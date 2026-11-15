@@ -1,18 +1,10 @@
 package routing
 
 import (
-	"regexp"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/slice"
 	"github.com/dangduoc08/ginject/internal/str"
 )
-
-var matchMethodReg = regexp.MustCompile(strings.Join(slice.Map(HTTPMethods, func(el string, i int) string {
-	return "/" + "\\" + "[" + el + "\\" + "]"
-}), "|"))
-
-var matchParamReg = regexp.MustCompile(`\{(.*?)\}`)
 
 var patternByMethod = func() map[string]string {
 	m := make(map[string]string, len(HTTPMethods))
@@ -23,21 +15,40 @@ var patternByMethod = func() map[string]string {
 }()
 
 func PatternToMethodRouteVersion(pattern string) (string, string, string) {
-	method := matchMethodReg.FindString(pattern)
-	noMethodRoute := pattern[:len(pattern)-len(method)]
+	if !strings.HasSuffix(pattern, "]/") {
+		return "", "", ""
+	}
+	rest := pattern[:len(pattern)-2]
 
-	route := noMethodRoute[:len(noMethodRoute)-1]
+	methodStart := strings.LastIndexByte(rest, '[')
+	if methodStart < 1 || rest[methodStart-1] != '/' {
+		return "", "", ""
+	}
+	method := rest[methodStart+1:]
+	if strings.ContainsAny(method, "/]") {
+		return "", "", ""
+	}
+	rest = rest[:methodStart-1]
 
-	lastSlashIndex := strings.LastIndex(route, "/")
-	version := ""
-	if lastSlashIndex < len(route)-1 {
-		version = route[lastSlashIndex+2 : len(route)-1]
+	if !strings.HasSuffix(rest, "|") {
+		return "", "", ""
+	}
+	rest = rest[:len(rest)-1]
+	versionStart := strings.LastIndexByte(rest, '|')
+	if versionStart < 0 {
+		return "", "", ""
+	}
+	version := rest[versionStart+1:]
+	if strings.IndexByte(version, '/') >= 0 {
+		return "", "", ""
 	}
 
-	route = route[:lastSlashIndex]
-	method = method[2 : len(method)-1]
+	route := rest[:versionStart]
+	if len(route) == 0 || route[0] != '/' || route[len(route)-1] != '/' {
+		return "", "", ""
+	}
 
-	return method, route, version
+	return method, route[:len(route)-1], version
 }
 
 func MethodRouteVersionToPattern(
@@ -46,59 +57,62 @@ func MethodRouteVersionToPattern(
 	version string,
 ) string {
 	routePattern := str.Enclose(route, '/')
+	if routePattern == "" {
+		routePattern = "/"
+	}
 	versionPattern := toPattern(version, "|", "|")
 	methodPattern, ok := patternByMethod[method]
 	if !ok {
 		methodPattern = toPattern(method, "[", "]")
 	}
 
-	size := len(routePattern)
-
-	if versionPattern != "" {
-		size += len(versionPattern) + 1
-	}
-
-	if methodPattern != "" {
-		size += len(methodPattern) + 1
-	}
-
 	var pattern strings.Builder
-	pattern.Grow(size)
-
+	pattern.Grow(len(routePattern) + len(versionPattern) + len(methodPattern) + 2)
 	pattern.WriteString(routePattern)
-
-	if versionPattern != "" {
-		pattern.WriteString(versionPattern)
-		pattern.WriteByte('/')
-	}
-
-	if methodPattern != "" {
-		pattern.WriteString(methodPattern)
-		pattern.WriteByte('/')
-	}
+	pattern.WriteString(versionPattern)
+	pattern.WriteByte('/')
+	pattern.WriteString(methodPattern)
+	pattern.WriteByte('/')
 
 	return pattern.String()
 }
 
 func ParseToParamKey(str string) (string, map[string][]int) {
-	if str == "" || strings.IndexByte(str, '{') < 0 {
+	if strings.IndexByte(str, '{') < 0 {
 		return str, nil
 	}
 
-	matches := matchParamReg.FindAllStringSubmatchIndex(str, -1)
-	if len(matches) == 0 {
-		return str, nil
-	}
-
-	paramKey := make(map[string][]int, len(matches))
+	var paramKey map[string][]int
 	var b strings.Builder
 	b.Grow(len(str))
 	prev := 0
-	for i, m := range matches {
-		b.WriteString(str[prev:m[0]])
+	index := 0
+	for {
+		open := strings.IndexByte(str[prev:], '{')
+		if open < 0 {
+			break
+		}
+		open += prev
+		closing := strings.IndexByte(str[open+1:], '}')
+		if closing < 0 {
+			break
+		}
+		closing += open + 1
+
+		if paramKey == nil {
+			paramKey = make(map[string][]int)
+		}
+		name := str[open+1 : closing]
+		paramKey[name] = append(paramKey[name], index)
+		index++
+
+		b.WriteString(str[prev:open])
 		b.WriteByte('$')
-		paramKey[str[m[2]:m[3]]] = append(paramKey[str[m[2]:m[3]]], i)
-		prev = m[1]
+		prev = closing + 1
+	}
+
+	if paramKey == nil {
+		return str, nil
 	}
 	b.WriteString(str[prev:])
 	return b.String(), paramKey

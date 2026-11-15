@@ -270,11 +270,15 @@ This is the opposite of `Provider`'s per-injection semantics — do not assume a
 ### Router
 
 ```go
+const (
+    MaxPathLength   = 4096 // bytes of the request path; longer paths never match
+    MaxPathSegments = 64   // segments of a path or a route
+)
+
 type Router struct {
-    trie                *ds.Trie
-    routerItemByPattern  map[string][]RouterItem
-    GlobalMiddlewares    []ctx.HTTPHandler
-    InjectableHandlers   map[string]any
+    // unexported: one trie (and a static-path map) per (method, version), the items in creation order
+    GlobalMiddlewares  []ctx.HTTPHandler
+    InjectableHandlers map[string]any // keyed by RouterItem.Pattern
 }
 
 func NewRouter() *Router
@@ -282,12 +286,15 @@ func NewRouter() *Router
 
 | Method | Signature |
 |--------|-----------|
-| `Match` | `Match(method, route, version string) (matched bool, pattern string, paramKeys map[string][]int, paramVals []string, handlers []ctx.HTTPHandler)` — **NOT** `Match(path, method) (RouterItem, bool)` |
+| `Match` | `Match(method, path, version string, params []string) (*RouterItem, []string)` — nil on a miss; the item is shared and read-only; the slice is `params` plus one value per route parameter, freshly allocated when there are values |
 | `Add` | `Add(method, route, version string, handler ctx.HTTPHandler) *Router` |
-| `AddInjectableHandler` | `AddInjectableHandler(method, route, version string, handler any) *Router` |
+| `AddInjectableHandler` | `AddInjectableHandler(method, route, version string, handler any) *Router` — also sets `RouterItem.Injectable` |
 | `Use` | `Use(handlers ...ctx.HTTPHandler) *Router` — global middleware |
-| `Group` | `Group(prefix string, subRouters ...*Router) *Router` |
 | `For` | `For(methods []string, route, version string) func(handlers ...ctx.HTTPHandler) *Router` |
+
+There is no `Group` (removed in design 0002). `Add`, `For` and `AddInjectableHandler` panic with
+`"invalid route: <route>: <reason>"` for a partial parameter segment (`/files/{name}.json`, `/a/{}`)
+or more than 64 segments. Matching rules: `.ginject/routing-system.md` §2.
 
 ### RouterItem
 
@@ -295,11 +302,13 @@ func NewRouter() *Router
 type RouterItem struct {
     Method       string
     Version      string
-    Pattern      string
-    Index        int
+    Pattern      string            // MethodRouteVersionToPattern(method, route, version)
+    Index        int               // dense, unique, in creation order
     HandlerIndex int
     Handlers     []ctx.HTTPHandler
-    ParamKeys    map[string][]int
+    ParamKeys    map[string][]int  // name → positions in the parameter values
+    ParamNames   []string          // ParamNames[i] names the i-th value; nil without parameters
+    Injectable   any               // the handler given to AddInjectableHandler, else nil
 }
 ```
 

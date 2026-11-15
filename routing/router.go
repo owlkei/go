@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"path"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/color"
@@ -13,6 +15,11 @@ import (
 )
 
 const SERVE = "SERVE"
+
+const (
+	MaxPathLength   = 4096
+	MaxPathSegments = ds.MaxSegments
+)
 
 var OperationsMapHTTPMethods = map[string]string{
 	http.MethodGet:     http.MethodGet,
@@ -41,11 +48,12 @@ var HTTPMethods = []string{
 }
 
 const (
-	ADD = iota + 1
-	USE
-	FOR
-	GROUP
+	callerAdd = iota + 1
+	callerUse
+	callerFor
 )
+
+const partialParamReason = "parameter must be a whole segment like {name}"
 
 type RouterItem struct {
 	Method       string
@@ -55,179 +63,38 @@ type RouterItem struct {
 	HandlerIndex int
 	Handlers     []ctx.HTTPHandler
 	ParamKeys    map[string][]int
+	ParamNames   []string
+	Injectable   any
 }
 
-func findRouterItem(items []RouterItem, method, version string) (RouterItem, bool) {
-	for _, item := range items {
-		if item.Method == method && item.Version == version {
-			return item, true
-		}
-	}
-	return RouterItem{}, false
+type routeTree struct {
+	method           string
+	version          string
+	trie             *ds.Trie[RouterItem]
+	itemByStaticPath map[string]*RouterItem
 }
 
 type Router struct {
-	trie                *ds.Trie
-	routerItemByPattern map[string][]RouterItem
-	routePatterns       []string
-	GlobalMiddlewares   []ctx.HTTPHandler
-	InjectableHandlers  map[string]any
+	trees              []*routeTree
+	items              []*RouterItem
+	itemByPattern      map[string]*RouterItem
+	GlobalMiddlewares  []ctx.HTTPHandler
+	InjectableHandlers map[string]any
 }
 
 func NewRouter() *Router {
 	return &Router{
-		trie:                ds.NewTrie(),
-		routerItemByPattern: make(map[string][]RouterItem),
-		GlobalMiddlewares:   []ctx.HTTPHandler{},
-		InjectableHandlers:  make(map[string]any),
+		itemByPattern:      make(map[string]*RouterItem),
+		GlobalMiddlewares:  []ctx.HTTPHandler{},
+		InjectableHandlers: make(map[string]any),
 	}
-}
-
-func (r *Router) push(method, route, version string, caller int, handlers ...ctx.HTTPHandler) *Router {
-	routePattern := str.Enclose(route, '/')
-
-	items := r.routerItemByPattern[routePattern]
-	itemPos := -1
-	for i := range items {
-		if items[i].Method == method && items[i].Version == version {
-			itemPos = i
-			break
-		}
-	}
-
-	var item RouterItem
-	if itemPos == -1 {
-		var routeIndex int
-		if len(items) > 0 {
-			routeIndex = items[0].Index
-		} else {
-			r.routePatterns = append(r.routePatterns, routePattern)
-			routeIndex = len(r.routePatterns) - 1
-		}
-		item = RouterItem{
-			Method:       method,
-			Version:      version,
-			Pattern:      MethodRouteVersionToPattern(method, route, version),
-			Index:        routeIndex,
-			HandlerIndex: -1,
-		}
-	} else {
-		item = items[itemPos]
-	}
-
-	handlerTotal := len(item.Handlers)
-	globalMiddlewareTotal := len(r.GlobalMiddlewares)
-
-	if caller == USE || caller == GROUP {
-
-		item.Handlers = append(item.Handlers, handlers...)
-	}
-
-	if caller == FOR {
-
-		if handlerTotal == 0 && globalMiddlewareTotal > 0 {
-			item.Handlers = append(item.Handlers, r.GlobalMiddlewares...)
-			item.Handlers = append(item.Handlers, handlers...)
-		} else {
-			item.Handlers = append(item.Handlers, handlers...)
-		}
-	}
-
-	if caller == ADD {
-
-		if handlerTotal == 0 && globalMiddlewareTotal == 0 {
-
-			item.Handlers = append(item.Handlers, handlers...)
-			item.HandlerIndex = 0
-
-		} else if handlerTotal == 0 && globalMiddlewareTotal > 0 {
-
-			item.Handlers = append(item.Handlers, r.GlobalMiddlewares...)
-			item.Handlers = append(item.Handlers, handlers...)
-			item.HandlerIndex = globalMiddlewareTotal
-		} else if item.HandlerIndex > -1 {
-
-			item.Handlers = append(item.Handlers[:item.HandlerIndex], item.Handlers[item.HandlerIndex+1:]...)
-			item.Handlers = append(item.Handlers, handlers...)
-			item.HandlerIndex = handlerTotal - 1
-		} else if item.HandlerIndex < 0 {
-
-			item.HandlerIndex = handlerTotal
-			item.Handlers = append(item.Handlers, handlers...)
-		}
-	}
-
-	parsedRoute, paramKey := ParseToParamKey(routePattern)
-	if len(paramKey) > 0 {
-		item.ParamKeys = paramKey
-	}
-
-	if itemPos == -1 {
-		items = append(items, item)
-	} else {
-		items[itemPos] = item
-	}
-	r.routerItemByPattern[routePattern] = items
-
-	r.trie.Insert(routePattern, parsedRoute, '/')
-
-	return r
-}
-
-func (r *Router) Match(method, route, version string) (bool, string, map[string][]int, []string, []ctx.HTTPHandler) {
-	searchPath := str.Enclose(path.Clean(route), '/')
-	matchedRaw, wildcardRaw, paramVals := r.trie.Find(searchPath, '/', true)
-
-	item, ok := findRouterItem(r.routerItemByPattern[matchedRaw], method, version)
-	if !ok {
-		item, ok = findRouterItem(r.routerItemByPattern[wildcardRaw], method, version)
-	}
-	if !ok {
-		return false, "", nil, nil, nil
-	}
-
-	return true, item.Pattern, item.ParamKeys, paramVals, item.Handlers
-}
-
-func (r *Router) Group(prefix string, subRouters ...*Router) *Router {
-	for _, subRouter := range subRouters {
-		for route, items := range subRouter.routerItemByPattern {
-			groupPath := prefix + route
-
-			for _, routerItem := range items {
-				if routerItem.HandlerIndex > -1 {
-					groupPathPattern := str.Enclose(groupPath, '/')
-					r.routePatterns = append(r.routePatterns, groupPathPattern)
-					r.routerItemByPattern[groupPathPattern] = append(r.routerItemByPattern[groupPathPattern], RouterItem{
-						Method:       routerItem.Method,
-						Version:      routerItem.Version,
-						Pattern:      MethodRouteVersionToPattern(routerItem.Method, groupPath, routerItem.Version),
-						Index:        len(r.routePatterns) - 1,
-						HandlerIndex: routerItem.HandlerIndex,
-					})
-				}
-
-				handlers := append(r.GlobalMiddlewares[:len(r.GlobalMiddlewares):len(r.GlobalMiddlewares)], routerItem.Handlers...)
-				r.push(routerItem.Method, groupPath, routerItem.Version, GROUP, handlers...)
-			}
-		}
-
-		for route, injectableHandler := range subRouter.InjectableHandlers {
-			r.InjectableHandlers[str.Enclose(prefix+route, '/')] = injectableHandler
-		}
-	}
-
-	return r
 }
 
 func (r *Router) Use(handlers ...ctx.HTTPHandler) *Router {
-
 	r.GlobalMiddlewares = append(r.GlobalMiddlewares, handlers...)
 
-	for route, items := range r.routerItemByPattern {
-		for _, routerItem := range items {
-			r.push(routerItem.Method, route, routerItem.Version, USE, handlers...)
-		}
+	for _, item := range r.items {
+		item.Handlers = append(item.Handlers, handlers...)
 	}
 
 	return r
@@ -236,7 +103,7 @@ func (r *Router) Use(handlers ...ctx.HTTPHandler) *Router {
 func (r *Router) For(methodInclusions []string, route string, version string) func(handlers ...ctx.HTTPHandler) *Router {
 	return func(handlers ...ctx.HTTPHandler) *Router {
 		for _, method := range methodInclusions {
-			r.push(method, route, version, FOR, handlers...)
+			r.push(method, route, version, callerFor, handlers...)
 		}
 
 		return r
@@ -244,7 +111,7 @@ func (r *Router) For(methodInclusions []string, route string, version string) fu
 }
 
 func (r *Router) Add(method, route, version string, handler ctx.HTTPHandler) *Router {
-	r.push(method, route, version, ADD, handler)
+	r.push(method, route, version, callerAdd, handler)
 
 	return r
 }
@@ -263,8 +130,227 @@ func (r *Router) AddInjectableHandler(method, route, version string, handler any
 		))
 	}
 
-	r.InjectableHandlers[MethodRouteVersionToPattern(method, route, version)] = handler
-	r.Add(method, route, version, nil)
+	item := r.push(method, route, version, callerAdd, nil)
+	item.Injectable = handler
+	r.InjectableHandlers[item.Pattern] = handler
 
 	return r
+}
+
+func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string) {
+	tree, path := r.lookup(method, path, version)
+	if tree == nil {
+		return nil, params
+	}
+
+	if item := tree.itemByStaticPath[staticKey(path)]; item != nil {
+		return item, params
+	}
+
+	return tree.trie.Find(path, params)
+}
+
+func (r *Router) matchTrie(method, path, version string, params []string) (*RouterItem, []string) {
+	tree, path := r.lookup(method, path, version)
+	if tree == nil {
+		return nil, params
+	}
+
+	return tree.trie.Find(path, params)
+}
+
+func (r *Router) lookup(method, path, version string) (*routeTree, string) {
+	tree := r.tree(method, version)
+	if tree == nil {
+		return nil, ""
+	}
+	path, ok := normalizePath(path)
+	if !ok {
+		return nil, ""
+	}
+	return tree, path
+}
+
+func (r *Router) tree(method, version string) *routeTree {
+	for _, tree := range r.trees {
+		if tree.method == method && tree.version == version {
+			return tree
+		}
+	}
+	return nil
+}
+
+func (r *Router) push(method, route, version string, caller int, handlers ...ctx.HTTPHandler) *RouterItem {
+	pattern := MethodRouteVersionToPattern(method, route, version)
+	item := r.itemByPattern[pattern]
+	if item == nil {
+		item = r.newItem(method, route, version, pattern)
+	}
+
+	handlerTotal := len(item.Handlers)
+	globalMiddlewareTotal := len(r.GlobalMiddlewares)
+
+	switch caller {
+	case callerUse:
+		item.Handlers = append(item.Handlers, handlers...)
+	case callerFor:
+		if handlerTotal == 0 && globalMiddlewareTotal > 0 {
+			item.Handlers = append(item.Handlers, r.GlobalMiddlewares...)
+		}
+		item.Handlers = append(item.Handlers, handlers...)
+	case callerAdd:
+		switch {
+		case handlerTotal == 0:
+			item.Handlers = append(item.Handlers, r.GlobalMiddlewares...)
+			item.Handlers = append(item.Handlers, handlers...)
+			item.HandlerIndex = globalMiddlewareTotal
+		case item.HandlerIndex > -1:
+			item.Handlers = append(item.Handlers[:item.HandlerIndex], item.Handlers[item.HandlerIndex+1:]...)
+			item.Handlers = append(item.Handlers, handlers...)
+			item.HandlerIndex = handlerTotal - 1
+		default:
+			item.HandlerIndex = handlerTotal
+			item.Handlers = append(item.Handlers, handlers...)
+		}
+	}
+
+	return item
+}
+
+func (r *Router) newItem(method, route, version, pattern string) *RouterItem {
+	compiled := compileRoute(route)
+
+	item := &RouterItem{
+		Method:       method,
+		Version:      version,
+		Pattern:      pattern,
+		Index:        len(r.items),
+		HandlerIndex: -1,
+		ParamNames:   compiled.paramNames,
+	}
+	if len(compiled.paramNames) > 0 {
+		item.ParamKeys = make(map[string][]int, len(compiled.paramNames))
+		for i, name := range compiled.paramNames {
+			item.ParamKeys[name] = append(item.ParamKeys[name], i)
+		}
+	}
+
+	tree := r.tree(method, version)
+	if tree == nil {
+		tree = &routeTree{
+			method:  method,
+			version: version,
+			trie:    ds.NewTrie[RouterItem](),
+		}
+		r.trees = append(r.trees, tree)
+	}
+	if err := tree.trie.Insert(compiled.triePattern, item); err != nil {
+		panic(invalidRoute(route, err.Error()))
+	}
+	if compiled.isStatic {
+		if tree.itemByStaticPath == nil {
+			tree.itemByStaticPath = make(map[string]*RouterItem)
+		}
+		tree.itemByStaticPath[compiled.triePattern] = item
+	}
+
+	r.items = append(r.items, item)
+	r.itemByPattern[pattern] = item
+
+	return item
+}
+
+type compiledRoute struct {
+	triePattern string
+	paramNames  []string
+	isStatic    bool
+}
+
+func compileRoute(route string) compiledRoute {
+	segments := strings.FieldsFunc(str.Enclose(route, '/'), func(r rune) bool { return r == '/' })
+	if len(segments) > MaxPathSegments {
+		panic(invalidRoute(route, "more than "+strconv.Itoa(MaxPathSegments)+" segments"))
+	}
+
+	compiled := compiledRoute{isStatic: true}
+	var triePattern strings.Builder
+	for _, seg := range segments {
+		triePattern.WriteByte('/')
+		if strings.ContainsAny(seg, "{}") {
+			if !isParamSegment(seg) {
+				panic(invalidRoute(route, partialParamReason))
+			}
+			compiled.paramNames = append(compiled.paramNames, seg[1:len(seg)-1])
+			compiled.isStatic = false
+			triePattern.WriteByte('$')
+			continue
+		}
+		if seg == "$" || strings.Contains(seg, "*") {
+			compiled.isStatic = false
+		}
+		triePattern.WriteString(seg)
+	}
+
+	if triePattern.Len() == 0 {
+		triePattern.WriteByte('/')
+	}
+	compiled.triePattern = triePattern.String()
+
+	return compiled
+}
+
+func isParamSegment(seg string) bool {
+	return len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}' && !strings.ContainsAny(seg[1:len(seg)-1], "{}")
+}
+
+func invalidRoute(route, reason string) error {
+	return errors.New(color.FmtRed("invalid route: %s: %s", route, reason))
+}
+
+func normalizePath(p string) (string, bool) {
+	if len(p) > MaxPathLength {
+		return "", false
+	}
+	if !hasDotSegment(p) {
+		return p, true
+	}
+	if len(p) > 2*MaxPathSegments && countSegments(p) > MaxPathSegments {
+		return "", false
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	return path.Clean(p), true
+}
+
+func hasDotSegment(p string) bool {
+	if len(p) > 0 && p[0] == '.' {
+		return true
+	}
+	for i := 0; i+1 < len(p); i++ {
+		if p[i] == '/' && p[i+1] == '.' {
+			return true
+		}
+	}
+	return false
+}
+
+func staticKey(p string) string {
+	if len(p) > 1 && p[len(p)-1] == '/' {
+		return p[:len(p)-1]
+	}
+	if p == "" {
+		return "/"
+	}
+	return p
+}
+
+func countSegments(s string) int {
+	count := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != '/' && (i == 0 || s[i-1] == '/') {
+			count++
+		}
+	}
+	return count
 }

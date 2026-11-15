@@ -2,7 +2,7 @@ package ds
 
 import "strings"
 
-func matchWildcard(str, route string) bool {
+func matchGlob(str, route string) bool {
 	prefix, rest, found := strings.Cut(route, "*")
 	if !found {
 		return str == route

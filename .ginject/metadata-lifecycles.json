@@ -82,8 +82,8 @@
         "from": "INITIALIZED",
         "to": "ROUTED",
         "stage": "handleRequest()",
-        "action": "routing.Router.Match(method, route, version string) (bool, string, map[string][]int, []string, []ctx.HTTPHandler)",
-        "effects": ["matched bool + pattern + param keys/values + handler chain returned as a tuple, NOT a RouterItem struct", "404 if matched is false"]
+        "action": "routing.Router.Match(method, path, version string, params []string) (*RouterItem, []string), retried with versioning.NeutralVersion on a miss",
+        "effects": ["the shared *RouterItem (Pattern, Handlers, ParamKeys, ParamNames) and the parameter values", "404 when both calls return nil"]
       },
       {
         "from": "ROUTED",

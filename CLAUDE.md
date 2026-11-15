@@ -163,6 +163,7 @@ Message format is `"<category>: <detail>"`:
 - `"route conflict: ..."` (`common/rest.go`)
 - `"event conflict: ..."` (`common/ws.go`)
 - `"invalid handler: ..."` (`routing/router.go`)
+- `"invalid route: ..."` (`routing/router.go`: a partial parameter segment such as `/files/{name}.json`, or more than 64 segments)
 - `"invalid module: ..."` (`core/module_builder.go`)
 - `"dependency injection: ..."` (`core/fn.go`)
 

@@ -24,7 +24,7 @@ the commit), README.
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
 | 1 | Foundations: `internal/str`, `internal/slice`, `internal/num`, `internal/color`, `internal/crypto` (the per-request UUID: hot spot 2), `internal/runtime` | tdd | docs/design/0001-internal.md | - | deep dive done; package checks green | done |
-| 2 | Trie and router: `internal/ds`, `routing`, `versioning` (route match is on every request) | tdd | docs/design/0002-routing.md | 1 | deep dive done; match benchmarks before → after | todo |
+| 2 | Trie and router: `internal/ds`, `routing`, `versioning` (route match is on every request) | tdd | docs/design/0002-routing.md | 1 | deep dive done; match benchmarks before → after | done |
 | 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | todo |
 | 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | todo |
 | 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | todo |
@@ -61,3 +61,7 @@ the commit), README.
 - Step 1: done. Two lint issues in the tester's crypto tests (unchecked `UUID()` error in a
   benchmark, a De Morgan form) were fixed by the orchestrator with no change in what they assert.
   `F64ToAnyNum(+Inf, Float32)` now returns +Inf (only finite values beyond `MaxFloat32` saturate).
+- Step 2: done. `Router.Match` static 271 → 39 ns (1 → 0 allocs), param 603 → 203 ns (2 → 1
+  alloc; the remaining one is what H1 would remove), miss 240 → 66 ns (1 → 0). End to end: one
+  allocation fewer per request (two on 404); time within the laptop's noise. No `core` test needed a
+  change. The orchestrator fixed three unchecked `Insert` errors in a tester benchmark (errcheck).

@@ -8,7 +8,6 @@
     - [Enclose](#enclose)
     - [RemoveDup](#removedup)
     - [RemoveSpace](#removespace)
-    - [Segment](#segment)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
@@ -44,10 +43,9 @@ mycallback
 
 | Function | Use | Path |
 |---|---|---|
-| `Enclose` | normalizes a route path: one separator at each end, no repeated separators or stars | hot (router, WebSocket path check) |
+| `Enclose` | normalizes a route path: one separator at each end, no repeated separators or stars | hot (WebSocket path check); cold (route registration) |
 | `RemoveDup` | collapses runs of one byte | hot (static file paths) |
 | `RemoveSpace` | removes Unicode white space | warm (JSONP callback) |
-| `Segment` | walks the segments of a path | hot (trie lookup) |
 
 ### Enclose
 
@@ -125,31 +123,6 @@ str.RemoveSpace("a b c\n") // "abc"
 - `"  "` and `""` return `""`.
 - An input without white space is returned as is, with no allocation.
 
-### Segment
-
-Returns the segment that follows the separator at index `start`, and the index of the next separator.
-
-#### Parameters
-1. `s` `string`: the path.
-2. `sep` `byte`: the separator.
-3. `start` `int`: the index of a separator in `s`.
-
-#### Returns
-1. `string`: the segment between `start` and the next separator.
-2. `int`: the index of the next separator, or `-1` when there is none or `start` is out of range.
-
-#### Usage
-
-```go
-path := "/users/{userId}/"
-for seg, next := str.Segment(path, '/', 0); next >= 0; seg, next = str.Segment(path, '/', next) {
-	fmt.Println(seg)
-}
-```
-
-#### Rules
-- Walking a path from index 0 yields the same segments as `strings.Split(path, "/")` without the leading empty one.
-
 ## Performance notes
 
 - `Enclose` and `RemoveDup` first scan the input once. When nothing would change, they return the input itself, with no allocation. Only an input that needs a change goes through the builder loop (`encloseSlow`, `removeDupSlow`). Tests compare both paths over 10,000 random strings.
@@ -164,7 +137,6 @@ Results depend on the machine. They were captured when this README was generated
 goos: darwin
 goarch: amd64
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkSegment-12              	19956400	        60.14 ns/op	       0 B/op	       0 allocs/op
 BenchmarkRemoveSpace-12          	 1962733	       610.4 ns/op	     112 B/op	       1 allocs/op
 BenchmarkEnclose_Dirty-12        	10390152	       115.4 ns/op	      32 B/op	       1 allocs/op
 BenchmarkEnclose_Canonical-12    	83314483	        14.31 ns/op	       0 B/op	       0 allocs/op

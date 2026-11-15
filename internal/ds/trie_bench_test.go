@@ -1,73 +1,86 @@
 package ds
 
 import (
-	"strconv"
 	"testing"
 )
 
-func buildBenchTrie() *Trie {
+func buildBenchTrie() *Trie[string] {
 	routes := []string{
-		"/users/$/",
-		"/users/$/friends/$/",
-		"/feeds/all/",
-		"/products/$/",
-		"/products/$/reviews/$/",
-		"/*/feeds/{feed*Id}/*/files/*.html/*/",
+		"/users/$",
+		"/users/$/friends/$",
+		"/feeds/all",
+		"/products/$",
+		"/products/$/reviews/$",
+		"/*/feeds/{feed*Id}/*/files/*.html/*",
+		"/a/$/x",
+		"/a/*",
 	}
-	tr := NewTrie()
+	tr := NewTrie[string]()
 	for _, r := range routes {
-		tr.Insert(r, r, '/')
+		value := r
+		if err := tr.Insert(r, &value); err != nil {
+			panic(err)
+		}
 	}
 	return tr
 }
 
 func BenchmarkTrieFind_Static(b *testing.B) {
 	tr := buildBenchTrie()
-	path := "/feeds/all/"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tr.Find(path, '/', false)
+	b.ReportAllocs()
+	for b.Loop() {
+		tr.Find("/feeds/all", nil)
 	}
 }
 
 func BenchmarkTrieFind_WithParam(b *testing.B) {
 	tr := buildBenchTrie()
-	path := "/users/633b0aa5d7fc3578b655b9bd/"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tr.Find(path, '/', true)
+	b.ReportAllocs()
+	for b.Loop() {
+		tr.Find("/users/633b0aa5d7fc3578b655b9bd", nil)
 	}
 }
 
 func BenchmarkTrieFind_DeepParam(b *testing.B) {
 	tr := buildBenchTrie()
-	path := "/users/633b0aa5d7fc3578b655b9bd/friends/633b0af45f4fe7d45b00fba5/"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tr.Find(path, '/', true)
+	b.ReportAllocs()
+	for b.Loop() {
+		tr.Find("/users/633b0aa5d7fc3578b655b9bd/friends/633b0af45f4fe7d45b00fba5", nil)
+	}
+}
+
+func BenchmarkTrieFind_ParamReusedBuffer(b *testing.B) {
+	tr := buildBenchTrie()
+	buf := make([]string, 0, 4)
+	b.ReportAllocs()
+	for b.Loop() {
+		tr.Find("/users/633b0aa5d7fc3578b655b9bd/friends/633b0af45f4fe7d45b00fba5", buf[:0])
 	}
 }
 
 func BenchmarkTrieFind_NoMatch(b *testing.B) {
 	tr := buildBenchTrie()
-	path := "/notexist/route/"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tr.Find(path, '/', false)
+	b.ReportAllocs()
+	for b.Loop() {
+		tr.Find("/notexist/route", nil)
 	}
 }
 
-func BenchmarkTrieRemove(b *testing.B) {
+func BenchmarkTrieFind_Backtrack(b *testing.B) {
 	tr := buildBenchTrie()
-	paths := make([]string, b.N)
-	for i := range paths {
-		p := "/bench/remove/" + strconv.Itoa(i) + "/"
-		paths[i] = p
-		tr.Insert(p, p, '/')
+	b.ReportAllocs()
+	for b.Loop() {
+		tr.Find("/a/1/y", nil)
 	}
+}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		tr.Remove(paths[i], '/')
+func BenchmarkTrieInsert(b *testing.B) {
+	value := "v"
+	b.ReportAllocs()
+	for b.Loop() {
+		tr := NewTrie[string]()
+		_ = tr.Insert("/users/$/friends/$", &value)
+		_ = tr.Insert("/feeds/all", &value)
+		_ = tr.Insert("/files/*.html", &value)
 	}
 }

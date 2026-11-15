@@ -14,20 +14,6 @@ func RemoveSpace(s string) string {
 	}, s)
 }
 
-func Segment(s string, sep byte, start int) (string, int) {
-	if len(s) == 0 || start < 0 || start > len(s)-1 {
-		return "", -1
-	}
-
-	i := strings.IndexByte(s[start+1:], sep)
-	if i < 0 {
-		return s[start:], i
-	}
-
-	next := i + start + 1
-	return s[start+1 : next], next
-}
-
 func Enclose(s string, sep byte) string {
 	if isEnclosed(s, sep) {
 		return s

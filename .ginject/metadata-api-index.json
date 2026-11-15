@@ -188,7 +188,7 @@
         "READ_ANY": "GET /*"
       },
       "notes": [
-        "Router.Match signature is func (r *Router) Match(method, route, version string) (bool, string, map[string][]int, []string, []ctx.HTTPHandler) — NOT (path, method) (RouterItem, bool). Do not invent a RouterItem-returning shape."
+        "Router.Match signature is func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string): nil on a miss; the item is shared and read-only; the slice is params plus one value per route parameter (design 0002). Router.Group does not exist.", "Route parameters are {name} whole segments (READ_BY_ID routes to GET /{id}); there is no :id syntax."
       ]
     },
     "exception": {

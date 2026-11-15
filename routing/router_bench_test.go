@@ -5,82 +5,154 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
 )
 
-func randomSegment(n int) string {
+func randomSegment(rnd *rand.Rand, n int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
+		b[i] = charset[rnd.Intn(len(charset))]
 	}
 	return string(b)
 }
 
+func randomRoute(rnd *rand.Rand) string {
+	return fmt.Sprintf("/%s/%s/{id}/%s", randomSegment(rnd, 8), randomSegment(rnd, 8), randomSegment(rnd, 8))
+}
+
 func buildBenchRouter(n int) (*Router, []string) {
+	rnd := rand.New(rand.NewSource(42))
 	r := NewRouter()
 	routes := make([]string, n)
-	noop := ctx.HTTPHandler(func(c *ctx.HTTPContext) {})
+	handler := ctx.HTTPHandler(func(c *ctx.HTTPContext) {})
 	for i := 0; i < n; i++ {
-		route := fmt.Sprintf("/%s/%s/{id}/%s", randomSegment(8), randomSegment(8), randomSegment(8))
-		routes[i] = route
-		r.Add(http.MethodGet, route, "", noop)
+		routes[i] = randomRoute(rnd)
+		r.Add(http.MethodGet, routes[i], "", handler)
 	}
 	return r, routes
 }
 
 func BenchmarkRouterAdd(b *testing.B) {
-	r := NewRouter()
-	routes := make([]string, b.N)
-	for i := 0; i < b.N; i++ {
-		routes[i] = fmt.Sprintf("/%s/%s/{id}/%s", randomSegment(8), randomSegment(8), randomSegment(8))
+	rnd := rand.New(rand.NewSource(7))
+	routes := make([]string, 1000)
+	for i := range routes {
+		routes[i] = randomRoute(rnd)
 	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	r := NewRouter()
+	i := 0
+	b.ReportAllocs()
+	for b.Loop() {
+		if i == len(routes) {
+			b.StopTimer()
+			r = NewRouter()
+			i = 0
+			b.StartTimer()
+		}
 		r.Add(http.MethodGet, routes[i], "", nil)
+		i++
+	}
+}
+
+func BenchmarkRouterUse(b *testing.B) {
+	noop := ctx.HTTPHandler(func(c *ctx.HTTPContext) {})
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		r, _ := buildBenchRouter(100)
+		b.StartTimer()
+		r.Use(noop)
 	}
 }
 
 func BenchmarkRouterMatch_Static(b *testing.B) {
 	r, _ := buildBenchRouter(1000)
 	r.Add(http.MethodGet, "/users/all", "", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, "/users/all", "", nil)
+	}
+}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		r.Match(http.MethodGet, "/users/all/", "")
+func BenchmarkRouterMatch_StaticTrailingSlash(b *testing.B) {
+	r, _ := buildBenchRouter(1000)
+	r.Add(http.MethodGet, "/users/all", "", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, "/users/all/", "", nil)
 	}
 }
 
 func BenchmarkRouterMatch_Param(b *testing.B) {
 	r, routes := buildBenchRouter(1000)
 	requestPath := strings.Replace(routes[len(routes)/2], "{id}", "123", 1)
+	buf := make([]string, 0, 4)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, requestPath, "", buf[:0])
+	}
+}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		r.Match(http.MethodGet, requestPath, "")
+func BenchmarkRouterMatch_ParamNoBuffer(b *testing.B) {
+	r, routes := buildBenchRouter(1000)
+	requestPath := strings.Replace(routes[len(routes)/2], "{id}", "123", 1)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, requestPath, "", nil)
+	}
+}
+
+func BenchmarkRouterMatch_Wildcard(b *testing.B) {
+	r, _ := buildBenchRouter(1000)
+	r.Add(http.MethodGet, "/assets/*", "", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, "/assets/css/site/main.css", "", nil)
+	}
+}
+
+func BenchmarkRouterMatch_Glob(b *testing.B) {
+	r, _ := buildBenchRouter(1000)
+	r.Add(http.MethodGet, "/files/in*.html", "", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, "/files/index.html", "", nil)
 	}
 }
 
 func BenchmarkRouterMatch_NoMatch(b *testing.B) {
 	r, _ := buildBenchRouter(1000)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		r.Match(http.MethodGet, "/notexist/route/", "")
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, "/notexist/route/", "", nil)
 	}
 }
 
-func BenchmarkRouterUse(b *testing.B) {
-	noop := ctx.HTTPHandler(func(c *ctx.HTTPContext) {})
-
-	b.StopTimer()
-	for i := 0; i < b.N; i++ {
-		r, _ := buildBenchRouter(100)
-		b.StartTimer()
-		r.Use(noop)
-		b.StopTimer()
+func BenchmarkRouterMatch_DotSegments(b *testing.B) {
+	r, _ := buildBenchRouter(1000)
+	r.Add(http.MethodGet, "/users/all", "", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		r.Match(http.MethodGet, "/users/x/../all", "", nil)
 	}
+}
+
+func BenchmarkRouterMatch_Parallel(b *testing.B) {
+	r, routes := buildBenchRouter(1000)
+	requestPath := strings.Replace(routes[len(routes)/2], "{id}", "123", 1)
+	var total atomic.Int64
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		buf := make([]string, 0, 4)
+		var count int64
+		for pb.Next() {
+			if item, _ := r.Match(http.MethodGet, requestPath, "", buf[:0]); item != nil {
+				count++
+			}
+		}
+		total.Add(count)
+	})
 }

@@ -243,20 +243,3 @@ func TestRemoveSpace_NoSpaceUnchanged(t *testing.T) {
 		t.Error(test.DiffMessage(allocs, 0.0, "S6: allocations of RemoveSpace without space"))
 	}
 }
-
-func TestSegment_SplitsBySeparator(t *testing.T) {
-	input := "/users/{userId}/schools/{schoolId}/subjects/{subjectId}/"
-	expect := make([]string, 6)
-	i := -1
-	for seg, next := Segment(input, '/', 0); next >= 0; seg, next = Segment(input, '/', next) {
-		i++
-		expect[i] = seg
-	}
-
-	spl := strings.Split(input, "/")
-	for i, seg := range expect {
-		if seg != spl[i+1] {
-			t.Error(test.DiffMessage(seg, spl[i+1], "Segment"))
-		}
-	}
-}

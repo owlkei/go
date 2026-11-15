@@ -81,10 +81,11 @@ func (http *HTTP) handleRequest(c *ctx.HTTPContext) {
 		version = http.versioning.GetVersion(c)
 	}
 
-	isMatched, matchedRoute, paramKeys, paramValues, handlers := http.route.Match(c.Method, c.URL.Path, version)
-	if !isMatched {
-		isMatched, matchedRoute, paramKeys, paramValues, handlers = http.route.Match(c.Method, c.URL.Path, versioning.NeutralVersion)
+	item, paramValues := http.route.Match(c.Method, c.URL.Path, version, nil)
+	if item == nil {
+		item, paramValues = http.route.Match(c.Method, c.URL.Path, versioning.NeutralVersion, nil)
 	}
+	isMatched := item != nil
 
 	if http.isVersioningEnabled {
 		if version == "" && isMatched {
@@ -104,16 +105,16 @@ func (http *HTTP) handleRequest(c *ctx.HTTPContext) {
 		}
 	}
 
-	catchEvent = matchedRoute
-
 	if isMatched {
-		c.ParamKeys = paramKeys
+		matchedRoute := item.Pattern
+		catchEvent = matchedRoute
+		c.ParamKeys = item.ParamKeys
 		c.ParamValues = paramValues
 		if c.Method == stdHTTP.MethodPost {
 			c.Status(stdHTTP.StatusCreated)
 		}
 
-		for _, handler := range handlers {
+		for _, handler := range item.Handlers {
 			if isNext {
 				isNext = false
 				if handler == nil {

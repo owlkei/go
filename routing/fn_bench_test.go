@@ -7,20 +7,22 @@ import (
 
 func BenchmarkPatternToMethodRouteVersion(b *testing.B) {
 	pattern := MethodRouteVersionToPattern(http.MethodGet, "/users/{userId}/friends/{friendId}", "v2")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		PatternToMethodRouteVersion(pattern)
 	}
 }
 
 func BenchmarkParseToParamKey(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		ParseToParamKey("/users/$/friends/$/schools/$/subjects/$/")
+	b.ReportAllocs()
+	for b.Loop() {
+		ParseToParamKey("/users/{a}/friends/{b}/schools/{c}/subjects/{d}/")
 	}
 }
 
 func BenchmarkMethodRouteVersionToPattern(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		MethodRouteVersionToPattern(http.MethodGet, "/users/{userId}/all", "v2")
 	}
 }

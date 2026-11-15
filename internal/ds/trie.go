@@ -1,216 +1,189 @@
 package ds
 
 import (
-	"encoding/json"
+	"errors"
+	"slices"
 	"strings"
-
-	"github.com/dangduoc08/ginject/internal/str"
 )
 
-type Node map[string]*Trie
+const MaxSegments = 64
 
-type Trie struct {
-	IsEnd        bool
-	Raw          string
-	Children     Node
-	globChildren []string
+var ErrTooManySegments = errors.New("ds: pattern has more than 64 segments")
+
+type Trie[T any] struct {
+	root  node[T]
+	count int
 }
 
-const paramValsInitialCap = 4
+type node[T any] struct {
+	value    *T
+	statics  map[string]*node[T]
+	globs    []glob[T]
+	param    *node[T]
+	wildcard *node[T]
+}
 
-func removeGlobChild(globChildren []string, key string) []string {
-	for i, k := range globChildren {
-		if k == key {
-			return append(globChildren[:i], globChildren[i+1:]...)
+type glob[T any] struct {
+	pattern  string
+	literals int
+	child    *node[T]
+}
+
+func NewTrie[T any]() *Trie[T] {
+	return &Trie[T]{}
+}
+
+func (t *Trie[T]) Len() int {
+	return t.count
+}
+
+func (t *Trie[T]) Insert(pattern string, value *T) error {
+	if countSegments(pattern) > MaxSegments {
+		return ErrTooManySegments
+	}
+
+	n := &t.root
+	for seg, next, ok := nextSegment(pattern, 0); ok; seg, next, ok = nextSegment(pattern, next) {
+		n = n.child(seg)
+	}
+
+	if n.value == nil && value != nil {
+		t.count++
+	} else if n.value != nil && value == nil {
+		t.count--
+	}
+	n.value = value
+
+	return nil
+}
+
+func (t *Trie[T]) Find(path string, params []string) (*T, []string) {
+	if len(path) > 2*MaxSegments && countSegments(path) > MaxSegments {
+		return nil, params
+	}
+
+	return t.root.find(path, 0, params, len(params))
+}
+
+func (n *node[T]) child(seg string) *node[T] {
+	switch {
+	case seg == "$":
+		if n.param == nil {
+			n.param = &node[T]{}
+		}
+		return n.param
+	case seg == "*":
+		if n.wildcard == nil {
+			n.wildcard = &node[T]{}
+		}
+		return n.wildcard
+	case strings.IndexByte(seg, '*') >= 0:
+		return n.globChild(seg)
+	}
+
+	if c := n.statics[seg]; c != nil {
+		return c
+	}
+	if n.statics == nil {
+		n.statics = make(map[string]*node[T])
+	}
+	c := &node[T]{}
+	n.statics[seg] = c
+	return c
+}
+
+func (n *node[T]) globChild(pattern string) *node[T] {
+	g := glob[T]{pattern: pattern, literals: len(pattern) - strings.Count(pattern, "*")}
+	i, found := slices.BinarySearchFunc(n.globs, g, compareGlobs[T])
+	if found {
+		return n.globs[i].child
+	}
+	g.child = &node[T]{}
+	n.globs = slices.Insert(n.globs, i, g)
+	return g.child
+}
+
+func compareGlobs[T any](a, b glob[T]) int {
+	if a.literals != b.literals {
+		return b.literals - a.literals
+	}
+	return strings.Compare(a.pattern, b.pattern)
+}
+
+func (n *node[T]) find(path string, start int, params []string, captured int) (*T, []string) {
+	seg, next, ok := nextSegment(path, start)
+	if !ok {
+		if n.value != nil {
+			return n.value, collect(params, captured)
+		}
+		if n.wildcard != nil && n.wildcard.value != nil {
+			return n.wildcard.value, collect(params, captured)
+		}
+		return nil, params
+	}
+
+	if c := n.statics[seg]; c != nil {
+		if value, out := c.find(path, next, params, captured); value != nil {
+			return value, out
 		}
 	}
-	return globChildren
-}
 
-func NewTrie() *Trie {
-	return &Trie{
-		Children: make(Node),
-	}
-}
-
-func (tr *Trie) Len() int {
-	counter := 0
-	for route, node := range tr.Children {
-		if route != "" {
-			counter++
-			if node != nil {
-				counter += node.Len()
+	for i := range n.globs {
+		if matchGlob(seg, n.globs[i].pattern) {
+			if value, out := n.globs[i].child.find(path, next, params, captured); value != nil {
+				return value, out
 			}
 		}
 	}
 
-	return counter
+	if n.param != nil {
+		if value, out := n.param.find(path, next, params, captured+1); value != nil {
+			out[captured] = seg
+			return value, out
+		}
+	}
+
+	if w := n.wildcard; w != nil {
+		if value, out := w.find(path, next, params, captured); value != nil {
+			return value, out
+		}
+		if w.value != nil {
+			return w.value, collect(params, captured)
+		}
+	}
+
+	return nil, params
 }
 
-func (tr *Trie) Insert(raw, insertedStr string, sep byte) *Trie {
-	node := tr
-	start := strings.IndexByte(insertedStr, sep)
-
-	for seg, next := str.Segment(insertedStr, sep, start); next > -1; seg, next = str.Segment(insertedStr, sep, next) {
-		if node.Children[seg] == nil {
-			node.Children[seg] = NewTrie()
-			if seg != "*" && strings.Contains(seg, "*") {
-				node.globChildren = append(node.globChildren, seg)
-			}
-		}
-
-		if next == len(insertedStr)-1 {
-			node.Children[seg].IsEnd = true
-			node.Children[seg].Raw = raw
-		}
-		node = node.Children[seg]
+func collect(params []string, captured int) []string {
+	if captured == len(params) {
+		return params
 	}
-
-	return tr
+	out := make([]string, captured)
+	copy(out, params)
+	return out
 }
 
-func (tr *Trie) Remove(removedStr string, sep byte) bool {
-	type step struct {
-		parent *Trie
-		key    string
+func nextSegment(s string, start int) (string, int, bool) {
+	for start < len(s) && s[start] == '/' {
+		start++
 	}
-
-	node := tr
-	start := strings.IndexByte(removedStr, sep)
-	var chain []step
-
-	for seg, next := str.Segment(removedStr, sep, start); next > -1; seg, next = str.Segment(removedStr, sep, next) {
-		child := node.Children[seg]
-		if child == nil {
-			return false
-		}
-		chain = append(chain, step{parent: node, key: seg})
-		node = child
+	if start == len(s) {
+		return "", start, false
 	}
-
-	if len(chain) == 0 || !node.IsEnd {
-		return false
+	end := strings.IndexByte(s[start:], '/')
+	if end < 0 {
+		return s[start:], len(s), true
 	}
-
-	node.IsEnd = false
-	node.Raw = ""
-
-	for i := len(chain) - 1; i >= 0; i-- {
-		s := chain[i]
-		child := s.parent.Children[s.key]
-		if child.IsEnd || len(child.Children) > 0 {
-			break
-		}
-		delete(s.parent.Children, s.key)
-		s.parent.globChildren = removeGlobChild(s.parent.globChildren, s.key)
-	}
-
-	return true
+	return s[start : start+end], start + end, true
 }
 
-func (tr *Trie) Find(path string, sep byte, supportParams bool) (string, string, []string) {
-	node := tr
-	var matchedNode *Trie
-	var wildcardNode *Trie
-	start := strings.IndexByte(path, sep)
-
-	var paramVals []string
-
-	for seg, next := str.Segment(path, sep, start); next > -1; seg, next = str.Segment(path, sep, next) {
-		exactNode := node.Children[seg]
-		if exactNode == nil {
-
-			if supportParams && node.Children["$"] != nil {
-
-				if w := node.Children["*"]; w != nil && w.IsEnd {
-					wildcardNode = w
-				}
-
-				node = node.Children["$"]
-				if paramVals == nil {
-					paramVals = make([]string, 0, paramValsInitialCap)
-				}
-				paramVals = append(paramVals, seg)
-			} else if node.Children["*"] != nil {
-				if w := node.Children["*"]; w.IsEnd {
-					wildcardNode = w
-				}
-				node = node.Children["*"]
-			} else {
-				isNotMatchAnythings := true
-
-				for _, route := range node.globChildren {
-					if matchWildcard(seg, route) {
-						node = node.Children[route]
-						isNotMatchAnythings = false
-						break
-					}
-				}
-
-				if isNotMatchAnythings {
-					break
-				}
-			}
-		} else {
-
-			if w := node.Children["*"]; w != nil && w.IsEnd {
-				wildcardNode = w
-			}
-			node = exactNode
-		}
-
-		if next == len(path)-1 {
-			matchedNode = node
-
-			if w := node.Children["*"]; w != nil && w.IsEnd {
-				wildcardNode = w
-			}
-			break
-		}
-
-		continue
-	}
-
-	matchedRaw := ""
-	if matchedNode != nil {
-		matchedRaw = matchedNode.Raw
-	}
-	wildcardRaw := ""
-	if wildcardNode != nil {
-		wildcardRaw = wildcardNode.Raw
-	}
-
-	return matchedRaw, wildcardRaw, paramVals
-}
-
-func (tr *Trie) ToJSON() (string, error) {
-	nodeMap := tr.genTrieMap("")
-	b, err := json.Marshal(nodeMap)
-	if err != nil {
-		return "", err
-	}
-	return string(b), err
-}
-
-func (tr *Trie) genTrieMap(path string) map[string]any {
-	nodeMap := map[string]any{
-		"children": []map[string]any{},
-	}
-	if path != "" {
-		nodeMap["path"] = path
-	}
-
-	for route, node := range tr.Children {
-		if route != "" {
-			if node.Children != nil {
-				trieMap := node.genTrieMap(route)
-				trieMap["isEnd"] = node.IsEnd
-
-				nodeMap["children"] = append(nodeMap["children"].([]map[string]any), trieMap)
-			}
+func countSegments(s string) int {
+	count := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != '/' && (i == 0 || s[i-1] == '/') {
+			count++
 		}
 	}
-
-	return nodeMap
-
+	return count
 }

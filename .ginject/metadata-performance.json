@@ -14,7 +14,7 @@
         {
           "stage": "Route matching",
           "time_us": "10-100",
-          "cost": "trie lookup (O(log n) for wildcards)"
+          "cost": "trie lookup bounded by the route tree size; static routes through a map"
         },
         {
           "stage": "Handler parameter resolution",
@@ -76,20 +76,21 @@
     "optimization": "getFnArgsByType() caches handler signatures"
   },
   "routing_performance": {
-    "exact_match": {
-      "complexity": "O(1)",
-      "time": "< 1 μs"
+    "source": "docs/design/0002-routing.md; routing/README.md and internal/ds/README.md hold the benchmark tables",
+    "static_route": {
+      "mechanism": "map of fully static routes per (method, version), probed before the trie",
+      "time": "about 30-40 ns, 0 allocs (1,000 routes)"
     },
-    "prefix_wildcard": {
-      "complexity": "O(log n)",
-      "time": "1-10 μs",
-      "example": "GET /:id matches /users/123"
+    "parameter_route": {
+      "mechanism": "trie walk by index, one map lookup per static segment, values collected into one slice at the match",
+      "time": "about 170-200 ns, 1 alloc of 16 B per value slice (no caller buffer: heavy technique H1 not approved)"
     },
-    "complex_regex": {
-      "complexity": "O(n) with regex compilation",
-      "time": "10-100 μs",
-      "example": "pattern matching with .* or +?"
-    }
+    "miss": {
+      "mechanism": "same walk, nothing allocated; a 404 calls Match twice (version, then NEUTRAL)",
+      "time": "about 50-60 ns, 0 allocs"
+    },
+    "limits": "paths over 4,096 bytes or 64 segments never match (404)",
+    "no_regex": "route matching uses no regexp; globs are matched by a linear scan per '*'"
   },
   "memory_allocation": {
     "per_request": {

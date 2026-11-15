@@ -1,382 +1,352 @@
 package ds
 
 import (
-	"encoding/json"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func TestTrieLenEmpty(t *testing.T) {
-	tr := NewTrie()
+func newTrie(t *testing.T, patterns ...string) *Trie[string] {
+	t.Helper()
+	tr := NewTrie[string]()
+	for _, pattern := range patterns {
+		value := pattern
+		if err := tr.Insert(pattern, &value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return tr
+}
 
-	actual := tr.Len()
-	expected := 0
-	if actual != expected {
-		t.Error(test.DiffMessage(actual, expected, "empty trie length should be equal"))
+func find(tr *Trie[string], path string) (string, []string) {
+	value, params := tr.Find(path, nil)
+	if value == nil {
+		return "", params
+	}
+	return *value, params
+}
+
+func checkFind(t *testing.T, tr *Trie[string], path, wantValue string, wantParams []string, rule string) {
+	t.Helper()
+	value, params := find(tr, path)
+	if value != wantValue {
+		t.Error(test.DiffMessage(value, wantValue, rule+": value of Find("+path+")"))
+	}
+	if len(params) != len(wantParams) || (len(wantParams) > 0 && !slices.Equal(params, wantParams)) {
+		t.Error(test.DiffMessage(params, wantParams, rule+": params of Find("+path+")"))
 	}
 }
 
-func TestTrieLen(t *testing.T) {
-	tc := struct {
-		paths    []string
-		expected int
-	}{
-		paths: []string{
-			"/users/{userId}/",
-			"/feeds/all/",
-			"/users/{userId}/friends/all/",
-		},
-		expected: 6,
-	}
-
-	tr := NewTrie()
-	for _, path := range tc.paths {
-		tr.Insert(path, path, '/')
-	}
-
-	actual := tr.Len()
-	if actual != tc.expected {
-		t.Error(test.DiffMessage(actual, tc.expected, "trie length should be equal"))
-	}
+func repeatSegments(segment string, n int) string {
+	return strings.Repeat("/"+segment, n)
 }
 
-func TestTrieInsert(t *testing.T) {
-	routes := []string{
-		"/users/{userId}/",
-		"/feeds/all/",
-		"/users/{userId}/friends/all/",
+func permutations(items []string) [][]string {
+	if len(items) <= 1 {
+		return [][]string{slices.Clone(items)}
 	}
-	tr := NewTrie()
-
-	for _, path := range routes {
-		tr.Insert(path, path, '/')
-	}
-
-	cases := []struct {
-		name       string
-		node       *Trie
-		wantIsEnd  bool
-		checkIsEnd bool
-	}{
-		{name: "users", node: tr.Children["users"]},
-		{name: "users/{userId}", node: tr.Children["users"].Children["{userId}"]},
-		{name: "users/{userId}/friends", node: tr.Children["users"].Children["{userId}"].Children["friends"], wantIsEnd: false, checkIsEnd: true},
-		{name: "feeds", node: tr.Children["feeds"]},
-		{name: "feeds/all", node: tr.Children["feeds"].Children["all"]},
-		{name: "users/{userId}/friends/all", node: tr.Children["users"].Children["{userId}"].Children["friends"].Children["all"], wantIsEnd: true, checkIsEnd: true},
-	}
-
-	for _, c := range cases {
-		if c.node == nil {
-			t.Error(test.DiffMessage(c.node, nil, c.name+": trie node should not be null"))
-			continue
-		}
-		if c.checkIsEnd && c.node.IsEnd != c.wantIsEnd {
-			t.Error(test.DiffMessage(c.node.IsEnd, c.wantIsEnd, c.name+": trie node IsEnd should be equal"))
+	var out [][]string
+	for i := range items {
+		rest := slices.Concat(items[:i], items[i+1:])
+		for _, p := range permutations(rest) {
+			out = append(out, append([]string{items[i]}, p...))
 		}
 	}
+	return out
 }
 
-func TestTrieFind(t *testing.T) {
-	routes := []string{
-		"/users/$/",
-		"/feeds/all/",
-		"/users/$/friends/$/",
-		"/*/feeds/{feed*Id}/*/files/*.html/*/",
-	}
-	tr := NewTrie()
-
-	for _, path := range routes {
-		tr.Insert(path, path, '/')
-	}
-
-	userID1 := "633b0aa5d7fc3578b655b9bd"
-	friendID1 := "633b0af45f4fe7d45b00fba5"
-
-	cases := []struct {
-		name              string
-		testPath          string
-		wantRaw           string
-		acceptWildcardRaw bool
-		wantNoMatch       bool
-		wantParams        []string
-	}{
-		{
-			name:       "deep param match",
-			testPath:   "/users/" + userID1 + "/friends/" + friendID1 + "/",
-			wantRaw:    routes[2],
-			wantParams: []string{userID1, friendID1},
-		},
-		{
-			name:        "incomplete path should not match",
-			testPath:    "/users/" + userID1 + "/friends/",
-			wantNoMatch: true,
-		},
-		{
-			name:              "wildcard deep match, exact length",
-			testPath:          "/api/feeds/{feedApiId}/next/files/id.html/endpoint/",
-			wantRaw:           routes[3],
-			acceptWildcardRaw: true,
-		},
-		{
-			name:              "wildcard deep match, extra trailing segments",
-			testPath:          "/api/feeds/{feedApiId}/next/files/id.html/endpoint/any/things/after/",
-			wantRaw:           routes[3],
-			acceptWildcardRaw: true,
-		},
-	}
-
-	for _, c := range cases {
-		actualRaw, actualWildcard, actualParams := tr.Find(c.testPath, '/', true)
-
-		if c.wantNoMatch {
-			if actualRaw != "" || actualWildcard != "" {
-				t.Error(test.DiffMessage(actualRaw, "", c.name))
-			}
-			continue
-		}
-
-		matched := actualRaw == c.wantRaw || (c.acceptWildcardRaw && actualWildcard == c.wantRaw)
-		if !matched {
-			t.Error(test.DiffMessage(actualRaw, c.wantRaw, c.name))
-		}
-
-		for i, want := range c.wantParams {
-			if actualParams[i] != want {
-				t.Error(test.DiffMessage(actualParams[i], want, c.name+": param should be equal"))
+func TestTrie_Find_Root(t *testing.T) {
+	for _, pattern := range []string{"/", ""} {
+		tr := newTrie(t, pattern)
+		for _, path := range []string{"/", "", "//"} {
+			value, _ := tr.Find(path, nil)
+			if value == nil {
+				t.Error(test.DiffMessage(value, pattern, "T1: root inserted as "+pattern+" must match "+path))
 			}
 		}
+		if value, _ := tr.Find("/a", nil); value != nil {
+			t.Error(test.DiffMessage(*value, nil, "T1: root must not match /a"))
+		}
 	}
 }
 
-func TestTrieFind_ParamSupportDisabled(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/users/$/", "/users/$/", '/')
-
-	matchedRaw, _, params := tr.Find("/users/123/", '/', false)
-	if matchedRaw != "" || params != nil {
-		t.Error(test.DiffMessage(matchedRaw, "", "Find(path, sep, false) must not treat $ as a param placeholder"))
-	}
-
-	matchedRaw, _, _ = tr.Find("/users/$/", '/', false)
-	if matchedRaw != "/users/$/" {
-		t.Error(test.DiffMessage(matchedRaw, "/users/$/", "$ should still match literally when param support is disabled"))
+func TestTrie_Find_EmptyTrie(t *testing.T) {
+	tr := NewTrie[string]()
+	for _, path := range []string{"/", "", "//", "/a", "/a/b"} {
+		value, params := tr.Find(path, nil)
+		if value != nil || len(params) != 0 {
+			t.Error(test.DiffMessage(value, nil, "T1: empty trie must miss "+path))
+		}
 	}
 }
 
-func TestTrieFind_ParamSupportEnabled(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/users/$/", "/users/$/", '/')
+func TestTrie_Find_Static(t *testing.T) {
+	tr := newTrie(t, "/feeds/all")
+	checkFind(t, tr, "/feeds/all", "/feeds/all", nil, "T2")
+	checkFind(t, tr, "/feeds/all/", "/feeds/all", nil, "T2")
+}
 
-	matchedRaw, _, params := tr.Find("/users/123/", '/', true)
-	if matchedRaw != "/users/$/" || len(params) != 1 || params[0] != "123" {
-		t.Error(test.DiffMessage(matchedRaw, "/users/$/", "Find(path, sep, true) must capture $ as a param placeholder"))
+func TestTrie_Find_StaticPrefixIsMiss(t *testing.T) {
+	tr := newTrie(t, "/feeds/all")
+	checkFind(t, tr, "/feeds", "", nil, "T2")
+	checkFind(t, tr, "/", "", nil, "T2")
+}
+
+func TestTrie_Find_StaticLongerIsMiss(t *testing.T) {
+	tr := newTrie(t, "/feeds/all")
+	checkFind(t, tr, "/feeds/all/x", "", nil, "T2")
+}
+
+func TestTrie_Find_Param(t *testing.T) {
+	tr := newTrie(t, "/users/$")
+	checkFind(t, tr, "/users/7", "/users/$", []string{"7"}, "T3")
+	checkFind(t, tr, "/users", "", nil, "T3: a parameter needs a segment")
+	checkFind(t, tr, "/users/7/x", "", nil, "T3: a parameter is one segment")
+}
+
+func TestTrie_Find_TwoParams(t *testing.T) {
+	tr := newTrie(t, "/users/$/friends/$")
+	checkFind(t, tr, "/users/7/friends/9", "/users/$/friends/$", []string{"7", "9"}, "T3")
+	checkFind(t, tr, "/users/7/friends", "", nil, "T3")
+}
+
+func TestTrie_Find_LiteralDollarIsValue(t *testing.T) {
+	tr := newTrie(t, "/users/$/friends/$")
+	checkFind(t, tr, "/users/$/friends/*", "/users/$/friends/$", []string{"$", "*"}, "T4")
+}
+
+func TestTrie_Find_LiteralStarIsText(t *testing.T) {
+	tr := newTrie(t, "/a/b")
+	checkFind(t, tr, "/a/*", "", nil, "T4")
+	checkFind(t, tr, "/a/$", "", nil, "T4")
+}
+
+func TestTrie_Find_WildcardMiddleOneSegment(t *testing.T) {
+	tr := newTrie(t, "/*/feeds")
+	checkFind(t, tr, "/x/feeds", "/*/feeds", nil, "T5")
+	checkFind(t, tr, "/feeds", "", nil, "T5: zero segments")
+	checkFind(t, tr, "/x/y/feeds", "", nil, "T5: two segments")
+}
+
+func TestTrie_Find_WildcardEndZeroSegments(t *testing.T) {
+	tr := newTrie(t, "/lv1/*")
+	for _, path := range []string{"/lv1", "/lv1/"} {
+		checkFind(t, tr, path, "/lv1/*", nil, "T6")
 	}
 }
 
-func TestTrieFindWildcardFallbackThroughUnrelatedSibling(t *testing.T) {
-	tc := struct {
-		routes   []string
-		testPath string
-		wantRaw  string
+func TestTrie_Find_WildcardEndManySegments(t *testing.T) {
+	tr := newTrie(t, "/lv1/*")
+	for _, path := range []string{"/lv1/a", "/lv1/a/b/c"} {
+		checkFind(t, tr, path, "/lv1/*", nil, "T6")
+	}
+	checkFind(t, tr, "/lv2/a", "", nil, "T6")
+}
+
+func TestTrie_Find_WildcardMiddleAndEnd(t *testing.T) {
+	tr := newTrie(t, "/a/*/b", "/a/*")
+	checkFind(t, tr, "/a/x/b", "/a/*/b", nil, "T6")
+	checkFind(t, tr, "/a/x/c", "/a/*", nil, "T6")
+	checkFind(t, tr, "/a/x/b/c", "/a/*", nil, "T6")
+	checkFind(t, tr, "/a", "/a/*", nil, "T6")
+}
+
+func TestTrie_Find_Glob(t *testing.T) {
+	tr := newTrie(t, "/files/in*.html", "/files/image.*", "/files/*.css")
+	checkFind(t, tr, "/files/in.html", "/files/in*.html", nil, "T7")
+	checkFind(t, tr, "/files/index.html", "/files/in*.html", nil, "T7")
+	checkFind(t, tr, "/files/in.htm", "", nil, "T7")
+	checkFind(t, tr, "/files/xin.html", "", nil, "T7")
+	checkFind(t, tr, "/files/image.png", "/files/image.*", nil, "T7")
+	checkFind(t, tr, "/files/site.css", "/files/*.css", nil, "T7")
+	checkFind(t, tr, "/files/site.css/x", "", nil, "T7: a glob is one segment")
+}
+
+func TestTrie_Find_BacktracksStaticToParam(t *testing.T) {
+	tr := newTrie(t, "/users/all/x", "/users/$/y")
+	checkFind(t, tr, "/users/all/y", "/users/$/y", []string{"all"}, "T8")
+	checkFind(t, tr, "/users/all/x", "/users/all/x", nil, "T8")
+}
+
+func TestTrie_Find_GlobBeforeWildcard(t *testing.T) {
+	tr := newTrie(t, "/x/*", "/x/*.html")
+	checkFind(t, tr, "/x/a.html", "/x/*.html", nil, "T8")
+	checkFind(t, tr, "/x/a.css", "/x/*", nil, "T8")
+}
+
+func TestTrie_Find_GlobBeforeParam(t *testing.T) {
+	tr := newTrie(t, "/f/$", "/f/*.html")
+	checkFind(t, tr, "/f/a.html", "/f/*.html", nil, "T8")
+	checkFind(t, tr, "/f/a.css", "/f/$", []string{"a.css"}, "T8")
+}
+
+func TestTrie_Find_ParamBeforeWildcard(t *testing.T) {
+	tr := newTrie(t, "/a/$/x", "/a/*")
+	checkFind(t, tr, "/a/1/x", "/a/$/x", []string{"1"}, "T8")
+	checkFind(t, tr, "/a/1/y", "/a/*", nil, "T8")
+}
+
+func TestTrie_Find_FallsBackToOuterWildcard(t *testing.T) {
+	tr := newTrie(t, "/lv1/*", "/lv1/lv2/lv3/pong")
+	checkFind(t, tr, "/lv1/lv2/lv3/extra", "/lv1/*", nil, "T8")
+	checkFind(t, tr, "/lv1/lv2/lv3/pong", "/lv1/lv2/lv3/pong", nil, "T8")
+}
+
+func TestTrie_Find_NodeValueBeforeEndWildcard(t *testing.T) {
+	tr := newTrie(t, "/a", "/a/*")
+	checkFind(t, tr, "/a", "/a", nil, "T8")
+	checkFind(t, tr, "/a/b", "/a/*", nil, "T8")
+}
+
+func TestTrie_Find_DropsAbandonedParams(t *testing.T) {
+	tr := newTrie(t, "/a/$/b/$/c", "/a/$/b/*")
+	checkFind(t, tr, "/a/1/b/2/d", "/a/$/b/*", []string{"1"}, "T9")
+	checkFind(t, tr, "/a/1/b/2/c", "/a/$/b/$/c", []string{"1", "2"}, "T9")
+	tr = newTrie(t, "/a/$/x", "/a/*")
+	checkFind(t, tr, "/a/1/y", "/a/*", nil, "T9")
+}
+
+func TestTrie_Find_MissKeepsParams(t *testing.T) {
+	tr := newTrie(t, "/a/$/b")
+	value, params := tr.Find("/a/1/c", nil)
+	if value != nil {
+		t.Error(test.DiffMessage(*value, nil, "T9: miss returns nil"))
+	}
+	if len(params) != 0 {
+		t.Error(test.DiffMessage(params, nil, "T9: miss returns the input params unchanged"))
+	}
+}
+
+func TestTrie_Find_InsertOrderIndependent(t *testing.T) {
+	patterns := []string{"/p/a*", "/p/*bc", "/p/$", "/p/*"}
+	paths := []struct {
+		path   string
+		want   string
+		params []string
 	}{
-		routes: []string{
-			"/lv1/*/",
-			"/lv1/lv2/lv3/pong/",
-		},
-		testPath: "/lv1/lv2/lv3/extra/",
-		wantRaw:  "/lv1/*/",
+		{"/p/abc", "/p/*bc", nil},
+		{"/p/axx", "/p/a*", nil},
+		{"/p/zzz", "/p/$", []string{"zzz"}},
+		{"/p/zzz/q", "/p/*", nil},
 	}
-
-	tr := NewTrie()
-	for _, path := range tc.routes {
-		tr.Insert(path, path, '/')
-	}
-
-	actualRaw, actualWildcard, _ := tr.Find(tc.testPath, '/', false)
-	if actualRaw != tc.wantRaw && actualWildcard != tc.wantRaw {
-		t.Error(test.DiffMessage(actualRaw, tc.wantRaw, "should fall back to /lv1/* despite unrelated deeper sibling"))
-	}
-}
-
-func TestTrieRemove_ExactMatch(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/users/$/", "/users/$/", '/')
-	tr.Insert("/feeds/all/", "/feeds/all/", '/')
-
-	ok := tr.Remove("/feeds/all/", '/')
-	if !ok {
-		t.Error(test.DiffMessage(ok, true, "Remove should report success for a previously inserted path"))
-	}
-
-	matchedRaw, _, _ := tr.Find("/feeds/all/", '/', false)
-	if matchedRaw != "" {
-		t.Error(test.DiffMessage(matchedRaw, "", "removed path should no longer be found"))
-	}
-
-	matchedRaw, _, _ = tr.Find("/users/123/", '/', true)
-	if matchedRaw != "/users/$/" {
-		t.Error(test.DiffMessage(matchedRaw, "/users/$/", "unrelated path should still match after removal"))
-	}
-}
-
-func TestTrieRemove_PrunesDeadBranch(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/a/b/c/", "/a/b/c/", '/')
-
-	ok := tr.Remove("/a/b/c/", '/')
-	if !ok {
-		t.Error(test.DiffMessage(ok, true, "Remove should report success"))
-	}
-
-	if got := tr.Len(); got != 0 {
-		t.Error(test.DiffMessage(got, 0, "removing the only path should prune every dead ancestor node"))
-	}
-}
-
-func TestTrieRemove_KeepsSharedPrefix(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/a/b/", "/a/b/", '/')
-	tr.Insert("/a/c/", "/a/c/", '/')
-
-	ok := tr.Remove("/a/b/", '/')
-	if !ok {
-		t.Error(test.DiffMessage(ok, true, "Remove should report success"))
-	}
-
-	matchedRaw, _, _ := tr.Find("/a/c/", '/', false)
-	if matchedRaw != "/a/c/" {
-		t.Error(test.DiffMessage(matchedRaw, "/a/c/", "sibling path sharing a prefix must survive removal"))
-	}
-
-	wantLen := 2
-	if got := tr.Len(); got != wantLen {
-		t.Error(test.DiffMessage(got, wantLen, "shared prefix node must not be pruned while a sibling still uses it"))
-	}
-}
-
-func TestTrieRemove_PrunesGlobChild(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/files/*.html/", "/files/*.html/", '/')
-	tr.Insert("/files/plain/", "/files/plain/", '/')
-
-	matchedRaw, _, _ := tr.Find("/files/id.html/", '/', false)
-	if matchedRaw != "/files/*.html/" {
-		t.Error(test.DiffMessage(matchedRaw, "/files/*.html/", "glob child should match before removal"))
-	}
-
-	ok := tr.Remove("/files/*.html/", '/')
-	if !ok {
-		t.Error(test.DiffMessage(ok, true, "Remove should report success for a previously inserted glob pattern"))
-	}
-
-	matchedRaw, _, _ = tr.Find("/files/id.html/", '/', false)
-	if matchedRaw != "" {
-		t.Error(test.DiffMessage(matchedRaw, "", "removed glob pattern must no longer be reachable via Find"))
-	}
-
-	matchedRaw, _, _ = tr.Find("/files/plain/", '/', false)
-	if matchedRaw != "/files/plain/" {
-		t.Error(test.DiffMessage(matchedRaw, "/files/plain/", "unrelated sibling should still match after glob removal"))
-	}
-}
-
-func TestTrieRemove_NoMatch_ReturnsFalse(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/a/b/", "/a/b/", '/')
-
-	cases := []string{
-		"/x/y/",
-		"/a/",
-		"",
-		"noslash",
-	}
-
-	for _, c := range cases {
-		if ok := tr.Remove(c, '/'); ok {
-			t.Error(test.DiffMessage(ok, false, "Remove("+c+") should report false"))
+	for _, order := range permutations(patterns) {
+		tr := newTrie(t, order...)
+		for _, p := range paths {
+			checkFind(t, tr, p.path, p.want, p.params, "T10: order "+strings.Join(order, " "))
 		}
 	}
+}
 
-	matchedRaw, _, _ := tr.Find("/a/b/", '/', false)
-	if matchedRaw != "/a/b/" {
-		t.Error(test.DiffMessage(matchedRaw, "/a/b/", "failed Remove calls must not mutate the trie"))
+func TestTrie_Find_GlobOrder(t *testing.T) {
+	for _, order := range permutations([]string{"/g/a*", "/g/*bc"}) {
+		tr := newTrie(t, order...)
+		checkFind(t, tr, "/g/abc", "/g/*bc", nil, "T10: more literal bytes first")
+	}
+	for _, order := range permutations([]string{"/t/a*", "/t/*a"}) {
+		tr := newTrie(t, order...)
+		checkFind(t, tr, "/t/aa", "/t/*a", nil, "T10: tie broken by pattern byte order")
 	}
 }
 
-func TestTrieRemove_AlreadyRemoved_ReturnsFalse(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/a/b/", "/a/b/", '/')
+func TestTrie_Find_SkipsEmptySegments(t *testing.T) {
+	tr := newTrie(t, "/a/b", "/c/$")
+	checkFind(t, tr, "//a///b/", "/a/b", nil, "T11")
+	checkFind(t, tr, "//c//5//", "/c/$", []string{"5"}, "T11")
+}
 
-	if ok := tr.Remove("/a/b/", '/'); !ok {
-		t.Error(test.DiffMessage(ok, true, "first Remove should succeed"))
-	}
-	if ok := tr.Remove("/a/b/", '/'); ok {
-		t.Error(test.DiffMessage(ok, false, "second Remove of the same path should report false"))
+func TestTrie_Find_DotSegmentsArePlainText(t *testing.T) {
+	tr := newTrie(t, "/a/$")
+	checkFind(t, tr, "/a/..", "/a/$", []string{".."}, "T11")
+	checkFind(t, tr, "/a/.", "/a/$", []string{"."}, "T11")
+}
+
+func TestTrie_Find_StaticNoAlloc(t *testing.T) {
+	tr := newTrie(t, "/feeds/all", "/users/$")
+	allocs := testing.AllocsPerRun(100, func() {
+		tr.Find("/feeds/all", nil)
+	})
+	if allocs != 0 {
+		t.Error(test.DiffMessage(allocs, 0.0, "T12: allocations of a static match"))
 	}
 }
 
-type trieJSONNode struct {
-	Path     string         `json:"path"`
-	IsEnd    bool           `json:"isEnd"`
-	Children []trieJSONNode `json:"children"`
+func TestTrie_Find_MissNoAlloc(t *testing.T) {
+	tr := newTrie(t, "/feeds/all", "/users/$")
+	allocs := testing.AllocsPerRun(100, func() {
+		tr.Find("/nope/at/all", nil)
+	})
+	if allocs != 0 {
+		t.Error(test.DiffMessage(allocs, 0.0, "T12: allocations of a miss"))
+	}
 }
 
-func findChildByPath(children []trieJSONNode, path string) *trieJSONNode {
-	for i := range children {
-		if children[i].Path == path {
-			return &children[i]
-		}
+func TestTrie_Find_TooManySegments(t *testing.T) {
+	tr := newTrie(t, "/*")
+	if value, _ := tr.Find(repeatSegments("a", MaxSegments), nil); value == nil {
+		t.Error(test.DiffMessage(value, "/*", "T13: 64 segments match"))
 	}
-	return nil
+	if value, _ := tr.Find(repeatSegments("a", MaxSegments+1), nil); value != nil {
+		t.Error(test.DiffMessage(*value, nil, "T13: 65 segments miss"))
+	}
 }
 
-func TestTrieToJSON(t *testing.T) {
-	tr := NewTrie()
-	tr.Insert("/users/$/", "/users/$/", '/')
-	tr.Insert("/feeds/all/", "/feeds/all/", '/')
-
-	js, err := tr.ToJSON()
-	if err != nil {
-		t.Error(test.DiffMessage(err, nil, "ToJSON should not error"))
+func TestTrie_Insert_TooManySegments(t *testing.T) {
+	tr := NewTrie[string]()
+	value := "v"
+	if err := tr.Insert(repeatSegments("a", MaxSegments), &value); err != nil {
+		t.Error(test.DiffMessage(err, nil, "T13: 64 segments are accepted"))
 	}
-
-	var root trieJSONNode
-	if err := json.Unmarshal([]byte(js), &root); err != nil {
-		t.Error(test.DiffMessage(err, nil, "ToJSON output should be valid JSON"))
+	before := tr.Len()
+	err := tr.Insert(repeatSegments("b", MaxSegments+1), &value)
+	if !errors.Is(err, ErrTooManySegments) {
+		t.Error(test.DiffMessage(err, ErrTooManySegments, "T13: 65 segments are refused"))
 	}
-
-	expectedRootChildren := 2
-	if len(root.Children) != expectedRootChildren {
-		t.Error(test.DiffMessage(len(root.Children), expectedRootChildren, "root children count should be equal"))
+	if tr.Len() != before {
+		t.Error(test.DiffMessage(tr.Len(), before, "T13: a refused Insert changes nothing"))
 	}
-
-	usersNode := findChildByPath(root.Children, "users")
-	if usersNode == nil {
-		t.Error(test.DiffMessage(usersNode, "users", "users node should exist"))
-	} else {
-		if usersNode.IsEnd {
-			t.Error(test.DiffMessage(usersNode.IsEnd, false, "users node IsEnd should be equal"))
-		}
-
-		paramNode := findChildByPath(usersNode.Children, "$")
-		if paramNode == nil {
-			t.Error(test.DiffMessage(paramNode, "$", "$ node should exist"))
-		} else if !paramNode.IsEnd {
-			t.Error(test.DiffMessage(paramNode.IsEnd, true, "$ node IsEnd should be equal"))
-		}
+	if value, _ := tr.Find(repeatSegments("b", MaxSegments), nil); value != nil {
+		t.Error(test.DiffMessage(*value, nil, "T13: a refused Insert leaves no prefix behind"))
 	}
+}
 
-	feedsNode := findChildByPath(root.Children, "feeds")
-	if feedsNode == nil {
-		t.Error(test.DiffMessage(feedsNode, "feeds", "feeds node should exist"))
-	} else {
-		allNode := findChildByPath(feedsNode.Children, "all")
-		if allNode == nil {
-			t.Error(test.DiffMessage(allNode, "all", "all node should exist"))
-		} else if !allNode.IsEnd {
-			t.Error(test.DiffMessage(allNode.IsEnd, true, "all node IsEnd should be equal"))
-		}
+func TestTrie_Len(t *testing.T) {
+	if got := NewTrie[string]().Len(); got != 0 {
+		t.Error(test.DiffMessage(got, 0, "T14: empty trie"))
 	}
+	tr := newTrie(t, "/a/b")
+	if got := tr.Len(); got != 1 {
+		t.Error(test.DiffMessage(got, 1, "T14: a pattern counts, its prefixes do not"))
+	}
+	tr = newTrie(t, "/", "/a", "/a/b", "/users/$", "/x/*", "/f/*.html")
+	if got := tr.Len(); got != 6 {
+		t.Error(test.DiffMessage(got, 6, "T14: patterns that hold a value"))
+	}
+}
+
+func TestTrie_Insert_ReplacesValue(t *testing.T) {
+	tr := NewTrie[string]()
+	first, second := "first", "second"
+	if err := tr.Insert("/a/$", &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.Insert("/a/$", &second); err != nil {
+		t.Fatal(err)
+	}
+	checkFind(t, tr, "/a/1", "second", []string{"1"}, "T14")
+	if got := tr.Len(); got != 1 {
+		t.Error(test.DiffMessage(got, 1, "T14: the same pattern twice counts once"))
+	}
+	if err := tr.Insert("", &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.Insert("/", &second); err != nil {
+		t.Fatal(err)
+	}
+	if got := tr.Len(); got != 2 {
+		t.Error(test.DiffMessage(got, 2, "T14: \"\" and \"/\" are the same pattern"))
+	}
+	checkFind(t, tr, "/", "second", nil, "T14")
 }

@@ -60,64 +60,74 @@
 
 ## 2. Route Matching Algorithm
 
-### 2.1 Matching Decision Tree
+Code: `routing/router.go` (`Router.Match`), `internal/ds/trie.go` (`Trie.Find`). Design: `docs/design/0002-routing.md`.
+There is no regexp, no `:id` syntax and no conflict detection between parameter routes.
+
+### 2.1 Route syntax (registration)
+
+Method names become routes with `{name}` parameters (`READ_BY_ID` → `GET /{id}`) and `*` for `ANY`
+(`READ_ANY` → `GET /*`, `READ_ANY_FILE_HTML` → `GET /*.html`). Each route is normalized with
+`str.Enclose` (white space removed, `//` and `**` collapsed), then compiled segment by segment:
+
+| Route segment | Trie segment | Matches in a request |
+|---|---|---|
+| `{name}` (whole segment, non-empty name without `{` `}`) | `$` parameter | exactly one non-empty segment, captured |
+| `*` | wildcard | one segment in the middle; zero or more segments at the end of a route |
+| other text with `*` (`in*.html`, `*.css`, `{feed*Id}` is a parameter, not a glob) | glob | one segment; each `*` = any run of bytes, empty included |
+| anything else | static | that exact segment |
+
+Bootstrap panics (`color.FmtRed`), from `Add`, `For` and `AddInjectableHandler`:
+- `invalid route: <route>: parameter must be a whole segment like {name}` — `/files/{name}.json`, `/a/{}`, `/a/{x}{y}`, `/a/{x`.
+- `invalid route: <route>: more than 64 segments`.
+
+`$` and `*` are reserved: a route cannot hold a literal `$` or `*` segment.
+
+### 2.2 Match decision tree
 
 ```
-request.URL.Path = "/api/users/123"
-request.Method = "GET"
-
-Router.Match(path, method):
-    1. Exact match in trie?
-       YES → return RouterItem[method]
-       NO → continue
-    
-    2. Prefix wildcard match?
-       Example: "/api/users/:userId" matches "/api/users/123"
-       YES → return RouterItem[method]
-       NO → continue
-    
-    3. Complex regex match?
-       Example: pattern "/api/(.+)/profile" matches "/api/john/profile"
-       YES → return RouterItem[method]
-       NO → continue
-    
-    4. No match found
-       → return 404 Not Found
+Router.Match(method, path, version, params):
+    1. tree = the trie of exactly (method, version)      linear scan of a short slice
+       none → nil                                       (core retries with versioning.NeutralVersion)
+    2. len(path) > 4096 → nil
+    3. path starts with "." or contains "/." → if > 64 segments → nil; path = path.Clean("/" + path)
+       (".." above the root stays at the root; nothing else in the request is rewritten)
+    4. fully static route? map[path minus one trailing slash, "" → "/"] → item, params unchanged
+    5. trie.Find(path, params):
+         > 64 non-empty segments → nil
+         walk the non-empty segments between "/" (repeated and trailing slashes ignored)
 ```
 
-### 2.2 Trie-Based Prefix Matching
+A miss is a miss: a root route answers only `/`, `""` and `//`, never an unknown path (404).
 
-**Performance**: O(1) for exact path, O(log n) for prefix matching
+### 2.3 Trie precedence (with backtracking)
 
-**Structure**:
+At each node the candidates for the next segment are tried in this order; the first whose subtree
+matches the whole rest of the path wins, otherwise the walk backs up and tries the next one:
+
 ```
-Trie node per path segment:
-  "/" → trie node
-    "api" → trie node
-      "users" → trie node
-        ":userId" → trie node (dynamic)
-```
-
-**Segment Types**:
-- **Static**: "api" (matches exactly)
-- **Dynamic**: ":userId" (matches any single segment)
-- **Wildcard**: "*" (matches remaining path)
-
-### 2.3 Conflict Detection
-
-**Route Conflicts** occur when:
-1. Two routes with identical path + method + version
-2. Two dynamic routes that could both match the same request
-
-**Example Conflicts**:
-```
-READ_BY_ID_AND_NAME        → GET /:id/:name
-READ_BY_ID_AND_COMMENT     → GET /:id/:comment
-
-// Both match GET /123/456 — CONFLICT!
+1. static child (one map lookup)
+2. glob children, most literal bytes first, then pattern byte order (independent of insert order)
+3. parameter child (captures the segment)
+4. wildcard as one segment (continue in the wildcard's subtree)
+5. wildcard as the end (zero or more remaining segments)
+Path ended at a node: the node's own route, else its end wildcard.
 ```
 
-**Behavior**: Panic at app.Create() with `route conflict: ...` message
+Examples: `/users/all/x` + `/users/{id}/y` → `/users/all/y` is the second (`["all"]`);
+`/x/*` + `/x/*.html` → `/x/a.html` is the glob; `/f/{id}` + `/f/*.html` → `/f/a.html` is the glob;
+`/lv1/*` + `/lv1/lv2/lv3/pong` → `/lv1/lv2/lv3/extra` is `/lv1/*`;
+`/a/{x}/x` + `/a/*` → `/a/1/y` is `/a/*` with no parameter values.
+
+Request segments are never interpreted: `/users/$` and `/users/*` give the values `$` and `*` to a
+parameter route, and match no static route.
+
+**Cost bound**: each trie node is visited at most once per lookup (a node sits at a fixed depth), so a
+lookup costs at most the size of that method's tree plus one glob test per visited glob child.
+
+### 2.4 Concurrency
+
+Routes are registered during `App.Create()` only; the router is read-only afterwards and `Match` keeps
+no state. Registering while serving is a data race and unsupported.
 
 ---
 
@@ -125,52 +135,50 @@ READ_BY_ID_AND_COMMENT     → GET /:id/:comment
 
 ```go
 type RouterItem struct {
-    Method       string              // "GET", "POST", etc.
-    Version      string              // API version (empty if unversioned)
-    Pattern      string              // Full route pattern
-    Index        int                 // Trie leaf index
-    HandlerIndex int                 // Handler function index
-    Handlers     []ctx.HTTPHandler   // Middleware + handler chain
-    ParamKeys    map[string][]int    // Path param positions
+    Method       string            // "GET", "POST", etc.
+    Version      string            // API version ("" when unversioned)
+    Pattern      string            // MethodRouteVersionToPattern(method, route, version): "/users/{id}/|v2|/[GET]/"
+    Index        int               // dense and unique, in creation order (0, 1, 2…)
+    HandlerIndex int               // position of the main handler in Handlers
+    Handlers     []ctx.HTTPHandler // global middlewares + For handlers + main handler
+    ParamKeys    map[string][]int  // name → positions in the parameter values
+    ParamNames   []string          // ParamNames[i] names the i-th value; nil without parameters
+    Injectable   any               // the handler given to AddInjectableHandler, else nil
 }
 ```
 
 **Usage**:
-1. Router.Match() returns RouterItem
-2. Item.Handlers executed sequentially (middleware chain)
-3. Item.ParamKeys used to extract and store path params
+1. `Router.Match()` returns the shared `*RouterItem` (read-only; the pointer is stable across later `Use` / `For` / `Add`) and the parameter values, or nil.
+2. `item.Handlers` run in order (`core/http.go`); a nil entry is the injectable main handler.
+3. `core` copies `item.ParamKeys` and the values into `HTTPContext.ParamKeys` / `ParamValues`.
+
+The root route's pattern is `/||/[GET]/` whether it was registered as `""` or `/`.
 
 ---
 
 ## 4. Path Parameter Extraction
 
-### 4.1 Named Parameters
+### 4.1 Named parameters
 
-**Pattern**: `READ_BY_ID` → `GET /:id`
+**Route**: `READ_BY_ID` → `GET /{id}`; `READ_BY_USER_ID_OF_FRIENDS_BY_FRIEND_ID` style names give several.
 
-**In Handler**:
+**In handler**:
 ```go
-func (c *UserController) READ_BY_ID(httpCtx *ctx.HTTPContext, params ctx.Param) string {
-    id := params.GetInt("id")  // ":id" → integer
-    return fmt.Sprintf("User %d", id)
+func (c UserController) READ_BY_ID(param ctx.Param) string {
+    return "User " + param.Get("id")
 }
 ```
 
-**Extraction Mechanism**:
-1. Route pattern defines param names: `:id`, `:userId`, etc.
-2. Request path matches pattern: "/users/123"
-3. RouterItem.ParamKeys maps name → position in path
-4. Param middleware extracts and stores in context
-5. `ctx.Param` interface provides getters: `Get()`, `GetInt()`, `GetString()`, etc.
+**Mechanism**:
+1. Registration: each `{name}` segment becomes `$` in the trie; `ParamNames` lists the names in path order, `ParamKeys` maps a name to its positions (a repeated name has several: `/s/{a}/t/{b}/{a}` → `{"a": [0, 2], "b": [1]}`).
+2. Match: one value per `$` on the matched route's path, in path order; values captured on abandoned branches are dropped, so `len(values) == len(item.ParamNames)` always.
+3. Values are substrings of the request path, unchanged (spaces, `*`, `$` kept). The slice is the `params` argument plus the values; with values it is a fresh allocation (core passes nil).
+4. `ctx.Param()` builds its map from `ParamKeys` + `ParamValues`.
 
-### 4.2 Wildcard Matching
+### 4.2 Wildcards and globs
 
-**Pattern**: `READ_ANY` → `GET /*`
-
-**Behavior**:
-- Matches any path starting with parent route
-- Remaining path available via param: `*`
-- Example: "GET /files/docs/readme.txt" → param["*"] = "docs/readme.txt"
+`*` and globs capture nothing: there is no `param["*"]`. A file route (`SERVE`, `READ_FILE…`) reads
+the rest of the URL itself (`core/http.go` `serveContent`, from `lastWildcardSlashIndexByRoute`).
 
 ---
 
@@ -290,25 +298,14 @@ func (c UserController) CREATE() { /* POST / */ }
 
 ### 9.1 Matching Precedence
 
-```
-1. Exact static path match (highest)
-2. Prefix dynamic path match
-3. Complex regex pattern match
-4. Catch-all wildcard match (lowest)
-```
+Static, then glob, then parameter, then wildcard, with backtracking: §2.3.
 
 ### 9.2 Ambiguous Routes
 
-**Problem**: Multiple patterns could match same request
-
-**Solution**: Error at app.Create() → prevent ambiguity
-
-**Example of Ambiguous Routes** (BANNED):
-```go
-func (c *UserController) READ_BY_ID() { /* GET /:id */ }
-func (c *UserController) READ_BY_ANY() { /* GET /:anything */ }
-// Both match "GET /123" — CONFLICT!
-```
+Only an identical pattern (same method, route and version) panics at `app.Create()` with
+`route conflict: ...` (`common/http.go`, `AddHandlerToRouterMap`). Two routes that differ only in
+parameter names (`/{id}` and `/{name}`) share one trie node: the one registered last answers.
+Overlapping shapes (`/{id}` beside `/all` or `/*.html`) are legal and resolved by §2.3.
 
 ### 9.3 Path Parameter Naming
 

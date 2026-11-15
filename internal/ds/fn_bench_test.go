@@ -4,8 +4,9 @@ import (
 	"testing"
 )
 
-func BenchmarkMatchWildcard(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		matchWildcard("index.html", "in*.html")
+func BenchmarkMatchGlob(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		matchGlob("index.html", "in*.html")
 	}
 }

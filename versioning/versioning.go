@@ -24,8 +24,8 @@ type Versioning struct {
 	Extractor      ExtractorHandler
 }
 
-func (versioning *Versioning) GetTypeString() string {
-	switch versioning.Type {
+func (v *Versioning) GetTypeString() string {
+	switch v.Type {
 	case QueryVersion:
 		return "query"
 	case HeaderVersion:
@@ -39,27 +39,62 @@ func (versioning *Versioning) GetTypeString() string {
 	}
 }
 
-func (versioning *Versioning) GetVersion(c *ctx.HTTPContext) string {
-	switch versioning.Type {
+func (v *Versioning) GetVersion(c *ctx.HTTPContext) string {
+	switch v.Type {
 	case QueryVersion:
-		if v := c.Query().Get(versioning.Key); v != "" {
-			return v
+		if version := c.Query().Get(v.Key); version != "" {
+			return version
 		}
 	case HeaderVersion:
-		if v := c.Header().Get(versioning.Key); v != "" {
-			return v
+		if version := c.Header().Get(v.Key); version != "" {
+			return version
 		}
 	case CustomVersion:
-		if versioning.Extractor != nil {
-			return versioning.Extractor(c)
+		if v.Extractor != nil {
+			if version := v.Extractor(c); version != "" {
+				return version
+			}
 		}
 	case MediaType:
-		if _, after, found := strings.Cut(c.Header().Get("Accept"), versioning.Key+"="); found {
-			if v, _, _ := strings.Cut(strings.TrimSpace(after), ";"); v != "" {
-				return v
-			}
+		if version := mediaTypeVersion(c.Header().Get("Accept"), v.Key); version != "" {
+			return version
 		}
 	}
 
-	return versioning.DefaultVersion
+	return v.DefaultVersion
+}
+
+func mediaTypeVersion(accept, key string) string {
+	i := 0
+	for i < len(accept) {
+		for i < len(accept) && accept[i] != ';' && accept[i] != ',' {
+			i++
+		}
+		for i < len(accept) && accept[i] == ';' {
+			i++
+			start := i
+			for i < len(accept) && accept[i] != ';' && accept[i] != ',' {
+				i++
+			}
+			if version := paramValue(accept[start:i], key); version != "" {
+				return version
+			}
+		}
+		i++
+	}
+
+	return ""
+}
+
+func paramValue(param, key string) string {
+	name, value, ok := strings.Cut(param, "=")
+	if !ok || !strings.EqualFold(strings.TrimSpace(name), key) {
+		return ""
+	}
+
+	value = strings.TrimSpace(value)
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		return value[1 : len(value)-1]
+	}
+	return value
 }
