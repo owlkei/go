@@ -1,157 +1,73 @@
 ---
-name: implement
-description: Implement or upgrade the feature described in $ARGUMENTS. If a file path is given, inspect it first and upgrade the existing implementation. If no argument is given, use the file currently open in the IDE or the most recently discussed file.
+description: Implement a new feature or upgrade existing code, with a design the user approves first, then tests, a security pass and docs.
+argument-hint: "<feature description | file | package>"
 ---
 
-# Mission
+# Implement: $ARGUMENTS
 
-Implement or upgrade features with complete security, testing, and documentation.
+`$ARGUMENTS` is a description, a file or a package. Nothing given: the file open in the IDE, else the one
+most recently discussed.
 
-Always balance correctness, security, and simplicity.
+## 1. Understand
 
----
+Read the target and its package tests. Read the `CLAUDE.md` sections the feature touches and the matching
+`.ginject/` page. Classify the task: **new** (does not exist) or **upgrade** (incomplete, insecure,
+untested).
 
-## Steps
+## 2. Design, then wait for approval
 
-1. **Read** the target file(s) fully. If no file is given, infer the target from context.
+Present, briefly, as numbered decisions:
 
-2. **Classify** the task:
-   - **New**: the feature or function does not exist yet → implement from scratch.
-   - **Upgrade**: code exists but is incomplete, insecure, or missing coverage → improve in-place.
+- the public API: exported types and signatures;
+- the invariants that must hold (validation, auth, limits) and the panics or errors it adds (bootstrap
+  panics follow `"<category>: <detail>"` in `color.FmtRed`, see `CLAUDE.md`);
+- concurrency: which goroutines exist, what shared state they touch, the primitive that protects it, the
+  lock order, and how each goroutine stops (stop method or context);
+- callers outside the target that change, and any new dependency (the standard library comes first).
 
-3. **Design before writing**:
-   - State the public API (exported types, function signatures) in one short paragraph.
-   - List the security-relevant invariants that must hold (input validation, auth checks, injection prevention, etc.).
-   - If the design would change callers outside the file, flag it and ask before proceeding.
-   - **Concurrency design**: identify every piece of shared mutable state the feature will touch. For each: choose a synchronisation primitive (`sync.Mutex`, `sync.RWMutex`, `sync/atomic`, or channel), document the lock-acquisition order when multiple locks are involved, and confirm no goroutine outlives the caller without an explicit lifecycle contract (start/stop or context cancellation).
+**Stop and wait for the user's approval.** Skip the wait only for a change with no public API and no
+caller impact (a private helper, a test), and say so.
 
-4. **Implement** the feature:
-   - Follow the existing package conventions (naming, error handling style, DI patterns).
-   - Keep the public API stable — do not break existing call sites.
-   - Do not add features, abstractions, or error handling beyond what was asked.
-   - Prefer standard library over third-party packages for new dependencies.
+## 3. Build
 
-5. **Security pass** — after writing the implementation, check each of the following and fix any issue found:
-   - **Injection**: SQL/command/path built from external input → use parameterized queries, `filepath.Clean`, `exec.Command` with separate args.
-   - **Auth**: endpoints or functions that mutate state must have authorization checks.
-   - **Input validation**: all values from request body, query, headers, env, or config must be validated at the boundary; reject early.
-   - **Secrets**: no hardcoded tokens, passwords, or keys; read from env/config only.
-   - **Cryptography**: use `crypto/rand` for tokens/nonces, never `math/rand`; use constant-time comparison for secrets (`subtle.ConstantTimeCompare`).
-   - **TLS**: never disable `InsecureSkipVerify`; do not downgrade to plain HTTP for internal calls.
-   - **Denial of service**: bound request body sizes (`http.MaxBytesReader`), timeouts on outbound calls, rate-limit loops over external input.
-   - **Information leakage**: do not expose stack traces, internal paths, or raw DB errors to external callers.
-   - **Race conditions**: every piece of shared mutable state must be protected (`sync.Mutex`, `sync/atomic`, or channels); no unprotected read-after-write across goroutines. Confirm with `-race`.
-   - **Deadlock prevention**: (a) **lock ordering** — always acquire multiple locks in the same documented order, never invert it; (b) **channel deadlock** — every unbuffered send must have a guaranteed receiver, no goroutine blocks indefinitely; (c) **mutex misuse** — every `Lock()` must have a paired `Unlock()` (prefer `defer`), never call a locking method while already holding the same non-reentrant mutex; (d) **context cancellation** — goroutines must `select` on `ctx.Done()` so they exit when cancelled and do not leak or hang.
-   - **OWASP Top 10 applicability**: briefly check which OWASP categories apply to this feature and note any that are not covered.
+- Follow the package's conventions (naming, DI through embedded fields, panic policy). No comments in Go
+  code: the repository keeps Go sources comment-free.
+- No features, abstractions or error handling beyond the approved design.
+- Each package owns its output; compute static config once (constructor or `sync.Once`), never per
+  request; assign output fields only after every normalization step.
 
-6. **Check tests and benchmarks**:
-   - File naming: tests → `<filename>_test.go`, benchmarks → `<filename>_bench_test.go`.
-   - If **no test file** exists → create one.
-   - If **tests exist** → review them and add missing cases (see coverage checklist below).
-   - If **no benchmark file** exists → create one with realistic inputs (1 000+ iterations, real-world-sized data).
-   - If **benchmarks exist** → add cases for any new code paths.
-   - When writing test assertions use `t.Error(test.DiffMessage(actual, expected, "desc"))` (import `"github.com/dangduoc08/ginject/internal/test"`), not raw `t.Errorf`.
+## 4. Security pass
 
-   **Coverage checklist** — for every public function/method, verify at least:
-   - Happy path (valid input, expected output).
-   - Empty / zero / nil input.
-   - Boundary values (off-by-one, max length, empty slice vs nil slice).
-   - Invalid / malformed input (error path, should not panic).
-   - Security-relevant inputs: oversized payloads, special characters, path traversal (`../`), SQL metacharacters, null bytes.
-   - Concurrent access (run with `-race`) if the code touches shared state.
-   - Any invariant stated in step 3 must have at least one failing-input test that confirms rejection.
+Check what applies and fix it: input validated at the boundary; body and payload sizes bounded
+(`http.MaxBytesReader`); timeouts on outbound calls; `crypto/rand` for tokens and
+`subtle.ConstantTimeCompare` for secrets; paths cleaned and kept inside their root; no secrets in code;
+no internal errors or paths leaked to clients; no TLS verification turned off. Shared state protected,
+locks released before callbacks, I/O and channel operations, goroutines that exit on cancellation.
 
-7. **Run tests**:
-   ```
-   go test ./... -race -v
-   ```
-   All tests must pass before reporting done. If a test fails, fix the implementation (not the test) unless the test itself is wrong.
+## 5. Tests
 
-8. **Run benchmarks**:
-   ```
-   go test -bench=. -benchmem ./...
-   ```
-   Record the numbers.
+In `<file>_test.go`, with `t.Error(test.DiffMessage(actual, expected, "desc"))` from `internal/test`. For
+every exported function or method: the happy path, zero / nil / empty input, boundaries, invalid input
+(an error, not a panic, on the request path), hostile input where it applies (oversized, `../`, null
+bytes), concurrent use under `-race` when it touches shared state, and one rejection test per invariant
+from step 2. A failing test means fixing the code, unless the test itself is wrong.
 
-9. **Lint** — if `.golangci.yml` exists run `golangci-lint run ./...`; otherwise run with default linters. Fix in order:
-   - Errors and bugs (`errcheck`, `staticcheck`, `govet`)
-   - Security (`gosec`)
-   - Style (`gocritic`, `errorlint`, `exhaustive`)
+Add a benchmark in `<file>_bench_test.go` only for code on a request hot path or for a perf claim, and
+record `go test -run='^$' -bench=. -benchmem ./<pkg>`.
 
-10. **README** — after all tests and lint pass:
-    - If **no `README.md`** exists in the package → create one covering: purpose, public API (types + method signatures + return semantics), usage examples, and any non-obvious behaviour.
-    - If **`README.md` already exists** → update it to reflect the new or changed API: add missing sections, update signatures, add usage examples for new features, remove stale content.
+## 6. Verify and document
 
----
+- `go vet`, `golangci-lint run` and `go test -race` on the touched packages, then `make check` once at the
+  end (the Stop hook also runs the package checks).
+- **Every package you added or changed code in has a `README.md`** (except `sample/**`, the demo app):
+  if it has none, create it by following `/doc`'s steps for that package (structure of
+  `modules/config/README.md`, rules only from tests, benchmarks only from a real run); if it has one,
+  update it for the new or changed API.
+- Update `CLAUDE.md` / `.ginject/` when the change alters a concept they describe
+  (`/kb update <package>`).
 
-## Report Format
+## Report
 
-**Report** results in **two versions — English first, then Vietnamese** — each containing:
-    - What was implemented or upgraded (one-line summary per item).
-    - Security invariants verified.
-    - Test cases added (count + categories covered).
-    - Benchmark numbers (ns/op, allocs/op).
-    - Lint issues fixed, if any.
-
-    **English version** format:
-    ```
-    ## Implementation Report
-
-    ### What changed
-    | Item | Action (new / upgraded) | File |
-    |------|------------------------|------|
-
-    ### Security invariants
-    | Invariant | Status |
-    |-----------|--------|
-
-    ### Tests added
-    | Test name | Category |
-    |-----------|----------|
-
-    ### Benchmarks
-    | Benchmark | ns/op | allocs/op |
-    |-----------|-------|-----------|
-
-    ### Lint fixes (if any)
-    | Issue | Fix |
-    ```
-
-    **Vietnamese version** format (immediately after English, under a `---` divider):
-    ```
-    ---
-    ## Báo Cáo Implement
-
-    ### Những thay đổi
-    | Mục | Hành động (mới / nâng cấp) | File |
-    |-----|---------------------------|------|
-
-    ### Bất biến bảo mật
-    | Bất biến | Trạng thái |
-    |----------|------------|
-
-    ### Test đã thêm
-    | Tên test | Loại |
-    |----------|------|
-
-    ### Benchmark
-    | Benchmark | ns/op | allocs/op |
-    |-----------|-------|-----------|
-
-    ### Sửa lỗi lint (nếu có)
-    | Vấn đề | Cách sửa |
-    ```
-
----
-
-## Rules
-
-- Never break the public API (exported names, function signatures) without flagging first.
-- Do not add features, error handling, or abstractions beyond the stated task.
-- Do not add comments to code unless the WHY is non-obvious (hidden constraint, subtle invariant, workaround).
-- Security and race-condition fixes are always applied, even when they reduce readability.
-- Each package owns its output — do not leave malformed data for downstream callers to normalise.
-- If the implementation requires a new dependency, state it explicitly before adding it.
-- **Normalisation before capture**: assign output struct fields only after all input normalisation is complete — never capture a pre-normalised value.
-- **Hot-path initialisation**: any work that computes static config (string joins, map builds, defaults) must run once at init/constructor time, never on every request.
-- **Concurrency contract first**: before writing any concurrent code, state in the design which goroutines exist, what shared state they access, how that state is protected, and the lock-acquisition order. These decisions must be in the design (step 3), not discovered post-hoc during review.
+In the language the user writes in, once: what changed (item, new or upgraded, file), the invariants and
+how each is tested, tests added, benchmark numbers if any, lint fixes, and anything left for the user to
+decide.

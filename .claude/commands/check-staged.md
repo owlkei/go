@@ -1,150 +1,46 @@
 ---
-name: check-staged
-description: Inspect the staged changes for correctness, logic integrity, and impact relative to the last commit. Stash unstaged work first so the working tree is clean and the diff is unambiguous.
+description: Read-only impact report of the staged changes against the last commit. Unstaged work is stashed first so only what will be committed is built, tested and reviewed.
+argument-hint: "(no arguments)"
 ---
 
-# Mission
+# Check staged changes
 
-Inspect staged changes for correctness, logic integrity, and impact relative to the last commit.
-
-Stash unstaged work first so the working tree is clean and the diff is unambiguous.
-
----
+Never commit, push, or change what is staged.
 
 ## Steps
 
-1. **Abort if nothing is staged.**
-   Run `git diff --staged --stat`. If the output is empty, tell the user and stop.
+1. `git diff --staged --stat`. Empty: tell the user nothing is staged and stop.
+2. **Stash unstaged work safely.** Record `git rev-parse -q --verify refs/stash` (may be empty), run
+   `git stash push --keep-index --include-untracked -m "check-staged"`, then read the ref again. A stash was
+   created only if the ref changed: otherwise there is nothing to pop later. Popping without a new stash
+   would apply an older, unrelated stash.
+3. **Verify** the tree that will be committed: `go build ./...`, `go vet ./...`, `golangci-lint run` and
+   `go test -race` on the packages the diff touches. Failures are findings.
+4. **Review** `git diff --staged` with the checklist in `.claude/agents/ginject-reviewer.md` (correctness,
+   concurrency, framework conventions, security, tests, docs). Also list every exported API that was
+   added, removed or changed.
+5. **Restore**: if step 2 created a stash, `git stash pop`. If the pop fails, stop and tell the user their
+   work is in `git stash list` under "check-staged". Restoring their work comes before the report.
 
-2. **Stash unstaged changes.**
-   Run `git stash --keep-index --include-untracked -m "check-staged: temp stash"`.
-   If it fails (nothing to stash), continue — the tree is already clean.
-   Record whether a stash was created so you can restore it at the end.
+## Report
 
-3. **Collect the staged diff.**
-   Run `git diff --staged` to get the full diff.
-   Run `git diff --staged --stat` for a summary.
-
-4. **Build and test.**
-   Run `go build ./...` and `go test ./...`.
-   Record any failures — they are findings.
-
-5. **Analyse the diff for impact.** For each changed file, examine:
-   - **Logic changes** — Does the observable behavior change? Are any conditions, data flows, or call sequences different from the last commit?
-   - **API / public surface** — Are any exported types, function signatures, or package-level variables added, removed, or altered?
-   - **Concurrency** — Any new shared state? Any lock added, removed, or reordered?
-   - **Error handling** — Any error paths added, removed, or silenced?
-   - **Performance** — Any hot-path allocations or work moved in or out of a loop?
-   - **Security** — Any injection surface, credential exposure, or TLS weakening?
-
-6. **Restore stashed changes.**
-   If a stash was created in step 2, run `git stash pop`.
-   If `pop` fails, report the conflict to the user and stop — do NOT lose their work.
-
-7. **Write the report** — English first, then Vietnamese under a `---` divider. Format:
+Write it in the language the user writes in, once (no second translation):
 
 ```
-## Staged Change Impact Report
+## Staged change impact
 
-**Build:** ✅ pass / ❌ fail  
-**Tests:** ✅ pass / ❌ fail (list failing tests if any)
+Build / vet / lint / tests: pass or fail (failing items)
 
-### Files changed
-| File | +lines | -lines | Category |
-|------|--------|--------|----------|
-| ...  | ...    | ...    | ...      |
+### Files
+| File | + | - | Kind |
 
 ### Findings
-| # | File | Finding | Severity |
-|---|------|---------|----------|
-| 1 | ...  | ...     | info / warning / critical |
+| # | File:line | Finding | Severity |
 
 ### Conclusion
-**Behaviour change vs last commit:** YES / NO  
-<one or two sentences — what changed functionally, or confirm nothing changed>
+Behavior change vs last commit: YES or NO, plus one or two sentences.
 ```
 
-```
----
-## Báo Cáo Tác Động Thay Đổi Staged
-
-**Build:** ✅ pass / ❌ fail  
-**Tests:** ✅ pass / ❌ fail (liệt kê test thất bại nếu có)
-
-### Files thay đổi
-| File | +dòng | -dòng | Phân loại |
-|------|-------|-------|-----------|
-| ...  | ...   | ...   | ...       |
-
-### Phát hiện
-| # | File | Nội dung | Mức độ |
-|---|------|----------|--------|
-| 1 | ...  | ...      | info / warning / critical |
-
-### Kết luận
-**Thay đổi hành vi so với commit cuối:** CÓ / KHÔNG  
-<một hoặc hai câu — mô tả thay đổi về mặt chức năng, hoặc xác nhận không có gì thay đổi>
-```
-
-## Report Format
-
-This skill produces a bilingual report. Format:
-
-```
-## Staged Change Impact Report
-
-**Build:** ✅ pass / ❌ fail  
-**Tests:** ✅ pass / ❌ fail (list failing tests if any)
-
-### Files changed
-| File | +lines | -lines | Category |
-|------|--------|--------|----------|
-| ...  | ...    | ...    | ...      |
-
-### Findings
-| # | File | Finding | Severity |
-|---|------|---------|----------|
-| 1 | ...  | ...     | info / warning / critical |
-
-### Conclusion
-**Behaviour change vs last commit:** YES / NO  
-<one or two sentences — what changed functionally, or confirm nothing changed>
-```
-
----
-
-## Báo Cáo Định Dạng
-
-Skill này tạo ra một báo cáo hai ngôn ngữ. Định dạng:
-
-```
-## Báo Cáo Tác Động Thay Đổi Staged
-
-**Build:** ✅ pass / ❌ fail  
-**Tests:** ✅ pass / ❌ fail (liệt kê test thất bại nếu có)
-
-### Files thay đổi
-| File | +dòng | -dòng | Phân loại |
-|------|-------|-------|-----------|
-| ...  | ...   | ...   | ...       |
-
-### Phát hiện
-| # | File | Nội dung | Mức độ |
-|---|------|----------|--------|
-| 1 | ...  | ...      | info / warning / critical |
-
-### Kết luận
-**Thay đổi hành vi so với commit cuối:** CÓ / KHÔNG  
-<một hoặc hai câu — mô tả thay đổi về mặt chức năng, hoặc xác nhận không có gì thay đổi>
-```
-
-## Rules
-
-- Never commit, push, or modify staged files.
-- If `git stash pop` fails, stop immediately and warn the user — restoring their work takes priority over completing the report.
-- Severity guide:
-  - **critical** — behaviour change, broken API, race condition, build/test failure
-  - **warning** — encapsulation leak, missing error handling, performance regression
-  - **info** — cosmetic, naming, dead code, style
-- Keep findings concise — one line per finding.
-- The Conclusion must be explicit: state YES or NO, not "possibly" or "depends".
+Severity: **critical** (behavior change not intended, broken API, race, failing build or test),
+**warning** (missing error handling or test, leaked internals, performance regression),
+**info** (naming, dead code). One line per finding. The conclusion says YES or NO, never "maybe".

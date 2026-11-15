@@ -1,120 +1,68 @@
 ---
-name: refactor
-description: Refactor the code in $ARGUMENTS for clarity and Go idiom compliance. If no argument is given, use the file currently open in the IDE or the most recently discussed file.
+description: Improve existing code without changing its public API. Default mode is clarity (no behavior change); `optimize` mode targets allocations, ns/op, races and deadlocks, measured with benchmarks.
+argument-hint: "[optimize] <file or package>"
 ---
 
-# Mission
+# Refactor: $ARGUMENTS
 
-Refactor code for clarity and Go idiom compliance.
+If the first word of `$ARGUMENTS` is `optimize`, use **optimize** mode; otherwise **clarity** mode. The rest
+is the target: a file or a package. No target: the file open in the IDE, else the one most recently
+discussed. Ask if it is still ambiguous.
 
-**Logic must not change.** Public API (exported names, function signatures) must not change.
+## Rules (both modes)
 
-Only structure, naming, and style are in scope.
-
----
+- The public API stays: exported names, signatures and interface implementations. A change that would
+  touch callers outside the target is proposed to the user first, not applied.
+- No new features, abstractions or error handling beyond the goal.
+- No comments in Go code: the repository keeps Go sources comment-free (commit `5babd36`).
+- Formatting is automatic (the gofmt hook); spend the effort on meaning.
+- Tests use `t.Error(test.DiffMessage(actual, expected, "desc"))` from `internal/test`.
+- Each package owns its output: don't leave artifacts (double slashes, trailing separators,
+  off-by-one bounds) for callers to normalize.
 
 ## Steps
 
-1. **Read** the target file(s) fully before touching anything.
+1. Read the target fully, and the tests of its package.
+2. Baseline: `go test -race -count=1 ./<pkg>/...` must pass. If it fails before you start, stop and report.
+   Optimize mode: also `go test -run='^$' -bench=. -benchmem ./<pkg>` and keep the numbers. If the code
+   you will change has no benchmark, add one in `<file>_bench_test.go` with realistic input sizes first;
+   if it has no tests, add them in `<file>_test.go` first.
+3. Analyze, by mode (below).
+4. Apply one change at a time and rerun the package's tests after each. A change that breaks a test is
+   reverted and noted, never "fixed" by editing the test.
+5. Finish with `go vet`, `golangci-lint run` and `go test -race` on the package (the Stop hook does the
+   same). Optimize mode: run the benchmarks again.
+6. Report in the language the user writes in: one table of changes (file, lines, what, why), then lint
+   fixes if any, then the test result. Optimize mode adds ns/op and allocs/op before → after per change.
 
-2. **Run existing tests** to record a passing baseline before any edits.
-   ```
-   go test ./... -race -count=1
-   ```
-   All tests must pass. If any fail before you start, stop and report — do not proceed.
+## Clarity mode
 
-3. **Check if the file should be split** before analyzing individual violations:
-   - If the file is longer than ~400 lines, check whether it mixes distinct responsibilities (e.g. public API + REST handler + WS handler + shared helpers).
-   - A natural split exists when: (a) each resulting file has a single clear focus, (b) no exported names need to move between files, and (c) all files stay in the same package.
-   - If a split is warranted, perform it first (move functions only — no logic changes), run tests, then continue with the analysis below on each new file.
-   - Typical split pattern for large handler files:
-     - `foo.go` — struct, constructor, public API methods
-     - `foo_rest.go` — HTTP request lifecycle handlers
-     - `foo_ws.go` — WebSocket request lifecycle handlers
-     - `foo_internal.go` — unexported helpers shared across the above
+Logic must not change on any code path; skip a change that would and note it.
 
-4. **Analyze** — identify every violation in these categories:
+- **Split** a file over about 400 lines that mixes responsibilities (public API, HTTP path, WS path, shared
+  helpers) into files of one package, moving functions only, and test before continuing.
+- **Naming:** Go conventions, consistent acronyms (`userID`, `httpURL`), predicate booleans (`isEnabled`,
+  `ok`), no shadowing of builtins.
+- **Structure:** guard clauses instead of nesting, no `else` after `return`, named constants for repeated
+  literals, declarations next to their first use, extraction only when the new function has one obvious job.
+- **Idioms:** `range` loops, `any`, composite literals, `if` instead of a one-case `switch`, the standard
+  library over hand-written equivalents (`strings.CutPrefix`, `slices`, `maps`).
 
-   **Naming**
-   - Variable, parameter, and receiver names that are too long, too short, or don't follow Go convention (`i` → loop index is fine; `userInputDataFromRequestBodyJSON` → not fine).
-   - Acronyms should be all-caps or all-lower, never mixed: `userID` not `userId`, `httpURL` not `httpUrl`, `wsHub` not `wsHb`.
-   - Boolean names that don't read as a predicate: `isEnabled`, `hasItems`, `ok`.
-   - Unexported names that shadow standard identifiers (`len`, `cap`, `error`, `string`, `new`).
+## Optimize mode
 
-   **Structure**
-   - Functions longer than ~50 lines that have a clear split into named sub-steps — extract only when the extracted function has a single, obvious responsibility.
-   - `if err != nil { return ..., err }` chains that can be collapsed without a helper.
-   - Nested `if` blocks that can be flattened with early returns (guard clauses).
-   - `else` after a `return` — remove the `else`.
-   - Repeated literal values that should be a named constant (`const`).
-   - Dead branches, tautological conditions (`if true`, `if x == x`).
-   - Variable declarations separated from their first use by many lines — move them to the point of first use.
+Allocation and ns/op gains are the priority: keep a change that the benchmark shows to be faster or
+lighter, even at a small readability cost; drop it when the delta is within noise. Race, deadlock and
+security fixes are always applied.
 
-   **Go idioms**
-   - `for i := 0; i < len(s); i++` → `for i, v := range s` where appropriate.
-   - `new(T)` when `&T{}` is clearer.
-   - Multiple return values used only for the error — check if a single `error` return suffices.
-   - `fmt.Sprintf` used purely for concatenation — prefer `+` or `strings.Builder`.
-   - `append` inside a loop when `make([]T, 0, n)` pre-allocation is known.
-   - `interface{}` → `any` (Go 1.18+).
-   - `switch` with a single `case` that could be an `if`.
-   - Initialising a `map` with `make` then immediately populating — prefer a composite literal.
-   - Struct fields that are always set together — consider grouping or a constructor.
-
-5. **Apply** changes one file at a time, running tests after each file:
-   ```
-   go test ./... -race -count=1
-   ```
-   If any test fails after a change, revert that specific change and note it in the report.
-
-6. **Run lint** after all changes:
-   - If `.golangci.yml` exists: `golangci-lint run ./...`
-   - Otherwise: `golangci-lint run --enable=govet,staticcheck,gocritic,misspell ./...`
-   Fix only issues introduced or pre-existing in the files you touched.
-
-7. **Report** results in **two versions — English first, then Vietnamese** — each containing a table of every change made.
-
----
-
-## Report Format
-
-**English version** format:
-   ```
-   ## Refactor Report
-
-   ### Changes
-   | File | Line(s) | Category | Before | After | Reason |
-   |------|---------|----------|--------|-------|--------|
-
-   ### Lint fixes (if any)
-   | Issue | Fix |
-
-   ### Tests
-   All N tests pass under -race.
-   ```
-
-   **Vietnamese version** format (immediately after English, under a `---` divider):
-   ```
-   ---
-   ## Báo Cáo Refactor
-
-   ### Thay đổi
-   | File | Dòng | Loại | Trước | Sau | Lý do |
-   |------|------|------|-------|-----|-------|
-
-   ### Sửa lỗi lint (nếu có)
-   | Vấn đề | Cách sửa |
-
-   ### Tests
-   Tất cả N tests pass với -race.
-   ```
-
-## Rules
-
-- **Logic must not change.** If a structural change would alter observable behaviour in any code path, skip it and note it in the report.
-- **Public API must not change.** Exported names, function signatures, interface implementations — do not touch.
-- Do not add features, error handling, or new abstractions.
-- Do not add or remove comments unless the comment describes *what* the code does (those should be removed); keep comments that explain *why* (hidden constraints, non-obvious invariants).
-- Do not format with `gofmt` manually — the IDE/tool handles that. Focus on semantic clarity.
-- If a rename would require changes in caller files outside the current target, flag it and ask before proceeding.
-- Prefer the smallest change that achieves the clarity goal — do not refactor speculatively.
+- **Hot paths:** work repeated per call that could run once (config joins, map builds, regexp compiles:
+  move them to construction or `sync.Once`), pre-sized slices, `strings.Builder` over `+=` in loops.
+- **Correctness:** dead or redundant conditions, missing bounds checks, normalization that runs after its
+  result was already captured into an output struct.
+- **Concurrency:** every access to shared state under the same lock or atomic; listener lists copied into
+  a private slice before the lock is released; fire-once listeners removed in the same critical section
+  that takes them; no I/O, callbacks or channel operations while holding a lock; `defer Unlock` right after
+  `Lock` unless the lock must drop before a blocking call; no RLock-to-Lock upgrade assumption;
+  `WaitGroup.Add` before the goroutine starts. Types that own a lock get a concurrent test that must pass
+  under `-race` (pattern: `TestWSConnection_TrySend_ConcurrentSendsNoRace` in `core/ws_connmgr_test.go`).
+- **Security:** injection through string building, `math/rand` where `crypto/rand` is needed, unvalidated
+  input in paths or exec, disabled TLS verification.

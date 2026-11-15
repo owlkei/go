@@ -1,6 +1,6 @@
 ---
-name: doc
-description: Generate (or refresh) `README.md` for the package at $ARGUMENTS. If no argument is given, use the package of the file currently open in the IDE or the package most recently discussed.
+description: Generate or refresh the README.md of one package, in the structure of modules/config/README.md, from its exported API, tests and benchmarks.
+argument-hint: "<package dir | import path | name>"
 ---
 
 # Mission

@@ -1,6 +1,6 @@
 ---
-name: commit
-description: Commit staged changes with an auto-generated message. If $ARGUMENTS is provided, use it as the commit message directly.
+description: Commit staged changes with Conventional Commits messages, split into logical commits after the user confirms. A message in $ARGUMENTS makes one commit with that message.
+argument-hint: "[commit message]"
 ---
 
 # Mission
@@ -32,11 +32,16 @@ If $ARGUMENTS is provided, use it as the commit message directly.
 
 5. Show the proposed commit plan (groups + messages) and ask for confirmation before committing. If there are multiple commits, show them in order.
 
-6. On confirmation, for each group in order:
-   a. Unstage everything: `git restore --staged .`
-   b. Stage only the files in this group: `git add <file1> <file2> ...`
-   c. Run: `git commit -m "<message>"`
-   d. If the commit fails, stop and report the error.
+6. On confirmation:
+   - **One commit:** `git commit -m "<message>"` (add `-m "<body>"` for a body). Nothing else.
+   - **Several commits:** the staged content may be partial (only some hunks of a file), so never re-stage
+     from the working tree with `git add`, which would add hunks the user left unstaged. Instead:
+     a. Save the staged snapshot once: `git diff --staged --binary > "$TMPDIR/commit-staged.patch"`.
+     b. For each group in order: `git reset -q`, then
+        `git apply --cached --include=<file1> --include=<file2> "$TMPDIR/commit-staged.patch"`,
+        then `git commit -m "<message>"`.
+     c. If a commit or the hook fails, stop, report, and tell the user the full staged set is in
+        `$TMPDIR/commit-staged.patch` (`git apply --cached` restores it).
 
 ---
 
@@ -44,7 +49,7 @@ If $ARGUMENTS is provided, use it as the commit message directly.
 
 - Never use `--no-verify`.
 - Never amend an existing commit.
-- Never stage files that were not in the original staged set.
+- Never stage files or hunks that were not in the original staged set.
 - If the pre-commit hook fails, report the error and stop. Do not retry or bypass.
 - Keep the message in English.
 - Never add anything Claude-related to the commit: no `Co-Authored-By`, no `Generated with Claude`, no signatures, no trailers of any kind.

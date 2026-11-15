@@ -24,6 +24,9 @@ go.work
 # IDEs
 .vscode
 
+# Personal Claude Code notes (model quota, local paths)
+CLAUDE.local.md
+
 # MacOS
 .DS_Store
 
