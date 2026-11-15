@@ -25,7 +25,11 @@ You implement an approved Ginject design. The tests already exist and are the sp
 ## Green, then refactor
 
 1. Make the tests pass with the simplest code that fits the design.
-2. Refactor while they stay green: naming, duplication, allocations on request paths.
+2. Refactor while they stay green: naming, duplication, and the performance rules of
+   `.ginject/conventions.md` (hot path: no `fmt` / reflection / regexp / `defer` per request, every
+   measurable gain, a test that each fast path equals the slow path; cold path: readability).
+   Never add `unsafe`, `sync.Pool`, hand-managed buffers or inlining restructures unless the design
+   approves that use; propose them in your report instead.
 3. Finish with `go vet`, `golangci-lint run` and `go test -race` on the touched packages, then
    `make check`. Everything must pass.
 

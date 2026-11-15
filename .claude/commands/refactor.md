@@ -50,12 +50,19 @@ Logic must not change on any code path; skip a change that would and note it.
 
 ## Optimize mode
 
-Allocation and ns/op gains are the priority: keep a change that the benchmark shows to be faster or
-lighter, even at a small readability cost; drop it when the delta is within noise. Race, deadlock and
-security fixes are always applied.
+Follow `.ginject/conventions.md` › Performance. First classify the target: **hot** (per request or
+message, or client-triggerable) or **cold**. Race, deadlock and security fixes are always applied.
 
-- **Hot paths:** work repeated per call that could run once (config joins, map builds, regexp compiles:
-  move them to construction or `sync.Once`), pre-sized slices, `strings.Builder` over `+=` in loops.
+- **Cold code:** type A fixes only (obvious waste); readability wins every tie.
+- **Hot code:** keep every change whose gain is stable across `-count 5` runs or removes an
+  allocation, however small; drop it when the delta is within noise (`benchstat`). Each new fast path
+  gets a test proving it equals the slow path.
+- **Heavy techniques** (`unsafe`, `sync.Pool`, hand-managed buffers, restructuring to inline): never
+  apply them. List each as a proposal in the report, with the benchmark that justifies it and the
+  constraint it brings, for the user to approve.
+- **Hot-path waste:** work repeated per call that could run once (config joins, map builds, regexp
+  compiles, reflection: move them to construction, `Create()` or `sync.Once`), `fmt` and `defer` on the
+  request path, pre-sized slices, `strings.Builder` over `+=` in loops.
 - **Correctness:** dead or redundant conditions, missing bounds checks, normalization that runs after its
   result was already captured into an output struct.
 - **Concurrency:** every access to shared state under the same lock or atomic; listener lists copied into

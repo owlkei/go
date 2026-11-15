@@ -27,8 +27,12 @@ API and every behavior rule, and the tests must cover every rule in its test pla
    bootstrap panics as `"<category>: <detail>"` wrapped once in `color.FmtRed`, never a panic on the
    request path.
 4. **Security**: input size limits, header and path handling, CORS / CSRF / helmet behavior, crypto use.
-5. **Tests**: new behavior has tests; bug fixes have a test that failed before.
-6. **Docs**: every package with changed non-test code (except `sample/**`) has a `README.md`; a missing
+5. **Performance** (`.ginject/conventions.md` › Performance): hot-path code with `fmt`, reflection,
+   regexp, `defer` or avoidable allocations; a fast path without a test that it equals the slow
+   path; `unsafe` / `sync.Pool` / manual buffers that no approved design allows (**high**); cold-path
+   code made clever for no measured gain; performance claims without `-count 5` numbers.
+6. **Tests**: new behavior has tests; bug fixes have a test that failed before.
+7. **Docs**: every package with changed non-test code (except `sample/**`) has a `README.md`; a missing
    one is a **high** finding. A changed public API is reflected in the package README, `.ginject/package-reference.md`
    and `CLAUDE.md`. Flag any doc that names a type or function that does not exist (`grep` it).
 
