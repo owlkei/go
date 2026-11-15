@@ -1,5 +1,5 @@
 ---
-description: Plan and run multi-step work - discuss and write a roadmap (user approves), design the steps (user approves), then run every step to the end without further approval, committing the work on a roadmap branch. Never pushes.
+description: Plan and run multi-step work - discuss and write a roadmap (user approves), design the steps (user approves), then run every step to the end without further approval, committing the work on the current branch. Never pushes.
 argument-hint: "new <topic> | design <roadmap> | run <roadmap> | status [roadmap]"
 ---
 
@@ -39,7 +39,8 @@ Before the first step:
 
 - Record `git status --porcelain` in your notes: files that were already modified or untracked are
   the user's, and you never stage them.
-- If the current branch is `master` or `main`, create and switch to `roadmap/<slug>`.
+- Work on the current branch (normally `master`): no separate roadmap branch (the user's choice,
+  2026-11-16). Record the starting commit so the report can list `git log --oneline <start>..HEAD`.
 
 Set `Running`. Take steps in dependency order; for each, set `doing`, then:
 
@@ -67,7 +68,7 @@ When every step is `done` or `blocked`:
 2. `make check`.
 3. Set `Done` (or leave `Running` if steps are blocked) and report: steps and states, deviations from
    the designs, blocked steps, review findings left open, the `make check` result, and the commits
-   made (`git log --oneline <start>..HEAD`). The user reviews the branch and pushes or merges it.
+   made (`git log --oneline <start>..HEAD`). The user reviews the commits and pushes them.
 
 ### Commits
 

@@ -3,7 +3,7 @@
 A roadmap is a set of steps the maintainer and Claude agree on before any design or code. Flow
 (`/roadmap`): discuss → roadmap (maintainer approves) → designs for the steps that need one
 (maintainer approves) → Claude runs every step to the end without further approval and commits its
-work on a `roadmap/<slug>` branch → the maintainer reviews the branch and pushes or merges it.
+work on the current branch → the maintainer reviews the commits and pushes them.
 
 - **Name:** `NNNN-<slug>.md`, numbered in order.
 - **Status:** `Draft` → `Approved` → `Designed` (designs approved) → `Running` → `Done`.
