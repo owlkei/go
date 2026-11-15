@@ -24,6 +24,17 @@ test: ## Run tests
 lint: ## Run linter
 	golangci-lint run
 
+.PHONY: fmt
+fmt: ## Format Go sources
+	gofmt -w $$(git ls-files '*.go')
+
+.PHONY: check
+check: ## Everything CI runs: format, vet, lint, tests
+	@test -z "$$(gofmt -l $$(git ls-files '*.go'))" || (gofmt -l $$(git ls-files '*.go'); echo "run make fmt"; exit 1)
+	go vet ./...
+	golangci-lint run
+	go test ./... -cover -race
+
 .PHONY: protoc
 protoc: ## Generate protocol buffer
 	protoc --go_out=. --go_opt=paths=source_relative \
