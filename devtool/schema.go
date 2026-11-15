@@ -28,7 +28,7 @@ var formatByKind = map[reflect.Kind]string{
 	reflect.Slice:      "array",
 	reflect.Map:        "map",
 	reflect.Struct:     "object",
-	reflect.Ptr:        "object",
+	reflect.Pointer:    "object",
 }
 
 var typeByKind = map[reflect.Kind]string{
@@ -52,7 +52,7 @@ var typeByKind = map[reflect.Kind]string{
 	reflect.Slice:      "array",
 	reflect.Map:        "object",
 	reflect.Struct:     "object",
-	reflect.Ptr:        "object",
+	reflect.Pointer:    "object",
 }
 
 func GenerateSchema(s reflect.Type, tag string) []*Schema {
@@ -120,7 +120,7 @@ func GenerateSchema(s reflect.Type, tag string) []*Schema {
 						Properties: GenerateSchema(structField.Type, tag),
 					})
 
-				case reflect.Ptr:
+				case reflect.Pointer:
 					if structField.Type.Elem().Kind() == reflect.Struct {
 						schema = append(schema, &Schema{
 							Name:       bindedField,
@@ -183,7 +183,7 @@ func explainObj(ob reflect.Type, tag string) *Schema {
 			Properties: GenerateSchema(ob, tag),
 		}
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if ob.Elem().Kind() == reflect.Struct {
 			return &Schema{
 				Type:       typeByKind[ob.Kind()],

@@ -27,7 +27,7 @@ func BindFile(f File, s any) (map[string][]*DataFile, any) {
 			if bindedValue, ok := f[bindedField]; ok {
 				switch structField.Type.Kind() {
 
-				case reflect.Ptr:
+				case reflect.Pointer:
 					if len(bindedValue) > 0 {
 						if fileHeader, ok := slice.Get(bindedValue, bindedIndex); ok {
 							dataFile := []*DataFile{

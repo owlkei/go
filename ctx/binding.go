@@ -150,7 +150,7 @@ func BindStruct(d map[string]any, fls *[]FieldLevel, s any, parentNS string, par
 					setValueToStructField(val)
 					continue
 
-				case reflect.Ptr:
+				case reflect.Pointer:
 					elemKind := structField.Type.Elem().Kind()
 					switch elemKind {
 					case reflect.Bool:
