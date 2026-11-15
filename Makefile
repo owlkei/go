@@ -34,3 +34,9 @@ check: ## Everything CI runs: format, vet, lint, tests
 	go vet ./...
 	golangci-lint run
 	go test ./... -cover -race
+
+BENCH_COUNT ?= 5
+
+.PHONY: bench
+bench: ## End-to-end HTTP benchmark of ginject (bench/), median of BENCH_COUNT runs
+	cd bench && go test -run '^$$' -bench 'BenchmarkGinject' -benchmem -count $(BENCH_COUNT) ./...

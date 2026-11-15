@@ -19,7 +19,7 @@ These numbers are the baseline every later roadmap (0002-0004) is measured again
 | 1 | Remove gRPC and protobuf only: delete `devtool.proto`, the `*.pb.go` files, the empty `Serve` and the `protoc` target. Keep everything devtools already inspects (`EnableDevtool`, the builder, `schema.go`, the snapshot types) as plain Go structs with the same names and fields | light | - | - | no `grpc` / `protobuf` in `go.mod`; `EnableDevtool` builds the same snapshot, covered by a test | done |
 | 2 | Go 1.27.4 (latest) in `go.mod` | light | - | 1 | `go.mod` says 1.27.4; `make check` passes with it | done |
 | 3 | Upgrade vulnerable dependencies (`golang.org/x/net` ≥ v0.60.0, `golang.org/x/text` ≥ v0.39.0, plus whatever the scan shows then) | light | - | 2 | `govulncheck ./...` reports nothing | done |
-| 4 | End-to-end HTTP benchmark through `App`: static route, path params, query + JSON body binding, a global middleware + guard + interceptor chain, an exception path, a 404; with `b.Loop`, `b.ReportAllocs` | light | - | 3 | the benchmark runs with `make bench`; ns/op and allocs/op per scenario recorded | todo |
+| 4 | End-to-end HTTP benchmark through `App`: static route, path params, query + JSON body binding, a global middleware + guard + interceptor chain, an exception path, a 404; with `b.Loop`, `b.ReportAllocs` | light | - | 3 | the benchmark runs with `make bench`; ns/op and allocs/op per scenario recorded | done |
 | 5 | Load test against a small app with the same routes: requests per second, p50 / p99 latency, allocations per request, at several concurrency levels | light | - | 4 | `make load` runs it; results recorded | todo |
 | 6 | Comparison module `bench/` (its own `go.mod`): the same scenarios on `net/http` `ServeMux`, Gin, Echo, Chi and Fiber | light | - | 4 | `make bench-compare` runs it; results recorded | todo |
 | 7 | Baseline report: the numbers from steps 4-6, the top allocation and CPU sites from profiles (`-cpuprofile`, `-memprofile`), and the hot spots they point to for roadmap 0002 | light | - | 4-6 | `docs/review/http-baseline.md` | todo |
@@ -64,3 +64,7 @@ rerunning this baseline.
 - Step 3: with gRPC gone, `golang.org/x/text` is no longer required at all; `golang.org/x/net`
   (WebSocket) went to v0.62.0, the smallest version fixing all seven advisories (two newer than
   v0.60.0). `go.mod` now has a single dependency; `govulncheck`: no vulnerabilities found.
+- Step 4: the benchmark lives in the `bench/` module (planned for step 6) instead of the main module,
+  so all frameworks share one scenario table (`bench/scenario.go`) and a parity test proves each
+  returns the expected status and body. It drives `App.ServeHTTP` with a reused request and a
+  discarding `ResponseWriter`, so only the framework's own work is measured.
