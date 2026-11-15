@@ -5,48 +5,53 @@ import (
 	"testing"
 )
 
-func BenchmarkSegment(t *testing.B) {
-	input1 := "/users/{userId}/schools/{schoolId}/subjects/{subjectId}/"
+func BenchmarkSegment(b *testing.B) {
+	input := "/users/{userId}/schools/{schoolId}/subjects/{subjectId}/"
 	sep := byte('/')
-	start := strings.IndexByte(input1, sep)
-	for i := 0; i < t.N; i++ {
-		for _, next := Segment(input1, sep, start); next >= 0; _, next = Segment(input1, sep, next) {
-
+	start := strings.IndexByte(input, sep)
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, next := Segment(input, sep, start); next >= 0; _, next = Segment(input, sep, next) {
 		}
 	}
 }
 
 func BenchmarkRemoveSpace(b *testing.B) {
 	input := "A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a b c d e f g h i j k l m n o p q r s t u v w x y z"
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		RemoveSpace(input)
 	}
 }
 
-func BenchmarkEnclose(b *testing.B) {
+func BenchmarkEnclose_Dirty(b *testing.B) {
 	input := "//users//profile//settings//"
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		Enclose(input, '/')
 	}
 }
 
-func BenchmarkRemoveDup(b *testing.B) {
+func BenchmarkEnclose_Canonical(b *testing.B) {
+	input := "/users/all/"
+	b.ReportAllocs()
+	for b.Loop() {
+		Enclose(input, '/')
+	}
+}
+
+func BenchmarkRemoveDup_Dirty(b *testing.B) {
 	input := "/**/school**/***/***/{subjectId}/***"
-	for i := 0; i < b.N; i++ {
-		RemoveDup(input, "*")
+	b.ReportAllocs()
+	for b.Loop() {
+		RemoveDup(input, '*')
 	}
 }
 
-func BenchmarkIsLower(b *testing.B) {
-	input := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	for i := 0; i < b.N; i++ {
-		IsLower(input)
-	}
-}
-
-func BenchmarkIsUpper(b *testing.B) {
-	input := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	for i := 0; i < b.N; i++ {
-		IsUpper(input)
+func BenchmarkRemoveDup_Clean(b *testing.B) {
+	input := "/static/css/app.min.css"
+	b.ReportAllocs()
+	for b.Loop() {
+		RemoveDup(input, '/')
 	}
 }

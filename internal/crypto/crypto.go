@@ -3,39 +3,10 @@ package crypto
 import (
 	cryptoRand "crypto/rand"
 	"encoding/hex"
+	"math/rand/v2"
 )
 
-func withCharset(length int, charset string) string {
-	n := len(charset)
-	limit := 256 - (256 % n)
-
-	out := make([]byte, length)
-	buf := make([]byte, length)
-	filled := 0
-
-	for filled < length {
-		if _, err := cryptoRand.Read(buf); err != nil {
-			panic(err)
-		}
-		for _, rb := range buf {
-			if int(rb) >= limit {
-				continue
-			}
-			out[filled] = charset[int(rb)%n]
-			filled++
-			if filled == length {
-				break
-			}
-		}
-	}
-
-	return string(out)
-}
-
-func Random(length int) string {
-	charset := "`~1!2@3#4$5%6^7&8*9(0)-_=+qQwWeErRtTyYuUiIoOpP[{]}\\|aAsSdDfFgGhHjJkKlL;:'zZxXcCvVbBnNmM,<.>/?"
-	return withCharset(length, charset)
-}
+const hexDigits = "0123456789abcdef"
 
 func UUID() (string, error) {
 	var uuid [16]byte
@@ -57,4 +28,23 @@ func UUID() (string, error) {
 	buf[23] = '-'
 	hex.Encode(buf[24:36], uuid[10:16])
 	return string(buf[:]), nil
+}
+
+func RandomHex(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return string(AppendRandomHex(make([]byte, 0, n), n))
+}
+
+func AppendRandomHex(dst []byte, n int) []byte {
+	for n > 0 {
+		r := rand.Uint64()
+		for k := min(n, 16); k > 0; k-- {
+			dst = append(dst, hexDigits[r&0xf])
+			r >>= 4
+		}
+		n -= min(n, 16)
+	}
+	return dst
 }

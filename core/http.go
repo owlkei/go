@@ -224,7 +224,7 @@ func (http *HTTP) handleRequest(c *ctx.HTTPContext) {
 func (http *HTTP) serveContent(c *ctx.HTTPContext, lastWildcardSlashIndex int, dir any) {
 	if dir, ok := dir.(string); ok {
 		if lastWildcardSlashIndex != 0 {
-			urlPath := str.RemoveDup(c.URL.Path, "/")
+			urlPath := str.RemoveDup(c.URL.Path, '/')
 			urlPathArr := strings.Split(urlPath, "/")
 			suffix := strings.Join(urlPathArr[lastWildcardSlashIndex:], "/")
 			oldDir := dir

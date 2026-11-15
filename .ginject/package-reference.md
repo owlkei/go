@@ -776,6 +776,6 @@ type Helmet struct {
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
 - `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog`; wired in via `App.EnableAccessLog()`.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
-- `internal/*` — private utilities (color, ds, str, crypto, num, runtime, slice, test). Not importable from outside the module.
+- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test). Not importable from outside the module.
 
 **There is no `data/` package or directory anywhere in this repository** — an earlier doc listed one; it never existed.

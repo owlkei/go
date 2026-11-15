@@ -9,177 +9,424 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func TestFind(t *testing.T) {
-	arr := []string{"John Doe", "Jane Doe", "The Rock"}
-	expect1 := "Jane Doe"
-	output1 := Find(arr, func(el string, i int) bool { return el == expect1 })
-	if output1 != expect1 {
-		t.Error(test.DiffMessage(output1, expect1, "ArrFind"))
+func TestMap_ReturnsMappedInOrder(t *testing.T) {
+	var order []int
+	got := Map([]string{"a", "b", "c"}, func(el string, i int) string {
+		order = append(order, i)
+		return el + el
+	})
+	if !reflect.DeepEqual(got, []string{"aa", "bb", "cc"}) {
+		t.Error(test.DiffMessage(got, []string{"aa", "bb", "cc"}, "L1: Map result"))
+	}
+	if !reflect.DeepEqual(order, []int{0, 1, 2}) {
+		t.Error(test.DiffMessage(order, []int{0, 1, 2}, "L1: Map call order"))
 	}
 }
 
-func TestFindIndex(t *testing.T) {
-	arr := []string{"John Doe", "Jane Doe", "The Rock"}
-	expect1 := 1
-	output1 := FindIndex(arr, func(el string, i int) bool { return el == "Jane Doe" })
-	if output1 != expect1 {
-		t.Error(test.DiffMessage(output1, expect1, "ArrFindIndex"))
+func TestMap_NilInputReturnsNonNilEmpty(t *testing.T) {
+	got := Map[string, int](nil, func(string, int) int { return 1 })
+	if got == nil || len(got) != 0 {
+		t.Error(test.DiffMessage(got, "non-nil empty slice", "L1: Map of nil"))
 	}
 }
 
-func TestMap(t *testing.T) {
-	arr := []string{"John Doe", "Jane Doe", "The Rock"}
-	expect1 := []int{1, 2, 3}
-	output1 := Map(arr, func(el string, i int) int { return i + 1 })
-	if output1[0] != expect1[0] || output1[1] != expect1[1] || output1[2] != expect1[2] {
-		t.Error(test.DiffMessage(output1, expect1, "ArrMap"))
+func TestMap_EmptyInputReturnsNonNilEmpty(t *testing.T) {
+	got := Map([]string{}, func(string, int) int { return 1 })
+	if got == nil || len(got) != 0 {
+		t.Error(test.DiffMessage(got, "non-nil empty slice", "L1: Map of empty"))
 	}
 }
 
-func TestFilter(t *testing.T) {
-	arr := []string{"John Doe", "Jane Doe", "The Rock"}
-	expect1 := []string{"John Doe", "Jane Doe"}
-	output1 := Filter(arr, func(el string, i int) bool { return strings.Contains(el, "Doe") })
-	if output1[0] != expect1[0] || output1[1] != expect1[1] || len(output1) > 2 {
-		t.Error(test.DiffMessage(output1, expect1, "ArrFilter"))
+func TestFilter_KeepsMatchingInOrder(t *testing.T) {
+	got := Filter([]string{"John Doe", "Jane Doe", "The Rock"}, func(el string, i int) bool { return strings.Contains(el, "Doe") })
+	want := []string{"John Doe", "Jane Doe"}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L1: Filter result"))
 	}
 }
 
-func TestToUnique(t *testing.T) {
-	arr := []string{"John Doe", "Jane Doe", "The Rock", "John Doe", "Jane Doe"}
-	expect1 := []string{"John Doe", "Jane Doe", "The Rock"}
-	output1 := ToUnique(arr)
-	if len(expect1) != len(output1) {
-		t.Error(test.DiffMessage(len(output1), len(expect1), "ArrToUnique length"))
+func TestFilter_PassesIndex(t *testing.T) {
+	got := Filter([]int{10, 11, 12, 13}, func(el int, i int) bool { return i%2 == 1 })
+	want := []int{11, 13}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L1: Filter index"))
 	}
-	for i, e := range output1 {
-		if expect1[i] != e {
-			t.Error(test.DiffMessage(e, expect1[i], fmt.Sprintf("ArrToUnique element at index %d", i)))
+}
+
+func TestFilter_NilAndNoMatchAreEmpty(t *testing.T) {
+	if got := Filter[int](nil, func(int, int) bool { return true }); len(got) != 0 {
+		t.Error(test.DiffMessage(len(got), 0, "L1: Filter of nil"))
+	}
+	if got := Filter([]int{1, 2}, func(int, int) bool { return false }); len(got) != 0 {
+		t.Error(test.DiffMessage(len(got), 0, "L1: Filter without match"))
+	}
+}
+
+func TestGet_InRange(t *testing.T) {
+	arr := []string{"John Doe", "Jane Doe"}
+	for i, want := range arr {
+		got, ok := Get(arr, i)
+		if got != want || !ok {
+			t.Error(test.DiffMessage([]any{got, ok}, []any{want, true}, "L1: Get in range"))
 		}
 	}
 }
 
-func TestGet(t *testing.T) {
-	arr := []string{"John Doe", "Jane Doe"}
-	output1, _ := Get(arr, 0)
-	if output1 != "John Doe" {
-		t.Error(test.DiffMessage(output1, "John Doe", "ArrGet valid index"))
+func TestGet_OutOfRange(t *testing.T) {
+	arr := []string{"a", "b"}
+	for _, i := range []int{2, 100} {
+		got, ok := Get(arr, i)
+		if got != "" || ok {
+			t.Error(test.DiffMessage([]any{got, ok}, []any{"", false}, "L1: Get out of range"))
+		}
 	}
-	output2, _ := Get(arr, 100)
-	if output2 != "" {
-		t.Error(test.DiffMessage(output2, "", "ArrGet out-of-bounds"))
-	}
-}
-
-func TestArrFindNotFound(t *testing.T) {
-	arr := []int{1, 2, 3}
-	got := Find(arr, func(el int, _ int) bool { return el == 99 })
-	if got != 0 {
-		t.Error(test.DiffMessage(got, 0, "ArrFind not-found should return zero value"))
+	got, ok := Get[int](nil, 0)
+	if got != 0 || ok {
+		t.Error(test.DiffMessage([]any{got, ok}, []any{0, false}, "L1: Get of nil"))
 	}
 }
 
-func TestArrFindIndexNotFound(t *testing.T) {
-	arr := []int{1, 2, 3}
-	got := FindIndex(arr, func(el int, _ int) bool { return el == 99 })
-	if got != -1 {
-		t.Error(test.DiffMessage(got, -1, "ArrFindIndex not-found should return -1"))
+func TestGet_Negative(t *testing.T) {
+	got, ok := Get([]string{"a"}, -1)
+	if got != "" || ok {
+		t.Error(test.DiffMessage([]any{got, ok}, []any{"", false}, "L1: Get negative index"))
 	}
 }
 
-func TestArrGetBool(t *testing.T) {
-	arr := []string{"a"}
-	if _, ok := Get(arr, 0); !ok {
-		t.Error(test.DiffMessage(false, true, "ArrGet valid index should return ok=true"))
-	}
-	if _, ok := Get(arr, -1); ok {
-		t.Error(test.DiffMessage(true, false, "ArrGet negative index should return ok=false"))
-	}
-	if _, ok := Get(arr, 1); ok {
-		t.Error(test.DiffMessage(true, false, "ArrGet out-of-bounds index should return ok=false"))
+func TestStrParseBool_Valid(t *testing.T) {
+	got := StrParseBool([]string{"true", "false"})
+	want := []bool{true, false}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseBool valid"))
 	}
 }
 
-func TestStrParseBool(t *testing.T) {
-	got := StrParseBool([]string{"true", "false", "bad"})
-	want := []bool{true, false, false}
-	if got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Error(test.DiffMessage(got, want, "ArrStrParseBool"))
+func TestStrParseBool_InvalidIsZero(t *testing.T) {
+	got := StrParseBool([]string{"bad", ""})
+	want := []bool{false, false}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseBool invalid or out of range"))
 	}
 }
 
-func TestStrParseInt(t *testing.T) {
-	got := StrParseInt([]string{"1", "-2", "bad"})
-	want := []int{1, -2, 0}
-	if got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Error(test.DiffMessage(got, want, "ArrStrParseInt"))
+func TestStrParseInt_Valid(t *testing.T) {
+	got := StrParseInt([]string{"1", "-2"})
+	want := []int{1, -2}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt valid"))
 	}
 }
 
-func TestStrParseFloat64(t *testing.T) {
-	got := StrParseFloat64([]string{"1.5", "-2.5", "bad"})
-	want := []float64{1.5, -2.5, 0}
-	if got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Error(test.DiffMessage(got, want, "ArrStrParseFloat64"))
+func TestStrParseInt_InvalidIsZero(t *testing.T) {
+	got := StrParseInt([]string{"bad", "", "9223372036854775808"})
+	want := []int{0, 0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt invalid or out of range"))
 	}
 }
 
-func TestStrParseComplex64(t *testing.T) {
-	got := StrParseComplex64([]string{"1+2i", "bad"})
-	want := []complex64{complex(1, 2), 0}
-	if got[0] != want[0] || got[1] != want[1] {
-		t.Error(test.DiffMessage(got, want, "ArrStrParseComplex64"))
+func TestStrParseInt8_Valid(t *testing.T) {
+	got := StrParseInt8([]string{"127", "-128"})
+	want := []int8{127, -128}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt8 valid"))
 	}
 }
 
-func TestStrParseAny(t *testing.T) {
-	got := StrParseAny([]string{"a", "b"})
-	if got[0] != "a" || got[1] != "b" {
-		t.Error(test.DiffMessage(got, []any{"a", "b"}, "ArrStrParseAny"))
+func TestStrParseInt8_InvalidIsZero(t *testing.T) {
+	got := StrParseInt8([]string{"bad", "300", "-129"})
+	want := []int8{0, 0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt8 invalid or out of range"))
 	}
 }
 
-func TestArrIterMultiDimensions(t *testing.T) {
-	multiDimension := []any{
+func TestStrParseInt16_Valid(t *testing.T) {
+	got := StrParseInt16([]string{"32767", "-32768"})
+	want := []int16{32767, -32768}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt16 valid"))
+	}
+}
+
+func TestStrParseInt16_InvalidIsZero(t *testing.T) {
+	got := StrParseInt16([]string{"bad", "40000"})
+	want := []int16{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt16 invalid or out of range"))
+	}
+}
+
+func TestStrParseInt32_Valid(t *testing.T) {
+	got := StrParseInt32([]string{"2147483647", "-2147483648"})
+	want := []int32{2147483647, -2147483648}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt32 valid"))
+	}
+}
+
+func TestStrParseInt32_InvalidIsZero(t *testing.T) {
+	got := StrParseInt32([]string{"bad", "2147483648"})
+	want := []int32{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt32 invalid or out of range"))
+	}
+}
+
+func TestStrParseInt64_Valid(t *testing.T) {
+	got := StrParseInt64([]string{"9223372036854775807", "-5"})
+	want := []int64{9223372036854775807, -5}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt64 valid"))
+	}
+}
+
+func TestStrParseInt64_InvalidIsZero(t *testing.T) {
+	got := StrParseInt64([]string{"bad", "9223372036854775808"})
+	want := []int64{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseInt64 invalid or out of range"))
+	}
+}
+
+func TestStrParseUint_Valid(t *testing.T) {
+	got := StrParseUint([]string{"0", "7"})
+	want := []uint{0, 7}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint valid"))
+	}
+}
+
+func TestStrParseUint_InvalidIsZero(t *testing.T) {
+	got := StrParseUint([]string{"bad", "-1", ""})
+	want := []uint{0, 0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint invalid or out of range"))
+	}
+}
+
+func TestStrParseUint8_Valid(t *testing.T) {
+	got := StrParseUint8([]string{"255", "0"})
+	want := []uint8{255, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint8 valid"))
+	}
+}
+
+func TestStrParseUint8_InvalidIsZero(t *testing.T) {
+	got := StrParseUint8([]string{"bad", "256", "-1"})
+	want := []uint8{0, 0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint8 invalid or out of range"))
+	}
+}
+
+func TestStrParseUint16_Valid(t *testing.T) {
+	got := StrParseUint16([]string{"65535"})
+	want := []uint16{65535}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint16 valid"))
+	}
+}
+
+func TestStrParseUint16_InvalidIsZero(t *testing.T) {
+	got := StrParseUint16([]string{"bad", "65536"})
+	want := []uint16{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint16 invalid or out of range"))
+	}
+}
+
+func TestStrParseUint32_Valid(t *testing.T) {
+	got := StrParseUint32([]string{"4294967295"})
+	want := []uint32{4294967295}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint32 valid"))
+	}
+}
+
+func TestStrParseUint32_InvalidIsZero(t *testing.T) {
+	got := StrParseUint32([]string{"bad", "4294967296"})
+	want := []uint32{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint32 invalid or out of range"))
+	}
+}
+
+func TestStrParseUint64_Valid(t *testing.T) {
+	got := StrParseUint64([]string{"18446744073709551615"})
+	want := []uint64{18446744073709551615}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint64 valid"))
+	}
+}
+
+func TestStrParseUint64_InvalidIsZero(t *testing.T) {
+	got := StrParseUint64([]string{"bad", "18446744073709551616", "-1"})
+	want := []uint64{0, 0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseUint64 invalid or out of range"))
+	}
+}
+
+func TestStrParseFloat32_Valid(t *testing.T) {
+	got := StrParseFloat32([]string{"1.5", "-2.5"})
+	want := []float32{1.5, -2.5}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseFloat32 valid"))
+	}
+}
+
+func TestStrParseFloat32_InvalidIsZero(t *testing.T) {
+	got := StrParseFloat32([]string{"bad", "1e40", ""})
+	want := []float32{0, 0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseFloat32 invalid or out of range"))
+	}
+}
+
+func TestStrParseFloat64_Valid(t *testing.T) {
+	got := StrParseFloat64([]string{"1.5", "-2.5"})
+	want := []float64{1.5, -2.5}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseFloat64 valid"))
+	}
+}
+
+func TestStrParseFloat64_InvalidIsZero(t *testing.T) {
+	got := StrParseFloat64([]string{"bad", "1e400"})
+	want := []float64{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseFloat64 invalid or out of range"))
+	}
+}
+
+func TestStrParseComplex64_Valid(t *testing.T) {
+	got := StrParseComplex64([]string{"1+2i", "3"})
+	want := []complex64{complex(1, 2), 3}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseComplex64 valid"))
+	}
+}
+
+func TestStrParseComplex64_InvalidIsZero(t *testing.T) {
+	got := StrParseComplex64([]string{"bad", ""})
+	want := []complex64{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseComplex64 invalid or out of range"))
+	}
+}
+
+func TestStrParseComplex128_Valid(t *testing.T) {
+	got := StrParseComplex128([]string{"1+2i", "3"})
+	want := []complex128{complex(1, 2), 3}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseComplex128 valid"))
+	}
+}
+
+func TestStrParseComplex128_InvalidIsZero(t *testing.T) {
+	got := StrParseComplex128([]string{"bad", ""})
+	want := []complex128{0, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseComplex128 invalid or out of range"))
+	}
+}
+
+func TestStrParse_NilAndEmptyInput(t *testing.T) {
+	if got := StrParseInt(nil); len(got) != 0 {
+		t.Error(test.DiffMessage(len(got), 0, "L2: StrParseInt of nil"))
+	}
+	if got := StrParseBool([]string{}); len(got) != 0 {
+		t.Error(test.DiffMessage(len(got), 0, "L2: StrParseBool of empty"))
+	}
+}
+
+func TestStrParseInt8_OutOfRangeIsZero(t *testing.T) {
+	got := StrParseInt8([]string{"300"})
+	if !reflect.DeepEqual(got, []int8{0}) {
+		t.Error(test.DiffMessage(got, []int8{0}, "L2: StrParseInt8 300"))
+	}
+}
+
+func TestStrParseUint_NegativeIsZero(t *testing.T) {
+	got := StrParseUint([]string{"-1"})
+	if !reflect.DeepEqual(got, []uint{0}) {
+		t.Error(test.DiffMessage(got, []uint{0}, "L2: StrParseUint -1"))
+	}
+}
+
+func TestStrParseFloat32_OverflowIsZero(t *testing.T) {
+	got := StrParseFloat32([]string{"1e40"})
+	if !reflect.DeepEqual(got, []float32{0}) {
+		t.Error(test.DiffMessage(got, []float32{0}, "L2: StrParseFloat32 1e40"))
+	}
+}
+
+func TestStrParseComplex64_IgnoresSpaces(t *testing.T) {
+	got := StrParseComplex64([]string{"1 + 2i"})
+	if !reflect.DeepEqual(got, []complex64{complex(1, 2)}) {
+		t.Error(test.DiffMessage(got, []complex64{complex(1, 2)}, "L2: StrParseComplex64 spaces"))
+	}
+}
+
+func TestStrParseComplex128_IgnoresSpaces(t *testing.T) {
+	got := StrParseComplex128([]string{"1 + 2i"})
+	if !reflect.DeepEqual(got, []complex128{complex(1, 2)}) {
+		t.Error(test.DiffMessage(got, []complex128{complex(1, 2)}, "L2: StrParseComplex128 spaces"))
+	}
+}
+
+func TestStrParseAny_BoxesEachString(t *testing.T) {
+	got := StrParseAny([]string{"a", "1"})
+	want := []any{"a", "1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "L2: StrParseAny"))
+	}
+	if got := StrParseAny(nil); len(got) != 0 {
+		t.Error(test.DiffMessage(len(got), 0, "L2: StrParseAny of nil"))
+	}
+}
+
+func TestIter_VisitsLeavesDepthFirst(t *testing.T) {
+	input := []any{
 		[]any{
-			[]any{
-				[]any{1000, 2000, 3000, 4000},
-				[]any{4001, 5001, 6001, 7001},
-			},
-			[]any{
-				[]any{1010, 2010, 3010, 4010},
-				[]any{4011, 5011, 6011, 7011},
-			},
+			[]any{1000, 2000},
+			[]any{3000},
 		},
 		[]any{
-			[]any{
-				[]any{1100, 2100, 3100, 4100},
-				[]any{4101, 5101, 6101, 7101},
-			},
-			[]any{
-				[]any{1110, 2110, 3110, 4110},
-				[]any{4111, 5111, 6111, 7111},
-			},
+			[]any{4000, 5000},
 		},
 	}
-
-	expected1 := 1000 + 2000 + 3000 + 4000 +
-		4001 + 5001 + 6001 + 7001 +
-		1010 + 2010 + 3010 + 4010 +
-		4011 + 5011 + 6011 + 7011 +
-		1100 + 2100 + 3100 + 4100 +
-		4101 + 5101 + 6101 + 7101 +
-		1110 + 2110 + 3110 + 4110 +
-		4111 + 5111 + 6111 + 7111
-
-	result1 := 0
-	Iter(multiDimension, 4, func(el any, d int) {
-		if reflect.TypeOf(el).Kind() == reflect.Int {
-			result1 += el.(int)
+	var leaves []int
+	Iter(input, 3, func(el any, d int) {
+		if n, ok := el.(int); ok {
+			leaves = append(leaves, n)
 		}
 	})
+	want := []int{1000, 2000, 3000, 4000, 5000}
+	if !reflect.DeepEqual(leaves, want) {
+		t.Error(test.DiffMessage(leaves, want, "L3: Iter leaf order"))
+	}
+}
 
-	if expected1 != result1 {
-		t.Error(test.DiffMessage(result1, expected1, "ArrIter sum"))
+func TestIter_ReportsDimension(t *testing.T) {
+	input := []any{1, []any{2, 3}, 4}
+	var events []string
+	Iter(input, 2, func(el any, d int) {
+		events = append(events, fmt.Sprintf("%v@%d", el, d))
+	})
+	want := []string{"1@2", "2@1", "3@1", "[2 3]@2", "4@2"}
+	if !reflect.DeepEqual(events, want) {
+		t.Error(test.DiffMessage(events, want, "L3: Iter dimensions"))
+	}
+}
+
+func TestIter_EmptyAndNil(t *testing.T) {
+	calls := 0
+	Iter(nil, 1, func(any, int) { calls++ })
+	Iter([]any{}, 1, func(any, int) { calls++ })
+	if calls != 0 {
+		t.Error(test.DiffMessage(calls, 0, "L3: Iter of nil or empty"))
 	}
 }

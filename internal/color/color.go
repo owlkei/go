@@ -2,128 +2,81 @@ package color
 
 import "fmt"
 
-func FmtWhite(format string, a ...any) string {
+func wrap(open, closing, format string, a []any) string {
 	if len(a) == 0 {
-		return "\x1b[97m" + format + "\x1b[0m"
+		return open + format + closing
 	}
-	return "\x1b[97m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return open + fmt.Sprintf(format, a...) + closing
+}
+
+func FmtWhite(format string, a ...any) string {
+	return wrap("\x1b[97m", "\x1b[0m", format, a)
 }
 
 func FmtBlue(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[34m" + format + "\x1b[0m"
-	}
-	return "\x1b[34m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[34m", "\x1b[0m", format, a)
 }
 
 func FmtGreen(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[32m" + format + "\x1b[0m"
-	}
-	return "\x1b[32m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[32m", "\x1b[0m", format, a)
 }
 
 func FmtCyan(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[36m" + format + "\x1b[0m"
-	}
-	return "\x1b[36m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[36m", "\x1b[0m", format, a)
 }
 
 func FmtYellow(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[33m" + format + "\x1b[0m"
-	}
-	return "\x1b[33m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[33m", "\x1b[0m", format, a)
 }
 
 func FmtRed(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[31m" + format + "\x1b[0m"
-	}
-	return "\x1b[31m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[31m", "\x1b[0m", format, a)
 }
 
 func FmtMagenta(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[35m" + format + "\x1b[0m"
-	}
-	return "\x1b[35m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[35m", "\x1b[0m", format, a)
 }
 
 func FmtPurple(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[38;5;129m" + format + "\033[39m"
-	}
-	return "\033[38;5;129m" + fmt.Sprintf(format, a...) + "\033[39m"
+	return wrap("\x1b[38;5;129m", "\x1b[39m", format, a)
 }
 
 func FmtOrange(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[38;5;208m" + format + "\033[0m"
-	}
-	return "\033[38;5;208m" + fmt.Sprintf(format, a...) + "\033[0m"
+	return wrap("\x1b[38;5;208m", "\x1b[0m", format, a)
 }
 
 func FmtDim(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[2m" + format + "\x1b[0m"
-	}
-	return "\x1b[2m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[2m", "\x1b[0m", format, a)
 }
 
 func FmtBold(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[1m" + format + "\x1b[0m"
-	}
-	return "\x1b[1m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[1m", "\x1b[0m", format, a)
 }
 
 func FmtItalic(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\x1b[3m" + format + "\x1b[0m"
-	}
-	return "\x1b[3m" + fmt.Sprintf(format, a...) + "\x1b[0m"
+	return wrap("\x1b[3m", "\x1b[0m", format, a)
 }
 
 func FmtBGBlue(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[44m" + format + "\033[0m"
-	}
-	return "\033[44m" + fmt.Sprintf(format, a...) + "\033[0m"
+	return wrap("\x1b[44m", "\x1b[0m", format, a)
 }
 
 func FmtBGGreen(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[42m" + format + "\033[0m"
-	}
-	return "\033[42m" + fmt.Sprintf(format, a...) + "\033[0m"
+	return wrap("\x1b[42m", "\x1b[0m", format, a)
 }
 
 func FmtBGRed(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[41m" + format + "\033[0m"
-	}
-	return "\033[41m" + fmt.Sprintf(format, a...) + "\033[0m"
+	return wrap("\x1b[41m", "\x1b[0m", format, a)
 }
 
 func FmtBGYellow(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[43m" + format + "\033[0m"
-	}
-	return "\033[43m" + fmt.Sprintf(format, a...) + "\033[0m"
+	return wrap("\x1b[43m", "\x1b[0m", format, a)
 }
 
 func FmtBGGrey(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[47m" + format + "\033[49m"
-	}
-	return "\033[47m" + fmt.Sprintf(format, a...) + "\033[49m"
+	return wrap("\x1b[47m", "\x1b[49m", format, a)
 }
 
 func FmtBGDim(format string, a ...any) string {
-	if len(a) == 0 {
-		return "\033[48;5;236m" + format + "\033[0m"
-	}
-	return "\033[48;5;236m" + fmt.Sprintf(format, a...) + "\033[0m"
+	return wrap("\x1b[48;5;236m", "\x1b[0m", format, a)
 }

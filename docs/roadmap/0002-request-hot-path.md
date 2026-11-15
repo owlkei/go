@@ -23,7 +23,7 @@ the commit), README.
 
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
-| 1 | Foundations: `internal/str`, `internal/slice`, `internal/num`, `internal/color`, `internal/crypto` (the per-request UUID: hot spot 2), `internal/runtime` | tdd | docs/design/0001-internal.md | - | deep dive done; package checks green | todo |
+| 1 | Foundations: `internal/str`, `internal/slice`, `internal/num`, `internal/color`, `internal/crypto` (the per-request UUID: hot spot 2), `internal/runtime` | tdd | docs/design/0001-internal.md | - | deep dive done; package checks green | done |
 | 2 | Trie and router: `internal/ds`, `routing`, `versioning` (route match is on every request) | tdd | docs/design/0002-routing.md | 1 | deep dive done; match benchmarks before → after | todo |
 | 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | todo |
 | 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | todo |
@@ -58,3 +58,6 @@ the commit), README.
   techniques for the user: 0002 H1 (caller-supplied parameter buffer), 0003 H1 (scratch buffer and
   kept encoder per context), 0003 H2 (shared read-only header slices), 0003 H3 (capacity kept across
   requests), 0004 H1 (hand-written error-body JSON). Run started from `b2d1070` on `master`.
+- Step 1: done. Two lint issues in the tester's crypto tests (unchecked `UUID()` error in a
+  benchmark, a De Morgan form) were fixed by the orchestrator with no change in what they assert.
+  `F64ToAnyNum(+Inf, Float32)` now returns +Inf (only finite values beyond `MaxFloat32` saturate).

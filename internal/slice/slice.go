@@ -5,27 +5,6 @@ import (
 	"strings"
 )
 
-func Find[T any](arr []T, cb func(el T, i int) bool) T {
-	for i, el := range arr {
-		if cb(el, i) {
-			return el
-		}
-	}
-
-	var zero T
-	return zero
-}
-
-func FindIndex[T any](arr []T, cb func(el T, i int) bool) int {
-	for i, el := range arr {
-		if cb(el, i) {
-			return i
-		}
-	}
-
-	return -1
-}
-
 func Map[T, U any](arr []T, cb func(el T, i int) U) []U {
 	newArr := make([]U, len(arr))
 	for i, el := range arr {
@@ -42,18 +21,6 @@ func Filter[T any](arr []T, cb func(el T, i int) bool) []T {
 		}
 	}
 	return newArr
-}
-
-func ToUnique[T comparable](arr []T) []T {
-	m := make(map[T]struct{}, len(arr))
-	uniqueArr := make([]T, 0, len(arr))
-	for _, el := range arr {
-		if _, seen := m[el]; !seen {
-			uniqueArr = append(uniqueArr, el)
-			m[el] = struct{}{}
-		}
-	}
-	return uniqueArr
 }
 
 func Get[T any](arr []T, i int) (T, bool) {
@@ -220,11 +187,11 @@ func StrParseAny(arr []string) []any {
 	})
 }
 
-func Iter(arr []any, dimmensions int, cb func(any, int)) {
+func Iter(arr []any, dimensions int, cb func(any, int)) {
 	for _, el := range arr {
 		if sub, ok := el.([]any); ok {
-			Iter(sub, dimmensions-1, cb)
+			Iter(sub, dimensions-1, cb)
 		}
-		cb(el, dimmensions)
+		cb(el, dimensions)
 	}
 }

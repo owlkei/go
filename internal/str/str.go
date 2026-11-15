@@ -3,69 +3,66 @@ package str
 import (
 	"strings"
 	"unicode"
-	"unicode/utf8"
 )
 
-func RemoveSpace(str string) string {
+func RemoveSpace(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) {
 			return -1
 		}
 		return r
-	}, str)
+	}, s)
 }
 
-func AddBegin(str, subStr string) string {
-	if str == "" {
-		return str
-	}
-
-	if !strings.HasPrefix(str, subStr) {
-		return subStr + str
-	}
-
-	return str
-}
-
-func AddEnd(str, subStr string) string {
-	if str == "" {
-		return str
-	}
-
-	if !strings.HasSuffix(str, subStr) {
-		return str + subStr
-	}
-
-	return str
-}
-
-func Segment(str string, sep byte, start int) (string, int) {
-	if len(str) == 0 || start < 0 || start > len(str)-1 {
+func Segment(s string, sep byte, start int) (string, int) {
+	if len(s) == 0 || start < 0 || start > len(s)-1 {
 		return "", -1
 	}
 
-	i := strings.IndexByte(str[start+1:], sep)
+	i := strings.IndexByte(s[start+1:], sep)
 	if i < 0 {
-		return str[start:], i
+		return s[start:], i
 	}
 
 	next := i + start + 1
-	return str[start+1 : next], next
+	return s[start+1 : next], next
 }
 
-func Enclose(str string, sep byte) string {
-	if str == "" {
+func Enclose(s string, sep byte) string {
+	if isEnclosed(s, sep) {
+		return s
+	}
+	return encloseSlow(s, sep)
+}
+
+func isEnclosed(s string, sep byte) bool {
+	if len(s) == 0 || s[0] != sep || s[len(s)-1] != sep {
+		return false
+	}
+	prev := byte(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isASCIISpace(c) || (c == prev && (c == sep || c == '*')) {
+			return false
+		}
+		prev = c
+	}
+	return true
+}
+
+func encloseSlow(s string, sep byte) string {
+	if s == "" {
 		return ""
 	}
 
 	var b strings.Builder
-	b.Grow(len(str) + 2)
+	b.Grow(len(s) + 2)
 	b.WriteByte(sep)
 	prev := sep
 	hadContent := false
 
-	for i := 0; i < len(str); i++ {
-		c := str[i]
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		if isASCIISpace(c) {
 			continue
 		}
@@ -91,37 +88,30 @@ func isASCIISpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'
 }
 
-func RemoveDup(str, pattern string) string {
-	patRune, patSize := utf8.DecodeRuneInString(pattern)
-	if patRune == utf8.RuneError || patSize != len(pattern) {
-		return str
+func RemoveDup(s string, c byte) string {
+	if !hasRun(s, c) {
+		return s
 	}
+	return removeDupSlow(s, c)
+}
+
+func hasRun(s string, c byte) bool {
+	for i := 1; i < len(s); i++ {
+		if s[i] == c && s[i-1] == c {
+			return true
+		}
+	}
+	return false
+}
+
+func removeDupSlow(s string, c byte) string {
 	var b strings.Builder
-	b.Grow(len(str))
-	var prev rune
-	for i, r := range str {
-		if i > 0 && r == patRune && prev == patRune {
-			prev = r
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if i > 0 && s[i] == c && s[i-1] == c {
 			continue
 		}
-		b.WriteRune(r)
-		prev = r
+		b.WriteByte(s[i])
 	}
 	return b.String()
-}
-
-func IsLower(str string) []bool {
-	res := make([]bool, 0, len(str))
-	for _, r := range str {
-		res = append(res, unicode.ToLower(r) == r)
-	}
-	return res
-}
-
-func IsUpper(str string) []bool {
-	res := make([]bool, 0, len(str))
-	for _, r := range str {
-		res = append(res, unicode.ToUpper(r) == r)
-	}
-	return res
 }
