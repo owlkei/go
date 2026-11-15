@@ -21,7 +21,7 @@ These numbers are the baseline every later roadmap (0002-0004) is measured again
 | 3 | Upgrade vulnerable dependencies (`golang.org/x/net` ≥ v0.60.0, `golang.org/x/text` ≥ v0.39.0, plus whatever the scan shows then) | light | - | 2 | `govulncheck ./...` reports nothing | done |
 | 4 | End-to-end HTTP benchmark through `App`: static route, path params, query + JSON body binding, a global middleware + guard + interceptor chain, an exception path, a 404; with `b.Loop`, `b.ReportAllocs` | light | - | 3 | the benchmark runs with `make bench`; ns/op and allocs/op per scenario recorded | done |
 | 5 | Load test against a small app with the same routes: requests per second, p50 / p99 latency, allocations per request, at several concurrency levels | light | - | 4 | `make load` runs it; results recorded | todo |
-| 6 | Comparison module `bench/` (its own `go.mod`): the same scenarios on `net/http` `ServeMux`, Gin, Echo, Chi and Fiber | light | - | 4 | `make bench-compare` runs it; results recorded | todo |
+| 6 | Comparison module `bench/` (its own `go.mod`): the same scenarios on `net/http` `ServeMux`, Gin, Echo, Chi and Fiber | light | - | 4 | `make bench-compare` runs it; results recorded | done |
 | 7 | Baseline report: the numbers from steps 4-6, the top allocation and CPU sites from profiles (`-cpuprofile`, `-memprofile`), and the hot spots they point to for roadmap 0002 | light | - | 4-6 | `docs/review/http-baseline.md` | todo |
 
 ## Decisions
@@ -68,3 +68,6 @@ rerunning this baseline.
   so all frameworks share one scenario table (`bench/scenario.go`) and a parity test proves each
   returns the expected status and body. It drives `App.ServeHTTP` with a reused request and a
   discarding `ResponseWriter`, so only the framework's own work is measured.
+- Step 6 before step 5, so the load test server can serve every framework. Each framework uses its
+  idiomatic recovery middleware (Ginject recovers by default). Fiber is measured on fasthttp's
+  `RequestCtx` directly; its `Static` number includes `RequestCtx.Init`.
