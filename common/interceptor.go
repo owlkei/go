@@ -9,8 +9,6 @@ import (
 
 const InterceptorMethodName = "Intercept"
 
-type WithValueKey string
-
 type Interceptable any
 
 type InterceptorItem struct {

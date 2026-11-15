@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/accesslog"
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/devtool"
@@ -122,8 +121,6 @@ var knownWSDependencyKeys = map[string]int{
 	publisherKey:                1,
 	common.WSPayloadPipeableKey: 1,
 }
-
-type WithValueKey = common.WithValueKey
 
 func New() *App {
 	app := &App{
@@ -453,30 +450,6 @@ func (app *App) initGuards(injectedProviders map[string]Provider) {
 	}
 }
 
-func tagInterceptorName(ev *event.Event, endpoint, name string, h ctx.HTTPHandler) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) {
-		h(c)
-		if !ev.HasListeners(trace.EventName) {
-			return
-		}
-		if aggregations, ok := c.Context().Value(WithValueKey(endpoint)).([]*aggregation.Aggregation); ok && len(aggregations) > 0 {
-			aggregations[len(aggregations)-1].Name = name
-		}
-	}
-}
-
-func tagWSInterceptorName(ev *event.Event, eventName, name string, h ctx.WSHandler) ctx.WSHandler {
-	return func(c *ctx.WSContext) {
-		h(c)
-		if !ev.HasListeners(trace.EventName) {
-			return
-		}
-		if aggregations, ok := c.Context().Value(WithValueKey(eventName)).([]*aggregation.Aggregation); ok && len(aggregations) > 0 {
-			aggregations[len(aggregations)-1].Name = name
-		}
-	}
-}
-
 func (app *App) initInterceptors(injectedProviders map[string]Provider) {
 	app.http.emitPostInterceptor = func(c *ctx.HTTPContext, name string, duration time.Duration) {
 		if !app.event.HasListeners(trace.EventName) {
@@ -523,17 +496,14 @@ func (app *App) initInterceptors(injectedProviders map[string]Provider) {
 			if isHTTPInterceptor {
 				for _, h := range app.module.HTTPMainHandlers {
 					httpMethod := routing.OperationsMapHTTPMethods[h.Method]
-					endpoint := routing.MethodRouteVersionToPattern(httpMethod, h.Route, h.Version)
-					mw := traceHTTPHandler(app.event, trace.StagePreInterceptor, name, common.BuildHTTPInterceptMiddleware(endpoint, httpIntercept))
-					mw = tagInterceptorName(app.event, endpoint, name, mw)
+					mw := traceHTTPHandler(app.event, trace.StagePreInterceptor, name, common.BuildHTTPInterceptMiddleware(name, httpIntercept))
 					app.http.route.For([]string{httpMethod}, h.Route, h.Version)(mw)
 				}
 			}
 
 			if isWSInterceptor && app.ws != nil {
 				for _, h := range app.module.WSMainHandlers {
-					mw := traceWSHandler(app.event, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(h.EventName, wsIntercept))
-					mw = tagWSInterceptorName(app.event, h.EventName, name, mw)
+					mw := traceWSHandler(app.event, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(name, wsIntercept))
 					app.ws.eventMatcher.AddMiddlewares(h.EventName, mw)
 				}
 			}
@@ -542,16 +512,13 @@ func (app *App) initInterceptors(injectedProviders map[string]Provider) {
 
 	for _, mi := range app.module.HTTPInterceptors {
 		httpMethod := routing.OperationsMapHTTPMethods[mi.Method]
-		endpoint := routing.MethodRouteVersionToPattern(httpMethod, mi.Route, mi.Version)
-		mw := traceHTTPHandler(app.event, trace.StagePreInterceptor, mi.Name, common.BuildHTTPInterceptMiddleware(endpoint, mi.Handler.(common.HTTPIntercept)))
-		mw = tagInterceptorName(app.event, endpoint, mi.Name, mw)
+		mw := traceHTTPHandler(app.event, trace.StagePreInterceptor, mi.Name, common.BuildHTTPInterceptMiddleware(mi.Name, mi.Handler.(common.HTTPIntercept)))
 		app.http.route.For([]string{httpMethod}, mi.Route, mi.Version)(mw)
 	}
 
 	if app.ws != nil {
 		for _, mi := range app.module.WSInterceptors {
-			mw := traceWSHandler(app.event, trace.StagePreInterceptor, mi.Name, common.BuildWSInterceptMiddleware(mi.EventName, mi.Handler.(common.WSIntercept)))
-			mw = tagWSInterceptorName(app.event, mi.EventName, mi.Name, mw)
+			mw := traceWSHandler(app.event, trace.StagePreInterceptor, mi.Name, common.BuildWSInterceptMiddleware(mi.Name, mi.Handler.(common.WSIntercept)))
 			app.ws.eventMatcher.AddMiddlewares(mi.EventName, mw)
 		}
 	}

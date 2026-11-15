@@ -68,17 +68,10 @@ func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, re
 		newMiddlewareFn = Construct(newMiddlewareFn, "NewMiddleware")
 		middlewareHandler.middlewareFn = newMiddlewareFn.(MiddlewareFn)
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range middlewareHandler.handlers {
-			fnName := GetFuncName(handler)
-			if pattern, ok := r.FuncNameToPatternMap[fnName]; ok {
-				targetedPatterns[pattern] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := httpHandlerTargets(r, middlewareHandler.handlers, "middleware", middlewarerType)
 
 		for pattern := range r.PatternToFuncNameMap {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
 
@@ -118,17 +111,10 @@ func (m *Middleware) InjectProvidersIntoWSMiddlewares(ws *WS, cb func(int, refle
 		newMiddlewarer = Construct(newMiddlewarer, "NewMiddleware")
 		middlewareHandler.middlewareFn = newMiddlewarer.(MiddlewareFn)
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range middlewareHandler.handlers {
-			fnName := GetFuncName(handler)
-			if event, ok := ParseWSFuncNameToEvent(fnName); ok {
-				targetedPatterns[event] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := wsHandlerTargets(middlewareHandler.handlers, "middleware", middlewarerType)
 
 		for pattern := range ws.funcNameByEvent {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				middlewareItemArr = append(middlewareItemArr, MiddlewareItem{
 					WS: WSMiddlewareItem{
 						EventName: pattern,

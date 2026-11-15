@@ -1,6 +1,9 @@
 package common
 
 import (
+	"errors"
+	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
@@ -125,4 +128,160 @@ func TestRunWSCatchChain_FallsBackToNextOnPanic(t *testing.T) {
 func TestRunWSCatchChain_EmptyIsNoop(t *testing.T) {
 	c := ctx.NewWSContext()
 	RunWSCatchChain(c, nil, "boom")
+}
+
+func TestRunWSCatchChain_EmptyDoesNothing(t *testing.T) {
+	c := ctx.NewWSContext()
+	if text, panicked := recoverValue(func() { RunWSCatchChain(c, nil, "boom") }); panicked {
+		t.Error(test.DiffMessage(text, "no panic", "B17: nil chain"))
+	}
+	if text, panicked := recoverValue(func() { RunWSCatchChain(c, []WSCatch{}, "boom") }); panicked {
+		t.Error(test.DiffMessage(text, "no panic", "B17: empty chain"))
+	}
+}
+
+func TestRunWSCatchChain_FirstFilterHandles(t *testing.T) {
+	c := ctx.NewWSContext()
+	var gotCtx *ctx.WSContext
+	var gotEx *exception.Exception
+	secondCalls := 0
+
+	RunWSCatchChain(c, []WSCatch{
+		func(arg *ctx.WSContext, ex *exception.Exception) { gotCtx, gotEx = arg, ex },
+		func(*ctx.WSContext, *exception.Exception) { secondCalls++ },
+	}, exception.NotFoundException("nope"))
+
+	if gotCtx != c {
+		t.Error(test.DiffMessage(gotCtx, c, "B18: the filter receives the request context"))
+	}
+	if gotEx == nil || gotEx.GetCode() != http.StatusNotFound || gotEx.GetMessage() != "nope" {
+		t.Error(test.DiffMessage(gotEx, "404 nope", "B18: the filter receives the normalized exception"))
+	}
+	if secondCalls != 0 {
+		t.Error(test.DiffMessage(secondCalls, 0, "B18: a filter that returns handles the exception"))
+	}
+}
+
+func TestRunWSCatchChain_PanicValueGoesToNextFilter(t *testing.T) {
+	c := ctx.NewWSContext()
+	var got *exception.Exception
+
+	RunWSCatchChain(c, []WSCatch{
+		func(_ *ctx.WSContext, ex *exception.Exception) { panic(*ex) },
+		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
+	}, exception.NotFoundException("nope"))
+
+	if got == nil || got.GetCode() != http.StatusNotFound || got.GetMessage() != "nope" {
+		t.Error(test.DiffMessage(got, "404 nope", "B19: a re-thrown value keeps its code"))
+	}
+}
+
+func TestRunWSCatchChain_PanicPointerKeepsCode(t *testing.T) {
+	c := ctx.NewWSContext()
+	var got *exception.Exception
+
+	RunWSCatchChain(c, []WSCatch{
+		func(_ *ctx.WSContext, ex *exception.Exception) { panic(ex) },
+		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
+	}, exception.NotFoundException("nope"))
+
+	if got == nil || got.GetCode() != http.StatusNotFound {
+		t.Error(test.DiffMessage(got, "404", "B19, B21: a re-thrown pointer keeps its status code"))
+	}
+	if got != nil && got.GetMessage() != "nope" {
+		t.Error(test.DiffMessage(got.GetMessage(), "nope", "B19, B21: a re-thrown pointer keeps its message"))
+	}
+}
+
+func TestRunWSCatchChain_PanicErrorGoesToNextFilter(t *testing.T) {
+	c := ctx.NewWSContext()
+	var got *exception.Exception
+
+	RunWSCatchChain(c, []WSCatch{
+		func(*ctx.WSContext, *exception.Exception) { panic(errors.New("filter broke")) },
+		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
+	}, "boom")
+
+	if got == nil || got.GetCode() != http.StatusInternalServerError || got.GetMessage() != "filter broke" {
+		t.Error(test.DiffMessage(got, "500 filter broke", "B19: an error panic becomes a 500 for the next filter"))
+	}
+}
+
+func TestRunWSCatchChain_NilPanicGoesToNextFilter(t *testing.T) {
+	c := ctx.NewWSContext()
+	var got *exception.Exception
+
+	RunWSCatchChain(c, []WSCatch{
+		func(*ctx.WSContext, *exception.Exception) { panic(nil) },
+		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
+	}, "boom")
+
+	if got == nil || got.GetCode() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got, "a 500", "B19: panic(nil) is still handed to the next filter"))
+	}
+}
+
+func TestRunWSCatchChain_AllPanicReturns(t *testing.T) {
+	c := ctx.NewWSContext()
+	var order []int
+
+	text, panicked := recoverValue(func() {
+		RunWSCatchChain(c, []WSCatch{
+			func(*ctx.WSContext, *exception.Exception) { order = append(order, 1); panic("one") },
+			func(*ctx.WSContext, *exception.Exception) { order = append(order, 2); panic("two") },
+			func(*ctx.WSContext, *exception.Exception) { order = append(order, 3); panic("three") },
+		}, "boom")
+	})
+
+	if panicked {
+		t.Error(test.DiffMessage(text, "no panic", "B20: the chain never lets a panic out"))
+	}
+	if !reflect.DeepEqual(order, []int{1, 2, 3}) {
+		t.Error(test.DiffMessage(order, []int{1, 2, 3}, "B20: each filter is called once, in order"))
+	}
+}
+
+func TestRunWSCatchChain_DoesNotModifySlice(t *testing.T) {
+	c := ctx.NewWSContext()
+	calls := 0
+	catchFns := []WSCatch{
+		func(*ctx.WSContext, *exception.Exception) { calls++; panic("one") },
+		func(*ctx.WSContext, *exception.Exception) { calls++; panic("two") },
+		func(*ctx.WSContext, *exception.Exception) { calls++ },
+	}
+	before := make([]uintptr, len(catchFns))
+	for i, fn := range catchFns {
+		before[i] = reflect.ValueOf(fn).Pointer()
+	}
+
+	RunWSCatchChain(c, catchFns, "boom")
+	RunWSCatchChain(c, catchFns, "boom")
+
+	if len(catchFns) != 3 || cap(catchFns) != 3 {
+		t.Error(test.DiffMessage([]int{len(catchFns), cap(catchFns)}, []int{3, 3}, "B20: the slice header is unchanged"))
+	}
+	for i, fn := range catchFns {
+		if reflect.ValueOf(fn).Pointer() != before[i] {
+			t.Error(test.DiffMessage(reflect.ValueOf(fn).Pointer(), before[i], "B20: filter slot is unchanged"))
+		}
+	}
+	if calls != 6 {
+		t.Error(test.DiffMessage(calls, 6, "B20: a second run behaves like the first"))
+	}
+}
+
+func TestRunWSCatchChain_LongChainOfPanickingFiltersReturns(t *testing.T) {
+	c := ctx.NewWSContext()
+	calls := 0
+	catchFns := make([]WSCatch, 20000)
+	for i := range catchFns {
+		catchFns[i] = func(*ctx.WSContext, *exception.Exception) { calls++; panic("again") }
+	}
+
+	if text, panicked := recoverValue(func() { RunWSCatchChain(c, catchFns, "boom") }); panicked {
+		t.Error(test.DiffMessage(text, "no panic", "B20: a long chain returns normally"))
+	}
+	if calls != len(catchFns) {
+		t.Error(test.DiffMessage(calls, len(catchFns), "B20: every filter is called once"))
+	}
 }

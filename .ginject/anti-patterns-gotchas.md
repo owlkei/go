@@ -693,32 +693,24 @@ brokerB.Unsubscribe(subA)  // returns ErrForeignSubscription, no-op on both brok
 
 **Rule**: A cross-broker `Unsubscribe` call is safe (rejected with a typed error), but almost always indicates a wiring bug — the caller has the wrong `Broker` reference.
 
-## 10. Cross-Cutting Concern Singleton Gotchas
+## 10. Cross-Cutting Concern Instance Gotchas
 
-### 10.1 GOTCHA: Binding the Same Middleware/Guard/Interceptor/Filter Type Twice With Different Config
+### 10.1 GOTCHA: Expecting Two Equal Bindings to Get Two Instances
 
-**WRONG**:
+Binding one Middleware/Guard/Interceptor/ExceptionFilter type with **different** configuration gives one instance per configuration:
 ```go
-// Controller A
+// Controller A and controller B each get their own cors.CORS instance.
 c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://a.example.com"}})
-
-// Controller B — different config, SAME Go type
 c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://b.example.com"}})
 ```
 
-**Why It's Wrong**: `common.Construct` (the mechanism behind every `BindMiddleware`/`BindGuard`/`BindInterceptor`/`BindExceptionFilter`, global or per-controller, HTTP and WS) caches by **Go type name only** (`reflect.TypeOf(obj).String()`), via a per-key `sync.Once`, process-wide. Whichever `cors.CORS{...}` literal is constructed first wins — controller B silently gets controller A's `AllowOrigin`, with no error, no warning. This applies to any type bound this way, not just `cors.CORS`, and applies even to types with no `New*()` constructor at all (the bare struct literal is still cached by type name).
+**The gotcha**: `common.Construct` (behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
 
-**RIGHT**: Give each configuration its own Go type:
-```go
-type PublicCORS struct{ cors.CORS }
-func (c PublicCORS) NewMiddleware() common.MiddlewareFn { return cors.CORS(c).NewMiddleware() }
+**Rule**: Equal configuration → one shared instance (its fields are yours to protect across requests); give the bindings different configuration when they must keep separate state.
 
-type InternalCORS struct{ cors.CORS }
-func (c InternalCORS) NewMiddleware() common.MiddlewareFn { return cors.CORS(c).NewMiddleware() }
-```
-Or avoid binding two differently-configured instances of the same underlying type anywhere in the same process.
+### 10.2 GOTCHA: Binding a Layer to a Method That Is Not a Handler
 
-**Rule**: Never assume a bound Middleware/Guard/Interceptor/ExceptionFilter gets a fresh instance per bind-site. It's a singleton keyed by type name — the opposite of `Provider`'s per-injection semantics.
+`c.BindGuard(AuthGuard{}, c.Helper)` where `Helper` is neither a route nor an event of the controller panics at `Create()`: `invalid guard: <type> is bound to 'Helper', which is not a handler of the controller`. Before, the layer silently applied to every route. A handler of the other transport (a `SUBSCRIBE_…` method given to an HTTP-only guard) binds nothing on that side.
 
 ## 11. HTTP Body Size Gotchas
 

@@ -33,6 +33,7 @@
 - `READ_OF_COMMENTS` → `GET /comments`
 - `CREATE_COMMENT` → `POST /comment`
 - `DELETE_BY_ID_AND_VERSION` → `DELETE /:id/:version`
+- Parameters of one resource keep their declaration order for any count: `READ_x_BY_a_AND_b_AND_c` → `GET /x/{a}/{b}/{c}/`, `READ_m_BY_a_AND_b_OF_u_BY_d` → `GET /u/{d}/m/{a}/{b}/`
 - `READ_ANY` → `GET /*` (catch-all)
 - `READ_FILE_ANY` → `GET /*` (static file serving)
 

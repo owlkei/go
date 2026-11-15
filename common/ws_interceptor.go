@@ -1,7 +1,6 @@
 package common
 
 import (
-	"context"
 	"errors"
 	"reflect"
 
@@ -17,13 +16,16 @@ type WSInterceptorItem struct {
 	Common    CommonItem
 }
 
+type wsInterceptor interface {
+	Intercept(*ctx.WSContext, *aggregation.Aggregation) any
+}
+
 func AsWSInterceptor(interceptable any) (WSIntercept, bool) {
-	method := reflect.ValueOf(interceptable).MethodByName(InterceptorMethodName)
-	if !method.IsValid() {
+	layer, ok := interceptable.(wsInterceptor)
+	if !ok {
 		return nil, false
 	}
-	fn, ok := method.Interface().(WSIntercept)
-	return fn, ok
+	return layer.Intercept, true
 }
 
 func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []InterceptorItem {
@@ -55,17 +57,10 @@ func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, ref
 			)))
 		}
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range interceptorHandler.handlers {
-			fnName := GetFuncName(handler)
-			if event, ok := ParseWSFuncNameToEvent(fnName); ok {
-				targetedPatterns[event] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := wsHandlerTargets(interceptorHandler.handlers, "interceptor", interceptableType)
 
 		for pattern := range ws.funcNameByEvent {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				interceptorItemArr = append(interceptorItemArr, InterceptorItem{
 					WS: WSInterceptorItem{
 						EventName: pattern,
@@ -82,22 +77,12 @@ func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, ref
 	return interceptorItemArr
 }
 
-func BuildWSInterceptMiddleware(key string, interceptFn WSIntercept) ctx.WSHandler {
+func BuildWSInterceptMiddleware(name string, interceptFn WSIntercept) ctx.WSHandler {
 	return func(c *ctx.WSContext) {
 		aggregationInstance := aggregation.NewAggregation()
-
-		if aggregations, ok := c.Context().Value(WithValueKey(key)).([]*aggregation.Aggregation); ok {
-			aggregations = append(aggregations, aggregationInstance)
-			c.SetContext(context.WithValue(c.Context(), WithValueKey(key), aggregations))
-		} else {
-			c.SetContext(context.WithValue(c.Context(), WithValueKey(key), []*aggregation.Aggregation{aggregationInstance}))
-		}
-
-		aggregationInstance.IsMainHandlerCalled = false
-		aggregationInstance.SetMainData(nil)
-
+		aggregationInstance.Name = name
+		c.AddAggregation(aggregationInstance)
 		aggregationInstance.InterceptorData = interceptFn(c, aggregationInstance)
-
 		c.Next()
 	}
 }

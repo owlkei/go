@@ -488,8 +488,7 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchInCountAndOrder(t *testing
 	pattern := "chat.to.*"
 	pipeIntercept := func(_ *ctx.WSContext, agg *aggregation.Aggregation) any { return agg.Pipe() }
 	for _, name := range []string{"A", "B", "C"} {
-		mw := traceWSHandler(ev, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(pattern, pipeIntercept))
-		mw = tagWSInterceptorName(ev, pattern, name, mw)
+		mw := traceWSHandler(ev, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(name, pipeIntercept))
 		ws.eventMatcher.AddMiddlewares(pattern, mw)
 	}
 	ws.eventMatcher.AddInjectableHandler(pattern, func() string { return "ok" })
@@ -560,8 +559,7 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchWhenShortCircuited(t *test
 		{"ShortCircuit", shortCircuitIntercept},
 		{"C", pipeIntercept},
 	} {
-		mw := traceWSHandler(ev, trace.StagePreInterceptor, spec.name, common.BuildWSInterceptMiddleware(pattern, spec.fn))
-		mw = tagWSInterceptorName(ev, pattern, spec.name, mw)
+		mw := traceWSHandler(ev, trace.StagePreInterceptor, spec.name, common.BuildWSInterceptMiddleware(spec.name, spec.fn))
 		ws.eventMatcher.AddMiddlewares(pattern, mw)
 	}
 	ws.eventMatcher.AddInjectableHandler(pattern, func() string { return "ok" })

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
@@ -9,8 +10,8 @@ import (
 
 func BenchmarkInjectProvidersIntoHTTPExceptionFilters_ApplyAll(b *testing.B) {
 	r := buildBenchHTTP(20)
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		e := &ExceptionFilter{}
 		e.BindExceptionFilter(mockExFilter{})
 		e.BindExceptionFilter(mockExFilter{})
@@ -21,20 +22,51 @@ func BenchmarkInjectProvidersIntoHTTPExceptionFilters_ApplyAll(b *testing.B) {
 
 func BenchmarkAsHTTPExceptionFilter(b *testing.B) {
 	exceptionFilterable := mockExFilter{}
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		_, _ = AsHTTPExceptionFilter(exceptionFilterable)
 	}
 }
 
-func BenchmarkRunHTTPCatchChain(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	catchFns := []HTTPCatch{
-		func(*ctx.HTTPContext, *exception.Exception) {},
+func BenchmarkHTTPExceptionFilter_Call(b *testing.B) {
+	fn, ok := AsHTTPExceptionFilter(mockExFilter{})
+	if !ok {
+		b.Fatal("mockExFilter must match HTTPCatch")
 	}
+	c := ctx.NewHTTPContext()
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		fn(c, &ex)
+	}
+}
 
-	b.ResetTimer()
-	for range b.N {
-		RunHTTPCatchChain(c, catchFns, "boom")
+func BenchmarkRunHTTPCatchChain_Exception(b *testing.B) {
+	c := ctx.NewHTTPContext()
+	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		RunHTTPCatchChain(c, catchFns, ex)
+	}
+}
+
+func BenchmarkRunHTTPCatchChain_Pointer(b *testing.B) {
+	c := ctx.NewHTTPContext()
+	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		RunHTTPCatchChain(c, catchFns, &ex)
+	}
+}
+
+func BenchmarkRunHTTPCatchChain_Error(b *testing.B) {
+	c := ctx.NewHTTPContext()
+	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
+	err := errors.New("boom")
+	b.ReportAllocs()
+	for b.Loop() {
+		RunHTTPCatchChain(c, catchFns, err)
 	}
 }

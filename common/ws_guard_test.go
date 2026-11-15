@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -109,25 +110,6 @@ func TestAsWSGuard_WrongShape(t *testing.T) {
 	}
 }
 
-func TestHandleWSGuard_PanicOnDenied(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(r, "non-nil panic", "handleWSGuard(nil, false) should panic"))
-		}
-	}()
-	handleWSGuard(nil, false)
-}
-
-func TestHandleWSGuard_CallsNext(t *testing.T) {
-	called := false
-	c := &ctx.WSContext{}
-	c.Next = func() { called = true }
-	handleWSGuard(c, true)
-	if !called {
-		t.Error(test.DiffMessage(called, true, "handleWSGuard should call Next when access is allowed"))
-	}
-}
-
 func TestBuildWSGuardMiddleware_AllowedCallsNext(t *testing.T) {
 	called := false
 	c := &ctx.WSContext{}
@@ -151,4 +133,90 @@ func TestBuildWSGuardMiddleware_DeniedPanics(t *testing.T) {
 		}
 	}()
 	mw(c)
+}
+
+func recoverGuardRejectionWS(mw func(*ctx.WSContext), c *ctx.WSContext) (rec any) {
+	defer func() { rec = recover() }()
+	mw(c)
+	return nil
+}
+
+func TestBuildWSGuardMiddleware_AllowCallsNextOnce(t *testing.T) {
+	calls := 0
+	c := &ctx.WSContext{}
+	c.Next = func() { calls++ }
+
+	mw := BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return true })
+	if rec := recoverGuardRejectionWS(mw, c); rec != nil {
+		t.Error(test.DiffMessage(rec, nil, "B12: an allowing guard does not panic"))
+	}
+
+	if calls != 1 {
+		t.Error(test.DiffMessage(calls, 1, "B12: an allowing guard calls Next once"))
+	}
+}
+
+func TestBuildWSGuardMiddleware_PassesTheContextToTheGuard(t *testing.T) {
+	c := &ctx.WSContext{}
+	c.Next = func() {}
+	var got *ctx.WSContext
+
+	BuildWSGuardMiddleware(func(arg *ctx.WSContext) bool {
+		got = arg
+		return true
+	})(c)
+
+	if got != c {
+		t.Error(test.DiffMessage(got, c, "B12: the guard receives the request context"))
+	}
+}
+
+func TestBuildWSGuardMiddleware_RejectPanicsForbidden(t *testing.T) {
+	c := &ctx.WSContext{}
+	mw := BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return false })
+
+	rec := recoverGuardRejectionWS(mw, c)
+	ex, ok := rec.(exception.Exception)
+	if !ok {
+		t.Fatal(test.DiffMessage(rec, "an exception.Exception value", "B12: a rejection panics with an exception value"))
+	}
+	if ex.GetCode() != 403 {
+		t.Error(test.DiffMessage(ex.GetCode(), 403, "B12: code"))
+	}
+	if ex.GetMessage() != "Access denied" {
+		t.Error(test.DiffMessage(ex.GetMessage(), "Access denied", "B12: message"))
+	}
+	if ex.Error() != "Forbidden" {
+		t.Error(test.DiffMessage(ex.Error(), "Forbidden", "B12: Error()"))
+	}
+}
+
+func TestBuildWSGuardMiddleware_RejectDoesNotCallNext(t *testing.T) {
+	calls := 0
+	c := &ctx.WSContext{}
+	c.Next = func() { calls++ }
+
+	recoverGuardRejectionWS(BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return false }), c)
+
+	if calls != 0 {
+		t.Error(test.DiffMessage(calls, 0, "B12: a rejection never calls Next"))
+	}
+}
+
+func TestBuildWSGuardMiddleware_RejectionsAreIndependentValues(t *testing.T) {
+	c := &ctx.WSContext{}
+	mw := BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return false })
+
+	first, ok1 := recoverGuardRejectionWS(mw, c).(exception.Exception)
+	second, ok2 := recoverGuardRejectionWS(mw, c).(exception.Exception)
+
+	if !ok1 || !ok2 {
+		t.Fatal(test.DiffMessage([]bool{ok1, ok2}, []bool{true, true}, "B12: every rejection panics with a value"))
+	}
+	if first != second {
+		t.Error(test.DiffMessage(second, first, "B12: two rejections are equal values"))
+	}
+	if copyOf := NormalizeRecovered(first); copyOf == NormalizeRecovered(second) {
+		t.Error(test.DiffMessage(copyOf, "distinct copies", "B12: each recovered value is its own copy"))
+	}
 }

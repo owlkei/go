@@ -16,13 +16,16 @@ type WSExceptionFilterItem struct {
 	Common    CommonItem
 }
 
+type wsExceptionFilter interface {
+	Catch(*ctx.WSContext, *exception.Exception)
+}
+
 func AsWSExceptionFilter(exceptionFilterable any) (WSCatch, bool) {
-	method := reflect.ValueOf(exceptionFilterable).MethodByName(ExceptionFilterMethodName)
-	if !method.IsValid() {
+	layer, ok := exceptionFilterable.(wsExceptionFilter)
+	if !ok {
 		return nil, false
 	}
-	fn, ok := method.Interface().(WSCatch)
-	return fn, ok
+	return layer.Catch, true
 }
 
 func (e *ExceptionFilter) InjectProvidersIntoWSExceptionFilters(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []ExceptionFilterItem {
@@ -54,17 +57,10 @@ func (e *ExceptionFilter) InjectProvidersIntoWSExceptionFilters(ws *WS, cb func(
 			)))
 		}
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range exceptionFilterHandler.handlers {
-			fnName := GetFuncName(handler)
-			if event, ok := ParseWSFuncNameToEvent(fnName); ok {
-				targetedPatterns[event] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := wsHandlerTargets(exceptionFilterHandler.handlers, "exception filter", exceptionFilterableType)
 
 		for pattern := range ws.funcNameByEvent {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				exceptionFilterItemArr = append(exceptionFilterItemArr, ExceptionFilterItem{
 					WS: WSExceptionFilterItem{
 						EventName: pattern,
@@ -82,15 +78,20 @@ func (e *ExceptionFilter) InjectProvidersIntoWSExceptionFilters(ws *WS, cb func(
 }
 
 func RunWSCatchChain(c *ctx.WSContext, catchFns []WSCatch, rec any) {
-	if len(catchFns) == 0 {
-		return
+	for _, catchFn := range catchFns {
+		var isHandled bool
+		if rec, isHandled = runWSCatch(c, catchFn, rec); isHandled {
+			return
+		}
 	}
+}
 
+func runWSCatch(c *ctx.WSContext, catchFn WSCatch, rec any) (next any, isHandled bool) {
 	defer func() {
-		if r := recover(); r != nil {
-			RunWSCatchChain(c, catchFns[1:], r)
+		if !isHandled {
+			next = recover()
 		}
 	}()
-
-	catchFns[0](c, NormalizeRecovered(rec))
+	catchFn(c, NormalizeRecovered(rec))
+	return nil, true
 }

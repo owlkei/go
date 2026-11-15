@@ -46,20 +46,43 @@ func ExceptionFilterShapeError(exceptionFilterable any) error {
 }
 
 func NormalizeRecovered(rec any) *exception.Exception {
-	if ex, ok := rec.(exception.Exception); ok {
+	switch arg := rec.(type) {
+	case *exception.Exception:
+		if arg != nil {
+			return arg
+		}
+	case exception.Exception:
+		return &arg
+	case error:
+		return normalizeError(arg)
+	case string:
+		ex := exception.InternalServerErrorException(arg)
 		return &ex
 	}
 
-	response := http.StatusText(http.StatusInternalServerError)
-	switch arg := rec.(type) {
-	case error:
-		response = arg.Error()
-	case string:
-		response = arg
-	}
-
-	ex := exception.InternalServerErrorException(response, map[string]any{
-		"description": "Unknown exception",
-	})
+	ex := exception.InternalServerErrorException(http.StatusText(http.StatusInternalServerError))
 	return &ex
+}
+
+func normalizeError(err error) *exception.Exception {
+	if canWrap(err) {
+		var pointer *exception.Exception
+		if errors.As(err, &pointer) && pointer != nil {
+			return pointer
+		}
+		var value exception.Exception
+		if errors.As(err, &value) {
+			return &value
+		}
+	}
+	ex := exception.InternalServerErrorException(err.Error())
+	return &ex
+}
+
+func canWrap(err error) bool {
+	switch err.(type) {
+	case interface{ Unwrap() error }, interface{ Unwrap() []error }, interface{ As(any) bool }:
+		return true
+	}
+	return false
 }

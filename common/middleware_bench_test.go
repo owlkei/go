@@ -6,8 +6,8 @@ import (
 
 func BenchmarkInjectProvidersIntoHTTPMiddlewares_ApplyAll(b *testing.B) {
 	r := buildBenchHTTP(20)
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		m := &Middleware{}
 		m.BindMiddleware(mockMiddlewareFn{})
 		m.BindMiddleware(mockMiddlewareFn{})
@@ -18,8 +18,8 @@ func BenchmarkInjectProvidersIntoHTTPMiddlewares_ApplyAll(b *testing.B) {
 
 func BenchmarkInjectProvidersIntoWSMiddlewares_ApplyAll(b *testing.B) {
 	ws := buildBenchWS(20)
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		m := &Middleware{}
 		m.BindMiddleware(mockMiddlewareFn{})
 		m.BindMiddleware(mockMiddlewareFn{})

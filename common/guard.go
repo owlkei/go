@@ -4,10 +4,13 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 )
 
 const GuardMethodName = "CanActivate"
+
+var accessDeniedException = exception.ForbiddenException("Access denied")
 
 type Guarder any
 

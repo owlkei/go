@@ -440,31 +440,29 @@ Handler panics with exception.BadRequestException("invalid")
 recover() catches panic value
         ↓
 common.NormalizeRecovered(value) converts to *exception.Exception
-  - Extracts message
-  - Captures stack trace via runtime.Stack()
-  - Wraps in Exception if needed
         ↓
-Exception filter chain called with exception
+Exception filter chain called with exception (a loop; a filter that panics passes to the next)
         ↓
-Filter's Catch(exception, context) handles response
+Filter's Catch(context, exception) handles response
         ↓
 HTTP response written (or WS message sent)
 ```
 
 **NormalizeRecovered() Behavior**:
-- Input: `interface{}` (panic value)
-- If already `*exception.Exception`: return as-is
-- If `error`: wrap in Exception with error message
-- If `string`: wrap in Exception with string message
-- Also captures `runtime.Stack()` trace
+- Input: `any` (panic value)
+- A non-nil `*exception.Exception`: returned as is (a filter that re-throws `panic(ex)` keeps the code)
+- An `exception.Exception` value: a pointer to a copy
+- An `error` that wraps an exception (`errors.As`): that exception
+- Any other `error`: 500, message `err.Error()`; a `string`: 500, message the string
+- Anything else (nil, a nil pointer, an int, a struct): 500, message `"Internal Server Error"`
+- No stack trace is captured
 
 ### 5.3 Exception Filter Architecture
 
 **Filter Interface**:
 ```go
-type ExceptionFilterable interface {
-    Catch(*exception.Exception, *ctx.HTTPContext)
-}
+type ExceptionFilterable any // matched by its method:
+// Catch(*ctx.HTTPContext, *exception.Exception)
 ```
 
 **Execution Order**:
@@ -546,7 +544,6 @@ type ExceptionFilterable interface {
 4. **Panic Recovery**:
    - Only exception filters can recover panics
    - Panics in guards/interceptors are NOT recoverable (propagate)
-   - Stack traces are captured during NormalizeRecovered()
 
 5. **Module Initialization**:
    - Module tree is immutable after `app.Create()`
@@ -568,8 +565,8 @@ type ExceptionFilterable interface {
    - There is currently NO public setter to change this at runtime — the field (`app.maxRequestBodyBytes`) is only set at construction
    - Exceeding the cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw panic (ctx/http_body.go)
 
-9. **Cross-Cutting Concern Singletons** (Guard/Middleware/Interceptor/ExceptionFilter):
-   - See [package-reference.md](package-reference.md), package `common`, section "`common.Construct` — Singleton-By-Type-Name Caveat" for full detail
-   - Any bound instance (global or per-controller) is deduplicated by **Go type name only** via `common.Construct`, regardless of the field values on the struct literal passed in
-   - Binding the same struct type twice with different configuration silently reuses whichever instance was constructed first — this is NOT per-Provider-style fresh-per-injection behavior
+9. **Cross-Cutting Concern Instances** (Guard/Middleware/Interceptor/ExceptionFilter):
+   - See [package-reference.md](package-reference.md), package `common`, section "`common.Construct` — One Instance Per Configuration" for full detail
+   - Bound instances are shared per configuration: same `reflect.Type`, same constructor name, `reflect.DeepEqual` value
+   - Binding the same struct type twice with different configuration gives two instances; equal configurations share one
 

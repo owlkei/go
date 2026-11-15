@@ -7,14 +7,20 @@ import (
 	"sync"
 )
 
+type singletonKey struct {
+	typ         reflect.Type
+	constructor string
+}
+
 type singletonEntry struct {
-	once sync.Once
-	val  any
+	configuration any
+	val           any
+	once          sync.Once
 }
 
 var (
 	singletonsMu sync.Mutex
-	singletons   = make(map[string]*singletonEntry)
+	singletons   = make(map[singletonKey][]*singletonEntry)
 )
 
 func GetFuncName(handler any) string {
@@ -110,8 +116,8 @@ func ParseFuncNameToURL(fnName string) (string, string, string) {
 
 		if s == TokenBy || s == TokenAnd {
 			firstSlashIndex := strings.Index(route, "/")
-			shouldConcatRoute := route[:firstSlashIndex]
-			remainRoutes := route[firstSlashIndex:]
+			resource := route[:firstSlashIndex]
+			rest := route[firstSlashIndex:]
 
 			i++
 			start := i
@@ -121,18 +127,8 @@ func ParseFuncNameToURL(fnName string) (string, string, string) {
 			param := strings.Join(subStr[start:i], "_")
 			j = i
 
-			if firstSlashIndex > -1 && firstSlashIndex < len(route)-1 {
-				if route[firstSlashIndex+1:firstSlashIndex+2] == "{" {
-					firstParamIndex := strings.Index(remainRoutes, "}/")
-					if firstParamIndex > -1 {
-						route = shouldConcatRoute + remainRoutes[:firstParamIndex+1] + "/{" + param + "}" + remainRoutes[firstParamIndex+1:]
-					}
-				} else {
-					route = shouldConcatRoute + "/{" + param + "}" + remainRoutes
-				}
-			} else {
-				route = shouldConcatRoute + "/{" + param + "}" + remainRoutes
-			}
+			at := paramInsertIndex(rest)
+			route = resource + rest[:at] + "/{" + param + "}" + rest[at:]
 			continue
 		}
 
@@ -186,20 +182,32 @@ func ParseWSFuncNameToEvent(fnName string) (string, bool) {
 	return b.String(), true
 }
 
+func paramInsertIndex(rest string) int {
+	at := 0
+	for at+1 < len(rest) && rest[at+1] == '{' {
+		end := strings.Index(rest[at:], "}/")
+		if end < 0 {
+			break
+		}
+		at += end + 1
+	}
+	return at
+}
+
 func Construct(obj any, constructor string) any {
-	newObjValue := reflect.ValueOf(obj)
-	key := newObjValue.Type().String()
+	value := reflect.ValueOf(obj)
+	key := singletonKey{typ: value.Type(), constructor: constructor}
 
 	singletonsMu.Lock()
-	entry, ok := singletons[key]
-	if !ok {
-		entry = &singletonEntry{}
-		singletons[key] = entry
+	entry := findSingleton(singletons[key], obj)
+	if entry == nil {
+		entry = &singletonEntry{configuration: snapshotConfiguration(obj, value)}
+		singletons[key] = append(singletons[key], entry)
 	}
 	singletonsMu.Unlock()
 
 	entry.once.Do(func() {
-		if objConstructor := newObjValue.MethodByName(constructor); objConstructor.IsValid() {
+		if objConstructor := value.MethodByName(constructor); objConstructor.IsValid() {
 			entry.val = objConstructor.Call(nil)[0].Interface()
 		} else {
 			entry.val = obj
@@ -207,6 +215,24 @@ func Construct(obj any, constructor string) any {
 	})
 
 	return entry.val
+}
+
+func snapshotConfiguration(obj any, value reflect.Value) any {
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return obj
+	}
+	snapshot := reflect.New(value.Elem().Type())
+	snapshot.Elem().Set(value.Elem())
+	return snapshot.Interface()
+}
+
+func findSingleton(entries []*singletonEntry, configuration any) *singletonEntry {
+	for _, entry := range entries {
+		if reflect.DeepEqual(entry.configuration, configuration) {
+			return entry
+		}
+	}
+	return nil
 }
 
 func ToWSEventName(s string) string {

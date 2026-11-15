@@ -21,13 +21,16 @@ type HTTPExceptionFilterItem struct {
 	Common  CommonItem
 }
 
+type httpExceptionFilter interface {
+	Catch(*ctx.HTTPContext, *exception.Exception)
+}
+
 func AsHTTPExceptionFilter(exceptionFilterable any) (HTTPCatch, bool) {
-	method := reflect.ValueOf(exceptionFilterable).MethodByName(ExceptionFilterMethodName)
-	if !method.IsValid() {
+	layer, ok := exceptionFilterable.(httpExceptionFilter)
+	if !ok {
 		return nil, false
 	}
-	fn, ok := method.Interface().(HTTPCatch)
-	return fn, ok
+	return layer.Catch, true
 }
 
 func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []ExceptionFilterItem {
@@ -59,17 +62,10 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 			)))
 		}
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range exceptionFilterHandler.handlers {
-			fnName := GetFuncName(handler)
-			if pattern, ok := r.FuncNameToPatternMap[fnName]; ok {
-				targetedPatterns[pattern] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := httpHandlerTargets(r, exceptionFilterHandler.handlers, "exception filter", exceptionFilterableType)
 
 		for pattern := range r.PatternToFuncNameMap {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
 
@@ -94,15 +90,20 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 }
 
 func RunHTTPCatchChain(c *ctx.HTTPContext, catchFns []HTTPCatch, rec any) {
-	if len(catchFns) == 0 {
-		return
+	for _, catchFn := range catchFns {
+		var isHandled bool
+		if rec, isHandled = runHTTPCatch(c, catchFn, rec); isHandled {
+			return
+		}
 	}
+}
 
+func runHTTPCatch(c *ctx.HTTPContext, catchFn HTTPCatch, rec any) (next any, isHandled bool) {
 	defer func() {
-		if r := recover(); r != nil {
-			RunHTTPCatchChain(c, catchFns[1:], r)
+		if !isHandled {
+			next = recover()
 		}
 	}()
-
-	catchFns[0](c, NormalizeRecovered(rec))
+	catchFn(c, NormalizeRecovered(rec))
+	return nil, true
 }

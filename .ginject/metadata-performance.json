@@ -156,8 +156,8 @@
     },
     "opportunity_3": {
       "name": "Reduce guard/interceptor reflection",
-      "current": "each invocation uses reflection",
-      "potential_savings": "10-30μs per pipeline stage"
+      "current": "done (design 0005): guards, interceptors and filters are called through compiled method values, interceptor state is a per-request list on the context",
+      "potential_savings": "realized: about 350 ns and 1 allocation per layer call"
     },
     "opportunity_4": {
       "name": "Lazy stack trace capture",

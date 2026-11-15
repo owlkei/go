@@ -9,8 +9,8 @@ import (
 
 func BenchmarkInjectProvidersIntoWSExceptionFilters_ApplyAll(b *testing.B) {
 	ws := buildBenchWS(20)
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		e := &ExceptionFilter{}
 		e.BindExceptionFilter(mockWSExFilter{})
 		e.BindExceptionFilter(mockWSExFilter{})
@@ -21,20 +21,31 @@ func BenchmarkInjectProvidersIntoWSExceptionFilters_ApplyAll(b *testing.B) {
 
 func BenchmarkAsWSExceptionFilter(b *testing.B) {
 	exceptionFilterable := mockWSExFilter{}
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		_, _ = AsWSExceptionFilter(exceptionFilterable)
+	}
+}
+
+func BenchmarkWSExceptionFilter_Call(b *testing.B) {
+	fn, ok := AsWSExceptionFilter(mockWSExFilter{})
+	if !ok {
+		b.Fatal("mockWSExFilter must match WSCatch")
+	}
+	c := ctx.NewWSContext()
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		fn(c, &ex)
 	}
 }
 
 func BenchmarkRunWSCatchChain(b *testing.B) {
 	c := ctx.NewWSContext()
-	catchFns := []WSCatch{
-		func(*ctx.WSContext, *exception.Exception) {},
-	}
-
-	b.ResetTimer()
-	for range b.N {
-		RunWSCatchChain(c, catchFns, "boom")
+	catchFns := []WSCatch{func(*ctx.WSContext, *exception.Exception) {}}
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		RunWSCatchChain(c, catchFns, ex)
 	}
 }

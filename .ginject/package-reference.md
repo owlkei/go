@@ -209,7 +209,7 @@ type WSContext struct {
 
 ### Cross-Cutting Concern Types
 
-**Only `MiddlewareFn` is a real, compile-time Go interface. `Guarder`, `Interceptable`, and `ExceptionFilterable` are all `type X any` — checked at bind time via reflection**, not the compiler:
+**Only `MiddlewareFn` is a real, compile-time Go interface. `Guarder`, `Interceptable`, and `ExceptionFilterable` are all `type X any` — checked at bind time by method name and signature** (a type assertion to an unexported interface, then the method value), not the compiler:
 
 | Declared type | Real definition | Checked shape (func alias) | Bind-time check fails with |
 |---|---|---|---|
@@ -218,7 +218,7 @@ type WSContext struct {
 | `Interceptable` | `any` | `HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any`, method name `"Intercept"` | `InterceptorShapeError` |
 | `ExceptionFilterable` | `any` | `HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)`, method name `"Catch"` | `ExceptionFilterShapeError` |
 
-**`Catch`'s parameter order is `(*ctx.HTTPContext, *exception.Exception)` — HTTPContext FIRST.** A common mistake (present in older docs and even in the project's own `CLAUDE.md`) is writing `Catch(*exception.Exception, *ctx.HTTPContext)`, which fails the reflection shape check.
+**`Catch`'s parameter order is `(*ctx.HTTPContext, *exception.Exception)` — HTTPContext FIRST.** A common mistake (present in older docs and even in the project's own `CLAUDE.md`) is writing `Catch(*exception.Exception, *ctx.HTTPContext)`, which fails the shape check.
 
 A bare func literal does **not** satisfy any of these — you must bind a struct value with the matching method. Example:
 ```go
@@ -261,19 +261,24 @@ type UserController struct {
 
 `common.HTTP` itself only carries routing bookkeeping (`PatternToFuncNameMap`, `RouterMap`, etc.) — it has no `Middleware`/`Guard`/`Interceptor`/`ExceptionFilter` fields; those are separate embeds. `common.WS` follows the same pattern for WebSocket controllers (`funcNameByEvent`, `EventMap`).
 
-### `common.Construct` — Singleton-By-Type-Name Caveat
+### `common.Construct` — One Instance Per Configuration
 
-`Construct(obj any, constructor string) any` (common/fn.go) backs **every** bind of a Middleware/Guard/Interceptor/ExceptionFilter (global or per-controller, HTTP and WS). If the bound type defines an optional `New*()` constructor (`NewMiddleware`, `NewGuard`, `NewInterceptor`, `NewExceptionFilter`), `Construct` calls it **exactly once per Go type name**, process-wide, via a per-key `sync.Once`, and caches the result — every later bind of that same type reuses the cached instance regardless of the field values on the literal passed in.
+`Construct(obj any, constructor string) any` (common/fn.go) backs **every** bind of a Middleware/Guard/Interceptor/ExceptionFilter (global or per-controller, HTTP and WS). Its cache key is the bound value's `reflect.Type` plus the constructor name (`NewMiddleware`, `NewGuard`, `NewInterceptor`, `NewExceptionFilter`); under one key, values are compared with `reflect.DeepEqual` (a pointer is compared by a shallow snapshot of its pointee taken before the constructor runs).
 
-**Consequence**: binding the same struct type twice with different configuration silently collapses to one instance — whichever was constructed first wins everywhere:
+- Equal configurations share: the constructor runs once (per-entry `sync.Once`, also under concurrent calls) and every equal bind gets the identical result. A rate limiter bound with the same options on two controllers stays one limiter.
+- Different configurations get their own instance:
 ```go
-// Controller A:
+// Controller A and B each get their own cors.CORS instance.
 c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://a.example.com"}})
-// Controller B (different config, same Go type):
 c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://b.example.com"}})
-// Whichever of A/B's cors.CORS is constructed FIRST wins for BOTH controllers.
 ```
-This is the opposite of `Provider`'s per-injection semantics — do not assume a fresh instance per bind for any type that defines a `New*()` method (or is bound as a bare struct at all, since even without a `New*()` method the literal itself is still funneled through `Construct` and cached by type name).
+- Two types whose `Type().String()` is equal (`a/auth.Guard`, `b/auth.Guard`) never share; the same value built with two constructor names gets each constructor's own result.
+- Without the constructor method, the result is the value given in the first call of that configuration.
+- A value holding a non-nil func, or a different channel, is never deeply equal to another, so it is never shared.
+
+### Binding targets
+
+`Bind…(layer, handlers...)` with no handlers binds every route (HTTP) or event (WS) of the controller. With handlers, only those that are routes (`FuncNameToPatternMap`) or events (`ParseWSFuncNameToEvent`) are bound; a handler of the other transport binds nothing on this side; a handler given twice yields one item. A handler that is neither (a helper method, `nil`, a non-func) panics at `Create()`: `invalid guard: <LayerType> is bound to '<name>', which is not a handler of the controller` (`invalid middleware`, `invalid interceptor`, `invalid exception filter`).
 
 ---
 

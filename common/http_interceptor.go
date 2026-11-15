@@ -1,7 +1,6 @@
 package common
 
 import (
-	"context"
 	"errors"
 	"reflect"
 
@@ -22,13 +21,16 @@ type HTTPInterceptorItem struct {
 	Common  CommonItem
 }
 
+type httpInterceptor interface {
+	Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any
+}
+
 func AsHTTPInterceptor(interceptable any) (HTTPIntercept, bool) {
-	method := reflect.ValueOf(interceptable).MethodByName(InterceptorMethodName)
-	if !method.IsValid() {
+	layer, ok := interceptable.(httpInterceptor)
+	if !ok {
 		return nil, false
 	}
-	fn, ok := method.Interface().(HTTPIntercept)
-	return fn, ok
+	return layer.Intercept, true
 }
 
 func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []InterceptorItem {
@@ -60,17 +62,10 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 			)))
 		}
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range interceptorHandler.handlers {
-			fnName := GetFuncName(handler)
-			if pattern, ok := r.FuncNameToPatternMap[fnName]; ok {
-				targetedPatterns[pattern] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := httpHandlerTargets(r, interceptorHandler.handlers, "interceptor", interceptableType)
 
 		for pattern := range r.PatternToFuncNameMap {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
 
@@ -94,22 +89,12 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 	return interceptorItemArr
 }
 
-func BuildHTTPInterceptMiddleware(key string, interceptFn HTTPIntercept) ctx.HTTPHandler {
+func BuildHTTPInterceptMiddleware(name string, interceptFn HTTPIntercept) ctx.HTTPHandler {
 	return func(c *ctx.HTTPContext) {
 		aggregationInstance := aggregation.NewAggregation()
-
-		if aggregations, ok := c.Context().Value(WithValueKey(key)).([]*aggregation.Aggregation); ok {
-			aggregations = append(aggregations, aggregationInstance)
-			c.Request = c.WithContext(context.WithValue(c.Context(), WithValueKey(key), aggregations))
-		} else {
-			c.Request = c.WithContext(context.WithValue(c.Context(), WithValueKey(key), []*aggregation.Aggregation{aggregationInstance}))
-		}
-
-		aggregationInstance.IsMainHandlerCalled = false
-		aggregationInstance.SetMainData(nil)
-
+		aggregationInstance.Name = name
+		c.AddAggregation(aggregationInstance)
 		aggregationInstance.InterceptorData = interceptFn(c, aggregationInstance)
-
 		c.Next()
 	}
 }

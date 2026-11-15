@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/routing"
 )
 
@@ -38,10 +39,26 @@ func buildBenchWS(n int) *WS {
 
 var benchCB = func(_ int, _ reflect.Type, _ reflect.Value, _ reflect.Value) {}
 
-func BenchmarkNormalizeRecovered(b *testing.B) {
+func BenchmarkNormalizeRecovered_Exception(b *testing.B) {
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = NormalizeRecovered(ex)
+	}
+}
+
+func BenchmarkNormalizeRecovered_Pointer(b *testing.B) {
+	ex := exception.NotFoundException("nope")
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = NormalizeRecovered(&ex)
+	}
+}
+
+func BenchmarkNormalizeRecovered_Error(b *testing.B) {
 	err := errors.New("boom")
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		_ = NormalizeRecovered(err)
 	}
 }

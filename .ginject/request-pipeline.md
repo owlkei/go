@@ -114,7 +114,7 @@ func (c UserController) NewController() Controller {
 }
 ```
 
-**Optional `NewMiddleware()` constructor** — if the bound type defines `NewMiddleware() MiddlewareFn`, the framework calls it once (via `common.Construct`) instead of using the literal directly — the standard place to precompute/validate config once instead of per-request (e.g. `middlewares/cors.CORS.NewMiddleware()` compiles its options once). **Caveat**: `Construct` caches by Go type name only, process-wide — binding two differently-configured instances of the same type anywhere in the app silently collapses to whichever was constructed first. Same applies to Guard/Interceptor/ExceptionFilter below. Full detail: [package-reference.md](package-reference.md), package `common`.
+**Optional `NewMiddleware()` constructor** — if the bound type defines `NewMiddleware() MiddlewareFn`, the framework calls it once (via `common.Construct`) instead of using the literal directly — the standard place to precompute/validate config once instead of per-request (e.g. `middlewares/cors.CORS.NewMiddleware()` compiles its options once). `Construct` keeps one instance per configuration (same type, same constructor name, `reflect.DeepEqual` value): equal bindings share an instance, different ones get their own. Same applies to Guard/Interceptor/ExceptionFilter below. A layer bound to a method that is neither a route nor an event of the controller panics at `Create()` (`invalid middleware: … is bound to '<name>', which is not a handler of the controller`); a handler of the other transport binds nothing on this side. Full detail: [package-reference.md](package-reference.md), package `common`.
 
 ### 2.3 Middleware Execution Order
 
@@ -137,11 +137,11 @@ func (c UserController) NewController() Controller {
 
 ### 3.1 Guard Interface
 
-`Guarder` is declared as `type Guarder any` (common/guard.go) — there is NO compile-time interface. The framework checks the shape via reflection (`reflect.ValueOf(x).MethodByName("CanActivate")`) and requires it to match this func type exactly:
+`Guarder` is declared as `type Guarder any` (common/guard.go) — there is NO compile-time interface. The framework matches the method by name and signature (a type assertion to an unexported interface, then the method value, so a guard call costs no reflection) and requires it to match this func type exactly:
 ```go
 type HTTPCanActivate = func(*ctx.HTTPContext) bool
 ```
-A bound value that has no `CanActivate` method matching this signature fails at bind time with `common.GuardShapeError`.
+A bound value that has no `CanActivate` method matching this signature fails at bind time with `common.GuardShapeError`. A guard that returns `false` panics `exception.ForbiddenException("Access denied")` (403, `Error()` is `"Forbidden"`), built once at package level.
 
 **Responsibilities**:
 - Inspect request (auth, permissions, etc.)
@@ -203,7 +203,7 @@ func (c UserController) NewController() Controller {
 
 ### 4.1 Interceptor Interface
 
-`Interceptable` is declared as `type Interceptable any` (common/interceptor.go) — checked via reflection against this func shape, not a compile-time interface:
+`Interceptable` is declared as `type Interceptable any` (common/interceptor.go) — matched by method name and signature against this func shape, not a compile-time interface:
 ```go
 type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 ```
@@ -215,8 +215,11 @@ type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 
 ### 4.2 Intercept() Execution
 
-`Intercept` runs once, before the handler, with a fresh `*aggregation.Aggregation`; its return value
-is stored in `aggregation.InterceptorData`.
+`Intercept` runs once, before the handler, with a fresh `*aggregation.Aggregation` whose `Name` is
+the interceptor's name; the middleware adds it to the context first (`c.AddAggregation`), then stores
+the return value in `aggregation.InterceptorData` and calls `c.Next()`. `c.Aggregations()` lists them
+in execution order; `core` reads that list after the handler. `c.Request` is never replaced, and
+`Reset` empties the list (one allocation per interceptor per request: the aggregation).
 
 ```
 Intercept(httpCtx, aggregation) called before the handler
@@ -281,7 +284,7 @@ func (c UserController) NewController() Controller {
 
 ### 5.1 Exception Filter Interface
 
-`ExceptionFilterable` is declared as `type ExceptionFilterable any` (common/exception_filter.go) — checked via reflection against this func shape. Note the parameter order: `*ctx.HTTPContext` comes FIRST, `*exception.Exception` SECOND (common/http_exception_filter.go):
+`ExceptionFilterable` is declared as `type ExceptionFilterable any` (common/exception_filter.go) — matched by method name and signature against this func shape. Note the parameter order: `*ctx.HTTPContext` comes FIRST, `*exception.Exception` SECOND (common/http_exception_filter.go):
 ```go
 type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
 ```
@@ -305,6 +308,12 @@ Exception filter chain called
     ↓
 Filter.Catch(httpCtx, exception) → writes response
 ```
+
+`common.RunHTTPCatchChain` / `RunWSCatchChain` loop over the filters: a filter that returns handled the
+exception; a filter that panics passes `NormalizeRecovered(<its panic value>)` to the next one; when
+every filter panics the chain returns, it never lets a panic out. A filter that re-throws the pointer
+it got (`panic(ex)`) keeps the code, and an error that wraps an exception (`fmt.Errorf("…: %w", ex)`)
+is recovered with `errors.As`.
 
 ### 5.3 Filter Execution Order
 

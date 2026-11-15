@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"
 )
 
-const currentUserKey core.WithValueKey = "shop.currentUser"
+type contextKey string
+
+const currentUserKey contextKey = "shop.currentUser"
 
 type AuthGuard struct {
 	common.Guard

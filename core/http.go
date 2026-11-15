@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
@@ -123,7 +122,7 @@ func (http *HTTP) handleRequest(c *ctx.HTTPContext) {
 
 					data := http.resolveAndCallHandler(matchedRoute, injectableHandler, c)
 
-					if aggregations, ok := c.Context().Value(WithValueKey(matchedRoute)).([]*aggregation.Aggregation); ok {
+					if aggregations := c.Aggregations(); len(aggregations) > 0 {
 						var aggregatedData any
 						isMainHandlerCalled := true
 

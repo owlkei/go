@@ -5,7 +5,6 @@ import (
 	"reflect"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/routing"
@@ -21,13 +20,16 @@ type HTTPGuardItem struct {
 	Common  CommonItem
 }
 
+type httpGuard interface {
+	CanActivate(*ctx.HTTPContext) bool
+}
+
 func AsHTTPGuard(guarder any) (HTTPCanActivate, bool) {
-	method := reflect.ValueOf(guarder).MethodByName(GuardMethodName)
-	if !method.IsValid() {
+	layer, ok := guarder.(httpGuard)
+	if !ok {
 		return nil, false
 	}
-	fn, ok := method.Interface().(HTTPCanActivate)
-	return fn, ok
+	return layer.CanActivate, true
 }
 
 func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []GuardItem {
@@ -59,17 +61,10 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 			)))
 		}
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range guardHandler.handlers {
-			fnName := GetFuncName(handler)
-			if pattern, ok := r.FuncNameToPatternMap[fnName]; ok {
-				targetedPatterns[pattern] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := httpHandlerTargets(r, guardHandler.handlers, "guard", guarderType)
 
 		for pattern := range r.PatternToFuncNameMap {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
 
@@ -94,13 +89,10 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 }
 
 func BuildHTTPGuardMiddleware(canActivateFn HTTPCanActivate) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) { handleHTTPGuard(c, canActivateFn(c)) }
-}
-
-func handleHTTPGuard(c *ctx.HTTPContext, canActive bool) {
-	if canActive {
+	return func(c *ctx.HTTPContext) {
+		if !canActivateFn(c) {
+			panic(accessDeniedException)
+		}
 		c.Next()
-	} else {
-		panic(exception.ForbiddenException("Access denied"))
 	}
 }

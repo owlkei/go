@@ -9,8 +9,8 @@ func BenchmarkAddHandlerToEventMap(b *testing.B) {
 		"SUBSCRIBE_user_typing", "SUBSCRIBE_user_presence", "SUBSCRIBE_notification",
 		"SUBSCRIBE_ALL",
 	}
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		orig := InsertedEvents
 		InsertedEvents = make(map[string]string)
 		ws := &WS{}
@@ -25,8 +25,8 @@ func BenchmarkWSFnToSubject(b *testing.B) {
 	fns := []string{
 		"SUBSCRIBE_chat_message", "SUBSCRIBE_chat_ANY", "SUBSCRIBE_chat_ALL", "SUBSCRIBE_ALL",
 	}
-	b.ResetTimer()
-	for range b.N {
+	b.ReportAllocs()
+	for b.Loop() {
 		for _, fn := range fns {
 			ParseWSFuncNameToEvent(fn)
 		}

@@ -5,7 +5,6 @@ import (
 	"reflect"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 )
 
@@ -16,13 +15,16 @@ type WSGuardItem struct {
 	Common    CommonItem
 }
 
+type wsGuard interface {
+	CanActivate(*ctx.WSContext) bool
+}
+
 func AsWSGuard(guarder any) (WSCanActivate, bool) {
-	method := reflect.ValueOf(guarder).MethodByName(GuardMethodName)
-	if !method.IsValid() {
+	layer, ok := guarder.(wsGuard)
+	if !ok {
 		return nil, false
 	}
-	fn, ok := method.Interface().(WSCanActivate)
-	return fn, ok
+	return layer.CanActivate, true
 }
 
 func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []GuardItem {
@@ -54,17 +56,10 @@ func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, r
 			)))
 		}
 
-		targetedPatterns := map[string]bool{}
-		for _, handler := range guardHandler.handlers {
-			fnName := GetFuncName(handler)
-			if event, ok := ParseWSFuncNameToEvent(fnName); ok {
-				targetedPatterns[event] = true
-			}
-		}
-		applyAll := len(targetedPatterns) == 0
+		targets := wsHandlerTargets(guardHandler.handlers, "guard", guarderType)
 
 		for pattern := range ws.funcNameByEvent {
-			if applyAll || targetedPatterns[pattern] {
+			if targets.has(pattern) {
 				guardItemArr = append(guardItemArr, GuardItem{
 					WS: WSGuardItem{
 						EventName: pattern,
@@ -82,14 +77,10 @@ func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, r
 }
 
 func BuildWSGuardMiddleware(canActivateFn WSCanActivate) ctx.WSHandler {
-	return func(c *ctx.WSContext) { handleWSGuard(c, canActivateFn(c)) }
-}
-
-func handleWSGuard(c *ctx.WSContext, canActive bool) {
-	if canActive {
+	return func(c *ctx.WSContext) {
+		if !canActivateFn(c) {
+			panic(accessDeniedException)
+		}
 		c.Next()
-	} else {
-
-		panic(exception.ForbiddenException("Access denied"))
 	}
 }

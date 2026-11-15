@@ -90,3 +90,16 @@ func TestArgumentMetadata_Zero(t *testing.T) {
 		t.Error(test.DiffMessage(m.ParamType, "", "zero ParamType"))
 	}
 }
+
+func TestArgumentMetadata_ContextTypeConstants(t *testing.T) {
+	if ContextTypeHTTP != "http" {
+		t.Error(test.DiffMessage(ContextTypeHTTP, "http", "Q3: ContextTypeHTTP"))
+	}
+	if ContextTypeWS != "ws" {
+		t.Error(test.DiffMessage(ContextTypeWS, "ws", "Q3: ContextTypeWS"))
+	}
+	m := ArgumentMetadata{ContextType: ContextTypeWS, ParamType: WSPayloadPipeableKey}
+	if m.ContextType != "ws" {
+		t.Error(test.DiffMessage(m.ContextType, "ws", "Q3: the constant fills ContextType"))
+	}
+}

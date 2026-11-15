@@ -4,7 +4,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
@@ -199,7 +198,7 @@ func dispatchWSEvent(conn *WSConnection, ws *WS, pattern, topic string, item wse
 
 	data := ws.resolveAndCallHandler(item.Handler, c)
 
-	if aggregations, ok := c.Context().Value(WithValueKey(pattern)).([]*aggregation.Aggregation); ok {
+	if aggregations := c.Aggregations(); len(aggregations) > 0 {
 		var aggregatedData any
 		totalAggregations := len(aggregations)
 

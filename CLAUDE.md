@@ -120,10 +120,11 @@ App-wide bindings: `app.BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalI
 Contracts:
 - Middleware is a real interface, `common.MiddlewareFn`: `Use(*http.Request, http.ResponseWriter, ctx.Next)`.
 - Guards, interceptors and exception filters are **not** interfaces: `common.Guarder`, `Interceptable`
-  and `ExceptionFilterable` are `any`. The framework looks the method up by name with reflection
-  (`GuardMethodName = "CanActivate"`, `"Intercept"`, `"Catch"`) and checks its signature, which differs
-  for HTTP and WS (`common/http_*.go`, `common/ws_*.go`); a wrong shape panics at startup
-  (`GuardShapeError` and friends):
+  and `ExceptionFilterable` are `any`. The framework matches the method by name and signature
+  (`GuardMethodName = "CanActivate"`, `"Intercept"`, `"Catch"`) through an unexported interface, which
+  differs for HTTP and WS (`common/http_*.go`, `common/ws_*.go`); a wrong shape panics at startup
+  (`GuardShapeError` and friends), and so does a layer bound to a method that is not a handler of the
+  controller (`invalid guard: … is bound to '<name>', which is not a handler of the controller`):
   - HTTP: `CanActivate(*ctx.HTTPContext) bool` · `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` · `Catch(*ctx.HTTPContext, *exception.Exception)`
   - WS: the same with `*ctx.WSContext`.
   - Note the `Catch` argument order: context first, exception second.

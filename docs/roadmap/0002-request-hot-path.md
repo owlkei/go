@@ -27,7 +27,7 @@ the commit), README.
 | 2 | Trie and router: `internal/ds`, `routing`, `versioning` (route match is on every request) | tdd | docs/design/0002-routing.md | 1 | deep dive done; match benchmarks before → after | done |
 | 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | done |
 | 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | done |
-| 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | todo |
+| 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | done |
 | 6 | Handler injection: `core/fn.go` (argument resolution and `reflect.Value.Call` per request: hot spot 1, the largest) | tdd | docs/design/0006-injection.md | 3, 5 | deep dive done for `fn.go`; the rest of `core` untouched | todo |
 | 7 | Measure: rerun `make bench-compare` and the load test, compare with the baseline | light | - | 1-6 | `docs/review/http-0002.md` with before → after per scenario | todo |
 
@@ -77,3 +77,10 @@ the commit), README.
   text looked up per call, as designed). The tester split one E9 case: boxing an options value at
   a call site whose result escapes allocates at the caller, so that case is measured with a local
   result.
+- Step 5: done. Chain 5.29 → 4.04 µs (33 → 25 allocs), Exception 3.90 → 3.52 µs; every route one
+  allocation fewer (the boxed `WithValueKey` lookup is gone). Guard / interceptor / filter calls
+  ~400 → ~4 ns. Interceptor middleware 95 ns, 2 allocs (design target 40 ns; the 192-byte
+  aggregation and the nil-reset list, since 0003 H3 is deferred). `Construct` 41 → 223 ns (cold,
+  `DeepEqual`). WS files of `common` and `core/read_loop.go` changed only for the shared API; the
+  tester updated `core/read_loop_test.go` to the approved `BuildWSInterceptMiddleware` signature and
+  added the design's three end-to-end `core` tests. `sample/shop` got its own context key type.

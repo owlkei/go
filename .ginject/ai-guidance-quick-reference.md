@@ -327,10 +327,9 @@ Pattern Question
   │   └─ NO - causes infinite recursion at app.Create()
   │       Result: stack overflow, unrecoverable panic
   │
-  ├─ "Should I bind the same Middleware/Guard/Interceptor/ExceptionFilter type twice with different config?"
-  │   └─ NO - common.Construct caches by Go type name only, process-wide
-  │       Result: second bind silently reuses the FIRST instance's config, no error
-  │       Fix: give each configuration its own Go type (see anti-patterns-gotchas.md §10.1)
+  ├─ "Can I bind the same Middleware/Guard/Interceptor/ExceptionFilter type twice with different config?"
+  │   └─ YES - common.Construct keeps one instance per configuration (type + constructor + reflect.DeepEqual value)
+  │       Equal configurations share one instance; different ones get their own
   │
   ├─ "Should I write cors.CORS{IsAllowCredentials: true} without an origin list?"
   │   └─ NO - AllowOrigin defaults to wildcard, and wildcard+credentials panics at app.Create()

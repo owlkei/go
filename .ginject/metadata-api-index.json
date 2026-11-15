@@ -139,7 +139,7 @@
     "common": {
       "responsibility": "Pipeline interfaces and embedded controller types",
       "notes": [
-        "Guarder, Interceptable, and ExceptionFilterable are declared as `any`, NOT compile-time Go interfaces. Shape is checked at bind time via reflection (MethodByName) against the func-type aliases below. A bound value missing the method panics with a *ShapeError (GuardShapeError / InterceptorShapeError / ExceptionFilterShapeError).",
+        "Guarder, Interceptable, and ExceptionFilterable are declared as `any`, NOT compile-time Go interfaces. Shape is checked at bind time by method name and signature (a type assertion to an unexported interface, then the method value; no reflection per call) against the func-type aliases below. A layer bound to a method that is not a handler of the controller panics at Create(). A bound value missing the method panics with a *ShapeError (GuardShapeError / InterceptorShapeError / ExceptionFilterShapeError).",
         "MiddlewareFn IS a real interface (requires a Use method) — different from the other three."
       ],
       "interfaces": {

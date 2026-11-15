@@ -15,6 +15,11 @@ const (
 	WSPayloadPipeableKey = "wsPayload"
 )
 
+const (
+	ContextTypeHTTP = "http"
+	ContextTypeWS   = "ws"
+)
+
 type ContextPipeable interface {
 	Transform(*ctx.HTTPContext, ArgumentMetadata) any
 }
