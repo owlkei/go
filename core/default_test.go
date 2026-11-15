@@ -86,3 +86,56 @@ func TestGlobalWSExceptionFilterEmptyMessageFallsBackToDefault(t *testing.T) {
 		t.Error(test.DiffMessage(env["code"], http.StatusInternalServerError, "WS status code fallback"))
 	}
 }
+
+func defaultFilterBody(ex exception.Exception) (int, string, string) {
+	filter := globalHTTPExceptionFilter{}
+	c := newHTTPContext()
+	w := c.ResponseWriter.(*httptest.ResponseRecorder)
+	filter.Catch(c, &ex)
+	return w.Code, w.Header().Get("Content-Type"), w.Body.String()
+}
+
+func TestGlobalHTTPExceptionFilter_BodyBytes(t *testing.T) {
+	cases := map[string]struct {
+		ex   exception.Exception
+		code int
+		body string
+	}{
+		"bad request": {
+			exception.BadRequestException("invalid input"),
+			400, `{"code":400,"error":"Bad Request","message":"invalid input"}`,
+		},
+		"description": {
+			exception.NotFoundException("Cannot GET /x", exception.ExceptionOptions{Description: "gone"}),
+			404, `{"code":404,"error":"gone","message":"Cannot GET /x"}`,
+		},
+		"empty message falls back": {
+			exception.InternalServerErrorException(""),
+			500, `{"code":500,"error":"Internal Server Error","message":"Unhandled exception has occurred"}`,
+		},
+		"zero value falls back": {
+			exception.Exception{},
+			500, `{"code":500,"error":"Internal Server Error","message":"Unhandled exception has occurred"}`,
+		},
+		"unknown code without text": {
+			exception.NewException("m", 599),
+			599, `{"code":599,"error":"Internal Server Error","message":"m"}`,
+		},
+		"hostile message": {
+			exception.BadRequestException("</script>\"&\u2028\\\n"),
+			400, `{"code":400,"error":"Bad Request","message":"\u003c/script\u003e\"\u0026\u2028\\\n"}`,
+		},
+	}
+	for name, tc := range cases {
+		code, contentType, body := defaultFilterBody(tc.ex)
+		if code != tc.code {
+			t.Error(test.DiffMessage(code, tc.code, "default filter status: "+name))
+		}
+		if contentType != "application/json" {
+			t.Error(test.DiffMessage(contentType, "application/json", "default filter content type: "+name))
+		}
+		if body != tc.body {
+			t.Error(test.DiffMessage(body, tc.body, "default filter body bytes: "+name))
+		}
+	}
+}

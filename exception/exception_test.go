@@ -174,3 +174,202 @@ func TestNewException_ExceptionOptions_CauseNoDefaultText(t *testing.T) {
 		t.Error(test.DiffMessage(e.Error(), "root cause", "cause becomes error when no default text exists"))
 	}
 }
+
+type causeBox struct{ error }
+
+func TestNewException_PointerOptions(t *testing.T) {
+	cause := errors.New("root")
+	ex := NewException("m", http.StatusBadRequest, &ExceptionOptions{Description: "d", Cause: cause})
+	if ex.Error() != "d: root" {
+		t.Error(test.DiffMessage(ex.Error(), "d: root", "E1: a non-nil *ExceptionOptions is read like the value"))
+	}
+	if ex.Unwrap() != cause {
+		t.Error(test.DiffMessage(ex.Unwrap(), cause, "E1: pointer options keep the cause"))
+	}
+	only := NewException("m", http.StatusBadRequest, &ExceptionOptions{Description: "d"})
+	if only.Error() != "d" {
+		t.Error(test.DiffMessage(only.Error(), "d", "E1: pointer options description"))
+	}
+}
+
+func TestNewException_UnknownOptionTypeIsNoOption(t *testing.T) {
+	for _, opt := range []any{map[string]any{"description": "d"}, 42, []string{"x"}, struct{}{}} {
+		ex := NewException("m", http.StatusBadRequest, opt)
+		if ex.Error() != "Bad Request" {
+			t.Error(test.DiffMessage(ex.Error(), "Bad Request", "E1: unsupported option type behaves as no option"))
+		}
+		if ex.Unwrap() != nil {
+			t.Error(test.DiffMessage(ex.Unwrap(), nil, "E1: unsupported option has no cause"))
+		}
+	}
+}
+
+func TestNewException_NilOptionIsNoOption(t *testing.T) {
+	ex := NewException("m", http.StatusBadRequest, nil)
+	if ex.Error() != "Bad Request" {
+		t.Error(test.DiffMessage(ex.Error(), "Bad Request", "E1: nil option behaves as no option"))
+	}
+	var err error
+	ex = NewException("m", http.StatusBadRequest, err)
+	if ex.Error() != "Bad Request" {
+		t.Error(test.DiffMessage(ex.Error(), "Bad Request", "E1: nil error option behaves as no option"))
+	}
+}
+
+func TestNewException_NilPointerOptionsIsNoOption(t *testing.T) {
+	var opts *ExceptionOptions
+	ex := NewException("m", http.StatusBadRequest, opts)
+	if ex.Error() != "Bad Request" {
+		t.Error(test.DiffMessage(ex.Error(), "Bad Request", "E1: nil *ExceptionOptions behaves as no option"))
+	}
+}
+
+func TestNewException_EmptyStringOptIsNoOption(t *testing.T) {
+	ex := NewException("m", http.StatusBadRequest, "")
+	if ex.Error() != "Bad Request" {
+		t.Error(test.DiffMessage(ex.Error(), "Bad Request", "E2: empty string behaves as no option"))
+	}
+	unknown := NewException("m", 999, "")
+	if unknown.Error() != "" {
+		t.Error(test.DiffMessage(unknown.Error(), "", "E2: empty string with unknown code stays empty"))
+	}
+}
+
+func TestNewException_NoOptionErrorIsStatusText(t *testing.T) {
+	if got := NewException("m", http.StatusTeapot).Error(); got != "I'm a teapot" {
+		t.Error(test.DiffMessage(got, "I'm a teapot", "E3: no option gives the status text"))
+	}
+}
+
+func TestNewException_DescriptionEmptyWithoutCauseUsesText(t *testing.T) {
+	ex := NewException("m", http.StatusNotFound, ExceptionOptions{})
+	if ex.Error() != "Not Found" {
+		t.Error(test.DiffMessage(ex.Error(), "Not Found", "E3: empty description gives the text"))
+	}
+}
+
+func TestNewException_DescriptionAndCauseText(t *testing.T) {
+	cause := errors.New("root")
+	ex := NewException("m", http.StatusBadRequest, ExceptionOptions{Description: "d", Cause: cause})
+	if ex.Error() != "d: root" {
+		t.Error(test.DiffMessage(ex.Error(), "d: root", "E3: description and cause"))
+	}
+}
+
+func TestNewException_CauseWithEmptyDescriptionUsesTextPrefix(t *testing.T) {
+	cause := errors.New("root")
+	ex := NewException("m", http.StatusBadRequest, ExceptionOptions{Cause: cause})
+	if ex.Error() != "Bad Request: root" {
+		t.Error(test.DiffMessage(ex.Error(), "Bad Request: root", "E3: empty description uses the text"))
+	}
+}
+
+func TestNewException_CauseWithoutTextOrDescription(t *testing.T) {
+	cause := errors.New("root")
+	ex := NewException("m", 999, ExceptionOptions{Cause: cause})
+	if ex.Error() != "root" {
+		t.Error(test.DiffMessage(ex.Error(), "root", "E3: no description and no text gives the cause text"))
+	}
+}
+
+func TestNewException_DescriptionWithCauseAndUnknownCode(t *testing.T) {
+	cause := errors.New("root")
+	ex := NewException("m", 999, ExceptionOptions{Description: "d", Cause: cause})
+	if ex.Error() != "d: root" {
+		t.Error(test.DiffMessage(ex.Error(), "d: root", "E3: description with cause on unknown code"))
+	}
+}
+
+func TestNewException_OnlyFirstOptionIsRead(t *testing.T) {
+	ex := NewException("m", http.StatusBadRequest, "first", "second", errors.New("third"))
+	if ex.Error() != "first" {
+		t.Error(test.DiffMessage(ex.Error(), "first", "E3: later options are ignored"))
+	}
+	if ex.Unwrap() != nil {
+		t.Error(test.DiffMessage(ex.Unwrap(), nil, "E3: a later error option is not a cause"))
+	}
+}
+
+func TestException_Unwrap_ReturnsCause(t *testing.T) {
+	cause := errors.New("root")
+	byErr := NewException("m", http.StatusBadRequest, cause)
+	if byErr.Unwrap() != cause {
+		t.Error(test.DiffMessage(byErr.Unwrap(), cause, "E4: error option is the cause"))
+	}
+	byOpts := NewException("m", http.StatusBadRequest, ExceptionOptions{Description: "d", Cause: cause})
+	if byOpts.Unwrap() != cause {
+		t.Error(test.DiffMessage(byOpts.Unwrap(), cause, "E4: options cause is the cause"))
+	}
+}
+
+func TestException_Unwrap_NilWithoutCause(t *testing.T) {
+	forms := map[string]Exception{
+		"none":        NewException("m", http.StatusBadRequest),
+		"string":      NewException("m", http.StatusBadRequest, "s"),
+		"description": NewException("m", http.StatusBadRequest, ExceptionOptions{Description: "d"}),
+	}
+	for name, ex := range forms {
+		if ex.Unwrap() != nil {
+			t.Error(test.DiffMessage(ex.Unwrap(), nil, "E4: Unwrap is nil for "+name))
+		}
+		if errors.Unwrap(ex) != nil {
+			t.Error(test.DiffMessage(errors.Unwrap(ex), nil, "E4: errors.Unwrap is nil for "+name))
+		}
+	}
+}
+
+func TestException_ErrorsAs_Pointer(t *testing.T) {
+	cause := &causeBox{errors.New("wrapped")}
+	ex := NewException("m", http.StatusBadRequest, ExceptionOptions{Description: "d", Cause: cause})
+	var target *causeBox
+	if !errors.As(ex, &target) || target != cause {
+		t.Error(test.DiffMessage(target, cause, "E4: errors.As finds the cause"))
+	}
+}
+
+func TestException_Equal(t *testing.T) {
+	if NewException("m", 400) != NewException("m", 400) {
+		t.Error(test.DiffMessage(false, true, "E8: no option"))
+	}
+	if NewException("m", 400, "s") != NewException("m", 400, "s") {
+		t.Error(test.DiffMessage(false, true, "E8: string option"))
+	}
+	if NewException("m", 400, ExceptionOptions{Description: "d"}) != NewException("m", 400, ExceptionOptions{Description: "d"}) {
+		t.Error(test.DiffMessage(false, true, "E8: description"))
+	}
+	if NewException("m", 400) == NewException("n", 400) {
+		t.Error(test.DiffMessage(true, false, "E8: different messages differ"))
+	}
+}
+
+var sinkException Exception
+
+func TestNewException_NoAllocs(t *testing.T) {
+	cause := errors.New("root")
+	cases := map[string]func(){
+		"no option":  func() { sinkException = NewException("m", http.StatusBadRequest) },
+		"string":     func() { sinkException = NewException("m", http.StatusBadRequest, "custom") },
+		"error":      func() { sinkException = NewException("m", http.StatusBadRequest, cause) },
+		"options-ws": func() { sinkException = NewException("m", 1008, ExceptionOptions{Description: "d"}) },
+	}
+	for name, fn := range cases {
+		if allocs := testing.AllocsPerRun(100, fn); allocs != 0 {
+			t.Error(test.DiffMessage(allocs, 0.0, "E9: constructor must not allocate: "+name))
+		}
+	}
+}
+
+func TestNewException_NoAllocs_OptionsByValueLocalResult(t *testing.T) {
+	cause := errors.New("root")
+	sum := 0
+	allocs := testing.AllocsPerRun(100, func() {
+		ex := NewException("m", http.StatusBadRequest, ExceptionOptions{Description: "d", Cause: cause})
+		sum += ex.GetCode()
+	})
+	if sum == 0 {
+		t.Fatal("result unused")
+	}
+	if allocs != 0 {
+		t.Error(test.DiffMessage(allocs, 0.0, "E9: constructor must not allocate for ExceptionOptions by value (result kept local: boxing the options at a call site whose result escapes is the caller's cost)"))
+	}
+}

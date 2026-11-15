@@ -200,9 +200,11 @@
           "Unwrap() error",
           "GetCode() int",
           "GetMessage() string",
-          "GetStatusText() string"
+          "GetStatusText() string",
+          "AppendJSON(dst []byte) []byte",
+          "MarshalJSON() ([]byte, error)"
         ],
-        "notes": "No GetStackTrace()/SetStackTrace() and no stack-trace field exist. Exception{message, error, code} is the entire struct."
+        "notes": "No GetStackTrace()/SetStackTrace() and no stack-trace field exist. Exception{message, description, cause, code, isJoined} holds no prebuilt error; Error() derives the text. AppendJSON / MarshalJSON write {\"code\",\"error\",\"message\"} with encoding/json."
       },
       "built_in_exceptions_http": [
         "BadRequestException (400)", "UnauthorizedException (401)", "ForbiddenException (403)",

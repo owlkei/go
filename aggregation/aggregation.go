@@ -1,17 +1,14 @@
 package aggregation
 
-type AggregationOperator = func(any) any
-
-type Operator struct {
-	Aggregation AggregationOperator
-	Name        string
-}
+const inlineOperatorCount = 4
 
 type Aggregation struct {
 	InterceptorData     any
 	mainData            any
 	Name                string
-	operators           []Operator
+	extraOperators      []Operator
+	inlineOperators     [inlineOperatorCount]Operator
+	operatorCount       int
 	IsMainHandlerCalled bool
 }
 
@@ -19,41 +16,44 @@ func NewAggregation() *Aggregation {
 	return &Aggregation{}
 }
 
-func (aggregation *Aggregation) Pipe(operators ...AggregationOperator) any {
-	aggregation.IsMainHandlerCalled = true
+func (a *Aggregation) Pipe(operators ...Operator) any {
+	a.IsMainHandlerCalled = true
+	a.operatorCount = len(operators)
+	if len(operators) <= inlineOperatorCount {
+		copy(a.inlineOperators[:], operators)
+		a.extraOperators = nil
+		return nil
+	}
 
+	a.extraOperators = append(a.extraOperators[:0], operators...)
 	return nil
 }
 
-func (aggregation *Aggregation) SetMainData(d any) *Aggregation {
-	aggregation.mainData = d
-	return aggregation
+func (a *Aggregation) SetMainData(d any) *Aggregation {
+	a.mainData = d
+	return a
 }
 
-func (aggregation *Aggregation) setOperators(name string, op AggregationOperator) *Aggregation {
-	aggregation.operators = append(aggregation.operators, Operator{
-		Name:        name,
-		Aggregation: op,
-	})
-
-	return aggregation
+func (a *Aggregation) operators() []Operator {
+	if a.operatorCount > inlineOperatorCount {
+		return a.extraOperators
+	}
+	return a.inlineOperators[:a.operatorCount]
 }
 
-func (aggregation *Aggregation) Aggregate() any {
-	for _, operator := range aggregation.operators {
-		switch operator.Name {
-		case OperatorTransform:
-			aggregation.mainData = operator.Aggregation(aggregation.mainData)
-		case OperatorTap:
-			operator.Aggregation(aggregation.mainData)
-		case OperatorFilter:
-			result := operator.Aggregation(aggregation.mainData)
-			if result == nil {
+func (a *Aggregation) Aggregate() any {
+	for _, operator := range a.operators() {
+		switch operator.kind {
+		case operatorTransform:
+			a.mainData = operator.fn(a.mainData)
+		case operatorTap:
+			operator.fn(a.mainData)
+		case operatorFilter:
+			if !operator.predicate(a.mainData) {
 				return nil
 			}
-			aggregation.mainData = result
 		}
 	}
 
-	return aggregation.mainData
+	return a.mainData
 }

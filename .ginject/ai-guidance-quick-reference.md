@@ -40,7 +40,7 @@ Feature Request
   │   ├─ Use Middleware for pre-processing
   │   ├─ Use Interceptor for post-processing
   │   ├─ Middleware can call next() or stop
-  │   └─ Interceptor can transform aggregation.Data
+  │   └─ Interceptor pipes operators over the handler result
   │
   ├─ "I need to handle errors"
   │   ├─ Panic with exception.BadRequestException(...) in handler

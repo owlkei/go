@@ -26,7 +26,7 @@ the commit), README.
 | 1 | Foundations: `internal/str`, `internal/slice`, `internal/num`, `internal/color`, `internal/crypto` (the per-request UUID: hot spot 2), `internal/runtime` | tdd | docs/design/0001-internal.md | - | deep dive done; package checks green | done |
 | 2 | Trie and router: `internal/ds`, `routing`, `versioning` (route match is on every request) | tdd | docs/design/0002-routing.md | 1 | deep dive done; match benchmarks before → after | done |
 | 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | done |
-| 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | todo |
+| 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | done |
 | 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | todo |
 | 6 | Handler injection: `core/fn.go` (argument resolution and `reflect.Value.Call` per request: hot spot 1, the largest) | tdd | docs/design/0006-injection.md | 3, 5 | deep dive done for `fn.go`; the rest of `core` untouched | todo |
 | 7 | Measure: rerun `make bench-compare` and the load test, compare with the baseline | light | - | 1-6 | `docs/review/http-0002.md` with before → after per scenario | todo |
@@ -72,3 +72,8 @@ the commit), README.
   deviations: one `defer` in `storeFile` (needed by B22); `Text` formats through a helper so `go
   vet` doesn't treat it as a printf wrapper. Proposal for later: typed number helpers in
   `internal/num`, since `F64ToAnyNumOK` returns `any` and allocates for floats and large ints.
+- Step 4: done. Exception scenario 5.66 → 4.35 µs, 843 → 386 B, 27 → 12 allocs; constructors
+  ~15 ns, 0 allocs; `Pipe` with two operators 81 → 12 ns, 0 allocs. `Error()` 1.9 → 8.6 ns (status
+  text looked up per call, as designed). The tester split one E9 case: boxing an options value at
+  a call site whose result escapes allocates at the caller, so that case is measured with a local
+  result.

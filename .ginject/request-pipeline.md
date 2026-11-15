@@ -215,33 +215,27 @@ type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 
 ### 4.2 Intercept() Execution
 
-**Pre-Handler Phase**:
+`Intercept` runs once, before the handler, with a fresh `*aggregation.Aggregation`; its return value
+is stored in `aggregation.InterceptorData`.
+
 ```
-Intercept(httpCtx, aggregation) called
-    ├─ httpCtx.Code = 0 (handler not run yet)
-    ├─ aggregation.Data = nil
-    ├─ Can modify httpCtx for handler
-    └─ Return value ignored (pre-phase)
+Intercept(httpCtx, aggregation) called before the handler
+    ├─ returns aggregation.Pipe(ops...)  → IsMainHandlerCalled = true: the handler runs, then
+    │                                      the framework calls SetMainData(handler result) and
+    │                                      Aggregate(), which applies ops in Pipe argument order
+    └─ returns anything else             → the handler is skipped and InterceptorData is the response
 ```
 
-**Post-Handler Phase**:
-```
-Intercept(httpCtx, aggregation) called
-    ├─ httpCtx.Code = 200 (or whatever handler set)
-    ├─ aggregation.Data = handler return value
-    ├─ aggregation.Exception = null (if no panic)
-    ├─ Can transform aggregation.Data
-    └─ Return value replaces handler response
-```
+Operators that are created (`Transform`, `Tap`, `Filter`) but not passed to `Pipe` never run.
 
 ### 4.3 Aggregation Object
 
 ```go
 type Aggregation struct {
-    Data      any          // Handler return value
-    Exception *exception.Exception  // If handler panicked
-    Request   *http.Request
-    Response  http.ResponseWriter
+    InterceptorData     any    // what Intercept returned
+    Name                string
+    IsMainHandlerCalled bool   // set by Pipe
+    // main data and piped operators are unexported
 }
 ```
 
@@ -253,16 +247,11 @@ type Aggregation struct {
 type TimestampInterceptor struct{}
 
 func (i TimestampInterceptor) Intercept(httpCtx *ctx.HTTPContext, agg *aggregation.Aggregation) any {
-    if agg.Data == nil {
-        return nil // pre-handler phase
-    }
-    if agg.Exception != nil {
-        return nil // log exception, post-handler phase
-    }
-    return map[string]any{
-        "data":      agg.Data,
-        "timestamp": time.Now(),
-    }
+    return agg.Pipe(
+        agg.Transform(func(data any) any {
+            return map[string]any{"data": data, "timestamp": time.Now()}
+        }),
+    )
 }
 
 type UserController struct {
@@ -284,6 +273,7 @@ func (c UserController) NewController() Controller {
 **Post-Handler**:
 - Executed in REVERSE order (last registered → first executed)
 - Similar to middleware call stack unwinding
+- Inside one interceptor, its piped operators run in `Pipe` argument order
 
 ---
 
@@ -401,7 +391,7 @@ Note: `c.JSON`/`c.Text`/`c.JSONP` write using whatever status was last set via `
 - Middleware: httpCtx fields
 - Guard: httpCtx (read-only recommended)
 - Interceptor (pre): httpCtx fields
-- Interceptor (post): aggregation.Data
+- Interceptor (post): the handler result, through the piped operators
 
 **NOT safe to mutate in**:
 - Exception filter: httpCtx already set

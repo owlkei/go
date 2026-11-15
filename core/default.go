@@ -11,25 +11,25 @@ type globalHTTPExceptionFilter struct{}
 
 func (g globalHTTPExceptionFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
 	code := ex.GetCode()
+	err := ex.Error()
+	message := ex.GetMessage()
+	if code != 0 && err != "" && message != "" {
+		c.Status(code).JSON(ex)
+		return
+	}
+
 	if code == 0 {
 		code = defaultException.GetCode()
 	}
-
-	err := ex.Error()
 	if err == "" {
 		err = defaultException.Error()
 	}
-
-	message := ex.GetMessage()
 	if message == "" {
 		message = defaultException.GetMessage()
 	}
 
-	c.Status(code).JSON(ctx.Map{
-		"code":    code,
-		"error":   err,
-		"message": message,
-	})
+	normalized := exception.NewException(message, code, err)
+	c.Status(code).JSON(&normalized)
 }
 
 type globalWSExceptionFilter struct{}

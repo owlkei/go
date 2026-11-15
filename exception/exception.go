@@ -1,15 +1,16 @@
 package exception
 
 import (
-	"errors"
-	"fmt"
+	"encoding/json"
 	"net/http"
 )
 
 type Exception struct {
-	message string
-	error   error
-	code    int
+	message     string
+	description string
+	cause       error
+	code        int
+	isJoined    bool
 }
 
 type ExceptionOptions struct {
@@ -17,15 +18,33 @@ type ExceptionOptions struct {
 	Cause       error
 }
 
+type exceptionBody struct {
+	Code    int    `json:"code"`
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
 func (e Exception) Error() string {
-	if e.error == nil {
-		return ""
+	if e.cause != nil && !e.isJoined {
+		return e.cause.Error()
 	}
-	return e.error.Error()
+
+	text := e.description
+	if text == "" {
+		text = e.GetStatusText()
+	}
+
+	if e.cause == nil {
+		return text
+	}
+	if text == "" {
+		return e.cause.Error()
+	}
+	return text + ": " + e.cause.Error()
 }
 
 func (e Exception) Unwrap() error {
-	return e.error
+	return e.cause
 }
 
 func (e Exception) GetCode() int {
@@ -44,41 +63,45 @@ func (e Exception) GetStatusText() string {
 	return statusText
 }
 
-func (e Exception) errorBuilder(opts ...any) Exception {
+func (e Exception) AppendJSON(dst []byte) []byte {
+	body, err := json.Marshal(&exceptionBody{Code: e.code, Error: e.Error(), Message: e.message})
+	if err != nil {
+		return dst
+	}
+	if len(dst) == 0 {
+		return body
+	}
+	return append(dst, body...)
+}
+
+func (e Exception) MarshalJSON() ([]byte, error) {
+	return e.AppendJSON(nil), nil
+}
+
+func (e *Exception) applyOptions(options ExceptionOptions) {
+	e.description = options.Description
+	e.cause = options.Cause
+	e.isJoined = options.Cause != nil
+}
+
+func NewException(message string, code int, opts ...any) Exception {
+	e := Exception{message: message, code: code}
 	if len(opts) == 0 {
-		if text := e.GetStatusText(); text != "" {
-			e.error = errors.New(text)
-		}
 		return e
 	}
 
 	switch option := opts[0].(type) {
 	case string:
-		e.error = errors.New(option)
+		e.description = option
 	case error:
-		e.error = option
+		e.cause = option
 	case ExceptionOptions:
-		if option.Description != "" {
-			e.error = errors.New(option.Description)
-		} else if text := e.GetStatusText(); text != "" {
-			e.error = errors.New(text)
+		e.applyOptions(option)
+	case *ExceptionOptions:
+		if option != nil {
+			e.applyOptions(*option)
 		}
-
-		if option.Cause == nil {
-			break
-		}
-
-		if e.error == nil {
-			e.error = option.Cause
-			break
-		}
-
-		e.error = fmt.Errorf("%v: %w", e.error, option.Cause)
 	}
 
 	return e
-}
-
-func NewException(message string, code int, opts ...any) Exception {
-	return Exception{message: message, code: code}.errorBuilder(opts...)
 }

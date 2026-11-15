@@ -1,28 +1,37 @@
 package aggregation
 
+type operatorKind uint8
+
 const (
-	OperatorTransform = "Transform"
-	OperatorTap       = "Tap"
-	OperatorFilter    = "Filter"
+	operatorNone operatorKind = iota
+	operatorTransform
+	operatorTap
+	operatorFilter
 )
 
-func (aggregation *Aggregation) Transform(opr func(any) any) AggregationOperator {
-	aggregation.setOperators(OperatorTransform, opr)
-	return opr
+type Operator struct {
+	fn        func(any) any
+	predicate func(any) bool
+	kind      operatorKind
 }
 
-func (aggregation *Aggregation) Tap(opr func(any) any) AggregationOperator {
-	aggregation.setOperators(OperatorTap, opr)
-	return opr
-}
-
-func (aggregation *Aggregation) Filter(predicate func(any) bool) AggregationOperator {
-	op := func(data any) any {
-		if predicate(data) {
-			return data
-		}
-		return nil
+func (a *Aggregation) Transform(fn func(any) any) Operator {
+	if fn == nil {
+		return Operator{}
 	}
-	aggregation.setOperators(OperatorFilter, op)
-	return op
+	return Operator{kind: operatorTransform, fn: fn}
+}
+
+func (a *Aggregation) Tap(fn func(any) any) Operator {
+	if fn == nil {
+		return Operator{}
+	}
+	return Operator{kind: operatorTap, fn: fn}
+}
+
+func (a *Aggregation) Filter(predicate func(any) bool) Operator {
+	if predicate == nil {
+		return Operator{}
+	}
+	return Operator{kind: operatorFilter, predicate: predicate}
 }

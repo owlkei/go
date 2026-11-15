@@ -351,9 +351,7 @@ type RouterItem struct {
 
 ```go
 type Exception struct {
-    message string
-    error   error
-    code    int
+    // unexported: message, description, cause, code, isJoined; no error value is built at construction
 }
 ```
 
@@ -366,6 +364,8 @@ No stack-trace field or method exists — `GetStackTrace()`/`SetStackTrace()` ar
 | `GetCode` | `GetCode() int` |
 | `GetMessage` | `GetMessage() string` |
 | `GetStatusText` | `GetStatusText() string` |
+| `AppendJSON` | `AppendJSON(dst []byte) []byte`: appends `{"code":…,"error":…,"message":…}` (`encoding/json` of a fixed struct, same bytes as `json.Marshal` of the map); makes `Exception` and `*Exception` a `ctx.JSONAppender` |
+| `MarshalJSON` | `MarshalJSON() ([]byte, error)`: the same body, so `json.Marshal(ex)` is no longer `{}` |
 
 All constructors share the shape `func XException(message string, opts ...any) Exception`.
 
@@ -373,7 +373,7 @@ All constructors share the shape `func XException(message string, opts ...any) E
 
 **WS constructors**: `GoingAwayException`, `ProtocolErrorException`, `UnsupportedDataException`, `InvalidPayloadException`, `PolicyViolationException`, `MessageTooBigException`, `WSInternalErrorException`, `NotSubscribedException`, `TopicNotFoundException`.
 
-`ExceptionOptions{Description, Cause}` is the `opts ...any` pattern for attaching a description or a wrapped cause.
+`ExceptionOptions{Description, Cause}` is the `opts ...any` pattern for attaching a description or a wrapped cause. Only `opts[0]` is read: a non-empty `string` (the error text), an `error` (the cause, `Error()` is its text), `ExceptionOptions` or a non-nil `*ExceptionOptions` (`Error()` is `Description` or the status text, then `": " + Cause.Error()` with a cause). Any other value, `nil`, `""` and a nil `*ExceptionOptions` count as no option: `Error()` is the status text. `Unwrap()` is the cause or `nil`. Exceptions without a cause compare equal with `==`.
 
 ---
 
@@ -564,7 +564,7 @@ type Event struct {
 **Responsibility**: Interceptor pipeline state, carried through the request context
 
 ```go
-type AggregationOperator = func(any) any
+type Operator struct{ /* unexported: kind + function; the zero value is skipped */ }
 
 type Aggregation struct {
     InterceptorData     any
@@ -581,11 +581,11 @@ func NewAggregation() *Aggregation
 | Method | Signature | Purpose |
 |--------|-----------|---------|
 | `SetMainData` | `SetMainData(d any) *Aggregation` | Sets the value operators transform |
-| `Transform` | `Transform(opr func(any) any) AggregationOperator` | Registers a transform step |
-| `Tap` | `Tap(opr func(any) any) AggregationOperator` | Registers a side-effect step (return value discarded) |
-| `Filter` | `Filter(predicate func(any) bool) AggregationOperator` | Registers a filter step (predicate false → `Aggregate()` returns nil) |
-| `Pipe` | `Pipe(operators ...AggregationOperator) any` | Marks `IsMainHandlerCalled = true` |
-| `Aggregate` | `Aggregate() any` | Runs registered operators over `mainData` in registration order, returns final value |
+| `Transform` | `Transform(fn func(any) any) Operator` | Creates a transform step (registers nothing) |
+| `Tap` | `Tap(fn func(any) any) Operator` | Creates a side-effect step (return value discarded) |
+| `Filter` | `Filter(predicate func(any) bool) Operator` | Creates a filter step (predicate false → `Aggregate()` returns nil; `nil` data with a true predicate continues) |
+| `Pipe` | `Pipe(operators ...Operator) any` | Sets `IsMainHandlerCalled = true`, replaces the operators with exactly these (nil-function and zero operators skipped), returns nil; up to 4 operators stored inline without allocating |
+| `Aggregate` | `Aggregate() any` | Runs the piped operators over `mainData` in `Pipe` argument order, returns the final value |
 
 Used as the second parameter to `Interceptable`'s `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` (see `common` section). The framework calls `SetMainData(handlerResult)` then `Aggregate()` after the handler returns (`core/http.go`).
 
