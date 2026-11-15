@@ -1,6 +1,6 @@
 # 0001: Cleanup and HTTP baseline
 
-Status: Running
+Status: Done
 
 ## Goal
 Remove gRPC, move to the latest Go and patched dependencies, then measure where HTTP stands: an
@@ -75,3 +75,11 @@ rerunning this baseline.
   the six frameworks; Ginject runs through `App.Listen`, its production path. Allocations per
   request come from step 4's benchmark (the load test can't see them). Client and server share the
   machine, so absolute numbers are a floor; comparisons between frameworks are fair.
+- Review (`ginject-reviewer`, all commits of the run): no correctness, concurrency or security issue.
+  Fixed: the Exception scenario now uses each framework's error mechanism (Echo `NewHTTPError`,
+  Fiber `NewError`, Gin `AbortWithStatusJSON`) and its row was re-measured; the report's JSON hot spot
+  named a `bytes.Clone` that doesn't exist (the copy is inside `encoding/json.Marshal`); `load.sh`
+  now fails when the port is taken or its server never answers; Fiber's harness allocation is
+  footnoted; `bench/README.md` added. Deferred by plan: READMEs for `core` and `devtool` (roadmaps
+  0002-0003). Noted for the release notes: `LayerScope(n).String()` returns `"UNKNOWN"` for unknown
+  values, where protobuf returned the number.
