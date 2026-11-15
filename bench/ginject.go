@@ -108,6 +108,10 @@ func (instance ginjectChainController) READ_chain() ginject.Map {
 }
 
 func NewGinject() http.Handler {
+	return NewGinjectApp()
+}
+
+func NewGinjectApp() *core.App {
 	app := core.New()
 	app.UseLogger(silentLogger{})
 	app.Create(

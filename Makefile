@@ -44,3 +44,7 @@ bench: ## End-to-end HTTP benchmark of ginject (bench/), median of BENCH_COUNT r
 .PHONY: bench-compare
 bench-compare: ## Same scenarios on ginject, net/http, Gin, Echo, Chi and Fiber (bench/)
 	cd bench && go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./...
+
+.PHONY: load
+load: ## Load test with wrk (bench/load.sh); FRAMEWORKS="ginject gin" DURATION=10s CONNECTIONS="64 256"
+	./bench/load.sh
