@@ -48,12 +48,13 @@ own work on a `roadmap/<slug>` branch. Claude never pushes, merges or tags.
 - **Tokens:** the flows are defaults, not rituals. Take the cheapest path that keeps the quality: the
   main session for small steps, cold agents only when they pay off, short prompts with file paths, one
   architect and one review pass per roadmap, package tests per step and `make check` once at the end.
-- Slash commands (`.claude/commands/`): `/roadmap`, `/feature`, `/implement`, `/refactor [optimize]`,
+- Slash commands (`.claude/commands/`): `/roadmap`, `/feature`, `/implement`, `/refactor [optimize]`, `/security [audit|fix]`,
   `/doc <package>` (README), `/kb [update|audit|readiness]` (this file + `.ginject/`), `/check-staged`,
   `/commit`.
 - Every package that work adds or changes code in gets a `README.md` if it has none (structure of
   `modules/config/README.md`, written by `/doc`'s steps); `sample/**` is exempt.
-- `make check` runs what CI runs (gofmt, `go vet`, `golangci-lint` with `.golangci.yml`, `go test -race`).
+- `make check` runs what CI runs (gofmt, `go vet`, `golangci-lint` with `.golangci.yml`, `go test -race`);
+  CI (`.github/workflows/ci.yml`) also runs `govulncheck` on every push, pull request and weekly.
 - Claude Code hooks (`.claude/settings.json`, scripts in `.claude/hooks/`): every edited `.go` file is
   gofmt-ed; before stopping, `go vet`, `golangci-lint` and `go test -race` run on the changed packages and
   a failure is sent back to Claude to fix. Pre-commit (husky + lint-staged) checks gofmt and
@@ -67,6 +68,7 @@ own work on a `roadmap/<slug>` branch. Claude never pushes, merges or tags.
 | `ginject-tester` | Sonnet | `*_test.go` only | failing tests from an approved design (TDD red) |
 | `ginject-builder` | Opus | code, README, docs; never `*_test.go` | make the tests pass, then refactor (green); the orchestrator checks that no test file changed |
 | `ginject-reviewer` | Opus | nothing | review against the designs and `CLAUDE.md` |
+| `ginject-security` | Opus | `go.mod` / `go.sum` and small fixes, only in `fix` mode | known vulnerabilities (govulncheck, latest advisories, Go security releases) and backend code flaws; `/security [audit\|fix]` |
 
 Agents run one after another in the same working tree; parallel work needs one git worktree each.
 Formats: `docs/roadmap/README.md`, `docs/design/README.md`.
