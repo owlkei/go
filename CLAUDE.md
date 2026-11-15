@@ -9,7 +9,6 @@ make test          # run all tests with coverage
 make lint          # run golangci-lint
 make deps          # install go + yarn dependencies
 make tidy          # go mod tidy
-make protoc        # regenerate protobuf from devtool/*.proto
 
 # run a single test
 go test ./routing/... -run TestRouter -v
@@ -30,11 +29,27 @@ receivers (`instance` for user-facing option types); `Is…` option booleans; `<
 `load<X>Options` normalizes once; `Err<Reason>` sentinels with a `"<pkg>: "` prefix; internal test
 packages, `Test<Subject>_<Behavior>`, one function per behavior, `test.DiffMessage`.
 
+**Performance depends on the path** (details: `.ginject/conventions.md` › Performance). Correctness
+and race-freedom first.
+- **Hot path** (every request or message: trie, `ctx`, binding, pipeline, injection, response,
+  per-request log / trace, WS loops; plus anything a client can trigger at will): optimize for speed,
+  no `fmt` / reflection / regexp / `defer` (do that work once at `Create()`), take every measurable
+  gain, prove each fast path equals the slow path with a test.
+- **Cold path** (bootstrap, `Create()`, registration, startup log, error formatting): readability and
+  ownership first, only avoid obvious waste.
+- **Type A** (free: no per-call regexp, no needless alloc or copy, no `Sprintf` to concatenate)
+  everywhere; **type B** (fast paths, `unsafe`, `sync.Pool`, manual buffers, inlining tricks) only on
+  proven hot code. `unsafe`, `sync.Pool`, manual buffers and inlining restructures need the user's
+  approval per use, in a design, with a benchmark.
+- Limits before speed for client-controlled input. Propose an optimization with its expected gain
+  before writing it; prove it with `-bench . -benchmem -count 5` before and after (`benchstat`).
+  Benchmarks: `for b.Loop()` + `b.ReportAllocs()`.
+
 ## Workflow
 
 The user approves **plans and designs**; Claude does the rest. Outside a roadmap run Claude commits only
 when asked (`/commit`); during `/roadmap run` (roadmap and designs approved) it stages and commits its
-own work on a `roadmap/<slug>` branch. Claude never pushes, merges or tags.
+own work on the current branch (no separate roadmap branch). Claude never pushes, merges or tags.
 
 - **Bigger work → `/roadmap`.** `new`: discuss, write `docs/roadmap/NNNN-<slug>.md` → **user approves
   the roadmap** → `design`: one architect pass for the steps that need a design → **user approves the

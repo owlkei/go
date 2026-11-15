@@ -27,6 +27,11 @@ Every exported type, function and method added or changed, as Go signatures.
 Numbered rules (B1, B2, …) that tests can assert: inputs, outputs, errors, panics
 (bootstrap panics as "<category>: <detail>"), ordering, defaults.
 
+## Performance
+Hot or cold path. For hot code: the expected cost per request (allocations, ns), what moves to
+`Create()`, and any heavy technique (`unsafe`, `sync.Pool`, manual buffers, inlining) with the
+benchmark that justifies it: approving the design approves exactly these uses.
+
 ## Concurrency
 Goroutines, shared state, how each is protected, lock order, how goroutines stop.
 

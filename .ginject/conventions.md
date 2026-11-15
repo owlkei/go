@@ -75,6 +75,50 @@ don't mass-rewrite the exceptions.
   it. Packages that touch shared state carry a `..._NoRace` / `Concurrent...` test run under `-race`
   (`core/ws_connmgr_test.go`, `core/fn_test.go`).
 
+## Performance: hot path and cold path
+
+Correctness and race-freedom come first, always. Then the rule depends on where the code runs.
+
+- **Hot path:** code that runs on every request or message: route lookup and the trie (`routing/`,
+  `internal/ds`), `ctx` creation and binding, the middleware → guard → interceptor → handler → filter
+  pipeline, handler injection, response writing, per-request logging and tracing, WS read / write
+  loops and fanout.
+  - Optimize for speed: minimize allocations; keep `fmt`, reflection, regexp and `defer` out. Do
+    that work once at `Create()` / construction time and keep the result (the `load<X>Options`
+    pattern, precomputed handler argument lists).
+  - **Take every measurable gain, however small.** Costs add up across the pipeline: ten functions at
+    14 ns each is 140 ns per request. A gain counts when it is stable across repeated runs or removes
+    an allocation.
+  - Every fast path has a test proving it returns what the slow path returns (for example over random
+    inputs).
+  - The maintainer must still understand every optimization: explain each one in the design or the
+    package README's performance notes.
+  - Code a client can trigger at will (warm code: an error path, a 404, a rejected guard) counts as
+    hot.
+- **Cold path:** everything else: bootstrap, `Create()`, module and route registration, startup
+  logging, error formatting, rarely called helpers. Write for readability and ownership; avoid only
+  obvious waste.
+- **Type A vs type B optimizations.**
+  - **Type A** is free (no readability cost, no extra branch) and applies everywhere: no regexp
+    compiled per call, no needless allocation or copy, no `Sprintf` for plain concatenation,
+    pre-sized slices and maps when the size is known.
+  - **Type B** costs something: a fast path, `unsafe`, `sync.Pool`, hand-managed buffers, restructuring
+    to make a function inline. Only on proven hot or warm code.
+  - Not sure which? Do type A now and record the type B idea in the roadmap or the review report.
+- **Heavy techniques need the maintainer's approval for each use, before the code is written:**
+  `unsafe`, `sync.Pool`, hand-managed buffers, restructuring to inline. Put them in a design (with a
+  benchmark showing the gain and the constraint they bring); an agent never adds one on its own.
+- **Bound client-controlled work with limits first** (body size, header count, path depth, message
+  size), then make it fast.
+- **Propose before optimizing:** state the expected gain, then measure. Never optimize first and
+  explain afterwards.
+- **Numbers or it didn't happen:** `go test -run='^$' -bench . -benchmem -count 5` before and after, on
+  the same machine; compare with `benchstat` (installed in `~/go/bin`).
+- **Benchmarks** use `for b.Loop() { ... }` and `b.ReportAllocs()` (Go 1.24+: `b.Loop` keeps results
+  alive, so no sink variable). `b.RunParallel` still needs a sink: count per goroutine, then add to an
+  `atomic` value at the end. Most existing benchmarks still use `for i := 0; i < b.N; i++`: convert
+  one when you touch it.
+
 ## Tests
 
 - **Name:** `Test<Subject>_<Behavior>` (818 of 998 tests have one or two underscores):
@@ -83,5 +127,5 @@ don't mass-rewrite the exceptions.
 - **Assertions:** `t.Error(test.DiffMessage(actual, expected, "what"))` from `internal/test`
   (about 1,400 uses); `t.Fatal(err)` / `t.Fatalf` for setup that makes the rest meaningless.
   `t.Errorf` is the exception (about 60 uses), kept for messages that `DiffMessage` can't express.
-- **Benchmarks** use realistic input sizes. 20 of 60 benchmark files call `b.ReportAllocs()`; new
-  benchmarks call it, since allocations are what `/refactor optimize` measures.
+- **Benchmarks** use realistic input sizes; their loop and allocation reporting follow the
+  Performance section above (20 of 60 benchmark files call `b.ReportAllocs()` today).
