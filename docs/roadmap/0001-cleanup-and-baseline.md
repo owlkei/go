@@ -22,7 +22,7 @@ These numbers are the baseline every later roadmap (0002-0004) is measured again
 | 4 | End-to-end HTTP benchmark through `App`: static route, path params, query + JSON body binding, a global middleware + guard + interceptor chain, an exception path, a 404; with `b.Loop`, `b.ReportAllocs` | light | - | 3 | the benchmark runs with `make bench`; ns/op and allocs/op per scenario recorded | done |
 | 5 | Load test against a small app with the same routes: requests per second, p50 / p99 latency, allocations per request, at several concurrency levels | light | - | 4 | `make load` runs it; results recorded | done |
 | 6 | Comparison module `bench/` (its own `go.mod`): the same scenarios on `net/http` `ServeMux`, Gin, Echo, Chi and Fiber | light | - | 4 | `make bench-compare` runs it; results recorded | done |
-| 7 | Baseline report: the numbers from steps 4-6, the top allocation and CPU sites from profiles (`-cpuprofile`, `-memprofile`), and the hot spots they point to for roadmap 0002 | light | - | 4-6 | `docs/review/http-baseline.md` | todo |
+| 7 | Baseline report: the numbers from steps 4-6, the top allocation and CPU sites from profiles (`-cpuprofile`, `-memprofile`), and the hot spots they point to for roadmap 0002 | light | - | 4-6 | `docs/review/http-baseline.md` | done |
 
 ## Decisions
 - gRPC and protobuf leave; nothing else about devtools changes, so step 1 needs no design.
