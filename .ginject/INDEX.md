@@ -61,6 +61,7 @@
 
 | Document | Purpose | Audience | Format |
 |----------|---------|----------|--------|
+| [conventions.md](conventions.md) | Code conventions measured from the code: files, naming, options, errors, tests | All | Markdown |
 | [anti-patterns-gotchas.md](anti-patterns-gotchas.md) | Common mistakes, anti-patterns, what NOT to do | All | Markdown |
 | [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md) | Decision trees for common scenarios | AI Agents | Markdown |
 
