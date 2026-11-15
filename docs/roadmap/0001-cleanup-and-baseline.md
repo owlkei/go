@@ -17,7 +17,7 @@ These numbers are the baseline every later roadmap (0002-0004) is measured again
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
 | 1 | Remove gRPC and protobuf only: delete `devtool.proto`, the `*.pb.go` files, the empty `Serve` and the `protoc` target. Keep everything devtools already inspects (`EnableDevtool`, the builder, `schema.go`, the snapshot types) as plain Go structs with the same names and fields | light | - | - | no `grpc` / `protobuf` in `go.mod`; `EnableDevtool` builds the same snapshot, covered by a test | done |
-| 2 | Go 1.27.4 (latest) in `go.mod` | light | - | 1 | `go.mod` says 1.27.4; `make check` passes with it | todo |
+| 2 | Go 1.27.4 (latest) in `go.mod` | light | - | 1 | `go.mod` says 1.27.4; `make check` passes with it | done |
 | 3 | Upgrade vulnerable dependencies (`golang.org/x/net` ≥ v0.60.0, `golang.org/x/text` ≥ v0.39.0, plus whatever the scan shows then) | light | - | 2 | `govulncheck ./...` reports nothing | todo |
 | 4 | End-to-end HTTP benchmark through `App`: static route, path params, query + JSON body binding, a global middleware + guard + interceptor chain, an exception path, a 404; with `b.Loop`, `b.ReportAllocs` | light | - | 3 | the benchmark runs with `make bench`; ns/op and allocs/op per scenario recorded | todo |
 | 5 | Load test against a small app with the same routes: requests per second, p50 / p99 latency, allocations per request, at several concurrency levels | light | - | 4 | `make load` runs it; results recorded | todo |
