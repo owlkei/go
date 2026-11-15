@@ -1,0 +1,63 @@
+# 0001: Cleanup and HTTP baseline
+
+Status: Running
+
+## Goal
+Remove gRPC, move to the latest Go and patched dependencies, then measure where HTTP stands: an
+end-to-end benchmark of the request cycle, a load test, and a comparison with other Go frameworks.
+These numbers are the baseline every later roadmap (0002-0004) is measured against.
+
+## Scope
+- In: gRPC and protobuf removal, the Go version, vulnerable dependencies, the HTTP benchmark and
+  load test harness, the comparison module.
+- Out: optimizing or fixing anything the measurements reveal (roadmaps 0002-0004), WebSocket
+  (roadmap 0005), devtools beyond keeping what it inspects today.
+
+## Steps
+| # | Step | Path | Design | Depends on | Done when | State |
+|---|---|---|---|---|---|---|
+| 1 | Remove gRPC and protobuf only: delete `devtool.proto`, the `*.pb.go` files, the empty `Serve` and the `protoc` target. Keep everything devtools already inspects (`EnableDevtool`, the builder, `schema.go`, the snapshot types) as plain Go structs with the same names and fields | light | - | - | no `grpc` / `protobuf` in `go.mod`; `EnableDevtool` builds the same snapshot, covered by a test | done |
+| 2 | Go 1.27.4 (latest) in `go.mod` | light | - | 1 | `go.mod` says 1.27.4; `make check` passes with it | todo |
+| 3 | Upgrade vulnerable dependencies (`golang.org/x/net` ≥ v0.60.0, `golang.org/x/text` ≥ v0.39.0, plus whatever the scan shows then) | light | - | 2 | `govulncheck ./...` reports nothing | todo |
+| 4 | End-to-end HTTP benchmark through `App`: static route, path params, query + JSON body binding, a global middleware + guard + interceptor chain, an exception path, a 404; with `b.Loop`, `b.ReportAllocs` | light | - | 3 | the benchmark runs with `make bench`; ns/op and allocs/op per scenario recorded | todo |
+| 5 | Load test against a small app with the same routes: requests per second, p50 / p99 latency, allocations per request, at several concurrency levels | light | - | 4 | `make load` runs it; results recorded | todo |
+| 6 | Comparison module `bench/` (its own `go.mod`): the same scenarios on `net/http` `ServeMux`, Gin, Echo, Chi and Fiber | light | - | 4 | `make bench-compare` runs it; results recorded | todo |
+| 7 | Baseline report: the numbers from steps 4-6, the top allocation and CPU sites from profiles (`-cpuprofile`, `-memprofile`), and the hot spots they point to for roadmap 0002 | light | - | 4-6 | `docs/review/http-baseline.md` | todo |
+
+## Decisions
+- gRPC and protobuf leave; nothing else about devtools changes, so step 1 needs no design.
+- Go: the latest release, 1.27.4. Users need Go 1.27 or newer.
+- The comparison module in `bench/` has its own `go.mod`, so other frameworks never become
+  dependencies of Ginject.
+- Measurements run on the user's machine; the report states the machine, the Go version and the
+  commit, and every number is the median of `-count 5`.
+- This roadmap changes no framework behavior except removing gRPC.
+
+## Next
+The rest of the HTTP work, one roadmap each, written after the previous one is merged so its designs
+build on the refactored code. Every package step is the same deep dive: bugs (each proved by a failing
+test), hot / cold performance per `.ginject/conventions.md`, concurrency and security, tests, benchmarks
+rewritten (`b.Loop`, `b.ReportAllocs`, `-count 5` + `benchstat`), README. Each roadmap ends by
+rerunning this baseline.
+
+- **0002 Request hot path** (5 designs): `internal/*`; `internal/ds` + `routing` + `versioning`; `ctx`;
+  `exception` + `aggregation`; `common` (route DSL cold, layer dispatch hot).
+- **0003 Server and production** (2 designs): `core` without WS (DI cold; `http.go` and handler
+  injection hot) with production defaults (timeouts, header and body limits, keep-alive, graceful
+  shutdown, panic containment, TLS, HTTP/2); `log` + `accesslog` + `trace` + `event`; tests for the
+  `devtool` snapshot.
+- **0004 Middlewares and modules** (3 designs): `cors` + `csrf` + `helmet` + `throttler`; `config` +
+  `cache` + `memorycache` + `httpclient`; `storage` (known data-loss risks in transactions and
+  compaction); then a security audit of the HTTP side, `/kb update`, and the final HTTP report.
+- **0005 WebSocket**: `core/ws*.go`, `read_loop.go`, `write_loop.go`, `wsevent`, `memorybroker`,
+  `pattern`.
+
+## Log
+- 2026-11-16: run started on `roadmap/cleanup-and-baseline` from `9121a5f`. Files already modified
+  before the run (`.claude/agents/ginject-builder.md`, `ginject-reviewer.md`,
+  `.claude/commands/refactor.md`, `.ginject/conventions.md`, `CLAUDE.md`, `docs/design/README.md`:
+  the hot / cold path rules) are left for the user to commit; this roadmap file is committed by the run.
+- Step 1: the `make protoc` line in `CLAUDE.md` was removed in the working tree; it is part of the
+  user's uncommitted `CLAUDE.md` changes. Found, not fixed (out of scope, for 0003): the snapshot
+  builder dereferences `versioning` unconditionally, so `EnableDevtool` without `EnableVersioning`
+  panics once a route exists.

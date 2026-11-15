@@ -34,9 +34,3 @@ check: ## Everything CI runs: format, vet, lint, tests
 	go vet ./...
 	golangci-lint run
 	go test ./... -cover -race
-
-.PHONY: protoc
-protoc: ## Generate protocol buffer
-	protoc --go_out=. --go_opt=paths=source_relative \
-			--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-			devtool/*.proto

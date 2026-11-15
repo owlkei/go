@@ -741,8 +741,6 @@ func (app *App) initDevtool() {
 		AddVersioning(app.http.versioning).
 		AddHTTPMainHandlers(app.module.HTTPMainHandlers).
 		Build()
-
-	go app.devtool.Serve()
 }
 
 func (app *App) callOnReady() {

@@ -38,7 +38,7 @@ type App struct {
 | `BindGlobalInterceptors(i ...common.Interceptable) *App` | Register global interceptors |
 | `BindGlobalExceptionFilters(f ...common.ExceptionFilterable) *App` | Register global exception filters |
 | `EnableWS(cfg *WSConfig, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSConfig` argument**, not zero-arg |
-| `EnableDevtool() *App` | Enable devtool snapshot (its gRPC transport is unimplemented — builds a snapshot, serves nothing) |
+| `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
 | `EnableVersioning(v versioning.Versioning) *App` | Enable API versioning |
 | `UseLogger(logger common.Logger) *App` | Replace the default logger |
@@ -773,7 +773,7 @@ type Helmet struct {
 
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
-- `devtool` — `Devtool{}` with `GetConfiguration(...)`; `Serve()` currently takes no arguments and its gRPC transport is unimplemented (builds a config snapshot, serves nothing). `EnableDevtool()` on `App` wires it in.
+- `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
 - `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog`; wired in via `App.EnableAccessLog()`.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
 - `internal/*` — private utilities (color, ds, str, crypto, num, runtime, slice, test). Not importable from outside the module.
