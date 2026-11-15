@@ -97,8 +97,9 @@
             "Init(ResponseWriter, *Request)",
             "Status(code int) *HTTPContext - sets c.Code; chain with JSON/Text",
             "Text(data string, args ...any)",
-            "JSON(data ...any)",
-            "JSONP(data ...any)",
+            "JSON(data any, args ...any) - string = raw JSON, JSONAppender = own bytes, else encoding/json; encode error panics 500 and writes nothing",
+            "JSONP(data any, args ...any) - sanitized callback, nosniff, falls back to JSON",
+            "AddAggregation(*aggregation.Aggregation) / Aggregations() []*aggregation.Aggregation",
             "GetID() string",
             "Body() Body - lazily parses JSON body; on http.MaxBytesError panics exception.RequestEntityTooLargeException (413), not a raw error"
           ],

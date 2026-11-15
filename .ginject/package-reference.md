@@ -153,11 +153,25 @@ type HTTPContext struct {
 | `Init` | `Init(w http.ResponseWriter, r *http.Request)` | No `InitWithMaxBodySize` variant exists |
 | `Reset` | `Reset()` | Clears all fields for pool reuse |
 | `Status` | `Status(code int) *HTTPContext` | Sets `c.Code`; chainable — call BEFORE `JSON`/`Text`, since they write using whatever `Code` is current |
-| `Text` | `Text(data string, args ...any)` | |
-| `JSON` | `JSON(data ...any)` | Variadic, not `(data any)` |
-| `JSONP` | `JSONP(data ...any)` | Falls back to `JSON` if no `?callback=` query param |
-| `GetID` | `GetID() string` | |
-| `Body` | `Body() Body` | Lazily parses JSON body; on `*http.MaxBytesError` panics `exception.RequestEntityTooLargeException` (413) instead of a raw error |
+| `Text` | `Text(data string, args ...any)` | Formats only when `args` are given |
+| `JSON` | `JSON(data any, args ...any)` | A `string` is raw JSON (formatted only with `args`); a `JSONAppender` writes its own bytes; anything else goes through `encoding/json`. An encoding error panics with a 500 `exception.Exception` and writes nothing |
+| `JSONP` | `JSONP(data any, args ...any)` | Callback from the cached `Query()`, reduced to `[A-Za-z0-9_$.[]]` and 128 bytes; falls back to `JSON` when nothing is left; sends `X-Content-Type-Options: nosniff` |
+| `Redirect` | `Redirect(url string)` | Uses `c.Code` when it is 3xx, else 301 |
+| `GetID` | `GetID() string` | 16 lowercase hex characters, generated in `Init` |
+| `Body` | `Body() Body` | Lazily parses a JSON body (`application/json` or `application/*+json`, case-insensitive), never `nil`; 400 `Invalid JSON body` / `Cannot read request body`, 413 on `*http.MaxBytesError` |
+| `Form` / `File` | `Form() Form` / `File() File` | One multipart parse shared by both; never `nil`; 400 `Invalid form body`, 413 over the limit |
+| `AddAggregation` / `Aggregations` | `AddAggregation(a *aggregation.Aggregation)` / `Aggregations() []*aggregation.Aggregation` | Per-request list, cleared by `Reset` (same on `WSContext`) |
+
+Removed: the writer types `ctx.DataWriter`, `ctx.JSON`, `ctx.JSONP`, `ctx.Text` (`ctx/writer.go`).
+
+### Binding
+
+`ctx.BinderOf(reflect.Type) (*Binder, error)` builds the binding plan of a struct type once and caches
+it per type (`sync.Map`); it returns `ctx.ErrBindTarget` for `nil` or a non-struct type. `Binder.StrArr`,
+`Binder.Header`, `Binder.Struct` and `Binder.File` bind with that plan. `Query`, `Form`, `Header`,
+`Param`, `Body` and `WSPayload` have `Bind(s) (any, []FieldLevel)` and `BindValue(s) any`, and
+`BindStruct` / `BindStrArr` / `BindFile` are thin wrappers over the binder: they panic with an error
+wrapping `ErrBindTarget` when `s` is not a struct value.
 
 ### WSContext
 

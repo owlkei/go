@@ -1,8 +1,11 @@
 package ctx
 
 import (
-	"reflect"
+	"errors"
+	"net/http"
 	"strings"
+
+	"github.com/dangduoc08/ginject/exception"
 )
 
 type Form map[string][]string
@@ -18,21 +21,39 @@ func (c *HTTPContext) Form() Form {
 		return c.form
 	}
 
-	var e error
-	contentType := c.Header().Get("Content-Type")
-
-	if strings.Contains(contentType, multipartFormData) {
-		e = c.ParseMultipartForm(defaultMaxMemory)
-	} else if strings.Contains(contentType, applicationXWWWFormUrlencoded) {
-		e = c.ParseForm()
+	mt := c.contentType()
+	switch {
+	case strings.EqualFold(mt, multipartFormData):
+		c.parseMultipartForm()
+	case strings.EqualFold(mt, applicationXWWWFormUrlencoded):
+		if err := c.ParseForm(); err != nil {
+			panic(formException(err))
+		}
+	default:
+		c.form = Form{}
+		return c.form
 	}
 
-	if e != nil {
-		panic(e)
+	if c.Request.Form == nil {
+		c.form = Form{}
+	} else {
+		c.form = Form(c.Request.Form)
 	}
-
-	c.form = Form(c.Request.Form)
 	return c.form
+}
+
+func (c *HTTPContext) parseMultipartForm() {
+	if err := c.ParseMultipartForm(defaultMaxMemory); err != nil {
+		panic(formException(err))
+	}
+}
+
+func formException(err error) exception.Exception {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return exception.RequestEntityTooLargeException(err.Error(), err)
+	}
+	return exception.BadRequestException("Invalid form body", err)
 }
 
 func (f Form) Get(k string) string {
@@ -61,6 +82,11 @@ func (f Form) Has(k string) bool {
 }
 
 func (f Form) Bind(s any) (any, []FieldLevel) {
-	fls := make([]FieldLevel, 0, reflect.TypeOf(s).NumField())
-	return BindStrArr(f, &fls, s)
+	b := binderOfValue(s)
+	fls := make([]FieldLevel, 0, len(b.fields))
+	return b.bindStrArr(f, false, &fls), fls
+}
+
+func (f Form) BindValue(s any) any {
+	return binderOfValue(s).bindStrArr(f, false, nil)
 }

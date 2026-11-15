@@ -130,6 +130,8 @@ type Pipeable interface {
 3. Pipeable returns transformed/validated data
 4. Handler receives transformed data
 
+**Binding inside a Transform**: `q.Bind(dto)` / `q.BindValue(dto)` (and the same on `Body`, `Form`, `Header`, `Param`, `WSPayload`) look up the struct type's plan with `ctx.BinderOf` (built once per type, cached in a `sync.Map`): a warm bind does no type walking or tag parsing. `BindValue` skips the `[]FieldLevel` and costs half of `Bind` or less. Design 0006 calls `ctx.BinderOf` at `Create()` for pipe argument types to warm the cache and report `ctx.ErrBindTarget` early.
+
 **Performance Note**: Pipeable transforms are traced separately if tracing enabled
 
 ---
@@ -317,7 +319,7 @@ if len(returnValues) > 0 {
     }
     
     // Otherwise, write to response
-    c.JSON(http.StatusOK, retVal)
+    c.JSON(retVal)
 }
 ```
 

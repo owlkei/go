@@ -1,6 +1,7 @@
 package ctx
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
@@ -87,5 +88,90 @@ func TestParam_Bind(t *testing.T) {
 	}
 	if len(fls) != 1 {
 		t.Error(test.DiffMessage(len(fls), 1, "Bind should report a FieldLevel per bound field"))
+	}
+}
+
+func TestHTTPContext_ParamValuesAreCopied(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamKeys = map[string][]int{"id": {0}, "tags": {1, 2}}
+	c.ParamValues = []string{"42", "a", "b"}
+
+	p := c.Param()
+
+	c.ParamValues[0] = "changed"
+	c.ParamValues[1] = "changed"
+	c.ParamValues = c.ParamValues[:0]
+	if p.Get("id") != "42" || len(p["tags"]) != 2 || p["tags"][0] != "a" || p["tags"][1] != "b" {
+		t.Error(test.DiffMessage(p, Param{"id": {"42"}, "tags": {"a", "b"}}, "B33: Param should stay valid when the router reuses its slice"))
+	}
+
+	p["tags"][0] = "mutated"
+	if c.ParamValues[:3][1] == "mutated" {
+		t.Error(test.DiffMessage(c.ParamValues[:3][1], "changed", "B33: writing to a Param value should not write to ParamValues"))
+	}
+}
+
+func TestParam_AddDoesNotCorruptSiblingKey(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamKeys = map[string][]int{"a": {0}, "b": {1}, "c": {2, 3}}
+	c.ParamValues = []string{"1", "2", "3", "4"}
+
+	p := c.Param()
+	p.Add("a", "x")
+	p.Add("b", "y")
+	p.Add("c", "z")
+
+	expected := Param{"a": {"1", "x"}, "b": {"2", "y"}, "c": {"3", "4", "z"}}
+	if !reflect.DeepEqual(p, expected) {
+		t.Error(test.DiffMessage(p, expected, "P9: appending to one parameter should never overwrite another's values"))
+	}
+}
+
+func TestHTTPContext_ParamMultipleValuesKeepOrder(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamKeys = map[string][]int{"a": {2, 0}}
+	c.ParamValues = []string{"x", "y", "z"}
+	got := c.Param()["a"]
+	if !reflect.DeepEqual(got, []string{"z", "x"}) {
+		t.Error(test.DiffMessage(got, []string{"z", "x"}, "B33: values should follow the order of ParamKeys"))
+	}
+}
+
+func TestHTTPContext_ParamIndexOutOfRangeIsSkipped(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamKeys = map[string][]int{"id": {0}, "bad": {5}, "neg": {-1}, "mix": {0, 9}}
+	c.ParamValues = []string{"42"}
+
+	var p Param
+	if !noPanic(t, "B35 Param with indexes outside ParamValues", func() { p = c.Param() }) {
+		return
+	}
+	if p.Get("id") != "42" {
+		t.Error(test.DiffMessage(p.Get("id"), "42", "B35: valid indexes should still bind"))
+	}
+	if p.Get("bad") != "" || p.Get("neg") != "" {
+		t.Error(test.DiffMessage([2]string{p.Get("bad"), p.Get("neg")}, [2]string{"", ""}, "B35: an index outside ParamValues should be skipped"))
+	}
+	if !reflect.DeepEqual(p["mix"], []string{"42"}) {
+		t.Error(test.DiffMessage(p["mix"], []string{"42"}, "B35: only the valid index of a mixed key should bind"))
+	}
+}
+
+func TestHTTPContext_ParamWithoutKeysIsEmptyNotNil(t *testing.T) {
+	c := newTestHTTPContext()
+	p := c.Param()
+	if p == nil || len(p) != 0 {
+		t.Error(test.DiffMessage(p, Param{}, "B33: Param should never be nil"))
+	}
+	noPanic(t, "B33 Set on an empty Param", func() { p.Set("k", "v") })
+}
+
+func TestParam_BindValueFromRequest(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamKeys = map[string][]int{"id": {0}}
+	c.ParamValues = []string{"42"}
+	got := c.Param().BindValue(paramBindDTO{})
+	if dto, ok := got.(paramBindDTO); !ok || dto.ID != "42" {
+		t.Error(test.DiffMessage(got, paramBindDTO{ID: "42"}, "BindValue should bind the request's parameters"))
 	}
 }

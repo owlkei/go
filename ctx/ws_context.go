@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/dangduoc08/ginject/aggregation"
 	"golang.org/x/net/websocket"
 )
 
@@ -15,8 +16,9 @@ type WSContext struct {
 
 	Next Next
 
-	payload   WSPayload
-	Timestamp time.Time
+	payload      WSPayload
+	aggregations []*aggregation.Aggregation
+	Timestamp    time.Time
 
 	send func(data any)
 }
@@ -37,7 +39,16 @@ func (c *WSContext) Reset() {
 	c.Next = nil
 	c.Conn = nil
 	c.payload = nil
+	c.aggregations = nil
 	c.send = nil
+}
+
+func (c *WSContext) AddAggregation(a *aggregation.Aggregation) {
+	c.aggregations = append(c.aggregations, a)
+}
+
+func (c *WSContext) Aggregations() []*aggregation.Aggregation {
+	return c.aggregations
 }
 
 func (c *WSContext) SetSend(fn func(data any)) {

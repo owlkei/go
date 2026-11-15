@@ -1,6 +1,9 @@
 package ctx
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 type benchBindDTO struct {
 	Name    string       `bind:"name"`
@@ -31,8 +34,7 @@ func benchBindData() map[string]any {
 func BenchmarkBindStruct(b *testing.B) {
 	data := benchBindData()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		BindStruct(data, &[]FieldLevel{}, benchBindDTO{}, "", "")
 	}
 }
@@ -45,8 +47,46 @@ type benchPtrDTO struct {
 func BenchmarkBindStruct_PointerFields(b *testing.B) {
 	data := map[string]any{"name": "John Doe", "age": float64(30)}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		BindStruct(data, &[]FieldLevel{}, benchPtrDTO{}, "", "")
+	}
+}
+
+func BenchmarkBinder_Struct(b *testing.B) {
+	data := benchBindData()
+	binder, err := BinderOf(reflect.TypeOf(benchBindDTO{}))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		binder.Struct(data)
+	}
+}
+
+func BenchmarkBody_Bind(b *testing.B) {
+	body := Body(benchBindData())
+	b.ReportAllocs()
+	for b.Loop() {
+		body.Bind(benchBindDTO{})
+	}
+}
+
+func BenchmarkBody_BindValue(b *testing.B) {
+	body := Body(benchBindData())
+	b.ReportAllocs()
+	for b.Loop() {
+		body.BindValue(benchBindDTO{})
+	}
+}
+
+func BenchmarkBinderOf_Warm(b *testing.B) {
+	typ := reflect.TypeOf(benchBindDTO{})
+	if _, err := BinderOf(typ); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = BinderOf(typ)
 	}
 }

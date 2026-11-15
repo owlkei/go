@@ -1,8 +1,8 @@
 package ctx
 
 import (
-	"go/token"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -10,343 +10,145 @@ import (
 )
 
 func BindStrArr(d map[string][]string, fls *[]FieldLevel, s any) (any, []FieldLevel) {
-	structureType := reflect.TypeOf(s)
-	newStructuredData := reflect.New(structureType)
-	setValueToStructField := setValueToStructField(newStructuredData)
-	fieldTags := getFieldBindTags(structureType)
+	b := binderOfValue(s)
+	if fls == nil {
+		fls = &[]FieldLevel{}
+	}
+	*fls = slices.Grow(*fls, len(b.fields))
+	return b.bindStrArr(d, false, fls), *fls
+}
 
-	for i := 0; i < structureType.NumField(); i++ {
-		structField := structureType.Field(i)
+func (b *Binder) bindStrArr(d map[string][]string, header bool, fls *[]FieldLevel) any {
+	ptr := reflect.New(b.typ)
+	dst := ptr.Elem()
+	for i := range b.fields {
+		f := &b.fields[i]
+		key := f.tag
+		if header {
+			key = f.header
+		}
+		values, present := d[key]
 
-		if !token.IsExported(structField.Name) {
+		if !present {
+			if fls != nil {
+				*fls = append(*fls, FieldLevel{
+					tag:       f.tag,
+					nestedTag: f.tag,
+					ns:        f.nsSuffix,
+					field:     f.name,
+					index:     f.tagIndex,
+					kind:      f.kind,
+					typ:       f.typ,
+				})
+			}
 			continue
 		}
 
-		if ft := fieldTags[i]; ft.ok {
-			setValueToStructField := setValueToStructField(i)
-			bindedIndex, bindedField := ft.index, ft.field
-			if bindedValues, ok := d[bindedField]; ok {
-				fl := FieldLevel{
-					tag:       bindedField,
-					nestedTag: bindedField,
-					ns:        structureType.Name() + "." + structField.Name,
-					field:     structField.Name,
-					index:     bindedIndex,
-					kind:      structField.Type.Kind(),
-					typ:       structField.Type,
-					isVal:     true,
-				}
-
-				switch structField.Type.Kind() {
-				case reflect.Bool:
-					var val bool
-					if boolStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val, _ = strconv.ParseBool(boolStr)
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Int:
-					var val int
-					if intStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val, _ = strconv.Atoi(intStr)
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Int8:
-					var val int8
-					if intStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if i64, err := strconv.ParseInt(intStr, 10, 8); err == nil {
-							val = int8(i64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Int16:
-					var val int16
-					if intStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if i64, err := strconv.ParseInt(intStr, 10, 16); err == nil {
-							val = int16(i64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Int32:
-					var val int32
-					if intStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if i64, err := strconv.ParseInt(intStr, 10, 32); err == nil {
-							val = int32(i64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Int64:
-					var val int64
-					if intStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val, _ = strconv.ParseInt(intStr, 10, 64)
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Uint:
-					var val uint
-					if uintStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if u64, err := strconv.ParseUint(uintStr, 10, 0); err == nil {
-							val = uint(u64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Uint8:
-					var val uint8
-					if uintStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if u64, err := strconv.ParseUint(uintStr, 10, 8); err == nil {
-							val = uint8(u64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Uint16:
-					var val uint16
-					if uintStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if u64, err := strconv.ParseUint(uintStr, 10, 16); err == nil {
-							val = uint16(u64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Uint32:
-					var val uint32
-					if uintStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if u64, err := strconv.ParseUint(uintStr, 10, 32); err == nil {
-							val = uint32(u64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Uint64:
-					var val uint64
-					if uintStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val, _ = strconv.ParseUint(uintStr, 10, 64)
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Float32:
-					var val float32
-					if fStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if f64, err := strconv.ParseFloat(fStr, 32); err == nil {
-							val = float32(f64)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Float64:
-					var val float64
-					if fStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val, _ = strconv.ParseFloat(fStr, 64)
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Complex64:
-					var val complex64
-					if cStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						if c128, err := strconv.ParseComplex(strings.ReplaceAll(cStr, " ", ""), 64); err == nil {
-							val = complex64(c128)
-						}
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Complex128:
-					var val complex128
-					if cStr, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val, _ = strconv.ParseComplex(strings.ReplaceAll(cStr, " ", ""), 128)
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.String:
-					var val string
-					if str, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val = str
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Interface:
-					var val string
-					if strVal, ok := slice.Get(bindedValues, bindedIndex); ok {
-						val = strVal
-					}
-					fl.val = val
-					*fls = append(*fls, fl)
-					setValueToStructField(val)
-					continue
-
-				case reflect.Slice:
-					switch structField.Type.Elem().Kind() {
-					case reflect.Bool:
-						val := slice.StrParseBool(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Int:
-						val := slice.StrParseInt(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Int8:
-						val := slice.StrParseInt8(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Int16:
-						val := slice.StrParseInt16(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Int32:
-						val := slice.StrParseInt32(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Int64:
-						val := slice.StrParseInt64(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Uint:
-						val := slice.StrParseUint(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Uint8:
-						val := slice.StrParseUint8(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Uint16:
-						val := slice.StrParseUint16(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Uint32:
-						val := slice.StrParseUint32(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Uint64:
-						val := slice.StrParseUint64(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Float32:
-						val := slice.StrParseFloat32(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Float64:
-						val := slice.StrParseFloat64(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Complex64:
-						val := slice.StrParseComplex64(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Complex128:
-						val := slice.StrParseComplex128(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.String:
-						val := bindedValues
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					case reflect.Interface:
-						val := slice.StrParseAny(bindedValues)
-						fl.val = val
-						*fls = append(*fls, fl)
-						setValueToStructField(val)
-						continue
-					}
-				}
-			} else {
-				*fls = append(*fls, FieldLevel{
-					tag:       bindedField,
-					nestedTag: bindedField,
-					ns:        structureType.Name() + "." + structField.Name,
-					field:     structField.Name,
-					index:     bindedIndex,
-					kind:      structField.Type.Kind(),
-					typ:       structField.Type,
-					val:       nil,
-					isVal:     false,
-				})
-			}
+		fv := dst.Field(f.index)
+		if !setStrArr(f, values, fv) {
+			continue
+		}
+		if fls != nil {
+			*fls = append(*fls, FieldLevel{
+				val:       fv.Interface(),
+				tag:       f.tag,
+				nestedTag: f.tag,
+				ns:        f.nsSuffix,
+				field:     f.name,
+				index:     f.tagIndex,
+				kind:      f.kind,
+				typ:       f.typ,
+				isVal:     true,
+			})
 		}
 	}
+	return dst.Interface()
+}
 
-	return reflect.Indirect(newStructuredData).Interface(), *fls
+func setStrArr(f *bindField, values []string, dst reflect.Value) bool {
+	switch f.strArr {
+	case strArrScalar:
+		if s, ok := slice.Get(values, f.tagIndex); ok {
+			parseStr(f.kind, s, dst, keepOnParseError(f.kind))
+		}
+		return true
+
+	case strArrAny:
+		s, _ := slice.Get(values, f.tagIndex)
+		dst.Set(reflect.ValueOf(s))
+		return true
+
+	case strArrStrings:
+		dst.Set(reflect.ValueOf(values))
+		return true
+
+	case strArrSlice:
+		if bindTypedStrSlice(dst, values) {
+			return true
+		}
+		elem := f.typ.Elem()
+		out := reflect.MakeSlice(f.typ, len(values), len(values))
+		if elem.Kind() == reflect.Interface {
+			for i, s := range values {
+				out.Index(i).Set(reflect.ValueOf(s))
+			}
+		} else {
+			kind := elem.Kind()
+			for i, s := range values {
+				parseStr(kind, s, out.Index(i), false)
+			}
+		}
+		dst.Set(out)
+		return true
+	}
+	return false
+}
+
+func keepOnParseError(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Int, reflect.Int64, reflect.Uint64, reflect.Float64, reflect.Complex128:
+		return true
+	}
+	return false
+}
+
+func parseStr(kind reflect.Kind, s string, dst reflect.Value, keep bool) {
+	switch kind {
+	case reflect.String:
+		dst.SetString(s)
+
+	case reflect.Bool:
+		v, _ := strconv.ParseBool(s)
+		dst.SetBool(v)
+
+	case reflect.Int:
+		if v, err := strconv.Atoi(s); err == nil || keep {
+			dst.SetInt(int64(v))
+		}
+
+	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if v, err := strconv.ParseInt(s, 10, dst.Type().Bits()); err == nil || keep {
+			dst.SetInt(v)
+		}
+
+	case reflect.Uint:
+		if v, err := strconv.ParseUint(s, 10, 0); err == nil || keep {
+			dst.SetUint(v)
+		}
+
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if v, err := strconv.ParseUint(s, 10, dst.Type().Bits()); err == nil || keep {
+			dst.SetUint(v)
+		}
+
+	case reflect.Float32, reflect.Float64:
+		if v, err := strconv.ParseFloat(s, dst.Type().Bits()); err == nil || keep {
+			dst.SetFloat(v)
+		}
+
+	case reflect.Complex64, reflect.Complex128:
+		if v, err := strconv.ParseComplex(strings.ReplaceAll(s, " ", ""), dst.Type().Bits()); err == nil || keep {
+			dst.SetComplex(v)
+		}
+	}
 }

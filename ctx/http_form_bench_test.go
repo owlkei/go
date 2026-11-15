@@ -8,17 +8,16 @@ import (
 
 func BenchmarkHTTPContext_FormURLEncoded(b *testing.B) {
 	c := newTestHTTPContext()
+	w := newDiscardResponseWriter()
 	var n int
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		c.form = nil
-		c.header = nil
-		c.Request = httptest.NewRequest("POST", "/", strings.NewReader("foo=bar&baz=qux"))
-		c.Request.Header.Set("Content-Type", applicationXWWWFormUrlencoded)
+	for b.Loop() {
+		r := httptest.NewRequest("POST", "/", strings.NewReader("foo=bar&baz=qux"))
+		r.Header.Set("Content-Type", applicationXWWWFormUrlencoded)
+		c.Init(w, r)
 		n += len(c.Form())
+		c.Reset()
 	}
-	b.StopTimer()
 	if n == 0 {
 		b.Fatal("Form should not be empty")
 	}
@@ -27,8 +26,15 @@ func BenchmarkHTTPContext_FormURLEncoded(b *testing.B) {
 func BenchmarkForm_Bind(b *testing.B) {
 	f := Form{"name": {"joe"}}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		f.Bind(formBindDTO{})
+	}
+}
+
+func BenchmarkForm_BindValue(b *testing.B) {
+	f := Form{"name": {"joe"}}
+	b.ReportAllocs()
+	for b.Loop() {
+		f.BindValue(formBindDTO{})
 	}
 }

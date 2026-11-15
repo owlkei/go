@@ -1,6 +1,9 @@
 package ctx
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 type benchStrArrDTO struct {
 	Bool1   bool    `bind:"bool_1"`
@@ -11,8 +14,8 @@ type benchStrArrDTO struct {
 	Float1  float64 `bind:"float_1"`
 }
 
-func BenchmarkBindStrArr(b *testing.B) {
-	d := map[string][]string{
+func benchStrArrData() map[string][]string {
+	return map[string][]string{
 		"bool_1":   {"true"},
 		"string_1": {"hello"},
 		"int_1":    {"42"},
@@ -20,11 +23,27 @@ func BenchmarkBindStrArr(b *testing.B) {
 		"uint_1":   {"99"},
 		"float_1":  {"3.14"},
 	}
+}
+
+func BenchmarkBindStrArr(b *testing.B) {
+	d := benchStrArrData()
 	var fls []FieldLevel
 	s := benchStrArrDTO{}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		fls = fls[:0]
 		BindStrArr(d, &fls, s)
+	}
+}
+
+func BenchmarkBinder_StrArr(b *testing.B) {
+	d := benchStrArrData()
+	binder, err := BinderOf(reflect.TypeOf(benchStrArrDTO{}))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		binder.StrArr(d)
 	}
 }

@@ -1,9 +1,6 @@
 package ctx
 
-import (
-	"net/textproto"
-	"reflect"
-)
+import "net/textproto"
 
 const (
 	RequestID = "X-Request-Id"
@@ -15,8 +12,11 @@ func (c *HTTPContext) Header() Header {
 	if c.header != nil {
 		return c.header
 	}
-	c.header = Header(c.Request.Header)
-
+	if c.Request.Header == nil {
+		c.header = Header{}
+	} else {
+		c.header = Header(c.Request.Header)
+	}
 	return c.header
 }
 
@@ -43,6 +43,11 @@ func (h Header) Has(k string) bool {
 }
 
 func (h Header) Bind(s any) (any, []FieldLevel) {
-	fls := make([]FieldLevel, 0, reflect.TypeOf(s).NumField())
-	return BindStrArr(h, &fls, s)
+	b := binderOfValue(s)
+	fls := make([]FieldLevel, 0, len(b.fields))
+	return b.bindStrArr(h, true, &fls), fls
+}
+
+func (h Header) BindValue(s any) any {
+	return binderOfValue(s).bindStrArr(h, true, nil)
 }

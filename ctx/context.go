@@ -8,7 +8,7 @@ type Context interface {
 	GetID() string
 }
 
-const requestIDLength = 8
+const requestIDLength = 16
 
 type contextID struct {
 	id string
@@ -18,12 +18,7 @@ func (c *contextID) SetID() {
 	if c.id != "" {
 		return
 	}
-
-	id, _ := crypto.UUID()
-	if len(id) > requestIDLength {
-		id = id[:requestIDLength]
-	}
-	c.id = id
+	c.id = crypto.RandomHex(requestIDLength)
 }
 
 func (c *contextID) GetID() string {

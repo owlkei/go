@@ -286,8 +286,7 @@ type HTTPContext struct {
     *http.Request              // Raw request
     http.ResponseWriter        // Raw response writer
     
-    contextID                  // Request ID (8-char UUID truncated)
-    dataWriter DataWriter      // Response body writer (Text/JSON/JSONP)
+    contextID                  // Request ID (16 lowercase hex characters, made in Init)
     
     body Body                  // Parsed request body
     form Form                  // Form data
@@ -295,6 +294,7 @@ type HTTPContext struct {
     query Query                // Query parameters
     header Header              // Headers
     param Param                // Path parameters
+    aggregations []*aggregation.Aggregation // AddAggregation / Aggregations, per request
     ParamKeys map[string][]int // Indices of dynamic path params
     ParamValues []string       // Values of dynamic path params
     
@@ -310,13 +310,13 @@ type HTTPContext struct {
 1. Allocated from pool via `app.ctxPool.Get()`
 2. Initialized via `c.Init(w, r)`
 3. Used throughout request processing
-4. Reset via `c.Reset()` which clears all fields
+4. Reset via `c.Reset()` which clears all fields (no reference to the request, writer or parsed input survives)
 5. Returned to pool via `app.ctxPool.Put(c)` for reuse
 
 **Operations**:
 - `Status(code) *HTTPContext` — sets `c.Code`; chainable, call before `JSON`/`Text` since they write using whatever `Code` was last set
-- `Text(data string, args ...any)` / `JSON(data ...any)` / `JSONP(data ...any)` — write response using the current `Code`
-- `Redirect(url)` — HTTP redirect
+- `Text(data string, args ...any)` / `JSON(data any, args ...any)` / `JSONP(data any, args ...any)` — write response using the current `Code`; a `JSON` encoding error panics with a 500 exception before anything is written
+- `Redirect(url)` — HTTP redirect with `Code` when it is 3xx, else 301
 
 ### 3.2 WSContext Structure
 

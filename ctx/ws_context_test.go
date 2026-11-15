@@ -2,8 +2,10 @@ package ctx
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
+	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/internal/test"
 	"golang.org/x/net/websocket"
 )
@@ -106,5 +108,78 @@ func TestWSContext_Reset(t *testing.T) {
 	}
 	if c.Context() != context.Background() {
 		t.Error(test.DiffMessage(c.Context(), context.Background(), "Context should fall back to Background after Reset"))
+	}
+}
+
+func TestWSContext_Init_IDIsSixteenLowercaseHex(t *testing.T) {
+	c := NewWSContext()
+	c.Init(&websocket.Conn{})
+	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
+		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "B24: Init should generate the id eagerly"))
+	}
+}
+
+func TestWSContext_Reset_EveryFieldIsZeroAfterUse(t *testing.T) {
+	type key struct{}
+	c := NewWSContext()
+	c.Init(&websocket.Conn{})
+	c.SetContext(context.WithValue(context.Background(), key{}, "v"))
+	c.SetWSPayload(WSPayload{"foo": "bar"})
+	c.SetSend(func(any) {})
+	c.AddAggregation(aggregation.NewAggregation())
+	c.Next = func() {}
+
+	c.Reset()
+
+	v := reflect.ValueOf(c).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		name := v.Type().Field(i).Name
+		if name == "Timestamp" {
+			continue
+		}
+		if !v.Field(i).IsZero() {
+			t.Error(test.DiffMessage(v.Field(i), "<zero>", "B27: after Reset the WS context should hold no reference to the connection or payload, but "+name+" is set"))
+		}
+	}
+	if len(c.Aggregations()) != 0 {
+		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: Reset should drop the aggregations"))
+	}
+}
+
+func TestWSContext_Aggregations_EmptyByDefault(t *testing.T) {
+	c := NewWSContext()
+	if len(c.Aggregations()) != 0 {
+		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: a new context should have no aggregation"))
+	}
+}
+
+func TestWSContext_Aggregations_Order(t *testing.T) {
+	c := NewWSContext()
+	first := aggregation.NewAggregation()
+	second := aggregation.NewAggregation()
+	c.AddAggregation(first)
+	c.AddAggregation(second)
+
+	got := c.Aggregations()
+	if len(got) != 2 || got[0] != first || got[1] != second {
+		t.Error(test.DiffMessage(got, []*aggregation.Aggregation{first, second}, "B36: Aggregations should return the list in the order added"))
+	}
+}
+
+func TestWSContext_ResetClearsAggregations(t *testing.T) {
+	c := NewWSContext()
+	c.Init(&websocket.Conn{})
+	c.AddAggregation(aggregation.NewAggregation())
+	c.Reset()
+	if len(c.Aggregations()) != 0 {
+		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: Reset should empty the aggregation list"))
+	}
+
+	again := aggregation.NewAggregation()
+	c.Init(&websocket.Conn{})
+	c.AddAggregation(again)
+	got := c.Aggregations()
+	if len(got) != 1 || got[0] != again {
+		t.Error(test.DiffMessage(got, []*aggregation.Aggregation{again}, "B36: a context reused after Reset should start with no aggregation"))
 	}
 }

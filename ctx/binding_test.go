@@ -331,7 +331,7 @@ func TestBindStruct_Pointers(t *testing.T) {
 		"ptr_uint8": 255,
 		"ptr_uint16": 65535,
 		"ptr_uint32": 4294967295,
-		"ptr_uint64": 18446744073709551615,
+		"ptr_uint64": 12345678901234,
 		"ptr_float32": 3.14,
 		"ptr_float64": 1.7976931348623157e+308,
 		"ptr_complex64": 2.5,

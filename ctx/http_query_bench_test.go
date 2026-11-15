@@ -7,15 +7,15 @@ import (
 
 func BenchmarkHTTPContext_Query(b *testing.B) {
 	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("GET", "/?foo=bar&baz=qux", nil)
+	w := newDiscardResponseWriter()
+	r := httptest.NewRequest("GET", "/?foo=bar&baz=qux", nil)
 	var n int
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		c.query = nil
+	for b.Loop() {
+		c.Init(w, r)
 		n += len(c.Query())
+		c.Reset()
 	}
-	b.StopTimer()
 	if n == 0 {
 		b.Fatal("Query should not be empty")
 	}
@@ -24,8 +24,15 @@ func BenchmarkHTTPContext_Query(b *testing.B) {
 func BenchmarkQuery_Bind(b *testing.B) {
 	q := Query{"name": {"joe"}, "age": {"30"}}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q.Bind(queryBindDTO{})
+	}
+}
+
+func BenchmarkQuery_BindValue(b *testing.B) {
+	q := Query{"name": {"joe"}, "age": {"30"}}
+	b.ReportAllocs()
+	for b.Loop() {
+		q.BindValue(queryBindDTO{})
 	}
 }

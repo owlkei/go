@@ -7,16 +7,16 @@ import (
 
 func BenchmarkHTTPContext_Header(b *testing.B) {
 	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("GET", "/", nil)
-	c.Request.Header.Set("X-Foo", "bar")
+	w := newDiscardResponseWriter()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Foo", "bar")
 	var n int
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		c.header = nil
+	for b.Loop() {
+		c.Init(w, r)
 		n += len(c.Header())
+		c.Reset()
 	}
-	b.StopTimer()
 	if n == 0 {
 		b.Fatal("Header should not be empty")
 	}
@@ -26,8 +26,16 @@ func BenchmarkHeader_Bind(b *testing.B) {
 	h := Header{}
 	h.Set("Authorization", "Bearer token")
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		h.Bind(headerBindDTO{})
+	}
+}
+
+func BenchmarkHeader_BindValue(b *testing.B) {
+	h := Header{}
+	h.Set("Authorization", "Bearer token")
+	b.ReportAllocs()
+	for b.Loop() {
+		h.BindValue(headerBindDTO{})
 	}
 }

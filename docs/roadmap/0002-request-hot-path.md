@@ -25,7 +25,7 @@ the commit), README.
 |---|---|---|---|---|---|---|
 | 1 | Foundations: `internal/str`, `internal/slice`, `internal/num`, `internal/color`, `internal/crypto` (the per-request UUID: hot spot 2), `internal/runtime` | tdd | docs/design/0001-internal.md | - | deep dive done; package checks green | done |
 | 2 | Trie and router: `internal/ds`, `routing`, `versioning` (route match is on every request) | tdd | docs/design/0002-routing.md | 1 | deep dive done; match benchmarks before → after | done |
-| 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | todo |
+| 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | done |
 | 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | todo |
 | 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | todo |
 | 6 | Handler injection: `core/fn.go` (argument resolution and `reflect.Value.Call` per request: hot spot 1, the largest) | tdd | docs/design/0006-injection.md | 3, 5 | deep dive done for `fn.go`; the rest of `core` untouched | todo |
@@ -65,3 +65,10 @@ the commit), README.
   alloc; the remaining one is what H1 would remove), miss 240 → 66 ns (1 → 0). End to end: one
   allocation fewer per request (two on 404); time within the laptop's noise. No `core` test needed a
   change. The orchestrator fixed three unchecked `Insert` errors in a tester benchmark (errcheck).
+- Step 3: done. End to end (`make bench`): Static 1.73 → 1.07 µs, Param 3.74 → 2.56, Query 5.85 →
+  4.26, JSONBody 7.81 → 5.96, Chain 5.29 → 4.20, Exception 5.65 → 4.37, NotFound 3.39 → 2.41
+  (geomean −28 % time, −15 % allocs). The tester fixed three of its own assertions (a FieldLevel
+  count the design contradicts, an escaped-character setup) and four test lint findings. Builder
+  deviations: one `defer` in `storeFile` (needed by B22); `Text` formats through a helper so `go
+  vet` doesn't treat it as a printf wrapper. Proposal for later: typed number helpers in
+  `internal/num`, since `F64ToAnyNumOK` returns `any` and allocates for floats and large ints.

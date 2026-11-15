@@ -5,17 +5,17 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"reflect"
 	"strings"
 
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/slice"
 )
 
 type Body map[string]any
 
 const (
-	applicationJSON = "application/json"
+	applicationJSON  = "application/json"
+	applicationMedia = "application/"
+	jsonSuffix       = "+json"
 )
 
 func (c *HTTPContext) Body() Body {
@@ -23,89 +23,161 @@ func (c *HTTPContext) Body() Body {
 		return c.body
 	}
 
-	c.body = make(Body)
-	contentType := c.Header().Get("Content-Type")
-	if strings.Contains(contentType, applicationJSON) {
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
-				panic(exception.RequestEntityTooLargeException(err.Error()))
-			}
-			panic(err)
-		}
-		err = json.Unmarshal(body, &c.body)
-		if err != nil {
-			panic(err)
-		}
+	if c.Request.Body == nil || !isJSONMediaType(c.contentType()) {
+		c.body = Body{}
+		return c.body
 	}
 
+	data, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		panic(readBodyException(err))
+	}
+
+	var body Body
+	if !isBlankJSON(data) {
+		if err := json.Unmarshal(data, &body); err != nil {
+			panic(exception.BadRequestException("Invalid JSON body", err))
+		}
+	}
+	if body == nil {
+		body = Body{}
+	}
+	c.body = body
 	return c.body
 }
 
-func (b Body) Set(k string, v any) {
-	keys := strings.Split(k, ".")
-	keys = slice.Filter[string](keys, func(el string, i int) bool {
-		return strings.TrimSpace(el) != ""
-	})
-	if len(keys) == 0 {
-		return
+func readBodyException(err error) exception.Exception {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return exception.RequestEntityTooLargeException(err.Error(), err)
 	}
+	return exception.BadRequestException("Cannot read request body", err)
+}
 
-	obj := b
-	for i, key := range keys {
-		if i == len(keys)-1 {
-			obj[key] = v
-			return
-		}
+func (c *HTTPContext) contentType() string {
+	if v := c.Request.Header["Content-Type"]; len(v) > 0 {
+		return mediaType(v[0])
+	}
+	return ""
+}
 
-		deeperObj, ok := obj[key].(map[string]any)
-		if !ok {
-			deeperObj = make(map[string]any)
-			obj[key] = deeperObj
+func mediaType(contentType string) string {
+	if i := strings.IndexByte(contentType, ';'); i >= 0 {
+		contentType = contentType[:i]
+	}
+	return strings.TrimSpace(contentType)
+}
+
+func isJSONMediaType(mt string) bool {
+	if strings.EqualFold(mt, applicationJSON) {
+		return true
+	}
+	return len(mt) > len(applicationMedia)+len(jsonSuffix) &&
+		strings.EqualFold(mt[:len(applicationMedia)], applicationMedia) &&
+		strings.EqualFold(mt[len(mt)-len(jsonSuffix):], jsonSuffix)
+}
+
+func isBlankJSON(data []byte) bool {
+	for _, b := range data {
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			return false
 		}
-		obj = deeperObj
+	}
+	return true
+}
+
+func (b Body) Set(k string, v any) {
+	var obj map[string]any = b
+	key := ""
+	for path := k; path != ""; {
+		var seg string
+		seg, path, _ = strings.Cut(path, ".")
+		if isBlank(seg) {
+			continue
+		}
+		if key != "" {
+			next, ok := obj[key].(map[string]any)
+			if !ok {
+				next = make(map[string]any)
+				obj[key] = next
+			}
+			obj = next
+		}
+		key = seg
+	}
+	if key != "" {
+		obj[key] = v
 	}
 }
 
 func (b Body) Get(k string) any {
-	keys := strings.Split(k, ".")
-	keys = slice.Filter(keys, func(el string, i int) bool {
-		return strings.TrimSpace(el) != ""
-	})
-	if len(keys) == 0 {
+	if strings.IndexByte(k, '.') < 0 && !isBlank(k) {
+		return b[k]
+	}
+	obj, key, ok := b.lookup(k)
+	if !ok {
+		return nil
+	}
+	if key == "" {
 		return b
 	}
-
-	obj := b
-	for i, key := range keys {
-		val, ok := obj[key]
-		if !ok {
-			return nil
-		}
-		if i == len(keys)-1 {
-			return val
-		}
-
-		deeperObj, ok := val.(map[string]any)
-		if !ok {
-			return nil
-		}
-		obj = deeperObj
-	}
-
-	return nil
+	return obj[key]
 }
 
 func (b Body) Del(k string) {
-	delete(b, k)
+	obj, key, ok := b.lookup(k)
+	if ok && key != "" {
+		delete(obj, key)
+	}
 }
 
 func (b Body) Has(k string) bool {
-	return b.Get(k) != nil
+	if strings.IndexByte(k, '.') < 0 && !isBlank(k) {
+		_, ok := b[k]
+		return ok
+	}
+	obj, key, ok := b.lookup(k)
+	if !ok {
+		return false
+	}
+	if key == "" {
+		return true
+	}
+	_, ok = obj[key]
+	return ok
+}
+
+func (b Body) lookup(path string) (map[string]any, string, bool) {
+	var obj map[string]any = b
+	key := ""
+	for path != "" {
+		var seg string
+		seg, path, _ = strings.Cut(path, ".")
+		if isBlank(seg) {
+			continue
+		}
+		if key != "" {
+			next, ok := obj[key].(map[string]any)
+			if !ok {
+				return nil, "", false
+			}
+			obj = next
+		}
+		key = seg
+	}
+	return obj, key, true
+}
+
+func isBlank(s string) bool {
+	return strings.TrimSpace(s) == ""
 }
 
 func (b Body) Bind(s any) (any, []FieldLevel) {
-	fls := make([]FieldLevel, 0, reflect.TypeOf(s).NumField())
-	return BindStruct(b, &fls, s, "", "")
+	binder := binderOfValue(s)
+	fls := make([]FieldLevel, 0, binder.flHint)
+	return binder.bindTop(b, &fls, "", ""), fls
+}
+
+func (b Body) BindValue(s any) any {
+	return binderOfValue(s).bindTop(b, nil, "", "")
 }

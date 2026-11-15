@@ -127,6 +127,11 @@
       "cost": "20μs per middleware",
       "mitigation": "keep middleware count low (2-3 global max)"
     },
+    "request_context": {
+      "issue": "ctx creates the context, binds the request and writes the response on every request",
+      "cost": "measured (ctx benchmarks, i7-9750H): Init + Reset 113 ns / 1 alloc; Text 55 ns; JSON of a small Map 880 ns; warm Body.Bind of 5 fields with a nested struct 962 ns (BindValue 382 ns); Query.Bind of 2 fields 311 ns (BindValue 162 ns)",
+      "mitigation": "binding plan per struct type (ctx.BinderOf, cached); BindValue when the FieldLevels are not needed; see ctx/README.md Performance notes"
+    },
     "json_marshaling": {
       "issue": "JSON encoding/decoding",
       "cost": "100-1000μs depending on size",
