@@ -37,6 +37,6 @@ func NewGin() http.Handler {
 		c.Next()
 	})
 	chain.GET("/chain", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"data": gin.H{"ok": true}}) })
-	router.GET("/error", func(c *gin.Context) { c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"}) })
+	router.GET("/error", func(c *gin.Context) { c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "bad request"}) })
 	return router
 }

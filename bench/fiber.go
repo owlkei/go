@@ -34,8 +34,8 @@ func NewFiber() *fiber.App {
 	}, func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"data": fiber.Map{"ok": true}})
 	})
-	app.Get("/error", func(c *fiber.Ctx) error {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "bad request"})
+	app.Get("/error", func(*fiber.Ctx) error {
+		return fiber.NewError(http.StatusBadRequest, "bad request")
 	})
 	return app
 }

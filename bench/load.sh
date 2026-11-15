@@ -16,10 +16,22 @@ server="${TMPDIR:-/tmp}/ginject-bench-server"
 echo "| framework | scenario | connections | requests/s | p50 | p99 | non-2xx |"
 echo "|---|---|---|---|---|---|---|"
 for framework in $frameworks; do
+  if curl -s -o /dev/null "$url/static"; then
+    echo "port $port is already in use; set PORT to a free one" >&2
+    exit 1
+  fi
   "$server" -framework "$framework" -port "$port" >/dev/null 2>&1 &
   pid=$!
   trap 'kill $pid 2>/dev/null || true' EXIT
-  for _ in $(seq 50); do curl -s -o /dev/null "$url/static" && break; sleep 0.1; done
+  ready=false
+  for _ in $(seq 50); do
+    if curl -s -o /dev/null "$url/static"; then ready=true; break; fi
+    sleep 0.1
+  done
+  if [ "$ready" != true ] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "$framework server did not start on port $port" >&2
+    exit 1
+  fi
 
   for conns in $connections; do
     for scenario in Static Param JSONBody Chain; do

@@ -9,7 +9,10 @@ The numbers every later HTTP roadmap is measured against.
 - **Scenarios** (`bench/scenario.go`, the same on every framework; a parity test checks status and
   body): `Static` (`GET /static`, text), `Param` (`GET /users/:id`, JSON), `Query` (`GET /search?q&page`,
   bound into a struct, JSON), `JSONBody` (`POST /users`, JSON body bound into a struct, 201), `Chain`
-  (middleware + guard + interceptor around a JSON handler), `Exception` (handler fails with 400),
+  (middleware + guard + interceptor around a JSON handler), `Exception` (the handler fails with 400
+through each framework's error mechanism: a panicked exception in Ginject, `echo.NewHTTPError` in
+Echo, `fiber.NewError` in Fiber, `AbortWithStatusJSON` in Gin; net/http and Chi have none, so they
+write the 400 directly),
   `NotFound` (unknown route, 404).
 
 ## Go benchmarks: the framework's own cost
@@ -24,20 +27,26 @@ request parsing are excluded.
 | Query | 6,292 ns | 2,583 ns | 2,625 ns | 2,712 ns | 2,911 ns | 2,231 ns | 2.4× |
 | JSONBody | 9,252 ns | 3,315 ns | 3,552 ns | 3,881 ns | 3,857 ns | 4,417 ns | 2.8× |
 | Chain | 6,093 ns | 1,775 ns | 2,156 ns | 2,122 ns | 2,276 ns | 3,371 ns | 3.4× |
-| Exception | 6,398 ns | 1,130 ns | 1,205 ns | 1,456 ns | 1,375 ns | 1,607 ns | 5.7× |
+| Exception ² | 7,933 ns | 1,302 ns | 1,155 ns | 1,424 ns | 1,544 ns | 1,032 ns | 6.1× |
 | NotFound | 3,403 ns | 1,074 ns | 120 ns | 1,522 ns | 584 ns | 1,152 ns | 3.2× |
 
 Allocations per request:
 
 | Scenario | Ginject | net/http | Gin | Echo | Chi | Fiber |
 |---|---|---|---|---|---|---|
-| Static | 13 (304 B) | 1 | 1 | 3 | 3 | 1 |
+| Static | 13 (304 B) | 1 | 1 | 3 | 3 | 1 ¹ |
 | Param | 27 (1.2 KB) | 9 | 9 | 10 | 12 | 9 |
 | Query | 46 (1.7 KB) | 16 | 17 | 17 | 18 | 13 |
 | JSONBody | 52 (2.2 KB) | 17 | 18 | 19 | 19 | 14 |
 | Chain | 40 (1.7 KB) | 10 | 15 | 14 | 12 | 14 |
-| Exception | 33 (980 B) | 7 | 8 | 9 | 9 | 8 |
+| Exception ² | 33 (980 B) | 7 | 8 | 12 | 9 | 3 |
 | NotFound | 31 (914 B) | 14 | 0 | 10 | 5 | 4 |
+
+1. Fiber runs on fasthttp's `RequestCtx`; each iteration calls `RequestCtx.Init` and
+   `Response.Reset`, so its numbers include about one allocation of harness work (its Static
+   allocation is that one).
+2. Measured in a second run, after the scenario was made fair (see Scenarios); that run was slower
+   overall (Ginject Static 2,441 ns), so compare within the row.
 
 Single runs vary by about ±15 % on this laptop (thermal throttling); compare medians, with
 `benchstat`, on the same machine.
@@ -73,13 +82,13 @@ profile (`-memprofilerate 1`, share of allocated objects). Each line names the r
 |---|---|---|---|---|
 | 1 | Handlers are called through reflection on every request (`reflect.Value.Call`, argument lists built per call) | 17 % CPU (`invokeHTTPHandlerByProviders`), 11 % in `reflect.Value.call`; `reflect.unsafe_New` + `methodReceiver` are 31 % of objects | `core` (`fn.go`) | 0003 (consider moving to 0002: it is the biggest single cost) |
 | 2 | A crypto-random UUID is generated for every request (`ctx.SetID` → `crypto.UUID`) | 8 % CPU, 4 % of objects | `ctx`, `internal/crypto` | 0002 |
-| 3 | JSON responses: `encoding/json` on a `map`, then the buffer is copied (`toJSONBuffer` → `bytes.Clone`) | 11 % CPU; `bytes.Clone` 2.4 % of objects | `ctx` (`writer.go`) | 0002 |
+| 3 | JSON responses: `toJSONBuffer` (`ctx/fn.go:14`) marshals `&data` (a pointer to an `any`) with `encoding/json`, whose `Marshal` copies its internal buffer into a new slice on every call; a string payload also goes through `fmt.Sprintf` | 11 % CPU; the copy is 2.4 % of objects | `ctx` | 0002 |
 | 4 | Context initialization (`HTTPContext.Init`, including the ID) | 10 % CPU | `ctx` | 0002 |
 | 5 | Response headers through `Header().Set` (canonicalization and a new slice each time) | 8 % of objects | `ctx`, `core` | 0002 |
 | 6 | Closures allocated per request in `handleRequest` | 8.7 % of objects (2.6 per Static request) | `core` (`http.go`) | 0003 |
 | 7 | `http.MaxBytesReader` wraps every body, including bodiless `GET`s | 4 % of objects, 1 per request | `core` (`app.go`) | 0003 |
 | 8 | 404s build an exception, a map and JSON per request (31 allocs, 3.4 µs; Gin: 0 allocs). A client can trigger it at will, so it counts as hot | `returnNotFound` 3.4 % of objects | `core`, `exception` | 0003 |
-| 9 | Exceptions cost 6.4 µs (panic, recover, filter chain, map, JSON) | `RunHTTPCatchChain`, `globalHTTPExceptionFilter.Catch` | `exception`, `common`, `core` | 0002 / 0003 |
+| 9 | Exceptions cost 6-8 µs (panic, recover, filter chain, map, JSON), against 1.0-1.4 µs for the error mechanisms of Gin, Echo and Fiber | `RunHTTPCatchChain`, `globalHTTPExceptionFilter.Catch` | `exception`, `common`, `core` | 0002 / 0003 |
 | 10 | Query and body binding walk struct fields with reflection per request (`BindStruct`, `BindStrArr`); query parsed by `url.ParseQuery` | `BindStruct`, `BindStrArr`, `url.parseQuery` in the top objects | `ctx` (`binding.go`) | 0002 |
 | 11 | Interceptors allocate closures per request (`BuildHTTPInterceptMiddleware`) | 1.4 % of objects | `common` | 0002 |
 | 12 | Garbage collection from the allocation rate | 11 % CPU in `gcBgMarkWorker` | all of the above | falls out of 1-11 |

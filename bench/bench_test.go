@@ -70,6 +70,7 @@ func BenchmarkFiber(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				fctx.Init(&request, nil, nil)
+				fctx.Response.Reset()
 				handler(&fctx)
 			}
 		})

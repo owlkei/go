@@ -41,8 +41,8 @@ func NewEcho() http.Handler {
 			return next(c)
 		}
 	})
-	e.GET("/error", func(c echo.Context) error {
-		return c.JSON(http.StatusBadRequest, map[string]any{"error": "bad request"})
+	e.GET("/error", func(echo.Context) error {
+		return echo.NewHTTPError(http.StatusBadRequest, "bad request")
 	})
 	return e
 }
