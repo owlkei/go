@@ -106,3 +106,19 @@ interceptor, not a middleware.
   deadline on `c.Context()`). Answering early while the handler still runs must never let it write
   into a pooled `HTTPContext` reused by another request: either the context returns to the pool only
   after the handler returns, or the response writer is detached from the pooled context.
+
+## Real app phase: court booking SaaS (after the 0.x alpha)
+
+Decided 2026-11-17: a real app built with Ginject + Owlky (no devtools needed yet), to validate the
+framework from the user's side before 1.0. Idea: booking for pickleball / badminton / mini football
+courts (SaaS for court owners). Keep it small: one court type, one payment gateway, one 1 vCPU VPS.
+
+- Owner side: court schedule grid, revenue and peak hours charts, regular customers, court photos.
+- Player side: public booking page, free slots, slots held by others shown live (WebSocket),
+  payment through a local gateway (webhook).
+- What it exercises: auth and multi-tenancy, double-booking races, payment webhooks and outbound
+  calls (timeouts, circuit breaker), public pages (`csrf`, `helmet`, throttler, `loadshed`),
+  WebSocket.
+- Storage and auth don't exist yet: use `database/sql` (SQLite or Postgres) and a simple auth; the
+  pain points become the requirements of the storage and auth roadmaps.
+- Later, a light web analytics app as a real-world performance test.
