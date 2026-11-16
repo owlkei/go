@@ -253,7 +253,8 @@ Builds the scope of a WebSocket message from its connection's context.
 2. `now` `time.Time`: the message time, used for a new trace ID.
 
 #### Returns
-1. `context.Context`: `parent` with the message scope.
+1. `context.Context`: `parent` with the message scope; `context.Background()` with the message scope
+   when `parent` carries no scope.
 2. `*Scope`: the scope.
 
 #### Usage
@@ -360,7 +361,8 @@ Returns the scope's own span ID: `Request`, or `Message` when `Request` is empty
 ### Headers
 
 Returns the prebuilt one-element values of the `X-Request-Id` and `Traceparent` response headers of a
-request scope, so setting them costs no allocation.
+request scope, so setting them costs no allocation. The slices are backed by the scope: never write
+them in place.
 
 #### Returns
 1. `requestID` `[]string`: `[Request]`.

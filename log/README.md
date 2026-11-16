@@ -283,7 +283,7 @@ Every logger from `NewLog` writes to one process-wide stdout pipeline, so lines 
 - **Long records:** a record over 64 KiB is cut on a UTF-8 boundary and ends with `...[TRUNCATED]` and a line feed (Pretty resets the color first). A cut JSON record is not valid JSON; the head with the time, level and message is kept.
 - **Errors:** a failed or panicking `Write` of stdout discards that batch, never retried; the next one is written.
 - **Shutdown:** the app flushes the pipeline (at most 2 seconds) after its `OnShutdown` hooks; `Fatal` flushes before it exits.
-- **What can be lost:** lines still queued when the process dies without shutdown or `Fatal` (an unrecovered panic in a goroutine, `os.Exit` in your code, `SIGKILL`): at most 1 MiB, in practice the last batch. Bytes you write to `os.Stdout` yourself are not ordered with log lines while the app serves.
+- **What can be lost:** lines still queued when the process dies without shutdown or `Fatal` (an unrecovered panic in a goroutine, `os.Exit` in your code, `SIGKILL`): at most 1 MiB, in practice the last batch. Bytes you write to `os.Stdout` yourself are not ordered with log lines while the app serves. When stdout is stuck and the shutdown flush timed out, lines logged afterwards block their caller until stdout accepts a write again; `Fatal` stays bounded (it waits at most 2 seconds, then exits).
 - **Memory:** about 300 B while unused; one buffer of at most 64 KiB once the queue is empty again; at most two 1 MiB buffers and one goroutine with stdout stuck.
 - Loggers given to `app.SetLogger` are not part of the pipeline: they are called directly.
 

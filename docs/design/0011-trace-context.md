@@ -496,6 +496,11 @@ Internal test packages, one function per behavior.
 - 2026-11-16: `Scope` gains `LogSlot atomic.Value`, asked by design 0012 (`From` caches the scoped
   logger once per scope instead of per call). 0011 never reads or writes it; a `Scope` is never copied
   after it is created.
+- 2026-11-16 (review of roadmap 0004): the internal API also has `func (s *Scope) Headers()
+  (requestID, traceparent []string)`, the prebuilt one-element header values of a request scope
+  (no allocation per response). The slices are backed by the scope: callers never write them in
+  place. `NewMessage` applies the W4 fallback itself: a parent without a scope becomes
+  `context.Background()`, so `(*WSContext).Init` looks the connection scope up once.
 
 ## Decisions (2026-11-16)
 

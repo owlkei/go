@@ -474,6 +474,20 @@ sleeping, no polling. Concurrent tests run under `-race`.
    time, level and message survives).
 9. **Heavy techniques H1, H2, H3** as listed. **Recommendation: approve all three.**
 
+## Coordination
+
+- 2026-11-16 (review of roadmap 0004): names the implementation added that the sections above do not
+  list, all internal or unexported to users:
+  - `logpipe.FlushTimeout` (2 s), exported in the internal package so `core` (shutdown, `SetStdout`)
+    and `log` (`Fatal`) flush with the same bound.
+  - `logpipe.AccessLine{Msg, Attrs}`, the internal seam through which `accesslog` hands a finished
+    access line to the built-in logger (`LogAccess`), so Pretty can color it without reflection.
+  - `color.ForDuration(d)` in `internal/color`, the duration colors of A2 (the `colorForDuration`
+    above), shared by `accesslog`.
+  - The sink keeps one buffer of at most 64 KiB once the queue is empty (the spare is always
+    dropped) and regrows a released queue straight to 64 KiB. A truncated record gets the color
+    reset only when its kept part holds an escape sequence.
+
 ## Decisions (2026-11-16)
 
 Approved by the user: every open question answered as recommended, with one addition.

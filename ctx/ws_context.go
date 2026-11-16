@@ -42,10 +42,7 @@ func connectionContext(conn *websocket.Conn) context.Context {
 	if r == nil {
 		return context.Background()
 	}
-	if parent := r.Context(); tracecontext.ScopeOf(parent) != nil {
-		return parent
-	}
-	return context.Background()
+	return r.Context()
 }
 
 func (c *WSContext) GetID() string {

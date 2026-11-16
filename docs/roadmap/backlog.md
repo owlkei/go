@@ -22,6 +22,14 @@ documentation points to other packages) with an implementation of its own, once 
   benchmarks against `coder/websocket` and `gorilla/websocket` in `bench/`.
 - **Joins the remaining WebSocket work:** acks, backpressure, limits, hooks, shutdown, broker.
 
+## WebSocket framework lines without the connection ID (WebSocket roadmap 0006)
+
+Found 2026-11-16 in the review of roadmap 0004: the framework's own WebSocket error lines
+(`WSReadFailed` in `core/read_loop.go`, `WSWriteFailed` in `core/write_loop.go`, `WSPingSendFailed`
+in `core/ws.go`) are written through `ws.logger`, not through `log.From` on the connection's
+context, so they carry no `trace_id` or `connection`. The WebSocket roadmap logs them through the
+connection scope.
+
 ## Public API surface (after roadmap 0005)
 
 Decided 2026-11-16 (Product principles in `CLAUDE.md`): Ginject exports about 607 functions, types and

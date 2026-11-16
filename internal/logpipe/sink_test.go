@@ -650,8 +650,8 @@ func TestSink_StuckOutputBoundsCallersAndMemory(t *testing.T) {
 			h.s.Write(levels[l], rec(300, letters[l]), quietReport)
 		}
 	})
-	if got := runtime.NumGoroutine(); got > base+1 {
-		t.Error(test.DiffMessage(got, base+1, "P13: exactly one goroutine is blocked"))
+	if !goroutinesAtMost(base + 1) {
+		t.Error(test.DiffMessage(runtime.NumGoroutine(), base+1, "P13: exactly one goroutine is blocked"))
 	}
 	h.w.openAll()
 	flushOK(t, h.s, "P12: Flush returns true")

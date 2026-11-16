@@ -102,6 +102,7 @@ func NewMessage(parent context.Context, now time.Time) (context.Context, *Scope)
 		s.Parent = conn.Request
 	} else {
 		putTraceID(text[traceIDStart:traceIDEnd], now)
+		parent = context.Background()
 	}
 	putSpanID(text[parentIDStart:parentIDEnd])
 	s.setTraceparent(&text, flags)
