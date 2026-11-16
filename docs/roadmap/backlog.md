@@ -3,6 +3,21 @@
 Decided work that has no roadmap yet. A roadmap that takes an item links back to it and removes it
 from here.
 
+
+## Order to the first release (decided 2026-11-17)
+
+1. 0005: middlewares, modules and security.
+2. Public API review (leaves room for the render route kind and auth).
+3. Server-side rendering; the court booking app starts right after, on `database/sql` and a minimal
+   auth, and drives the next roadmaps.
+4. Authentication and authorization (sessions for SSR, tokens for REST, roles and permissions as
+   guards).
+5. Storage: adapters over existing databases (SQLite, Postgres), not an engine of our own; Ginject
+   adds connections, transactions, migrations, pool bounds, the circuit breaker, trace and devtools.
+6. HTTP client (timeouts, bounded retries, circuit breaker).
+7. 0.x release once the court booking app runs for real.
+8. After the release: WebSocket (0006), devtools and MCP.
+
 ## Own WebSocket implementation (after HTTP is production ready)
 
 Decided 2026-11-16: Ginject replaces `golang.org/x/net/websocket` (its last dependency; its own
