@@ -4,159 +4,131 @@
 
 ## 1. Module System Basics
 
+The user-facing reference is `core/README.md` › Modules and lifecycle (builder, fields, `Prefix`,
+hooks, rules from the tests). This page explains how the container resolves things.
+
 ### 1.1 Module Purpose
 
-**Module** = Composition root + configuration container
+**Module** = composition root:
+- Declare controllers (HTTP/WS handlers) and providers (services)
+- Declare imports (other modules, or module funcs)
+- Lifecycle hooks: the `OnInit`, `OnReady`, `OnShutdown` fields
+- Visibility: `IsGlobal` makes its providers visible to every module
 
-**Responsibilities**:
-- Declare controllers (HTTP/WS handlers)
-- Declare providers (business logic, services)
-- Declare exports (what's available globally)
-- Declare imports (dependency on other modules)
-- Declare lifecycle hooks (setup/teardown)
-
-### 1.2 Module Structure
+### 1.2 Module Structure (`core/module.go`)
 
 ```go
 type Module struct {
-    id             string
-    Name           string
-    providers      []Provider
-    controllers    []Controller
+    id       string
+    Name     string
+    prefixes []string
+
+    imports        []any
     staticModules  []*Module
     dynamicModules []any
+    providers      []Provider
+    controllers    []Controller
 
     IsGlobal   bool
     OnInit     func()
     OnReady    func()
     OnShutdown func()
 }
+
+func (m *Module) Prefix(prefix string) *Module
+func (m *Module) ID() string
 ```
 
-`Create` never writes a `*Module`: the wiring results (routes, layers, provider instances) live in the app's container (`core/container.go`), so one module value can be given to any number of apps.
+`Create` never writes a `*Module`: the wiring results (routes, layers, provider instances) live in
+the app's container (`core/container.go`), so one module value can be given to any number of apps.
 
-**No `exports []string` field or `Export(...)` method exists anywhere** — there is no explicit export mechanism; anything registered as a `Provider`/`Controller` on a module is available per the normal import-tree resolution rules. `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown` are set directly on the built `*Module` (e.g. `module.IsGlobal = true`), not via builder methods.
+**No `exports` field, `Export(...)` method or `IsGlobal(...)` builder method exists.** There is no
+export mechanism: a module sees its own providers, those of the modules it imports (at any depth),
+and the global ones. `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown` are set on the built `*Module`
+(`m.IsGlobal = true`).
 
 ### 1.3 Module Tree
 
-**Structure** (at app.Create()):
 ```
-RootModule
+RootModule                    its providers are global
 ├── Imports:
-│   ├── AuthModule
-│   │   └── Providers: JWTService, AuthService
-│   ├── UserModule
-│   │   ├── Controllers: UserController
-│   │   └── Providers: UserService, UserRepository
-│   └── ProductModule
-│       ├── Controllers: ProductController
-│       └── Providers: ProductService
+│   ├── AuthModule            Providers: JWTService, AuthService
+│   ├── UserModule            Controllers: UserController; Providers: UserService, UserRepository
+│   └── ConfigModule          a module func or Register(...) result; IsGlobal = true
 ├── Controllers: AppController
-└── Providers: AppLogger, Config
+└── Providers: AppConfig
 ```
 
-**Traversal**: Depth-first walk during app.Create() to collect all resources
+**Traversal**: `discover` walks the tree depth first at `Create()`, each module once per app.
 
 ---
 
 ## 2. Creating Modules
 
-### 2.1 Static Module (Singleton)
-
-**Pattern**: Single instance, created once
+### 2.1 Static Module
 
 ```go
-var AppModule = func() *core.Module {
-    return core.ModuleBuilder().
-        Controllers(
-            AppController{},
-        ).
-        Providers(
-            AppLogger{},
-            DatabasePool{},
-        ).
-        Imports(
-            AuthModule,
-            UserModule,
-        ).
-        Build()
-}()
+var UserModule = core.ModuleBuilder().
+	Controllers(UserController{}).
+	Providers(UserService{}, UserRepository{}).
+	Build()
 
-// Usage:
-app := core.New()
-app.Create(AppModule)
+var AppModule = core.ModuleBuilder().
+	Imports(UserModule).
+	Build()
 ```
 
-**Characteristics**:
-- Created at app startup
-- Single instance for entire app lifetime
-- Controllers are instantiated per-request
+`Build()` resolves `Name` from the variable (`main.UserModule`), used in the `InstanceLoader` log line.
 
-### 2.2 Dynamic Module (Factory)
+### 2.2 Module Funcs
 
-**Pattern**: Factory function that creates module instances
+`Imports` also accepts a function whose type starts with `func(` and returns `*core.Module`. The app
+calls it once (per app, whatever the number of importers) while discovering the tree, **before** it
+discovers the importing module's other imports. Its arguments resolve from the global providers known
+at that point (the root module's providers, and those of `IsGlobal` modules discovered earlier), then
+`common.Logger` and `common.Publisher`; a provider used this way is constructed then. An unresolvable
+argument panics `dependency injection: can't resolve argument of '<func>' …`: an `IsGlobal` module
+imported next to the module func is not visible to it yet.
 
 ```go
-func NewConfigModule(envPath string) *core.Module {
-    cfg := loadConfig(envPath)
-    return core.ModuleBuilder().
-        Providers(
-            ConfigService{config: cfg},
-        ).
-        Build()
+type ReportService struct{}
+
+func (instance ReportService) NewProvider() core.Provider { return instance }
+
+func ReportModule(logger common.Logger) *core.Module {
+	logger.Info("ReportModule")
+	return core.ModuleBuilder().Providers(ReportService{}).Build()
 }
 
-// Usage:
-app := core.New()
-app.Create(
-    core.ModuleBuilder().
-        Imports(
-            NewConfigModule("/etc/app.env"),  // Create instance
-            AuthModule,
-        ).
-        Build(),
-)
+var AppModule = core.ModuleBuilder().
+	Imports(UserModule, ReportModule).
+	Build()
 ```
 
-**Characteristics**:
-- Created on-demand
-- Can accept parameters
-- Used for configurable modules
+A module func may be called by two apps at once: it must not write shared state without its own
+protection.
+
+### 2.3 Register Functions (built-in modules)
+
+Every built-in module is a package-level `Register(opts *<X>ModuleOptions) *core.Module` that returns
+a configured module (`config.Register`, `cache.Register`). A backend it creates is shared by every app
+that imports the returned module value.
 
 ---
 
 ## 3. Module Builder API
 
-### 3.1 ModuleBuilder() Methods
-
 ```go
-ModuleBuilder().
-    Controllers(UserController{}, ProductController{}).
-    Providers(UserService{}, ProductService{}).
-    Imports(AuthModule, DatabaseModule).
-    Export("UserService", "ProductService").  // Make globally available
-    Build()
+func ModuleBuilder() *moduleBuilder
+func (m *moduleBuilder) Imports(modules ...any) *moduleBuilder
+func (m *moduleBuilder) Providers(providers ...Provider) *moduleBuilder
+func (m *moduleBuilder) Controllers(controllers ...Controller) *moduleBuilder
+func (m *moduleBuilder) Build() *Module
 ```
 
-**Methods**:
-- `Controllers(...Controller) ModuleBuilder` — Register HTTP/WS handlers
-- `Providers(...Provider) ModuleBuilder` — Register business logic
-- `Imports(...*Module) ModuleBuilder` — Import other modules
-- `Export(...string) ModuleBuilder` — Export provider names globally
-- `Build() *Module` — Create module instance
-
-### 3.2 Module Chaining
-
-```go
-core.ModuleBuilder().
-    Controllers(C1{}).
-    Controllers(C2{}).  // Can chain multiple calls
-    Providers(P1{}).
-    Providers(P2{}).
-    Imports(M1).
-    Imports(M2).
-    Build()
-```
+- Calls chain and accumulate: `Providers(P1{}).Providers(P2{})` lists both
+- An import that is neither a `*Module` nor a module func panics `invalid module: can't pass '<type>' type as module` at `Build()`
+- `Prefix("v1")` on the built module prefixes its routes and its imports' routes; an importer's prefix goes in front (`/api/v1/ping`)
 
 ---
 
@@ -170,63 +142,34 @@ type Provider interface {
 }
 ```
 
-**Only Requirement**: Implement `NewProvider() Provider`
-
-### 4.2 Provider Lifecycle
+### 4.2 Provider Lifecycle (`core/container.go`)
 
 ```
-1. Declaration: Register provider in ModuleBuilder
-2. Discovery: app.Create() walks module tree
-3. Registration: Provider added to injectedProviders map
-4. Key Generation: type.String() → key (e.g., "main.UserService")
-5. Injection: When handler needs provider type
-6. Instantiation: provider.NewProvider() called
-7. Reuse: Caller holds reference (or discards immediately)
+1. Declaration   ModuleBuilder().Providers(UserService{})
+2. Discovery     discover(): visible keys per module; the first module that lists a type owns it
+3. Construction  for each module in init order: OnInit(), then provide(key) for its providers:
+                 the providers its exported fields name first, injectDependencies, NewProvider()
+4. Injection     the NewProvider result, by value, into every field of that type
 ```
 
-### 4.3 Provider Instantiation Timing
+Key = package path + type (`genFieldKey`). Each provider type is constructed **once per app**,
+however many modules list it. `app.Get(UserService{})` returns that instance after `Create`.
 
-**CRITICAL**: `NewProvider()` called PER INJECTION, not at startup
-
-```go
-// WRONG - doesn't create singleton
-type UserService struct { }
-func (u UserService) NewProvider() Provider {
-    return UserService{}  // NEW instance every time
-}
-
-// RIGHT - creates singleton
-var userSingleton = UserService{repo: globalRepo}
-type UserService struct { }
-func (u UserService) NewProvider() Provider {
-    return userSingleton  // REUSE instance
-}
-```
-
-### 4.4 Provider with Initialization
+### 4.3 Provider with Initialization
 
 ```go
 type DatabasePool struct {
-    conn *sql.DB
+	DB *sql.DB
 }
 
-func (d DatabasePool) NewProvider() Provider {
-    // Lazy initialization (first call initializes)
-    if d.conn == nil {
-        d.conn = initDatabase()
-    }
-    return d
-}
-
-// OR: Initialize once at module creation
-var dbPool = &DatabasePool{
-    conn: initDatabase(),
-}
-
-func (d DatabasePool) NewProvider() Provider {
-    return dbPool
+func (instance DatabasePool) NewProvider() core.Provider {
+	instance.DB, _ = sql.Open("postgres", "postgres://localhost/app")
+	return instance
 }
 ```
+
+`NewProvider()` runs once per app, so it is the place to open a resource; close it in the module's
+`OnShutdown`. Shared state belongs behind a pointer (the provider is copied into each field).
 
 ---
 
@@ -234,332 +177,113 @@ func (d DatabasePool) NewProvider() Provider {
 
 ### 5.1 Provider-to-Provider Injection
 
-**Inject providers into other providers**:
-
 ```go
-type UserService struct {
-    Repository UserRepository  // Inject provider
-}
-
 type UserRepository struct {
-    DB DatabasePool  // Inject provider
+	Pool DatabasePool
 }
 
-// Providers are injected by type name matching
-// UserRepository field will get DatabasePool provider
+type UserService struct {
+	Repository UserRepository
+}
 ```
 
-**How It Works**:
-1. User service needs UserRepository
-2. Framework looks up provider with type "UserRepository"
-3. Finds UserRepository provider
-4. Calls UserRepository.NewProvider()
-5. Injects into UserService
+`provide(UserService)` sees the `UserRepository` field, constructs `UserRepository` first (which
+constructs `DatabasePool`), then injects and calls `UserService.NewProvider()`.
 
-### 5.2 Provider Injection in Controllers
+### 5.2 Field Lookup Order
+
+For each exported field (`injectDependencies`, `core/fn.go`):
+1. a provider of the module (own or imported)
+2. a global provider
+3. an interface the container holds (`common.Logger`, `common.Publisher`)
+4. otherwise: a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`; any other field keeps the value it was given
+
+An unexported field panics `dependency injection: can't set value to unexported '<field>' field of the <type> <kind>`.
+
+### 5.3 Provider Injection in Controllers
 
 ```go
 type UserController struct {
-    common.HTTP
-    UserService UserService  // Framework injects provider
+	common.HTTP
+	UserService UserService
 }
 
-func (c UserController) NewController() Controller {
-    // Before NewController() returns, framework resolves dependencies
-    // UserService field will be populated
-    return c
+func (instance UserController) NewController() core.Controller {
+	return instance
 }
 ```
 
-### 5.3 Circular Dependencies (Detect at app.Create())
+Fields are injected before `NewController()` is called; its result is the controller the routes use.
 
-```go
-type ServiceA struct {
-    B ServiceB  // A → B
-}
+### 5.4 Circular Dependencies
 
-type ServiceB struct {
-    A ServiceA  // B → A (circular!)
-}
-
-// At app.Create():
-// ServiceA.NewProvider() → tries to inject ServiceB
-// ServiceB.NewProvider() → tries to inject ServiceA
-// Infinite recursion → stack overflow → panic
-```
-
-**Mitigation Strategies**:
-1. **Restructure**: Move shared logic to third service
-2. **Lazy Loading**: Defer initialization
-3. **Manual Wiring**: Don't use injection for circular deps
+Value providers can't form a cycle: a struct containing itself through another struct is an invalid
+recursive type and doesn't compile. Move shared logic into a third provider.
 
 ---
 
-## 6. Module Exports & Global Availability
-
-### 6.1 Export Mechanism
+## 6. Global Modules
 
 ```go
-ModuleBuilder().
-    Providers(
-        UserService{},
-        AuthService{},
-        DatabasePool{},
-    ).
-    Export("UserService", "AuthService").  // Only these are global
-    Build()
+var InfraModule = func() *core.Module {
+	m := core.ModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
+	m.IsGlobal = true
+	return m
+}()
 ```
 
-**Effect**:
-- Exported providers available in other modules
-- Non-exported providers only available within module
-- Global scope: accessible to any module that imports this one
-
-### 6.2 Export Semantics
-
-**Rule**: Exported = globally available by type name
-
-**Example**:
-```go
-// Module A exports UserService
-ExportedModule := ModuleBuilder().
-    Providers(UserService{}).
-    Export("UserService").
-    Build()
-
-// Module B can use it
-ModuleBuilder().
-    Providers(
-        MyService{},  // Can depend on UserService from Module A
-    ).
-    Imports(ExportedModule).
-    Build()
-
-// MyService.NewProvider():
-// Can inject UserService from ExportedModule
-```
+- The providers of the root module and of every `IsGlobal` module (at any import depth) are visible to every module
+- A global module still has to be in the tree (imported somewhere) to be discovered
+- Module funcs' arguments resolve only from the global providers discovered before the call (the root's, and earlier `IsGlobal` modules'), then `common.Logger` and `common.Publisher`
 
 ---
 
-## 7. Global Modules
+## 7. Module Initialization Order
 
-### 7.1 IsGlobal Flag
-
-```go
-ModuleBuilder().
-    IsGlobal(true).
-    Providers(GlobalLogger{}).
-    Build()
-```
-
-**Effect**:
-- Providers available EVERYWHERE (all modules)
-- No need to explicitly import module
-- Global scope automatically
-
-### 7.2 Global Module Semantics
-
-**Without Global**:
-```
-Module A
-  Imports(Module B)
-    Module B providers available only in Module A
-
-Module C
-  Imports(Module B)
-    Module B providers available only in Module C
-```
-
-**With IsGlobal**:
-```
-Global Module
-  All modules automatically import
-  Providers available everywhere
-```
+The `Create()` sequence is in [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md) § Phase 2.
+Modules are initialized depth first: a module after every module it imports, imports in `Imports(…)`
+order, each once per app. `OnReady` follows the same order at the end of `Create`; `OnShutdown` runs in
+the exact reverse.
 
 ---
 
-## 8. Module Initialization Order (app.Create())
+## 8. Module Best Practices
 
-### 8.1 Initialization Sequence (CRITICAL)
+### 8.1 DO
 
-**MUST NOT BE REORDERED**:
-
-```
-app.Create(rootModule)
-    ↓
-1. initLogger()
-   └─ Setup Logger (first dependency for everything)
-
-2. initProviders(rootModule)
-   ├─ Walk module tree (depth-first)
-   ├─ Collect all providers
-   ├─ Collect all controllers
-   ├─ Collect all handlers
-   └─ Build injectedProviders map
-   
-3. initWS(injectedProviders)
-   ├─ IF EnableWS called:
-   │  ├─ Create WS instance
-   │  ├─ Set up WebSocket routing
-   │  └─ Prepare for WS handlers
-   └─ IF NOT called: skip (ws remains nil)
-   
-4. initMiddlewares(injectedProviders)
-   ├─ Resolve global middleware instances
-   ├─ Resolve module-scoped middleware
-   └─ Build middleware chains
-   
-5. initExceptionFilters(injectedProviders)
-   ├─ Resolve HTTP exception filters
-   ├─ Resolve WS exception filters
-   └─ Build filter chains
-   
-6. initGuards(injectedProviders)
-   ├─ Resolve global guards
-   ├─ Resolve route-specific guards
-   └─ Register guards
-   
-7. initInterceptors(injectedProviders)
-   ├─ Resolve interceptors
-   └─ Register interceptors
-   
-8. initMainHandlers()
-   ├─ Build routing trie
-   ├─ Register HTTP handlers
-   ├─ Build handler chains
-   └─ Setup exception filter routing
-   
-9. initDevtool()
-   ├─ IF Devtool enabled:
-   │  └─ Create route/handler snapshot
-   └─ IF NOT: skip
-   
-10. initAccessLog()
-    ├─ IF AccessLog enabled:
-    │  └─ Setup access logging
-    └─ IF NOT: skip
-```
-
-### 8.2 Why Order Matters
-
-**Dependency Cascade**:
-- initProviders MUST run first (builds provider map)
-- initWS MUST run before exception/guard/interceptor init (WS state is read)
-- initDevtool MUST run last (needs fully populated state)
-
-**If Reordered** (WILL BREAK):
-- Exception filters might reference uninitialized WS state
-- Handlers might be registered before providers available
-- Devtool might see incomplete state
-
----
-
-## 9. Module Best Practices
-
-### 9.1 DO
-
-- ✓ Use static modules for singletons (performance)
-- ✓ Use dynamic modules for configuration (flexibility)
 - ✓ Keep modules focused (single responsibility)
-- ✓ Export only necessary providers
-- ✓ Use module imports to declare dependencies
-- ✓ Use IsGlobal sparingly (only for truly global services)
+- ✓ Use imports to declare dependencies; `IsGlobal` only for truly global services
+- ✓ Open resources in `NewProvider()` or `OnInit`, close them in `OnShutdown`
+- ✓ Keep shared mutable state behind a pointer, protected by a mutex or atomics
 
-### 9.2 DON'T
+### 8.2 DON'T
 
-- ✗ Use circular module dependencies
-- ✗ Mutate module state after Create()
-- ✗ Create provider instances manually (use framework injection)
-- ✗ Store mutable state in static module variables
-- ✗ Mix static and dynamic module patterns
-- ✗ Call NewProvider() manually in handlers
+- ✗ Change a module (`Prefix`, `IsGlobal`, a hook) after giving it to `Create`
+- ✗ Call `NewProvider()` yourself (the instance would have no injected fields)
+- ✗ Write shared state from a module func without protection (two apps may call it at once)
 
 ---
 
-## 10. Common Module Patterns
+## 9. Common Module Patterns
 
-### 10.1 Service Layer Module
-
-```go
-var UserModule = func() *core.Module {
-    return core.ModuleBuilder().
-        Controllers(
-            UserController{},
-        ).
-        Providers(
-            UserService{},
-            UserRepository{},
-        ).
-        Export("UserService").
-        Build()
-}()
-```
-
-### 10.2 Configuration Module
+### 9.1 Dependency Hierarchy
 
 ```go
-func NewConfigModule(path string) *core.Module {
-    config := loadConfigFromFile(path)
-    
-    return core.ModuleBuilder().
-        IsGlobal(true).
-        Providers(
-            ConfigService{config: config},
-        ).
-        Build()
-}
+var InfraModule = func() *core.Module {
+	m := core.ModuleBuilder().Providers(DatabasePool{}).Build()
+	m.IsGlobal = true
+	return m
+}()
 
-// Usage:
-app.Create(
-    core.ModuleBuilder().
-        Imports(
-            NewConfigModule("/etc/app.env"),
-            UserModule,
-        ).
-        Build(),
-)
+var UserModule = core.ModuleBuilder().
+	Controllers(UserController{}).
+	Providers(UserService{}, UserRepository{}).
+	Build()
+
+var AppModule = core.ModuleBuilder().
+	Imports(InfraModule, UserModule).
+	Build()
 ```
 
-### 10.3 Dependency Hierarchy
-
-```go
-// Layer 1: Infrastructure (database, cache)
-var InfrastructureModule = func() *core.Module {
-    return core.ModuleBuilder().
-        IsGlobal(true).
-        Providers(
-            DatabasePool{},
-            CacheService{},
-        ).
-        Export("DatabasePool", "CacheService").
-        Build()
-}()
-
-// Layer 2: Business logic (services)
-var BusinessModule = func() *core.Module {
-    return core.ModuleBuilder().
-        Providers(
-            UserService{},      // Uses DatabasePool (injected)
-            ProductService{},   // Uses CacheService (injected)
-        ).
-        Imports(InfrastructureModule).
-        Export("UserService", "ProductService").
-        Build()
-}()
-
-// Layer 3: Handlers (controllers)
-var AppModule = func() *core.Module {
-    return core.ModuleBuilder().
-        Controllers(
-            UserController{},    // Uses UserService (injected)
-            ProductController{}, // Uses ProductService (injected)
-        ).
-        Imports(BusinessModule).
-        Build()
-}()
-
-// Usage:
-app.Create(AppModule)
-```
-
+`InfraModule` is initialized first, so `DatabasePool` exists before `UserRepository` asks for it (and
+`provide` would construct it first anyway).

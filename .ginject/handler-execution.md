@@ -5,9 +5,9 @@
 ## 1. Handler Plans (design 0006)
 
 Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `core/fn_plan.go`
-(`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `core/module.go`
-(`bindHTTPController` / `bindWSController` build the plans into `Module.httpPlanByPattern` /
-`wsPlanByEvent`); `core/app.go` `initRoutes` stores each HTTP plan in its route (`httpRoute.plan`,
+(`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `core/container.go`
+(`bindHTTPController` / `bindWSController` build the plans into the app's
+`container.httpPlanByPattern` / `wsPlanByEvent`); `core/app.go` `initRoutes` stores each HTTP plan in its route (`httpRoute.plan`,
 called with `call(c, ev, traced)`), and the WS read loop looks the plan up through `resolveAndCallHandler`.
 
 ### 1.1 Building a plan (cold, `Create()`)
@@ -70,8 +70,8 @@ invoke(c, ev):
 
 ### 1.3 Concurrency
 
-Plans are built under `moduleGlobalMu` during `Create()` and read-only afterwards; requests share
-them without a lock. The argument array lives on the request's stack.
+Plans are built during `Create()` on the calling goroutine, in the app's own container, and are
+read-only afterwards; requests share them without a lock. The argument array lives on the request's stack.
 
 ---
 
@@ -85,50 +85,23 @@ selects the plan. The handler's last result is the reply message.
 
 ## 3. Provider Instantiation
 
-### 3.1 Provider.NewProvider() Call
+Providers are constructed at `Create()`, never per request or per injection (`provide` in
+`core/container.go`, explained in [architecture-core-concepts.md](architecture-core-concepts.md) § 4.1):
 
-**When**: Each time a provider is injected into a handler
-
-**How**:
-1. Lookup provider by type key in `injectedProviders`
-2. Call `provider.NewProvider()` to get instance
-3. Convert to reflect.Value
-4. Append to handler args
-5. Call handler with args
-
-**Important**: Providers are NOT singletons. Each injection calls NewProvider().
-
-### 3.2 Singleton Providers (Pattern)
-
-**To create singleton providers**:
-
-```go
-// WRONG - creates new instance each time:
-func (p UserService) NewProvider() Provider {
-    return UserService{} // NEW instance every time
-}
-
-// RIGHT - return same instance:
-var userServiceSingleton = UserService{repo: ...}
-
-func (p UserService) NewProvider() Provider {
-    return userServiceSingleton // Reuse instance
-}
-```
-
-### 3.3 Provider with Initialization
+- each provider type once per app, after the providers its exported fields name
+- the value `NewProvider()` returns is injected, by value, into every field of its type (controllers,
+  other providers, layers, pipe prototypes)
+- shared state belongs behind a pointer; open resources in `NewProvider()` and close them in the
+  module's `OnShutdown`
 
 ```go
 type EmailService struct {
-    smtp *net.Conn
+	conn *smtp.Client
 }
 
-func (e EmailService) NewProvider() Provider {
-    // Initialize connection once
-    if e.smtp == nil {
-        e.smtp = net.Dial("tcp", "localhost:25")
-    }
-    return e
+func (instance EmailService) NewProvider() core.Provider {
+	instance.conn, _ = smtp.Dial("localhost:25")
+	return instance
 }
 ```
 
@@ -155,7 +128,6 @@ There is no deadline check before handler invocation — `ctx.HTTPContext.IsDead
 | `pipe <T>: Transform returned …, want <T>` | `Transform` returned nil or another type | 500 exception → exception filter |
 | `panic(exception.BadRequestException(...))` | Validation failure | Caught by exception filter |
 | `return nil` from handler | No return value | OK, handler can return any type |
-| Timeout exceeded | Handler takes too long | Panic with RequestTimeoutException |
 
 ---
 
@@ -200,23 +172,20 @@ approved.
 
 ### 7.1 Where Panics Are Recovered
 
-| Layer | Recovers? | Recovery Action |
-|-------|-----------|-----------------|
-| Handler invocation | YES | → exception filter |
-| Middleware | YES | → exception filter |
-| Guard | NO | → propagates |
-| Interceptor | NO | → propagates |
-| Exception filter | NO | → unrecoverable |
+All in `HTTP.handleRequest()` (`recoverRequest`), the request's only `recover()`; the spec is
+[request-pipeline.md](request-pipeline.md) § 1.
+
+| Layer | Goes to |
+|-------|---------|
+| Global or module middleware | The HTTP layer's fixed error response (no exception filter) |
+| Guard, interceptor (`Intercept`, operators), pipe, argument binding, handler | Module filters (bound last first), global filters, the built-in filter |
+| Exception filter | The next filter; if every filter panics, the error response for the last panic |
+| Any, after a response was sent | Nothing written; `ErrorAfterResponse` logged |
 
 ### 7.2 Panic Propagation Rules
 
-**Rule 1**: Panic in handler → recovered by recovery wrapper
-
-**Rule 2**: Panic in guard → NOT recovered → request terminates
-
-**Rule 3**: Panic in exception filter → NOT recovered → unrecoverable error
-
-**Rule 4**: Only exception filters can handle exceptions
+- Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged as `UnhandledPanic`
+- `panic(http.ErrAbortHandler)` is re-panicked so `net/http` aborts the connection
 
 ---
 
@@ -250,39 +219,13 @@ type UserController struct {
 }
 ```
 
-### 8.2 Circular Dependency Panics
+### 8.2 Circular Dependencies
 
-**GOTCHA**: Circular dependencies cause runtime panics at app.Create()
+Value providers can't form a cycle: a struct that contains itself through another struct is an
+invalid recursive type and doesn't compile.
 
-```go
-// A → B → A cycle
-type ServiceA struct {
-    B ServiceB  // A depends on B
-}
+### 8.3 Nil From NewProvider
 
-type ServiceB struct {
-    A ServiceA  // B depends on A
-}
-
-// At app.Create(): ServiceA.NewProvider() → tries to inject B → 
-// B.NewProvider() → tries to inject A → infinite recursion → panic
-```
-
-### 8.3 Nil Dependency Injection
-
-**GOTCHA**: If provider returns nil, handler gets nil
-
-```go
-func (u UserService) NewProvider() Provider {
-    if someCondition {
-        return nil  // Returns nil
-    }
-    return u
-}
-
-// Handler gets nil
-func (c *UserController) READ(us UserService) {
-    us.DoSomething()  // NilPointerException if us is nil!
-}
-```
-
+A provider whose `NewProvider()` returns `nil` is stored as `nil`; `injectDependencies`
+(`core/fn.go`) skips nil entries, so a field of that type is unresolved and `Create()` panics
+`dependency injection: can't resolve dependency …` (read from the code, no test pins it).

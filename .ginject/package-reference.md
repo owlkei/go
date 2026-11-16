@@ -2,7 +2,7 @@
 
 **Optimization**: Structured reference, minimal prose, organized by package.
 
-**Verification policy**: every signature below was read directly from source on 2026-09-25. If you (an AI agent) are about to generate code against an API in this file, and this file is more than a few weeks old relative to the repo, spot-check the signature with a grep before trusting it — this file has previously contained fabricated APIs that looked exactly as confident as everything else in it.
+**Verification policy**: the `core`, `log`, `trace` and `accesslog` signatures below were checked against source on 2026-11-16 (roadmap 0003), the rest on 2026-09-25. If you (an AI agent) are about to generate code against an API in this file, and this file is more than a few weeks old relative to the repo, spot-check the signature with a grep before trusting it — this file has previously contained fabricated APIs that looked exactly as confident as everything else in it.
 
 ---
 
@@ -14,14 +14,12 @@
 
 ```go
 type App struct {
-    http    *HTTP
-    ws      *WS
-    tracer  trace.Tracer
-    broker  memorybroker.Broker
-    Logger  common.Logger
-    // ... other unexported fields
+    // unexported fields only: router, container, tracer, broker, logger, server state
 }
 ```
+
+Every `core.New()` is independent (own routes, providers, layers, logger, publisher). The logger is
+set with `SetLogger` (the only way) and read with `Logger()`; `App` has no exported fields.
 
 **Public Methods** (all chainable, return `*App`, unless noted):
 
@@ -392,7 +390,7 @@ type LogOptions struct {
 }
 ```
 
-- No `Transports`, no `TimeFormat`, no `Output`: output is stdout; anything else is a custom logger behind `WrapLogger`.
+- `LogOptions` has exactly the four fields above; output is stdout; anything else is a custom logger behind `WrapLogger`.
 - The Pretty handler is unexported; `internal/color.Colored{Text, Color}` is printed in its color by Pretty and as its `Text` in JSON and Text.
 - A logger call never panics because of a value: depth 16, 1,000 values per argument, `[MAX_DEPTH]` / `[TRUNCATED]`, a panicking `String` / `Error` / `LogValue` gives a `log_error` pair.
 - `WrapLogger(nil, …)` panics; `WrapLogger` of a built-in or wrapped logger merges the rules (one layer).
@@ -467,10 +465,11 @@ broker.Publish("users.created", userData)
 // Cleanup
 broker.Unsubscribe(sub)
 
-// Alternative (preferred): Inject Publisher interface
-app.BindWSHandler("users.created", func(pub common.Publisher) {
+// Alternative (preferred): inject common.Publisher into a handler
+func (instance UserController) SUBSCRIBE_users_created(pub common.Publisher) string {
     pub.Publish("users.profile.updated", profileData)
-})
+    return "ok"
+}
 ```
 
 ### Architecture
@@ -527,7 +526,7 @@ func (t *Tracer) Emit(e Event)                         // synchronous, in regist
 func (t *Tracer) Listen(fn func(Event)) (stop func())  // stop removes exactly that registration
 ```
 
-- There is no event bus: the `event` package was removed (design 0010). `core` holds one `trace.Tracer`
+- There is no event bus (design 0010). `core` holds one `trace.Tracer`
   per app (`app.tracer`); the access log is its only listener today. Every event carries `Transport`.
 
 ---
@@ -619,10 +618,9 @@ Provides `ConfigService` (`Get(k string) any`, `Set(k string, v any)`, `Transfor
 func Register(opts *CacheModuleOptions) *core.Module   // package name: cache
 
 type CacheModuleOptions struct {
-    IsGlobal   bool
-    OnInit     func()
-    Backend    Cache        // pluggable; defaults to memorycache.NewMemoryCache() if nil
-    MaxEntries int           // 0 = memorycache.DefaultMaxEntries; negative = unlimited; ignored if Backend supplied
+    IsGlobal bool
+    OnInit   CacheOnInitFn  // func()
+    Backend  Cache          // pluggable; defaults to memorycache.NewMemoryCache() if nil
 }
 
 type Cache interface {
@@ -679,9 +677,7 @@ Provides `StoreService{DB *DB}`. This package was entirely absent from earlier v
 **Responsibility**: In-memory sharded byte cache with TTL — **no persistence of any kind**
 
 ```go
-func NewMemoryCache(opts ...Option) *MemoryCache   // the only constructor
-
-func WithMaxEntries(n int) Option   // caps total entries; n<=0 means unlimited
+func NewMemoryCache() *MemoryCache   // the only constructor; no options
 ```
 
 | Method | Signature |
@@ -696,7 +692,7 @@ func WithMaxEntries(n int) Option   // caps total entries; n<=0 means unlimited
 
 **`PersistenceConfig` and `NewMemoryCacheWithConfig` do not exist and never have — do not generate them.** This was a fabrication repeated across multiple doc files; the package has zero file I/O.
 
-**Eviction is NOT LFU.** `admitLocked` (internal), triggered on insert once `WithMaxEntries`'s cap is hit, samples up to 8 live entries per shard, deletes any already expired, and evicts whichever sampled entry has the soonest non-zero TTL deadline (falling back to the first sampled entry if none have one). It's an approximate cap, not an exact one, and has no frequency counters at all.
+**No entry cap and no eviction policy.** Expired entries are removed by the background sweep and, every few writes, by a bounded expired-entry cleanup in `Set` (`evictLocked`, internal); live entries are never evicted.
 
 `hashKey` uses `hash/maphash` with a random per-process seed (not FNV-1a) — shard placement is stable within a process but not reproducible across restarts; this closes a hash-flooding DoS vector present in an earlier hand-rolled FNV-1a implementation.
 

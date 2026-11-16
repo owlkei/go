@@ -12,28 +12,28 @@ Feature Request
   ├─ "I need an HTTP endpoint"
   │   ├─ Embed common.HTTP in controller
   │   ├─ Create method: READ/CREATE/UPDATE/MODIFY/DELETE_BY_params
-  │   ├─ Add parameters to method signature (injected types)
+  │   ├─ Add parameters to method signature (built-in types and pipes, core/README.md › Handler injection)
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
-  │   └─ Provider dependencies injected automatically
+  │   └─ Providers go in exported controller fields (injected at Create())
   │
   ├─ "I need WebSocket support"
   │   ├─ Embed common.WS in controller
-  │   ├─ Create method: ON_TOPIC_NAME
+  │   ├─ Create method: SUBSCRIBE_<topic> (e.g. SUBSCRIBE_chat_PERSON_ANY)
   │   ├─ Inject *ctx.WSContext, *websocket.Conn, common.Publisher
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Use publisher.Publish() for fanout
   │
   ├─ "I need to validate input"
   │   ├─ Option 1: Create Pipeable struct (Transform method)
-  │   ├─ Option 2: Validate in middleware and panic
-  │   ├─ Option 3: Validate in handler and return error
-  │   └─ NEVER validate in guard (guard is for auth, not validation)
+  │   ├─ Option 2: Validate in the handler and panic exception.BadRequestException(...)
+  │   ├─ (a middleware panic skips your exception filters: fixed error response)
+  │   └─ Guards decide access, not input shape
   │
   ├─ "I need authentication"
   │   ├─ Create Guard struct with CanActivate()
   │   ├─ Guard checks JWT/session in httpCtx.Request.Header
-  │   ├─ Return true if authorized, false if forbidden
-  │   ├─ NEVER panic in guard
+  │   ├─ Return true if authorized, false for 403
+  │   ├─ Or panic exception.UnauthorizedException(...) for 401 (reaches the exception filters)
   │   └─ Bind guard to specific handlers
   │
   ├─ "I need to modify request/response"
@@ -102,16 +102,16 @@ Piece of Code
   │
   ├─ "Initialization/setup code"
   │   ├─ If per-handler: put in middleware
-  │   ├─ If per-module: create Provider with setup in NewProvider()
-  │   └─ If global: use IsGlobal(true) module or BindGlobalMiddlewares
+  │   ├─ If per-module: the module's OnInit / OnReady hook, or setup in NewProvider() (called once per app)
+  │   └─ If global: set IsGlobal = true on the module, or BindGlobalMiddlewares
   │
   ├─ "Cleanup/teardown code"
-  │   └─ Use defer in middleware or handler
-  │       (Framework doesn't have explicit lifecycle hooks)
+  │   ├─ Per request: defer in the handler, or an interceptor's Pipe operators
+  │   └─ Per app: the module's OnShutdown hook (runs after the drain, reverse init order)
   │
   └─ "Logging, tracing, monitoring"
-      ├─ Use event.Emit() for custom events
-      ├─ Use Logger for structured logging
+      ├─ Per-request timing: EnableAccessLog() (the app's tracer has no public listener API)
+      ├─ Use Logger for structured logging (inject common.Logger, or app.Logger())
       └─ Can go in middleware, handler, or provider
 ```
 
@@ -212,18 +212,17 @@ Error Scenario
   │   └─ To bound a slow handler yourself: wrap the slow call in your own context.WithTimeout and panic(exception.RequestTimeoutException(...)) on ctx.Err()
   │
   ├─ "Internal server error (unexpected panic)"
-  │   ├─ Panic with exception.InternalServerErrorException
-  │   ├─ Or any panic caught by exception filter
-  │   └─ Exception filter writes 500 Internal Server Error
+  │   ├─ Any non-exception panic answers a fixed 500 and is logged (UnhandledPanic)
+  │   └─ Filters receive InternalServerErrorException("Internal Server Error"), never the value
   │
   ├─ "Not implemented"
   │   ├─ Panic with exception.NotImplementedException
   │   └─ Exception filter writes 501 Not Implemented
   │
-  └─ "Panic in guard/interceptor (unrecoverable)"
-      ├─ Framework does NOT catch this
-      ├─ Unhandled panic → app crash
-      └─ NEVER panic in guard, NEVER panic in interceptor pre
+  └─ "Panic in a middleware"
+      ├─ Never reaches exception filters
+      ├─ Exception → its code and message; anything else → fixed 500
+      └─ To answer differently: write the response and return without next()
 ```
 
 ---
@@ -241,15 +240,14 @@ Architecture Question
   │
   ├─ "How do I share code between modules?"
   │   ├─ Create shared Provider (register in imported module)
-  │   ├─ Use IsGlobal(true) for truly global services
-  │   ├─ Export(...) specific providers from module
-  │   └─ Inject into handlers/controllers in other modules
+  │   ├─ Set m.IsGlobal = true on the built module for truly global services
+  │   ├─ Otherwise import the module: its providers are visible to the importer
+  │   └─ Inject as exported fields of controllers/providers in other modules
   │
   ├─ "Where should I put validation logic?"
-  │   ├─ Option 1: Middleware (runs before handler)
+  │   ├─ Option 1: Pipeable (custom transform for a specific param)
   │   ├─ Option 2: Interceptor pre-phase (runs before handler)
-  │   ├─ Option 3: Pipeable (custom transform for specific param)
-  │   └─ NOT in Guard (guards are for auth/permissions)
+  │   └─ Guards are for auth/permissions
   │
   ├─ "Where should I put caching logic?"
   │   ├─ Create Provider with injected CacheService
@@ -268,12 +266,12 @@ Architecture Question
   │   ├─ Logging → Middleware or interceptor
   │   ├─ Error handling → Exception filter
   │   ├─ Authentication → Guard or middleware
-  │   ├─ Tracing → event.On() listener
+  │   ├─ Tracing → EnableAccessLog(), or an interceptor
   │   └─ Rate limiting → Guard
   │
   └─ "How do I test this application?"
       ├─ Create new app instance per test
-      ├─ Create new module per test (avoid static state)
+      ├─ Modules may be shared: every core.New() has its own routes, providers and layers
       ├─ Mock providers via dependency injection
       ├─ Use httptest.Server for HTTP testing
       ├─ For WS: use real websocket connection or mock interface
@@ -296,16 +294,12 @@ Pattern Question
   │       Result: bypass guard logic, security issue
   │
   ├─ "Should I call next() multiple times?"
-  │   └─ NO - causes double-processing
-  │       Result: handler called multiple times
+  │   └─ Harmless but pointless - a second call does nothing
+  │       Code after next() runs before the next layer, not after the handler
   │
-  ├─ "Should I panic in guard?"
-  │   └─ NO - panic not caught in guard
-  │       Result: unhandled panic, app crash
-  │
-  ├─ "Should I panic in interceptor?"
-  │   └─ NO - panic not caught in interceptor pre-phase
-  │       Result: unhandled panic, app crash
+  ├─ "Should I panic in guard or interceptor?"
+  │   └─ YES with an exception - it reaches the route's exception filters
+  │       A non-exception value answers a fixed 500 and is logged
   │
   ├─ "Should I hold state in provider?"
   │   └─ DEPENDS - if mutable, protect with sync.Mutex
@@ -316,16 +310,15 @@ Pattern Question
   │       Result: message corruption
   │
   ├─ "Should I store mutable state in module?"
-  │   └─ NO - module is singleton, shared across requests
+  │   └─ NO - a module value may be given to several apps; providers are constructed once per app
   │       Result: race conditions
   │
   ├─ "Should I call NewProvider() manually?"
-  │   └─ NO - breaks dependency injection
-  │       Result: defeats pooling, lifecycle management
+  │   └─ NO - the app constructs each provider once and injects its fields first
+  │       Result: uninjected fields, a second instance
   │
   ├─ "Should I have circular dependencies?"
-  │   └─ NO - causes infinite recursion at app.Create()
-  │       Result: stack overflow, unrecoverable panic
+  │   └─ Can't with value providers - the recursive type doesn't compile
   │
   ├─ "Can I bind the same Middleware/Guard/Interceptor/ExceptionFilter type twice with different config?"
   │   └─ YES - the app keeps one instance per configuration (type + constructor + reflect.DeepEqual value)

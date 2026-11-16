@@ -55,7 +55,7 @@ func main() {
 ## Stages and transports
 
 - Stages: `StageMiddleware`, `StageGuard`, `StagePreInterceptor`, `StagePostInterceptor`, `StageExceptionFilter`, `StagePipe`, `StageHandler`, `StageComplete`.
-- Transports: `TransportHTTP` (`"HTTP"`), `TransportWS` (`"WS"`).
+- Transport values: `TransportHTTP` (`"HTTP"`), `TransportWS` (`"WS"`).
 - `core` asks `Enabled()` once per request and emits nothing for a request that started without a listener.
 
 ## `Tracer` Methods

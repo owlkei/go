@@ -19,11 +19,11 @@
     "synchronization": "channelized (readLoop → handler → memorybroker.Publish → writeLoop via channel)"
   },
   "global_shared_state": {
-    "injectedProviders": {
-      "description": "map[string]Provider - provider registry",
-      "access": "read-only after app.Create()",
+    "app container (core/container.go)": {
+      "description": "per-app providers, layers, routes, events and handler plans",
+      "access": "written during app.Create() on the calling goroutine, read-only afterwards",
       "thread_safe": true,
-      "synchronization": "immutable after initialization"
+      "synchronization": "immutable after initialization; two apps never share one"
     },
     "routing.Router": {
       "description": "Trie-based route matching",
@@ -125,12 +125,12 @@
     "risk_1": "Middleware calling next() inside lock",
     "risk_2": "memorybroker.Broker.Close() called synchronously from within a handler that was itself dispatched by PublishAsync — self-deadlock, VERIFIED (see anti-patterns-gotchas.md). Close()'s wg.Wait() can never return because wg.Done() for that goroutine only runs after the handler (which is blocked in Close()) returns. NOT a bug in the locking, an inherent property of waiting on your own in-flight WaitGroup entry; documented as unsupported rather than special-cased",
     "risk_2_note": "Reentrancy is otherwise SAFE and verified by test: a handler calling Subscribe/Unsubscribe/Publish/PublishAsync (including on itself) does not deadlock, because publishInternal releases its RLock before invoking any handler — Close() called from a SYNC Publish handler is also safe (Publish isn't WaitGroup-tracked)",
-    "risk_3": "Event listener blocking on I/O",
+    "risk_3": "A trace listener blocking on I/O (listeners run synchronously on the request goroutine)",
     "prevention": "keep pipeline stages lock-free and non-blocking; never call Close() synchronously from a PublishAsync-dispatched handler"
   },
   "cancellation_handling": {
-    "http_requests": "No per-request ctx.HTTPContext.SetDeadline()/Deadline/IsDeadlineExceeded() exists — do not invent them (verified absent from ctx/http_context.go). Timeouts are server-level only: http.Server's ReadHeaderTimeout(2s)/ReadTimeout(5s)/WriteTimeout(15s)/IdleTimeout(60s), set once in core.App.Listen() via the Default* constants, not per-request or configurable.",
+    "http_requests": "No per-request ctx.HTTPContext.SetDeadline()/Deadline/IsDeadlineExceeded() exists; do not invent them. Timeouts are server-level internal defaults (core/server.go newServerDefaults): ReadHeaderTimeout 5s, ReadTimeout 30s, WriteTimeout 30s, IdleTimeout 75s; a handler extends its own with http.NewResponseController. During a shutdown each running request's Context() is cancelled when ShutdownTimeout passes.",
     "ws_connections": "no context.Context, use heartbeat + timeout",
-    "graceful_shutdown": "Built in: SIGINT/SIGTERM triggers serveWithGracefulShutdown (core/app.go) -> callOnShutdown() (each Module's OnShutdown() in tree order, guarded by shutdownOnce so it runs exactly once even if app.Stop() is also called) -> stdlib http.Server.Shutdown(ctx) with a 30s timeout. No WebSocket-specific shutdown handling (no close-frame/status-code logic) — open WS connections are simply dropped when the server stops."
+    "graceful_shutdown": "Built in (core/server.go): SIGINT/SIGTERM or app.Stop() -> stop intercepting signals -> close the listener and idle connections -> drain running requests for ServerOptions.ShutdownTimeout (default 30s) -> runShutdownHooks() once per app (shutdownOnce): every Module's OnShutdown in the exact reverse of the init order, a panicking hook logged as OnShutdownPanic -> access log stopped. Stop() is safe from any goroutine; called from a handler it waits for that request (use go app.Stop()). No WebSocket-specific shutdown: open WS connections end when the process exits."
   }
 }

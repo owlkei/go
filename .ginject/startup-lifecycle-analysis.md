@@ -1,18 +1,22 @@
 # Startup Lifecycle & Race Condition Analysis
 
-**Purpose**: Document application startup sequence, module initialization guarantees, and identified race conditions.
+**Purpose**: Application startup sequence, module initialization guarantees, shutdown, and the race
+conditions an app can still create for itself. The user-facing contract (hooks, server, shutdown) is
+`core/README.md` › Modules and lifecycle and › Server; this page explains the implementation.
 
-**Last Updated**: v2.1 (matches current codebase)
+**Last Updated**: 2026-11-16 (roadmap 0003, designs 0008 and 0009)
 
 ---
 
 ## Critical Finding
 
-⚠️ **POTENTIAL RACE CONDITION EXISTS**: WebSocket handlers can be called before dependent modules complete initialization if:
-1. Handler depends on another module (e.g., Cache service)
-2. Module uses async initialization (e.g., `go connectToRedis()`)
-3. WebSocket client connects during that async phase
-4. Framework does not guarantee all modules fully initialized when `Listen()` starts
+⚠️ **Async work started in a hook is not tracked**: a request or WebSocket message can reach a
+provider before work it started in a goroutine has finished, when:
+1. The handler depends on a provider (for example a cache client)
+2. A hook starts that provider's setup in a goroutine (`go connectToRedis()`)
+3. A client connects during that async phase
+
+The framework guarantees only that every synchronous hook has returned before the server starts.
 
 ---
 
@@ -22,82 +26,85 @@
 
 ```
 core.New()
-  ├─ Create HTTP server (net/http)
-  ├─ Create event emitter
-  ├─ Create memorybroker (READY FOR PUB/SUB IMMEDIATELY)
-  ├─ Create publisher (wraps broker)
-  └─ Initialize context pools
+  ├─ newHTTP()                       router and route tables of this app
+  ├─ memorybroker.NewMemoryBroker()  the app's own broker (ready for pub/sub immediately)
+  ├─ newContainer()                  the app's own modules, providers, layers, routes and events
+  ├─ log.NewLog(nil)                 the built-in logger (replace it with SetLogger before Create)
+  ├─ context pools (HTTP exchange, WS context), server defaults, body cap 10 MiB
+  ├─ container.addInterface(common.Publisher)
+  └─ BindGlobalExceptionFilters(built-in HTTP and WS filters)
 ```
 
-**Key Point**: Broker is created and ready immediately. No subscriptions yet.
+Every `core.New()` is independent: there is no package-level registry of routes, events, providers or
+layers (design 0009). The app's `trace.Tracer` is a zero value (no listener).
 
-### Phase 2: App Initialization (`app.Create(m *Module)`)
+### Phase 2: App Initialization (`app.Create(m *Module)`, `core/app.go`)
 
-Sequential phases (NO CONCURRENCY):
-
-```
-1. initLogger()
-   └─ Create logger, register globally
-
-2. initProviders(m)
-   └─ CALLS: m.NewModule()
-      ├─ CALLS: OnInit() for each module (SEQUENTIAL)
-      ├─ Injects static modules
-      ├─ Injects dynamic modules
-      ├─ Registers all providers
-      └─ Registers all controllers
-      ↓ Lock held during entire NewModule()
-
-3. initWS()
-   └─ If WebSocket enabled: create WS handler
-
-4. initMiddlewares()
-5. initExceptionFilters()
-6. initGuards()
-7. initInterceptors()
-8. initMainHandlers()
-9. initDevtool()
-10. initAccessLog()
-
-11. callOnReady()
-   └─ CALLS: OnReady() for each module (SEQUENTIAL)
-```
-
-**Key Point**: All initialization is SEQUENTIAL within `Create()`, NOT concurrent.
-
-### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`)
+Sequential, on the calling goroutine:
 
 ```
-app.Listen(port, nil)
-  ├─ Bind the address (a bind error returns here: nothing logged, no hook)
-  ├─ Log module initialization status
-  ├─ Log HTTP routes
-  ├─ Log WS events (if enabled)
-  ├─ Log ServerListening (address, tls, protocols)
-  └─ Serve (IMMEDIATELY ACCEPTING CONNECTIONS)
+Create(m)
+  ├─ m == nil          → panic "invalid module: Create needs a root module"
+  ├─ second call       → panic "invalid app: Create called twice"
+  ├─ container.addInterface(common.Logger)
+  ├─ container.wire(m)                      core/container.go
+  │    ├─ addGlobals(root)                  the root's providers are global
+  │    ├─ discover(root)                    depth first, each module once:
+  │    │     IsGlobal → its providers become global;
+  │    │     module funcs are called here (arguments from global providers, then Logger, Publisher);
+  │    │     visible providers and controllers per module, prefixes per controller
+  │    ├─ for each module in init order: OnInit(), then provide() each of its providers
+  │    │     (a provider is constructed after the providers its fields name, once per app)
+  │    └─ injectController() for every controller of the tree (fields injected, then NewController)
+  ├─ initWS()                               only when EnableWS was called
+  ├─ initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(),
+  │  initInterceptors(), initMainHandlers()  layers constructed once per type and configuration,
+  │                                          handler plans built (core/fn_plan.go)
+  ├─ app.http.finishRoutes()                one immutable route struct per route, fixed 404/405 bodies
+  ├─ initDevtool()                          after routes and layers exist
+  ├─ initAccessLog()                        the tracer's only listener, when EnableAccessLog was called
+  └─ callOnReady()                          OnReady of every module, in init order; then isCreated = true
 ```
 
-**Key Point**: HTTP server accepts connections IMMEDIATELY after this call.
+**Init order**: a module after every module it imports, imports in `Imports(…)` order, each module once
+per app. Root importing A and C, both importing B: B, A, C, root.
 
-### Phase 4: WebSocket Client Connection
+**Key Points**:
+- A panic in `OnInit` or `OnReady` stops `Create` and reaches the caller unchanged. An app whose
+  `Create` did not finish runs no `OnShutdown`.
+- `Create` never writes to the modules it is given: the same module value may be given to several apps.
+- Configuration methods (`BindGlobal…`, `Enable…`, `SetLogger`) panic after `Create`:
+  `invalid app: <Method> must be called before Create`.
+
+### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`; `core/server.go`)
 
 ```
-Client: GET /ws HTTP/1.1 Upgrade: websocket
-
-Server: Run middleware chain (handshake phase)
-
-Server: Accept connection → readLoop() starts
-
-Client: Send message (e.g., TypeSubscribe)
-
-Server: handleSubscribe()
-  ├─ Run middleware
-  ├─ DEPENDS ON: Handler parameter types
-  ├─ RESOLVE: Dependency injection
-  ├─ CALLS: Handler
+app.Listen(port, opts)
+  ├─ checks (before Create, already serving, stopped, option conflicts) → return an error
+  ├─ bind :<port>          a bind error returns here: nothing logged, no hook runs
+  ├─ log InstanceLoader (one line per named module), RouteExplorer (one per route),
+  │  WebSocketEvent (one per event), ServerListening (address, tls, protocols)
+  └─ serve until SIGINT / SIGTERM / app.Stop() or a server error
 ```
 
-**Key Point**: Dependencies resolved at THIS POINT, not before.
+The server accepts connections as soon as `ServerListening` is logged.
+
+### Phase 4: Shutdown (`core/server.go`)
+
+```
+SIGINT / SIGTERM / app.Stop()
+  ├─ stop intercepting signals (a second signal ends the process the default way)
+  ├─ close the listener and idle keep-alive connections
+  ├─ drain running requests for ShutdownTimeout (default 30 s), then close their connections
+  ├─ runShutdownHooks()   once per app (app.shutdownOnce):
+  │     OnShutdown of every module in the exact reverse of the init order (root first);
+  │     a panicking hook is logged as OnShutdownPanic (module, panic) and the others still run;
+  │     then the access log is stopped, so its last lines are written
+  └─ the serving call returns nil, "core: shutdown timed out after <timeout>" or "core: serve: <err>"
+```
+
+`app.Stop()` on an app that is not serving runs the hooks once and marks the app stopped. WebSocket
+connections are not drained: they end when the process exits.
 
 ---
 
@@ -105,57 +112,36 @@ Server: handleSubscribe()
 
 ### Condition 1: Async Module Initialization ⚠️ REAL
 
-**Scenario**:
 ```go
-// Cache module
-module.OnInit = func() {
-    go client.Connect("redis://...")  // ← Async!
+var CacheModule = func() *core.Module {
+	m := core.ModuleBuilder().Providers(CacheService{}).Build()
+	m.OnInit = func() {
+		go client.Connect("redis://...")
+	}
+	return m
+}()
+
+func (instance ChatController) SUBSCRIBE_chat(payload ctx.WSPayload) string {
+	instance.CacheService.Set("key", "value")
+	return "ok"
 }
-
-// WebSocket handler
-app.BindWSHandler("event.update", func(cache CacheService) {
-    cache.Set("key", "value")  // ← Depends on async!
-})
-
-// Timeline:
-// T0: OnInit() starts, async connect spawned
-// T1: OnInit() returns (Connect still pending!)
-// T2: OnReady() called (Connect still pending!)
-// T3: app.Listen() → HTTP server listening
-// T4: WebSocket client connects
-// T5: handleSubscribe() → depends on cache
-// T6: cache.Set() → FAILS (Redis not connected)
 ```
 
-**Likelihood**: HIGH if modules use goroutines
+Timeline: `OnInit` returns while `Connect` is pending → `OnReady` → `Listen` → a client connects →
+the handler calls the cache before the connection exists.
 
-**Impact**: Handler fails, exception sent to client, no message loss (in-memory)
+**Framework Guarantee**: none for goroutines a hook starts.
 
-**Framework Guarantee**: NONE. Framework only waits for sync code to complete.
+### Condition 2: Import Order ✓ DEFINED
 
-### Condition 2: Module Dependency Ordering ⚠️ THEORETICAL
+Imports are initialized in `Imports(…)` order, after the modules they import themselves. A provider
+is constructed after the providers its exported fields name, whatever the module order, so the order
+of `Imports(…)` matters only for the order hooks run in.
 
-**Scenario**:
-```go
-// Module A imports Module B, but B not listed first
-moduleTree := core.ModuleBuilder().
-    Imports(moduleA, moduleB).  // ← Order unspecified!
-    Build()
-```
+### Condition 3: Broker Subscriptions ✓ NOT POSSIBLE AT STARTUP
 
-**Likelihood**: LOW (good practice catches this)
-
-**Impact**: Panic during initialization (DI resolution fails)
-
-**Framework Guarantee**: None for import order.
-
-### Condition 3: Broker Subscriptions ✓ NOT POSSIBLE
-
-**Why this CANNOT happen**:
-- Broker is created in `core.New()`
-- Subscriptions only happen when WebSocket client sends TypeSubscribe message
-- That happens AFTER HTTP server listening AFTER all modules initialized
-- No automatic subscriptions during startup
+The broker is created in `core.New()`; subscriptions only happen when a WebSocket client sends a
+`subscribe` message, after the server is listening.
 
 ---
 
@@ -163,184 +149,40 @@ moduleTree := core.ModuleBuilder().
 
 ### What IS Guaranteed
 
-| Phase | Guarantee | Confidence |
-|-------|-----------|------------|
-| OnInit() called | SYNC completion before next phase | HIGH |
-| OnReady() called | SYNC completion before Listen() | HIGH |
-| All providers created | Before Listen() | HIGH |
-| All controllers registered | Before Listen() | HIGH |
-| Middleware chain installed | Before first request | HIGH |
+| Phase | Guarantee |
+|-------|-----------|
+| `OnInit()` | Returned before the module's providers are constructed |
+| `OnReady()` | Every module's has returned before `Create` returns, so before any serving call |
+| Providers | Each constructed once per app, before `Create` returns |
+| Controllers and routes | Registered before `Create` returns |
+| `OnShutdown()` | Runs once per app, after the drain, in reverse init order |
 
 ### What IS NOT Guaranteed
 
 | Item | Why |
 |------|-----|
-| Async operations complete | Framework doesn't track goroutines |
-| External services ready | Connect() runs async outside framework |
-| Module A ready before B | No import order guarantees |
-| All modules same readiness level | Each has own OnInit/OnReady |
-
-### Shutdown: `OnShutdown` (the counterpart this doc's title implies, documented here for completeness)
-
-`core.Module.OnShutdown func()` fires on SIGINT/SIGTERM or `app.Stop()` while serving, **after** the server has drained its running requests (or after `ShutdownTimeout`), or on a direct `app.Stop()` of an app that is not serving — all paths funnel into `runShutdownHooks()`, guarded by `app.shutdownOnce` so it runs exactly once (`core/server.go`). A hook that panics is logged as `OnShutdownPanic` and the others still run.
-
-**Order** (design 0009 K1-K4): `OnInit` and `OnReady` run depth first, a module after every module it imports; `OnShutdown` runs in the exact reverse, so a module stops before the modules it imports. An app whose `Create` did not finish runs no `OnShutdown`. The wiring walk described above (`NewModule`, `initProviders`) is replaced by `(*container).wire` in `core/container.go`; this file's walkthrough is refreshed in roadmap 0003 step 5.
-
-After all modules' `OnShutdown()` return, the stdlib `http.Server.Shutdown(ctx)` runs with a 30-second timeout. There is no WebSocket-specific shutdown handling (no close-frame/status-code logic) — open WS connections are simply dropped when the server stops.
+| Async operations complete | The framework doesn't track goroutines |
+| External services ready | They are outside the framework |
+| WebSocket connections drained at shutdown | Not implemented (roadmap 0005) |
 
 ---
 
-## Message Safety
-
-### Broker Lifecycle
-
-```
-1. Broker created in core.New()
-   ├─ In-memory storage: 4 maps (exact/prefix/global/complex), single sync.RWMutex, no sharding
-   ├─ No goroutines started eagerly — PublishAsync spawns one goroutine per call, on demand
-   └─ Ready for Publish/Subscribe IMMEDIATELY
-
-2. Subscriptions only when WebSocket client connects
-   ├─ Client sends TypeSubscribe
-   ├─ handleSubscribe() called
-   ├─ Middleware chain runs
-   ├─ ws.connmgr.Subscribe() → memorybroker.Subscribe()
-   └─ Handler installed
-
-3. On message failure
-   ├─ Exception caught
-   ├─ Exception sent to client
-   ├─ NO ACK/NACK (in-memory)
-   ├─ NO RETRY
-   └─ Message effectively lost (not persisted)
-```
-
-### Message Guarantees
+## Message Safety (WebSocket)
 
 | Scenario | Behavior | Loss Risk |
 |----------|----------|-----------|
-| Handler succeeds | Message processed, no ack needed | None |
-| Handler panics | Exception caught, sent to client | Lost |
-| Handler depends missing | Exception sent | Lost |
-| Slow client buffer full | Message dropped via TrySend | Lost |
-| App crashes mid-dispatch | Message lost (in-memory) | High |
+| Handler succeeds | Reply sent | None |
+| Handler panics | Exception sent to the client | Message not retried |
+| Slow client buffer full | Message dropped via `TrySend` | Lost |
+| Process exits | In-memory broker state lost | High |
+
+No ACK / NACK, no retry, no persistence: the broker is in memory (`memorybroker`).
 
 ---
 
-## Recommendations to Avoid Race Conditions
+## Recommendations
 
-### 1. Avoid Async in OnInit()
-
-```go
-// ❌ BAD
-module.OnInit = func() {
-    go connect()  // Async!
-}
-
-// ✓ GOOD
-module.OnInit = func() {
-    connect()  // Sync, blocks until ready
-}
-```
-
-### 2. Use OnReady() for Background Tasks
-
-```go
-module.OnReady = func() {
-    // After ALL modules initialized
-    go startWorkerPool()
-    go startHealthChecks()
-}
-```
-
-### 3. Verify Dependencies Before Returning
-
-```go
-module.OnReady = func() {
-    if !redis.IsConnected() {
-        panic("Redis not connected!")
-    }
-}
-```
-
-### 4. Never Depend in Middleware
-
-```go
-// ❌ BAD - Dependency resolved in handler
-app.BindWSHandler("event", func(cache CacheService) {
-    cache.Set("key", "value")
-})
-
-// ✓ BETTER - Inject at app level, verify readiness
-cacheService := ... // Inject, verify ready
-app.BindWSHandler("event", func() {
-    cacheService.Set("key", "value")
-})
-```
-
-### 5. Wait for Client Connections After Ready
-
-```go
-// Good practice (though not enforced)
-app.Create(rootModule)
-// All modules initialized now
-
-// Verify critical services
-if err := verifyServices(); err != nil {
-    log.Fatal(err)
-}
-
-// Now start listening
-app.Listen(8080, nil)
-```
-
----
-
-## Implementation Evidence
-
-**File**: `core/app.go:217-229`
-```go
-func (app *App) Create(m *Module) {
-    app.initLogger()                    // Sequential
-    injectedProviders := app.initProviders(m)  // Calls NewModule() -> OnInit()
-    // ... more sequential steps ...
-    app.callOnReady()                   // Calls OnReady() for each module
-}
-```
-
-**File**: `core/module.go:138-164`
-```go
-func (m *Module) NewModule() *Module {
-    m.Lock()  // ← Critical section
-    defer m.Unlock()
-    
-    if m.OnInit != nil {
-        m.OnInit()  // ← Called here, MUST complete sync
-    }
-    // ... module setup ...
-}
-```
-
-**File**: `core/server.go`
-```go
-func (app *App) Listen(port int, opts *ServerOptions) error {
-    // ... options, bind ...
-    return app.serve(l, o)  // logs, serves, shuts down on a signal or Stop
-}
-```
-
----
-
-## Summary
-
-| Aspect | Status | Risk |
-|--------|--------|------|
-| Startup sequence is sequential | ✓ YES | LOW |
-| All sync init complete before Listen | ✓ YES | LOW |
-| Async operations tracked | ❌ NO | HIGH |
-| Broker ready immediately | ✓ YES | N/A |
-| Module init race conditions | ⚠️ POSSIBLE | MEDIUM |
-| Message loss risk | ✓ UNDERSTOOD | MEDIUM |
-| OnInit/OnReady ordering | ✓ GUARANTEED | LOW |
-
-**Best Practice**: Use sync initialization in OnInit(), move async work to OnReady() with verification hooks.
+1. **Connect synchronously in `OnInit`** when a provider needs a ready connection: `Create` waits for it.
+2. **Start background work in `OnReady`** (`go startWorkerPool()`): every module is initialized then.
+3. **Fail fast**: panic in `OnReady` when a dependency isn't ready; `Create` stops with that panic.
+4. **Release resources in `OnShutdown`**: it runs after the last request returned.

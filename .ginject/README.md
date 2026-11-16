@@ -62,25 +62,24 @@ This directory (`.ginject/`) contains complete AI-friendly documentation of the 
 
 ### Architecture
 - **Module → Controller → Provider**: Composition pattern
-- **Pipeline**: Middleware → Guard → Interceptor → Handler → Filter
+- **Pipeline**: global → module middleware → guards → pre-interceptors → handler → post-interceptors; errors from a guard onwards → exception filters (spec: request-pipeline.md § 1)
 - **Reflection-based DI**: Type-matched, no tags needed
 
 ### Critical Rules (NEVER violate)
 1. Never hold context after request
-2. Never panic in guard
-3. Never call next() multiple times
+2. Never expect code after `next()` to run after the handler (use an interceptor)
+3. Never call configuration methods after `Create`
 4. Never call NewProvider() manually
-5. Module init order is SACRED
+5. `Create()` order is fixed (`core/app.go`)
 
 ### Concurrency
 - HTTP: Each request is independent (thread-safe)
 - WebSocket: Each connection is single-threaded (2 goroutines: read + write)
-- Global state: Read-only after app.Create()
+- App state: read-only after app.Create(); every `core.New()` is independent
 
 ### Performance
-- Typical request: 1-2ms (simple handler, no I/O)
-- Dependency injection: 5-10μs per parameter
-- Reflection overhead: main bottleneck
+- A static route through `ServeHTTP` is about 0.6 µs and 6 allocations (`core/README.md` › Benchmarks)
+- Handler arguments are planned once at `Create()`; a request runs the plan
 
 ---
 
@@ -195,13 +194,17 @@ app.Create(module)
 
 ### 2. Dependency Injection
 **What**: Automatic parameter resolution by type matching
-**How**: Declare parameter in handler signature; framework injects by type
-**When**: Per-request for controllers, per-injection for providers
+**How**: Providers go in exported controller / provider fields (matched by type); request data comes as handler parameters (built-in types and pipes)
+**When**: Fields at `Create()` (each provider once per app); parameters per request, from a plan built at `Create()`
 **Example**:
 ```go
-func (c UserController) READ(httpCtx *ctx.HTTPContext, us UserService) string {
-    // httpCtx and us injected automatically
-    return us.GetUser(httpCtx.Param.Get("id"))
+type UserController struct {
+    common.HTTP
+    UserService UserService
+}
+
+func (instance UserController) READ_users_BY_id(param ctx.Param) string {
+    return instance.UserService.GetUser(param.Get("id"))
 }
 ```
 
@@ -211,7 +214,10 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext, us UserService) string {
 **When**: Every HTTP request or WebSocket message
 **Example**:
 ```
-Global Middleware → Module Middleware → Guard → Handler → Exception Filter
+global middleware → module middleware → global guard → module guard →
+global pre-interceptor → module pre-interceptor → handler →
+module post-interceptor → global post-interceptor → response
+(a panic from a guard onwards → module filters → global filters → built-in filter)
 ```
 
 ### 4. WebSocket Pub/Sub
@@ -225,7 +231,7 @@ publisher.Publish("users.created", userData)  // All subscribers receive
 
 ### 5. Exception Handling
 **What**: Panic recovery and error response writing
-**How**: Panic in handler caught, exception filter writes response
+**How**: A panic from a guard onwards reaches the exception filters; a middleware panic gets the HTTP layer's fixed error response
 **When**: Handler panics or validation fails
 **Example**:
 ```go
@@ -239,20 +245,19 @@ panic(exception.BadRequestException("invalid"))  // Caught → 400 response
 ### Never
 - ❌ Hold context after request ends
 - ❌ Mutate context after guard
-- ❌ Panic in guard (return bool instead)
 - ❌ Call next() multiple times in middleware
 - ❌ Call NewProvider() manually
 - ❌ Access raw websocket.Conn in handlers
 - ❌ Create circular dependencies
-- ❌ Reorder app.Create() initialization steps
+- ❌ Change a module after giving it to `Create`
 
 ### Always
-- ✅ Inject dependencies via handler parameters
+- ✅ Inject providers via exported fields; request data via handler parameters
 - ✅ Use middleware for request/response transformation
 - ✅ Use guard for authentication/authorization
 - ✅ Use exception filter for error recovery
 - ✅ Use Publisher for WebSocket fanout
-- ✅ Make providers singletons (return same instance)
+- ✅ Keep shared provider state behind a pointer (providers are constructed once per app, injected by value)
 - ✅ Call next() exactly once per middleware
 
 ---
@@ -261,16 +266,10 @@ panic(exception.BadRequestException("invalid"))  // Caught → 400 response
 
 From [metadata-performance.json](metadata-performance.json):
 
-**Typical fast path**: 1-2ms (simple handler)
-- Context pooling: 500ns
-- Route matching: 10-100μs
-- Handler params: 25-50μs (5 deps × 5-10μs each)
-- Middleware: 20-60μs
-- Handler execution: 500-1000μs
+Measured numbers: `core/README.md` › Benchmarks.
 
 **Optimization**:
-- Minimize handler parameters (reflect cost)
-- Avoid exceptions in hot path
+- Panic exceptions, not other values (a non-exception panic costs about 25 µs for its stack capture)
 - Keep middleware count low
 - Use binary serialization for high throughput
 
@@ -288,10 +287,9 @@ From [metadata-performance.json](metadata-performance.json):
 - Connection single-threaded (no race within connection)
 - Global memorybroker thread-safe (single RWMutex, no sharding)
 
-**Global State**:
+**App State**:
+- Each `core.New()` has its own (no package-level registry)
 - Read-only after app.Create()
-- Immutable (no mutations)
-- All concurrent operations safe
 
 ---
 
@@ -300,11 +298,10 @@ From [metadata-performance.json](metadata-performance.json):
 | Problem | Likely Cause | Read |
 |---------|-------------|------|
 | "Dependency not found" | Type mismatch between provider and parameter | handler-execution.md#1.1 |
-| "Stack overflow at startup" | Circular dependency | modules-and-providers.md#5.3 |
 | "Context has wrong data" | Holding context after request | anti-patterns-gotchas.md#2.1 |
 | "Handler called twice" | Calling next() multiple times | anti-patterns-gotchas.md#3.2 |
 | "Slow client drops messages" | WS send buffer overflow | websocket-system.md#11.1 |
-| "Request takes too long" | No timeout set or handler hanging | architecture-core-concepts.md#3.2 |
+| "Request takes too long" | Handler hanging (no per-handler timeout; server timeouts bound the connection) | core/README.md › Timeouts and limits |
 | "Messages corrupt" | Concurrent writes to WS connection | websocket-system.md#4.2 |
 | "Memory usage high" | Retaining pooled contexts | anti-patterns-gotchas.md#2.1 |
 
@@ -359,8 +356,8 @@ Reference: request-pipeline.md#3-guard-layer (authorization)
 
 ## Maintenance & Updates
 
-**Last Updated**: August 2026 (memorybroker corrections: dropped stale sharding/worker-pool claims, synced to the simplified Subscribe/Unsubscribe/Publish/PublishAsync/Close API)  
-**Coverage**: Ginject pre-v1.0 (6.2/10 production readiness)  
+**Last Updated**: 2026-11-16 (roadmap 0003: server, lifecycle, per-app container, `trace.Tracer`; see INDEX.md › Version & Updates)  
+**Coverage**: Ginject pre-v1.0  
 **Source**: Complete source code analysis (direct reads of `.go` files, not a separate roadmap doc — `ARCHITECTURE_REVIEW_AND_ROADMAP.md` referenced by earlier versions of this doc does not exist in this repository)
 
 **To Update This Knowledge Base**:

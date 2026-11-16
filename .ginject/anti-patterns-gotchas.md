@@ -4,35 +4,39 @@
 
 ## 1. Dependency Resolution Gotchas
 
-### 1.1 GOTCHA: Type Mismatch (Provider vs Handler Parameter)
+### 1.1 GOTCHA: Type Mismatch (Provider vs Field) and Providers as Handler Parameters
 
 **Problem**:
 ```go
-// Provider registered as value
-type UserService struct { ... }
-func (u UserService) NewProvider() Provider { return u }
+type UserService struct{}
 
-// Handler expects pointer
-func (c UserController) READ(us *UserService) { ... }
+func (instance UserService) NewProvider() core.Provider { return instance }
+
+type UserController struct {
+	common.HTTP
+	UserService *UserService
+}
+
+func (instance UserController) READ_users(us UserService) string { return "" }
 ```
 
 **Why It Fails**:
-- Provider key: `"main.UserService"`
-- Parameter type: `*main.UserService`
-- Keys don't match → `panic("dependency injection: can't resolve")`
+- Providers are injected into **fields**, matched by type identity (package path + type): the provider is `UserService`, the field is `*UserService`, so `Create()` panics `dependency injection: can't resolve dependency '*main.UserService' …` (a pointer to a provider type is still a provider type)
+- A provider is never a handler parameter: `READ_users(us UserService)` makes `Create()` panic `dependency injection: can't resolve dependencies of the 'func(main.UserService) string' …`
 
-**Solution**: Make types match
+**RIGHT**:
 ```go
-// Option 1: Both values
-func (c UserController) READ(us UserService) { ... }
+type UserController struct {
+	common.HTTP
+	UserService UserService
+}
 
-// Option 2: Both pointers (recommended)
-type UserService struct { ... }
-func (u *UserService) NewProvider() Provider { return u }
-func (c UserController) READ(us *UserService) { ... }
+func (instance UserController) READ_users() string {
+	return instance.UserService.Name()
+}
 ```
 
-**Rule**: Provider type must match handler parameter type EXACTLY
+**Rule**: Providers go in exported fields of exactly the provider's type; handler parameters are the built-in types and pipes (`core/README.md` › Handler injection)
 
 ---
 
@@ -48,16 +52,18 @@ func (c UserController) READ() {
 ```
 
 **Why It's Wrong**:
-- Framework doesn't know you called it
-- Defeats dependency injection
-- No cleanup/lifecycle management
-- Each call creates new instance (not singletons)
+- The app constructs each provider once, after injecting its exported fields: a manual call gets an instance with empty fields
+- It is a second instance: state kept by the app's instance is not shared
 
 **RIGHT**:
 ```go
-// Let framework inject
-func (c UserController) READ(us UserService) {
-    us.GetUser(123)  // Framework-injected
+type UserController struct {
+	common.HTTP
+	UserService UserService
+}
+
+func (instance UserController) READ_users_BY_id(param ctx.Param) string {
+	return instance.UserService.GetUser(param.Get("id"))
 }
 ```
 
@@ -67,66 +73,9 @@ func (c UserController) READ(us UserService) {
 
 ### 1.3 GOTCHA: Circular Dependencies
 
-**Problem**:
-```go
-type ServiceA struct {
-    B ServiceB  // A depends on B
-}
+Providers are value types injected by value, so a cycle (`ServiceA` with a `ServiceB` field, `ServiceB` with a `ServiceA` field) is an invalid recursive type: Go refuses to compile it. A cycle through a pointer field (`B *ServiceB`) needs `*ServiceB` to be a provider type of its own.
 
-type ServiceB struct {
-    A ServiceA  // B depends on A (CIRCULAR!)
-}
-
-// At app.Create():
-// A.NewProvider() → inject B
-// B.NewProvider() → inject A
-// Infinite recursion → stack overflow
-```
-
-**Why It Fails**:
-- No static dependency analysis
-- Detected at runtime (too late)
-- Causes unrecoverable panic
-
-**Solutions**:
-
-**Option 1: Restructure**
-```go
-// Create third service
-type SharedLogic struct {
-    // Common functionality
-}
-
-type ServiceA struct {
-    Shared SharedLogic
-}
-
-type ServiceB struct {
-    Shared SharedLogic
-}
-```
-
-**Option 2: Lazy Loading**
-```go
-type ServiceA struct {
-    B *ServiceB  // Don't auto-inject
-}
-
-func (a ServiceA) GetB() ServiceB {
-    if a.B == nil {
-        a.B = &ServiceB{}  // Create on demand
-    }
-    return a.B
-}
-```
-
-**Option 3: Single Responsibility**
-```go
-// Avoid creating service that needs both A and B
-// Instead: A depends on Repo, B depends on Repo
-```
-
-**Rule**: Avoid circular dependencies — restructure instead
+**Rule**: Restructure shared logic into a third provider that both depend on
 
 ---
 
@@ -204,48 +153,20 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext) {
 
 ## 3. Handler Pipeline Gotchas
 
-### 3.1 GOTCHA: Panic in Guard
+### 3.1 GOTCHA: Expecting a Guard's `false` to Answer 401
 
-**WRONG**:
+A guard that returns `false` hands `exception.ForbiddenException("Access denied")` (403) to the route's exception filters. A guard may also panic an exception: the panic goes to the same filters, so `panic(exception.UnauthorizedException("not logged in"))` answers 401.
+
 ```go
-type AuthGuard struct {
-    common.Guard
+func (instance AuthGuard) CanActivate(c *ctx.HTTPContext) bool {
+	if c.Request.Header.Get("Authorization") == "" {
+		panic(exception.UnauthorizedException("not logged in"))
+	}
+	return true
 }
-
-func (g AuthGuard) CanActivate(httpCtx *ctx.HTTPContext) bool {
-    panic(exception.UnauthorizedException("not logged in"))  // WRONG!
-}
-
-// Panic is NOT recoverable in guard layer
-// Unhandled panic → app crash
 ```
 
-**Why It's Wrong**:
-- Guard panics are NOT caught
-- No exception filter to handle it
-- Unrecoverable error
-- Crashes entire request handling
-
-**RIGHT**:
-```go
-// Option 1: Return false for forbidden
-func (g AuthGuard) CanActivate(httpCtx *ctx.HTTPContext) bool {
-    if !isAuthorized(httpCtx) {
-        return false  // 403 Forbidden
-    }
-    return true
-}
-
-// Option 2: Throw in middleware (before guard)
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-    if !isAuthorized(r) {
-        panic(exception.UnauthorizedException(...))  // This IS caught
-    }
-    next()
-})
-```
-
-**Rule**: Guards must return bool, not panic
+**Rule**: Return `false` for 403; panic an exception for any other status. A non-exception panic answers a fixed 500 and is logged.
 
 ---
 
@@ -419,73 +340,32 @@ var MyModule = func() *core.Module {
 
 ---
 
-### 5.2 GOTCHA: NewProvider() Called Multiple Times
+### 5.2 GOTCHA: Expecting a Value Provider to Share State
 
-**Problem**:
+`NewProvider()` is called once per app, and the result is injected **by value** into every field that names it. A provider that holds a plain counter gives each user its own copy; mutations are not shared.
+
 ```go
-type DatabasePool struct {
-    conn *sql.DB
+type CounterService struct {
+	count *atomic.Int64
 }
 
-func (d DatabasePool) NewProvider() Provider {
-    // WARNING: Called EACH TIME provider is injected!
-    // If not careful, creates multiple connections
-    return DatabasePool{
-        conn: sql.Open(...),  // NEW connection each time!
-    }
-}
-
-// Every handler that injects DatabasePool gets new connection
-// Connection leak!
-```
-
-**Why It's Wrong**:
-- NewProvider() called per injection, not at startup
-- If you create new resource each time, resource leak
-- Not singletons by default
-
-**RIGHT**:
-```go
-var globalDBPool *sql.DB = nil
-
-type DatabasePool struct {
-    conn *sql.DB
-}
-
-func (d DatabasePool) NewProvider() Provider {
-    if globalDBPool == nil {
-        globalDBPool, _ = sql.Open(...)  // Create once
-    }
-    return DatabasePool{conn: globalDBPool}  // Reuse
+func (instance CounterService) NewProvider() core.Provider {
+	instance.count = new(atomic.Int64)
+	return instance
 }
 ```
 
-**Rule**: NewProvider() should return same instance (singleton) or create fresh without resource leak
+**Rule**: Open a resource or allocate shared state in `NewProvider()` (once per app) and keep it behind a pointer; close it in the module's `OnShutdown`
 
 ---
 
 ## 6. Exception Handling Gotchas
 
-### 6.1 GOTCHA: Panic Outside Exception Filter
+### 6.1 GOTCHA: Expecting an Exception Filter to Catch a Middleware Panic
 
-**WRONG**:
-```go
-func (c UserController) READ() {
-    // Exception filter can only catch panics in:
-    // - Handler execution
-    // - Middleware
-    // NOT in guard or interceptor pre-phase
-    
-    // If guard panics, exception filter doesn't catch it
-}
-```
+A panic in a middleware never reaches your exception filters: the HTTP layer answers it with the fixed `{"code","error","message"}` format (an exception's code and message, else a fixed 500). Panics from a guard onwards (guards, interceptors, pipes, the handler, operators) go to the filters.
 
-**Why It's Wrong**:
-- Exception filters only wrap handler/middleware
-- Panics in guard = unrecoverable
-- Propagates as unhandled panic
-
-**Rule**: Guards must not panic, must return bool
+**Rule**: A middleware that wants its own response writes it and returns without `next()` (`core/README.md` › Errors in middleware)
 
 ---
 
@@ -496,32 +376,21 @@ func (c UserController) READ() {
 c.BindExceptionFilter(validationFilter, c.READ)
 c.BindExceptionFilter(authFilter, c.READ)
 
-// LIFO: authFilter called first
-// If authFilter doesn't handle, validationFilter called
-// But both might try to write response!
-
-// Example:
-// authFilter writes 401 Unauthorized
-// validationFilter tries to write 400 Bad Request
-// Response headers already sent!
+// inside one scope the filter bound last runs first: authFilter
+// a filter that returns has handled the error: validationFilter never runs
+// a filter that panics passes its panic to the next filter (panic(ex) passes ex unchanged)
 ```
 
-**Why It's Wrong**:
-- Multiple filters can conflict
-- Once first filter writes response, others can't
-
-**RIGHT**:
+**RIGHT**: one filter that handles every code it cares about, and `panic(ex)` for the rest:
 ```go
-c.BindExceptionFilter(func(ex *exception.Exception, httpCtx *ctx.HTTPContext) {
-    // Handle different exception types
-    switch ex.GetCode() {
-    case http.StatusUnauthorized:
-        // Handle auth error
-    case http.StatusBadRequest:
-        // Handle validation error
-    }
-    // Write single response
-}, c.READ)
+func (instance APIFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
+	switch ex.GetCode() {
+	case http.StatusUnauthorized, http.StatusBadRequest:
+		c.Status(ex.GetCode()).JSON(ctx.Map{"error": ex.GetMessage()})
+	default:
+		panic(ex)
+	}
+}
 ```
 
 **Rule**: One filter per route, or make filter handle all cases
@@ -543,28 +412,11 @@ c.BindExceptionFilter(func(ex *exception.Exception, httpCtx *ctx.HTTPContext) {
 
 ---
 
-### 7.2 GOTCHA: Synchronous Exceptions in Fast Path
+### 7.2 GOTCHA: Panicking Non-Exceptions
 
-**Problem**:
-```go
-// Exception creation allocates new objects
-// In exception filter, creates response object
+An exception costs about 1.6 µs per request; any other panic value (a string, an `error`) captures up to 4 KiB of stack for its `UnhandledPanic` log line: about 25 µs and 7.6 KB (`core/README.md` › Benchmarks).
 
-exception.NewException(...)
-    ├─ Allocate Exception struct
-    ├─ Allocate error message
-    └─ Allocate stack trace string
-
-// Every exception = allocation
-// High-error-rate app = memory pressure
-```
-
-**Mitigation**:
-- Minimize exceptions in hot path
-- Reuse exception instances
-- Use object pooling
-
-**Rule**: Exceptions are expensive, avoid in hot path
+**Rule**: Panic exceptions (`exception.BadRequestException(…)`) for expected errors
 
 ---
 
@@ -585,37 +437,11 @@ exception.NewException(...)
 
 ## 8. Testing Gotchas
 
-### 8.1 GOTCHA: Global State Pollution Between Tests
+### 8.1 GOTCHA: State Shared Between Tests Outside the Framework
 
-**WRONG**:
-```go
-func TestUserController(t *testing.T) {
-    app := core.New()
-    app.Create(MyModule)  // Global module with shared state!
-    
-    // Test 1: app.http.ctxPool used
-    // Test 2: app.http.ctxPool reused from Test 1
-    // Context state bleeding between tests!
-}
-```
+Every `core.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module func.
 
-**Why It's Wrong**:
-- sync.Pool reuses objects
-- Context not fully reset between tests
-- Tests interfere with each other
-
-**RIGHT**:
-```go
-func TestUserController(t *testing.T) {
-    app := core.New()
-    module := NewMyModule()  // Create NEW module each test
-    app.Create(module)
-    
-    // No shared state pollution
-}
-```
-
-**Rule**: Create new module/app instances per test
+**Rule**: A new `core.New()` per test; build modules that hold resources per test when the tests must not share them
 
 ---
 

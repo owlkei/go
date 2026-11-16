@@ -62,7 +62,7 @@ don't mass-rewrite the exceptions.
 
 - **Options struct + loader:** a public `<X>Options` (or the middleware type itself) holds what the
   user sets; a private `load<X>Options` fills defaults once and returns the normalized form:
-  `loadCORSOptions` (`middlewares/cors/cors.go:175`), `loadLogOptions` (`log/log.go:61`),
+  `loadCORSOptions` (`middlewares/cors/cors.go:175`),
   `loadConfigOptions` (`modules/config/module.go:28`). Never normalize on the request path.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once

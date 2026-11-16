@@ -3,13 +3,35 @@
   "title": "Ginject Lifecycle State Machines",
   "purpose": "Document exact state transitions for app, requests, and connections",
   "application_lifecycle": {
-    "states": ["CREATED", "INITIALIZED", "RUNNING", "STOPPED"],
+    "source": "core/app.go (New, Create), core/container.go (wire), core/server.go (Listen, ListenTLS, Serve, Stop); user contract in core/README.md",
+    "states": [
+      "CREATED",
+      "INITIALIZED",
+      "RUNNING",
+      "STOPPED"
+    ],
     "transitions": [
       {
         "from": "START",
         "to": "CREATED",
         "action": "app := core.New()",
-        "effects": ["Create App struct", "Initialize sync.Pool", "Setup broker", "Setup event system"]
+        "effects": [
+          "own HTTP router, container, memorybroker, built-in logger (log.NewLog(nil)), context pools",
+          "Publisher registered in the container",
+          "built-in HTTP and WS exception filters bound",
+          "trace.Tracer zero value (no listener)",
+          "body cap 10 MiB"
+        ]
+      },
+      {
+        "from": "CREATED",
+        "to": "CREATED",
+        "action": "configuration: BindGlobal*, EnableVersioning, EnableWS, EnableDevtool, EnableAccessLog, SetLogger",
+        "effects": [
+          "each returns *App",
+          "after Create each panics 'invalid app: <Method> must be called before Create'",
+          "SetLogger(nil) panics 'invalid app: SetLogger needs a logger'"
+        ]
       },
       {
         "from": "CREATED",
@@ -17,127 +39,172 @@
         "action": "app.Create(module)",
         "critical": true,
         "order": [
-          "initLogger",
-          "initProviders (BUILDS injectedProviders map)",
-          "initWS (IF EnableWS called)",
+          "container.addInterface(common.Logger)",
+          "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",
+          "initWS (only if EnableWS)",
+          "initRoutes",
           "initMiddlewares",
           "initExceptionFilters",
           "initGuards",
           "initInterceptors",
-          "initMainHandlers (BUILDS routing trie)",
-          "initDevtool (IF enabled)",
-          "initAccessLog (IF enabled)"
+          "initMainHandlers (handler plans)",
+          "http.finishRoutes",
+          "initDevtool (if enabled)",
+          "initAccessLog (if enabled)",
+          "callOnReady",
+          "isCreated = true"
         ],
-        "effects": ["All providers registered", "All routes registered", "All middleware/guard/interceptor resolved"]
+        "effects": [
+          "every provider constructed once per app",
+          "all routes, events and layers registered",
+          "panics: 'invalid module: Create needs a root module', 'invalid app: Create called twice', 'dependency injection: ...', 'route conflict: ...', 'event conflict: ...'"
+        ]
       },
       {
         "from": "INITIALIZED",
         "to": "RUNNING",
-        "action": "app.Listen(port)",
-        "effects": ["HTTP server starts", "Listening on :port", "Request handler active"]
+        "action": "app.Listen(port, opts) / app.ListenTLS(port, certFile, keyFile, opts) / app.Serve(listener, opts)",
+        "effects": [
+          "errors returned before binding: 'core: Create must be called before serving', 'core: app is already serving', 'core: app is stopped', TLS / H2C option conflicts, 'core: listen on :<port>: <err>'",
+          "startup log: InstanceLoader, RouteExplorer, WebSocketEvent, ServerListening",
+          "the call blocks until the server stopped"
+        ]
       },
       {
         "from": "RUNNING",
         "to": "STOPPED",
-        "action": "SIGINT/SIGTERM (serveWithGracefulShutdown) or app.Stop() called",
+        "action": "SIGINT / SIGTERM or app.Stop()",
         "critical": true,
         "effects": [
-          "callOnShutdown() runs exactly once (guarded by app.shutdownOnce), regardless of which path triggered it",
-          "Each module's OnShutdown() (if set) is called in the exact REVERSE of the initialization order (OnInit/OnReady run imports first; OnShutdown runs the root first)",
-          "stdlib http.Server.Shutdown(ctx) runs with a 30s timeout (context.WithTimeout in core/app.go)",
-          "No WebSocket-specific close-frame/status-code logic exists anywhere in shutdown — do not invent a 'graceful WS shutdown (code 1000)' step; open WS connections are simply dropped when the server stops"
+          "signals no longer intercepted",
+          "listener and idle connections closed",
+          "running requests drained for ServerOptions.ShutdownTimeout (default 30 s), then their connections closed",
+          "runShutdownHooks once per app (app.shutdownOnce): OnShutdown in the exact reverse of the init order; a panicking hook is logged as OnShutdownPanic and the others run",
+          "access log stopped after the hooks",
+          "returns nil, 'core: shutdown timed out after <timeout>' or 'core: serve: <err>'",
+          "WebSocket connections are not drained"
+        ]
+      },
+      {
+        "from": "INITIALIZED",
+        "to": "STOPPED",
+        "action": "app.Stop() on an app that is not serving",
+        "effects": [
+          "OnShutdown hooks run once",
+          "later serving calls return 'core: app is stopped'; ServeHTTP still answers"
         ]
       }
     ],
     "immutable_after_create": [
-      "injectedProviders map",
-      "routing.Router",
-      "module tree",
-      "provider registry"
+      "routes and route structs",
+      "providers and layers",
+      "module tree"
     ],
     "post_create_behavior": [
-      "app.Create() can be called exactly ONCE",
-      "Calling Create() twice = panic or undefined behavior",
-      "No runtime modification of providers/controllers"
+      "app.Create() can be called exactly ONCE (second call panics)",
+      "no runtime modification of providers/controllers",
+      "two apps in one process are independent (no package-level registry)"
     ]
   },
   "http_request_lifecycle": {
-    "states": ["RECEIVED", "POOLED", "ROUTED", "INJECTED", "PIPELINE", "HANDLED", "FILTERED", "TRACED", "RELEASED"],
+    "states": [
+      "RECEIVED",
+      "POOLED",
+      "INITIALIZED",
+      "ROUTED",
+      "PIPELINE",
+      "RESPONDED",
+      "RELEASED"
+    ],
     "transitions": [
       {
         "from": "RECEIVED",
         "to": "POOLED",
         "stage": "ServeHTTP()",
         "action": "c := app.ctxPool.Get()",
-        "effects": ["Context object allocated or reused from pool"]
+        "effects": [
+          "Context object allocated or reused from pool"
+        ]
       },
       {
         "from": "POOLED",
         "to": "INITIALIZED",
         "stage": "ServeHTTP()",
-        "action": "r.Body = http.MaxBytesReader(w, r.Body, app.maxRequestBodyBytes); c.Init(w, r)",
-        "effects": ["Body wrapped in MaxBytesReader BEFORE Init (fixed 10MB default, no per-call variant — InitWithMaxBodySize does not exist)", "Timestamp set", "Request ID generated", "ResponseWriter/Request set"]
+        "action": "if r.Body is not nil / http.NoBody and the cap > 0: r.Body = http.MaxBytesReader(w, r.Body, cap); c.Init(&ex.writer, r)",
+        "effects": [
+          "the cap is an atomic.Int64: 10 MiB, or ServerOptions.MaxRequestBodyBytes of the serving call (negative = off)",
+          "Request ID generated, X-Request-Id set",
+          "ResponseWriter/Request set"
+        ]
       },
       {
         "from": "INITIALIZED",
         "to": "ROUTED",
         "stage": "handleRequest()",
         "action": "routing.Router.Match(method, path, version string, params []string) (*RouterItem, []string), retried with versioning.NeutralVersion on a miss",
-        "effects": ["the shared *RouterItem (Pattern, Handlers, ParamKeys, ParamNames) and the parameter values", "404 when both calls return nil"]
+        "effects": [
+          "the route's immutable httpRoute (layers, handler plan, filters)",
+          "no route: global middlewares only, then 404 or 405 with Allow (precomputed bodies)"
+        ]
       },
       {
         "from": "ROUTED",
-        "to": "INJECTED",
-        "stage": "Handler invocation",
-        "action": "Reflect on handler parameters + resolve providers",
-        "effects": ["All handler args resolved", "Dependency injection complete"]
-      },
-      {
-        "from": "INJECTED",
         "to": "PIPELINE",
-        "stage": "Pipeline execution",
-        "action": "Global middleware → Module middleware → Guard → Interceptor pre → Handler → Interceptor post",
-        "effects": ["Each stage executes in order", "Can terminate early (guard returns false)", "Handler panics recovered"]
+        "stage": "handleRequest() in core/http.go",
+        "action": "global middleware -> module middleware -> global guard -> module guard -> global pre-interceptor -> module pre-interceptor -> handler plan (pipes, then the handler) -> module post-interceptor -> global post-interceptor",
+        "effects": [
+          "spec: .ginject/request-pipeline.md section 1",
+          "a middleware without next(), a guard returning false (403 to the filters) or an interceptor without Pipe stops the chain",
+          "error in a middleware: the HTTP layer's fixed error response, no filter",
+          "error from a guard onwards: module filters (bound last first), global filters, built-in filter",
+          "with a tracer listener (only the access log): one event per stage and a complete event"
+        ]
       },
       {
         "from": "PIPELINE",
-        "to": "HANDLED",
-        "stage": "Handler execution",
-        "action": "handler(args)",
-        "effects": ["Business logic executed", "Return value captured", "Panics recovered"]
-      },
-      {
-        "from": "HANDLED",
-        "to": "FILTERED",
-        "stage": "Exception filter (if panic)",
-        "action": "exception.Filter.Catch(exception, httpCtx)",
-        "effects": ["Exception handled", "Response written"]
-      },
-      {
-        "from": "FILTERED",
-        "to": "TRACED",
-        "stage": "Tracing",
-        "action": "event.Emit(trace.Event) if listeners present",
-        "effects": ["Trace event emitted with timing"]
+        "to": "RESPONDED",
+        "stage": "core/http.go",
+        "action": "write the result by kind, or the filter's response",
+        "effects": [
+          "only exceptions reach the client with their code and message; any other panic answers a fixed 500 and is logged as UnhandledPanic",
+          "after a response was sent nothing more is written (ErrorAfterResponse logged)"
+        ]
       },
       {
         "from": "TRACED",
         "to": "RELEASED",
         "stage": "Cleanup",
         "action": "app.releaseCtx(ex)",
-        "effects": ["ex.reset(): c.Reset() clears all fields but keeps the capacity of ParamValues and the aggregation list (dropped over 64), the response writer points at nothing", "Exchange returned to pool for reuse (not after an http.ErrAbortHandler re-panic)"]
+        "effects": [
+          "ex.reset(): c.Reset() clears all fields but keeps the capacity of ParamValues and the aggregation list (dropped over 64), the response writer points at nothing",
+          "Exchange returned to pool for reuse (not after an http.ErrAbortHandler re-panic)"
+        ]
       }
     ],
     "panics_handled": true,
     "panic_handling_location": "HTTP.handleRequest() in core/http.go: the request's only recover; middleware panics get the HTTP layer's error response, later ones the route's filters",
     "context_mutation_rules": {
-      "safe_to_mutate_in": ["Middleware", "Interceptor (pre)", "Handler"],
-      "dangerous_to_mutate_in": ["Guard (semantically wrong)", "Interceptor (post)", "Exception filter"],
+      "safe_to_mutate_in": [
+        "Middleware",
+        "Interceptor (pre)",
+        "Handler"
+      ],
+      "dangerous_to_mutate_in": [
+        "Guard (semantically wrong)",
+        "Interceptor (post)",
+        "Exception filter"
+      ],
       "never_mutate_after": "Guard stage (guard made decisions based on request state)"
     }
   },
   "websocket_connection_lifecycle": {
-    "states": ["UPGRADE", "HANDSHAKE", "ACCEPTED", "RUNNING", "CLOSED"],
+    "states": [
+      "UPGRADE",
+      "HANDSHAKE",
+      "ACCEPTED",
+      "RUNNING",
+      "CLOSED"
+    ],
     "goroutine_structure": {
       "goroutine_1": "readLoop (per-connection blocking receive)",
       "goroutine_2": "writeLoop (per-connection send channel drain)",
@@ -151,13 +218,21 @@
         "from": "UPGRADE",
         "to": "HANDSHAKE",
         "action": "HTTP Upgrade header received",
-        "effects": ["websocket.Handler called", "Handshake function runs"]
+        "effects": [
+          "websocket.Handler called",
+          "Handshake function runs"
+        ]
       },
       {
         "from": "HANDSHAKE",
         "to": "ACCEPTED",
         "action": "Handshake middleware + guards pass",
-        "effects": ["websocket.Conn established", "connID generated (UUID)", "Connection registered in WSConnMgr", "LastSeen timestamp set"]
+        "effects": [
+          "websocket.Conn established",
+          "connID generated (UUID)",
+          "Connection registered in WSConnMgr",
+          "LastSeen timestamp set"
+        ]
       },
       {
         "from": "ACCEPTED",
@@ -181,7 +256,7 @@
           "LastSeen timestamp updated",
           "Topic pattern matching",
           "Handler lookup",
-          "Same HTTP pipeline (middleware, guard, interceptor, handler)",
+          "The layers (guard, interceptor, handler, filters); middlewares run only at the handshake",
           "Handler can broker.Publish() for fanout"
         ],
         "message_protocol": {
@@ -227,87 +302,82 @@
     }
   },
   "module_lifecycle_hooks": {
-    "hooks": ["OnInit", "OnReady", "OnShutdown"],
+    "hooks": [
+      "OnInit",
+      "OnReady",
+      "OnShutdown"
+    ],
+    "declaration": "exported func() fields of core.Module, set on the built module (m.OnInit = func() {...})",
     "timing": {
-      "OnInit": "Called during provider initialization (not yet implemented in public API)",
-      "OnReady": "Called after app.Create() completes and all modules initialized (before app.Listen())",
-      "OnShutdown": "Called when app receives SIGINT/SIGTERM signal or app.Stop() invoked"
+      "OnInit": "during Create, when the module is initialized, before its providers are constructed",
+      "OnReady": "once per app at the end of Create, after routes, layers and the devtool snapshot exist; app.Get works inside it",
+      "OnShutdown": "once per app, on SIGINT/SIGTERM or app.Stop(), after running requests were drained"
     },
-    "use_cases": {
-      "OnReady": [
-        "Initialize backend resources (Redis, database connections)",
-        "Start background workers",
-        "Verify external service connectivity",
-        "Setup resource pools"
-      ],
-      "OnShutdown": [
-        "Gracefully close backend connections",
-        "Flush pending data",
-        "Stop background workers",
-        "Release resources"
-      ]
-    },
-    "implementation": {
-      "declaration": "Module has OnReady and OnShutdown fields (func())",
-      "example": "module.OnReady = func() { /* ... */ }",
-      "call_order": "OnInit and OnReady run depth first, a module after the modules it imports (in Imports order, each once per app); OnShutdown runs in the exact reverse order. An app whose Create did not finish runs no OnShutdown."
-    }
+    "call_order": "OnInit and OnReady run depth first, a module after the modules it imports (in Imports order, each once per app); OnShutdown runs in the exact reverse order. An app whose Create did not finish runs no OnShutdown.",
+    "panics": "a panic in OnInit or OnReady stops Create unchanged; a panic in OnShutdown is logged (OnShutdownPanic) and the other hooks run"
   },
   "provider_lifecycle": {
-    "states": ["DECLARED", "DISCOVERED", "REGISTERED", "INJECTED"],
+    "states": [
+      "DECLARED",
+      "DISCOVERED",
+      "CONSTRUCTED",
+      "INJECTED"
+    ],
     "transitions": [
       {
         "from": "DECLARED",
         "to": "DISCOVERED",
         "stage": "ModuleBuilder",
-        "action": "ModuleBuilder().Providers(MyProvider{})",
-        "effects": ["Provider added to module"]
+        "action": "ModuleBuilder().Providers(MyProvider{})"
       },
       {
         "from": "DISCOVERED",
-        "to": "REGISTERED",
-        "stage": "app.Create() → initProviders()",
-        "action": "Walk module tree depth-first",
+        "to": "CONSTRUCTED",
+        "stage": "app.Create() -> container.wire()",
+        "action": "provide(key): the providers its exported fields name first, then injectDependencies, then NewProvider()",
         "effects": [
-          "Provider key generated: type.String()",
-          "Added to injectedProviders map",
-          "Provider NOT instantiated yet"
+          "key: package path + type (genFieldKey)",
+          "constructed once per app, however many modules list it",
+          "an unresolvable field panics 'dependency injection: can't resolve dependency ...'",
+          "an unexported field panics 'dependency injection: can't set value to unexported ...'"
         ]
       },
       {
-        "from": "REGISTERED",
+        "from": "CONSTRUCTED",
         "to": "INJECTED",
-        "stage": "Handler invocation",
-        "action": "newHTTPHandlerPlan() / newWSHandlerPlan() at Create() resolve each handler parameter once (pipe prototypes get providers injected); a request runs the plan",
+        "stage": "app.Create()",
+        "action": "the NewProvider result is set into controller, provider, layer and pipe fields",
         "effects": [
-          "provider.NewProvider() called",
-          "Instance created (or singleton returned)",
-          "Injected into handler parameter",
-          "NewProvider() called EVERY TIME provider is injected"
+          "injected by value: shared state sits behind a pointer"
         ]
       }
     ],
-    "critical_rule": "NewProvider() called per-injection, NOT at startup",
-    "singleton_pattern": "return same instance from NewProvider() for singletons"
+    "critical_rule": "NewProvider() is called once per provider type per app, at Create(); never call it yourself",
+    "visibility": "a module sees its own providers, those of the modules it imports, and the global ones (root module and IsGlobal modules)"
   },
   "module_initialization_order": {
-    "critical": "Order is SACRED and cannot be changed",
+    "critical": "Create's call order is fixed (comment on App.Create in core/app.go)",
     "sequence": [
-      "1. initLogger - Setup Logger instance",
-      "2. initProviders - Build injectedProviders map FROM module tree",
-      "3. initWS - Setup WS instance (reads from injectedProviders)",
-      "4. initMiddlewares - Resolve middleware instances",
-      "5. initExceptionFilters - Resolve exception filters",
-      "6. initGuards - Resolve guards",
-      "7. initInterceptors - Resolve interceptors",
-      "8. initMainHandlers - Build routing trie (reads from module tree)",
-      "9. initDevtool - Create devtool snapshot (reads fully-populated state)",
-      "10. initAccessLog - Setup access logging"
+      "container.addInterface(common.Logger)",
+      "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",
+      "initWS (only if EnableWS)",
+      "initRoutes",
+      "initMiddlewares",
+      "initExceptionFilters",
+      "initGuards",
+      "initInterceptors",
+      "initMainHandlers (handler plans)",
+      "http.finishRoutes",
+      "initDevtool (if enabled)",
+      "initAccessLog (if enabled)",
+      "callOnReady",
+      "isCreated = true"
     ],
     "dependencies": [
-      "Step 2 MUST run before step 3 (builds injectedProviders)",
-      "Step 3 MUST run before steps 4-7 (WS state needed)",
-      "Step 9 MUST run last (needs complete state)"
+      "wire must run first: it fills the container everything else reads",
+      "initWS must run before the layer and handler init functions (they write WS state when WS is enabled)",
+      "initDevtool after routes and layers exist",
+      "callOnReady last; only then is the app marked created"
     ],
     "if_reordered": "Uninitialized references, missing state, panic"
   }

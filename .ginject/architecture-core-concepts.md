@@ -17,49 +17,37 @@ Module (composition root)
 
 **Invariants**:
 - Every Module is wired once per app at `app.Create()` (`(*container).wire`); a module value can be given to any number of apps
-- Controllers are instantiated per-request (temporary, pooled)
-- Providers are registered once, referenced repeatedly
+- Controllers are constructed once per app at `Create()` (fields injected, then `NewController`); handler methods run on that value
+- Providers are constructed once per app (fields injected, then `NewProvider`), whatever the number of modules that list them
 - Module tree is immutable after `app.Create()`
 
-**Dependency Resolution**:
-1. Check if parameter type is built-in (HTTPContext, Body, Query, etc.)
-2. Check if type matches registered Provider (by type name)
-3. Call `Provider.NewProvider()` to instantiate
-4. Inject via reflection into handler signature
+**Dependency Resolution** (all at `Create()`):
+1. Provider and controller fields: matched by type identity (package path + type) against the providers visible to the module
+2. Handler parameters: matched against the built-in types and pipes (section 1.4); providers are not handler parameters
+3. Anything unresolvable panics `dependency injection: …` at `Create()`
 
-**Cost**: ~5-10μs per dependency (reflection overhead)
+**Cost**: reflection runs once per handler at `Create()`; a request runs the prepared plan (`core/README.md` › Benchmarks)
 
 ---
 
 ### 1.2 Request Pipeline (HTTP)
 
-**Sequential Execution Order**:
+The spec, arrow by arrow, is [request-pipeline.md](request-pipeline.md) § 1. In short:
+
 ```
-HTTP Request arrives
-        ↓
-[Global Middlewares] — can call next() or terminate
-        ↓
-[Module Middlewares] — scoped to this route's module
-        ↓
-[Guards] — CanActivate() returns bool, no recovery
-        ↓
-[Interceptors (pre)] — transform request
-        ↓
-[Handler Execution] — main business logic (recovers panics)
-        ↓
-[Interceptors (post)] — transform response + aggregation
-        ↓
-[Exception Filters] — ONLY place that can recover panics
-        ↓
-HTTP Response written
+global middleware → module middleware → global guard → module guard →
+global pre-interceptor → module pre-interceptor → main handler →
+module post-interceptor → global post-interceptor → response
+
+error in a middleware      → the HTTP layer's fixed error response (no exception filter)
+error from a guard onwards → module exception filter → global exception filter → built-in filter
 ```
 
 **Key Rules**:
-- Only middleware can call `next()` to continue chain
-- Guards must return bool; false = early termination (not an exception)
-- Interceptors run pre and post handler, but post is aggregation-aware
-- Exception filters are the panic recovery boundary — panics outside them propagate
-- If any layer panics before guard/interceptor, it is recovered by globalHTTPExceptionFilter
+- A layer stops the request by not continuing: a middleware without `next()`, a guard returning `false` (the filters get a 403), an interceptor that returns without `Pipe`
+- The chain is linear: code after `next()` runs before the next layer starts, not after the handler
+- `HTTP.handleRequest()` (`core/http.go`) holds the request's only `recover()`
+- Only exceptions reach the client with their code and message; any other panic answers a fixed 500 and is logged
 
 ---
 
@@ -82,7 +70,7 @@ Client sends JSON: { type: "publish", topic: "users.created", message: {...} }
         ↓
 [Handler lookup]
         ↓
-[Same pipeline as HTTP: middleware → guard → interceptor]
+[guard → interceptor → handler; middlewares ran once, at the handshake]
         ↓
 [Handler execution → memorybroker.Publish(topic)]
         ↓
@@ -104,22 +92,14 @@ Connection closes → readLoop exits → writeLoop exits
 
 ### 1.4 Dependency Injection via Reflection
 
-**Resolution Algorithm**:
+**Resolution Algorithm** (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `core/fn_plan.go`, once per handler at `Create()`):
 ```
-For each parameter in handler(Param1, Param2, ..., ParamN):
-    type := typeof(Param)
-    
-    if type in BuiltInDependencies:
-        resolve from HTTPContext/WSContext directly
-        return
-    
-    providerKey := genProviderKey(type)
-    if providerKey in injectedProviders:
-        provider := injectedProviders[providerKey]
-        instance := provider.NewProvider()
-        return instance
-    
-    panic("dependency not found")
+For each parameter of handler(Param1, …, ParamN):
+    if its type is a built-in type of the transport: a step that reads it from the context
+    else if it is a value type with the transport's Transform method: a pipe step
+        (the prototype gets providers injected into its exported fields once)
+    else: panic "dependency injection: can't resolve dependencies of the '<func type>' …"
+A request runs the steps left to right, then calls the method once.
 ```
 
 **Built-in HTTP Dependencies**:
@@ -129,7 +109,7 @@ For each parameter in handler(Param1, Param2, ..., ParamN):
 - `ctx.Body` — parsed request body
 - `ctx.Query` — URL query parameters
 - `ctx.Header` — HTTP headers
-- `ctx.Param` — path parameters (from `:id` patterns)
+- `ctx.Param` — path parameters (from `BY_<name>` segments)
 - `ctx.Form` — form-encoded data
 - `ctx.File` — file uploads
 - `ctx.Next` — function to call next middleware
@@ -146,10 +126,10 @@ For each parameter in handler(Param1, Param2, ..., ParamN):
 - Pipeable types (WSPayload with custom transforms)
 
 **Critical Rules**:
-- Parameter types MUST be exported structs or interfaces
-- All fields in parameter types MUST be exported (for reflection to work)
-- Circular dependencies → runtime panic (no static analysis)
-- Unknown parameter types → immediate panic (fail-fast)
+- Parameters match by type identity; a type that only prints like a framework type is refused
+- A pointer pipe parameter is refused at `Create()`
+- An unexported field of a provider, controller or pipe panics at `Create()`
+- Unknown parameter types → `Create()` panics (fail-fast); full table in `core/README.md` › Handler injection
 
 ---
 
@@ -157,100 +137,42 @@ For each parameter in handler(Param1, Param2, ..., ParamN):
 
 ### 2.1 App.Create() Initialization Sequence
 
-**CRITICAL**: Order is sacred and cannot be reordered:
+The order is fixed (comment on `App.Create` in `core/app.go`); the walkthrough is in
+[startup-lifecycle-analysis.md](startup-lifecycle-analysis.md) § Phase 2:
 
 ```
-1. initLogger()
-   └─ Creates framework logger, wraps custom logger if provided
-   
-2. initProviders(module)
-   └─ Walks module tree, collects all providers
-   └─ Builds injectedProviders map (key=type.String(), value=Provider)
-   └─ Builds HTTPMainHandlers list
-   
-3. initWS(injectedProviders)
-   └─ IF EnableWS was called:
-      ├─ Creates WS instance
-      ├─ Registers WS context factories
-      ├─ Sets up event routing
-      └─ Sets up memorybroker callbacks
-   └─ Skipped if EnableWS not called
-   
-4. initMiddlewares(injectedProviders)
-   └─ Resolves global middleware instances via DI
-   └─ Resolves module-scoped middleware
-   
-5. initExceptionFilters(injectedProviders)
-   └─ Resolves HTTP exception filters
-   └─ Resolves WS exception filters (if WS enabled)
-   
-6. initGuards(injectedProviders)
-   └─ Resolves global guards
-   └─ Resolves route-specific guards
-   
-7. initInterceptors(injectedProviders)
-   └─ Resolves global interceptors
-   └─ Resolves route-specific interceptors
-   
-8. initMainHandlers()
-   └─ Builds routing trie
-   └─ Creates handler chains (middleware + handler)
-   └─ Wires up exception filter lookup
-   
-9. initDevtool()
-   └─ IF Devtool enabled: creates snapshot of routes/handlers
-   
-10. initAccessLog()
-    └─ IF AccessLog enabled: sets up structured access logging
+container.addInterface(common.Logger)
+container.wire(root)       modules discovered, OnInit + providers per module, controllers injected
+initWS()                   only when EnableWS was called
+initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(), initInterceptors(), initMainHandlers()
+app.http.finishRoutes()    one immutable route struct per route, fixed 404 / 405 bodies
+initDevtool(), initAccessLog()
+callOnReady()              then the app is marked created
 ```
 
 **Why Order Matters**:
-- initProviders MUST run first (builds everything else's dependency source)
-- initWS MUST run before exception filters/guards/interceptors (WS state is referenced)
-- initDevtool MUST run last (needs fully-populated state)
+- `wire` MUST run first (it fills the container everything else reads)
+- `initWS` MUST run before the layer and handler init functions (they write WS state when WS is enabled)
+- `initDevtool` after routes and layers exist; `callOnReady` last
 
 ### 2.2 Per-Request Lifecycle (HTTP)
 
 ```
-1. ServeHTTP(w, r) called
-   └─ app.ctxPool.Get() → *ctx.HTTPContext (pooled allocation)
-   
-2. c.Init(w, r) — initialize context
-   └─ Sets Timestamp = now()
-   └─ Sets ResponseWriter, Request
-   └─ Generates request ID
-   
-3. Route matching: routing.Router.Match(r.URL.Path, r.Method)
-   └─ Returns RouterItem or 404 Not Found
-   
-4. Handler resolution from RouterItem
-   └─ Get handler function from registry
-   └─ Get handler name, version, route
-   
-5. Handler chain execution:
-   ├─ Global middlewares
-   ├─ Module middlewares
-   ├─ Guards
-   ├─ Interceptors (pre)
-   ├─ Handler invocation (with panic recovery)
-   ├─ Interceptors (post)
-   └─ Exception filters (if panic recovered)
-   
-6. Trace emission (if listeners registered)
-   └─ Send trace.Event with timing data
-   
-7. Context release: app.ctxPool.Put(c)
-   └─ c.Reset() — clears all fields
-   └─ Returns to pool for reuse
-   
-8. HTTP response written to wire
+1. App.ServeHTTP(w, r)
+   └─ a request with a body: r.Body = http.MaxBytesReader(w, r.Body, cap) (cap > 0)
+   └─ app.ctxPool.Get() → *httpExchange (context + tracking writer), c.Init(&ex.writer, r)
+   └─ X-Request-Id set; Tracer.Enabled() asked once
+2. HTTP.handleRequest (the only defer / recover)
+   └─ routing.Router.Match(method, path, version, params), retried with the neutral version
+   └─ no route: global middlewares, then 404 / 405 (+ Allow) from precomputed bytes
+   └─ the route's httpRoute: middlewares → guards → interceptors → handler plan → operators
+   └─ panics routed per request-pipeline.md § 1
+3. Result written by its kind (core/README.md › Results)
+4. With a listener: the complete event (Code = the status written)
+5. app.releaseCtx(ex): c.Reset() (keeps slice capacity), back to the pool
 ```
 
-**Performance Characteristics**:
-- Context pooling: ~500ns allocation saved per request
-- Route matching: O(1) exact, O(log n) prefix wildcard, O(n) complex regex
-- Dependency resolution: ~1-5μs per dependency × count
-- Handler execution: 1-2ms fast path (no I/O)
+**Performance**: measured numbers are in `core/README.md` › Benchmarks (a static route is about 0.6 µs and 6 allocations).
 
 ### 2.3 WebSocket Connection Lifecycle
 
@@ -338,59 +260,29 @@ type WSContext struct {
 
 ### 4.1 Provider Registration
 
-**Provider Interface**:
 ```go
 type Provider interface {
     NewProvider() Provider
 }
 ```
 
-**How It Works**:
+**How It Works** (`core/container.go`):
 1. Any struct implementing `NewProvider() Provider` is a provider
 2. Register via `ModuleBuilder().Providers(MyProvider{})`
-3. At startup: `app.Create()` walks module tree and collects all providers
-4. Key = `type.String()` of provider (e.g., "main.UserService")
-5. Stored in `injectedProviders map[string]Provider`
+3. At `app.Create()`, `discover` walks the module tree once: each module's visible providers (its own, its imports', the global ones of the root and `IsGlobal` modules)
+4. Key = package path + type (`genFieldKey`: `t.PkgPath() + "/" + t.String()`)
+5. `provide(key)` constructs a provider once per app: the providers its exported fields name first, then `injectDependencies`, then `NewProvider()`; the result is what every field receives
 
-**Critical Rule**:
-- `NewProvider()` is called fresh every time it's injected
-- NOT cached as singleton (called per-injection)
-- To create singletons: have static module-level variables
+**Critical Rules**:
+- `NewProvider()` is called once per provider type per app; never call it yourself
+- Providers are injected by value: state shared between users sits behind a pointer
+- `app.Get(MyProvider{})` returns the app's instance after `Create`
 
-### 4.2 Provider Key Generation
+### 4.2 Matching
 
-```go
-func genProviderKey(provider Provider) string {
-    return reflect.TypeOf(provider).String()
-}
-```
-
-**Example**:
-- Provider: `UserService{}`
-- Key: `"main.UserService"`
-- If injected into handler: `func(c *ctx.HTTPContext, us *UserService)`
-  - Parameter type: `*UserService` → `"*main.UserService"`
-  - Match: NOT FOUND (key mismatch!)
-  - Solution: Provider should be `*UserService` or parameter should be `UserService`
-
-**Critical Rule**:
-- Provider types MUST match exactly with handler parameter types
-- Pointer vs non-pointer matters!
-
-### 4.3 Circular Dependency Handling
-
-**Current Behavior**: Panic at runtime (no static analysis)
-
-**Detection**: During `app.Create()`, if Provider A needs Provider B which needs Provider A:
-- Call A.NewProvider()
-- A.NewProvider() tries to inject B
-- B.NewProvider() tries to inject A
-- Infinite recursion → stack overflow → panic
-
-**Mitigation Strategies**:
-1. Restructure dependencies (use composition)
-2. Lazy-load circular dependencies (defer initialization)
-3. Use a third-party package to resolve circular deps
+- A field matches a provider of exactly its type: `UserService` and `*UserService` are different keys
+- Lookup order per field (`injectDependencies`, `core/fn.go`): a provider of the module, a global provider, an interface the container holds (`common.Logger`, `common.Publisher`); otherwise a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`, and any other field keeps the value it was given (configuration)
+- An unexported field panics `dependency injection: can't set value to unexported '<field>' field of the <type> provider`
 
 ---
 
@@ -465,18 +357,13 @@ type ExceptionFilterable any // matched by its method:
 ```
 
 **Execution Order**:
-- Multiple filters can be registered per route
-- Filters are called in LIFO (stack) order: last-registered → first-executed
-- First filter to handle the exception wins (no chaining)
-
-**Global vs Route-Specific**:
-- Global filters: catch all exceptions across entire app
-- Route-specific filters: catch exceptions only for that route
-- Route-specific filters run BEFORE global filters (LIFO)
+- Inside one scope the filter bound last runs first
+- Module (controller) filters run before global filters, then the built-in filter
+- A filter that returns has handled the error; a filter that panics passes what it panicked with to the next filter
 
 **Default Filters**:
 - `globalHTTPExceptionFilter` — catches all HTTP exceptions, writes JSON response
-- `globalWSExceptionException` — catches all WS exceptions, sends close message
+- `globalWSExceptionFilter` — catches all WS exceptions
 
 ---
 
@@ -498,7 +385,7 @@ type ExceptionFilterable any // matched by its method:
 ### 6.2 Global Shared State
 
 **Thread-Safe**:
-- `injectedProviders map[string]Provider` — read-only after app.Create()
+- the app's container (providers, layers, routes) — read-only after app.Create()
 - `routing.Router` — read-only after app.Create()
 - `sync.Pool` for context pooling — handles synchronization
 - `trace.Tracer` — listeners in an immutable slice behind an `atomic.Pointer`; `Enabled` / `Emit` take no lock, `Listen` / `stop` serialize on one mutex
@@ -532,23 +419,22 @@ type ExceptionFilterable any // matched by its method:
    - Never mutate context fields after guard stage
 
 2. **Dependency Resolution**:
-   - Handler parameters MUST match registered provider types exactly
-   - Circular dependencies cause runtime panics (fail-fast)
+   - Provider and controller fields match provider types exactly (package path + type)
+   - Handler parameters are built-in types or pipes, resolved into a plan at `Create()`
    - All injectable fields MUST be exported
 
 3. **Pipeline Execution**:
-   - Only middleware can call `next()` to continue
-   - Guards must return bool; cannot throw exceptions
-   - Panics outside exception filters are unrecoverable
+   - Middlewares continue with `next()`, guards return `bool`, interceptors continue with `Pipe`
+   - A panic from a guard onwards reaches the exception filters; a middleware panic gets the fixed error response
 
 4. **Panic Recovery**:
-   - Only exception filters can recover panics
-   - Panics in guards/interceptors are NOT recoverable (propagate)
+   - `HTTP.handleRequest()` recovers every request panic (except `http.ErrAbortHandler`, re-panicked)
+   - Non-exception values never reach the client: fixed 500 + `UnhandledPanic` log line
 
 5. **Module Initialization**:
    - Module tree is immutable after `app.Create()`
-   - Providers are singletons (created once per module tree walk)
-   - Controllers are instantiated per-request
+   - Providers and controllers are constructed once per app
+   - Every `core.New()` is independent: no package-level registry
 
 6. **WebSocket**:
    - Each message is a complete request/response (not streaming)
@@ -558,7 +444,7 @@ type ExceptionFilterable any // matched by its method:
 7. **Concurrency**:
    - Each HTTP request is independent (no shared mutable state)
    - Each WS connection is single-threaded (readLoop + writeLoop)
-   - Global state is read-only after app.Create()
+   - App state is read-only after app.Create() (each app has its own)
 
 8. **Request Body Size**:
    - Every request body is capped at 10 MiB by default, enforced via `http.MaxBytesReader` in `App.ServeHTTP` (core/app.go)

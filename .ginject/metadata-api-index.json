@@ -3,10 +3,10 @@
   "purpose": "Machine-readable API index for Ginject framework",
   "packages": {
     "core": {
-      "responsibility": "Application lifecycle, handler invocation, DI container",
+      "responsibility": "Application lifecycle, server, handler invocation, DI container (user docs: core/README.md)",
       "public_types": {
         "App": {
-          "description": "Main application container",
+          "description": "Main application container; every core.New() is independent (own routes, providers, layers, logger, publisher)",
           "methods": [
             {
               "name": "New",
@@ -16,74 +16,151 @@
             {
               "name": "Create",
               "signature": "Create(m *Module)",
-              "purpose": "Initialize app with module tree (MUST call once)"
+              "purpose": "Wire the module tree, plan handlers, run OnReady (call once; panics on misuse)"
             },
             {
               "name": "Listen",
-              "signature": "Listen(port int)",
-              "purpose": "Start HTTP server on port"
+              "signature": "Listen(port int, opts *ServerOptions) error",
+              "purpose": "Serve HTTP/1.1 (and h2c with H2C) on :port; nil opts = safe defaults; blocks until shut down"
+            },
+            {
+              "name": "ListenTLS",
+              "signature": "ListenTLS(port int, certFile, keyFile string, opts *ServerOptions) error",
+              "purpose": "Serve TLS with HTTP/1.1 and HTTP/2; empty file names need opts.TLSConfig with certificates"
+            },
+            {
+              "name": "Serve",
+              "signature": "Serve(l net.Listener, opts *ServerOptions) error",
+              "purpose": "Serve on a listener you made (TLS when opts.TLSConfig is set)"
+            },
+            {
+              "name": "Stop",
+              "signature": "Stop()",
+              "purpose": "Graceful shutdown (drain, then OnShutdown hooks once); safe from any goroutine; from a handler use go app.Stop()"
             },
             {
               "name": "ServeHTTP",
-              "signature": "ServeHTTP(w ResponseWriter, r *Request)",
-              "purpose": "HTTP handler (auto-called by Go stdlib)"
+              "signature": "ServeHTTP(w http.ResponseWriter, r *http.Request)",
+              "purpose": "App is an http.Handler (advanced: no server defaults, no graceful shutdown)"
+            },
+            {
+              "name": "Get",
+              "signature": "Get(p Provider) any",
+              "purpose": "The instance this app created for p's type, nil before Create or for an unknown type"
+            },
+            {
+              "name": "SetLogger",
+              "signature": "SetLogger(logger common.Logger) *App",
+              "purpose": "The one way to set the logger (before Create; nil panics)"
+            },
+            {
+              "name": "Logger",
+              "signature": "Logger() common.Logger",
+              "purpose": "The app's logger, never nil"
             },
             {
               "name": "BindGlobalMiddlewares",
-              "signature": "BindGlobalMiddlewares(fn ...MiddlewareFn)",
-              "purpose": "Register middlewares for all routes"
+              "signature": "BindGlobalMiddlewares(middlewares ...common.MiddlewareFn) *App",
+              "purpose": "Middlewares for every HTTP request"
+            },
+            {
+              "name": "BindGlobalGuards",
+              "signature": "BindGlobalGuards(guarders ...common.Guarder) *App",
+              "purpose": "Guards for every route and event"
+            },
+            {
+              "name": "BindGlobalInterceptors",
+              "signature": "BindGlobalInterceptors(interceptors ...common.Interceptable) *App",
+              "purpose": "Interceptors for every route and event"
+            },
+            {
+              "name": "BindGlobalExceptionFilters",
+              "signature": "BindGlobalExceptionFilters(exceptionFilters ...common.ExceptionFilterable) *App",
+              "purpose": "Exception filters for every route and event"
+            },
+            {
+              "name": "EnableVersioning",
+              "signature": "EnableVersioning(v versioning.Versioning) *App",
+              "purpose": "Route versioning"
             },
             {
               "name": "EnableWS",
               "signature": "EnableWS(cfg *WSConfig, middlewares ...common.MiddlewareFn) *App",
-              "purpose": "Enable WebSocket support; returns App for chaining"
+              "purpose": "Enable WebSocket support with handshake middlewares"
+            },
+            {
+              "name": "EnableDevtool",
+              "signature": "EnableDevtool() *App",
+              "purpose": "Devtool snapshot of routes and layers"
+            },
+            {
+              "name": "EnableAccessLog",
+              "signature": "EnableAccessLog() *App",
+              "purpose": "One access log line per request (the tracer's only listener)"
             }
           ],
           "notes": [
-            "No public setter exists to change the request body cap at runtime. maxRequestBodyBytes defaults to DefaultMaxRequestBodyBytes (10MB) in New() and is fixed for the life of the App. Do NOT invent a SetMaxBodySize-style method — it does not exist.",
-            "ServeHTTP unconditionally wraps r.Body in http.MaxBytesReader(w, r.Body, app.maxRequestBodyBytes) before dispatching, independent of ctx.Init. Exceeding it surfaces as a 413 exception.RequestEntityTooLargeException from ctx.Body(), not a raw panic (see ctx.HTTPContext notes).",
-            "Listen() builds http.Server with DefaultReadHeaderTimeout=2s, DefaultReadTimeout=5s, DefaultWriteTimeout=15s, DefaultIdleTimeout=60s, DefaultMaxHeaderBytes=1MB — all hardcoded, no setters."
+            "Configuration methods panic after Create: 'invalid app: <Method> must be called before Create'.",
+            "The request body cap is ServerOptions.MaxRequestBodyBytes of the serving call (0 = 10 MiB, negative = off); ServeHTTP wraps a body (not nil / http.NoBody) in http.MaxBytesReader. Exceeding it is a 413 exception from ctx.Body(). No SetMaxBodySize-style method exists.",
+            "Server timeouts are internal defaults, not options: ReadHeaderTimeout 5 s, ReadTimeout 30 s, WriteTimeout 30 s, IdleTimeout 75 s, MaxHeaderBytes 64 KiB. Deeper tuning: run App as an http.Handler in your own http.Server.",
+            "The logger API is SetLogger(l) and Logger() only; App has no exported fields."
           ]
         },
         "Module": {
-          "description": "Composition root for controllers and providers with lifecycle hooks",
+          "description": "Composition root for controllers and providers with lifecycle hooks; fields set on the built module",
           "fields": [
-            "providers []Provider",
-            "controllers []Controller",
-            "imports []*Module",
+            "Name string - resolved by Build from the variable or function name (<package>.<name>); used in the InstanceLoader log line",
             "IsGlobal bool - makes providers available to every module without an explicit import",
             "OnInit func() - called during app.Create(), a module after the modules it imports, then its providers are constructed",
             "OnReady func() - called once per app at the end of app.Create(), in the OnInit order",
             "OnShutdown func() - called on graceful shutdown (SIGINT/SIGTERM, or app.Stop()), in the exact reverse of the OnInit order"
+          ],
+          "methods": [
+            "Prefix(prefix string) *Module - path prefix for the module's routes and its imports' routes",
+            "ID() string - identifier given by Build"
           ]
         },
         "ModuleBuilder": {
-          "description": "Fluent API for building modules",
+          "description": "Fluent API for building modules: core.ModuleBuilder() returns the unexported *moduleBuilder",
           "methods": [
-            "Controllers(...) *ModuleBuilder",
-            "Providers(...) *ModuleBuilder",
-            "Imports(...) *ModuleBuilder",
-            "Export(...) *ModuleBuilder",
-            "IsGlobal(bool) *ModuleBuilder",
+            "Imports(modules ...any) *moduleBuilder - *Module values or module funcs (func(...) *core.Module)",
+            "Providers(providers ...Provider) *moduleBuilder",
+            "Controllers(controllers ...Controller) *moduleBuilder",
             "Build() *Module"
-          ]
+          ],
+          "notes": "No Export or IsGlobal builder methods exist: set m.IsGlobal on the built module."
         },
         "Provider": {
           "description": "Any struct implementing NewProvider() Provider",
           "interface": "type Provider interface { NewProvider() Provider }"
+        },
+        "ServerOptions": {
+          "description": "Options of Listen, ListenTLS and Serve; nil = defaults",
+          "fields": [
+            "ShutdownTimeout time.Duration - drain time at shutdown (0 or negative = 30 s)",
+            "MaxRequestBodyBytes int64 - body cap (0 = 10 MiB, negative = off)",
+            "TLSConfig *tls.Config - ListenTLS / Serve TLS config, cloned",
+            "H2C bool - Listen / Serve without TLS also accept unencrypted HTTP/2"
+          ]
+        },
+        "Controller": {
+          "description": "Any struct implementing NewController() Controller; embeds common.HTTP and/or common.WS",
+          "interface": "type Controller interface { NewController() Controller }"
         }
       },
       "initialization_order": [
-        "initLogger",
-        "initProviders",
+        "container.wire (modules, OnInit, providers, controllers)",
         "initWS",
+        "initRoutes",
         "initMiddlewares",
         "initExceptionFilters",
         "initGuards",
         "initInterceptors",
         "initMainHandlers",
+        "http.finishRoutes",
         "initDevtool",
-        "initAccessLog"
+        "initAccessLog",
+        "callOnReady"
       ]
     },
     "ctx": {
@@ -187,7 +264,8 @@
         "READ_ANY": "GET /*"
       },
       "notes": [
-        "Router.Match signature is func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string): nil on a miss; the item is shared and read-only; the slice is params plus one value per route parameter (design 0002). Router.Group does not exist.", "Route parameters are {name} whole segments (READ_BY_ID routes to GET /{ID}: the parameter name keeps the case of the method name); there is no :id syntax."
+        "Router.Match signature is func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string): nil on a miss; the item is shared and read-only; the slice is params plus one value per route parameter (design 0002). Router.Group does not exist.",
+        "Route parameters are {name} whole segments (READ_BY_ID routes to GET /{ID}: the parameter name keeps the case of the method name); there is no :id syntax."
       ]
     },
     "exception": {
@@ -205,30 +283,59 @@
         "notes": "No GetStackTrace()/SetStackTrace() and no stack-trace field exist. Exception{message, description, cause, code, isJoined} holds no prebuilt error; Error() derives the text. AppendJSON / MarshalJSON write {\"code\",\"error\",\"message\"} with encoding/json."
       },
       "built_in_exceptions_http": [
-        "BadRequestException (400)", "UnauthorizedException (401)", "ForbiddenException (403)",
-        "NotFoundException (404)", "MethodNotAllowedException (405)", "NotAcceptableException (406)",
-        "RequestTimeoutException (408)", "ConflictException (409)", "GoneException (410)",
-        "PreconditionFailedException (412)", "RequestEntityTooLargeException (413)",
-        "UnsupportedMediaTypeException (415)", "MisdirectedRequestException (421)",
-        "UnprocessableEntityException (422)", "TeapotException (418)", "TooManyRequestsException (429)",
-        "InternalServerErrorException (500)", "NotImplementedException (501)", "BadGatewayException (502)",
-        "ServiceUnavailableException (503)", "GatewayTimeoutException (504)", "HTTPVersionNotSupportedException (505)"
+        "BadRequestException (400)",
+        "UnauthorizedException (401)",
+        "ForbiddenException (403)",
+        "NotFoundException (404)",
+        "MethodNotAllowedException (405)",
+        "NotAcceptableException (406)",
+        "RequestTimeoutException (408)",
+        "ConflictException (409)",
+        "GoneException (410)",
+        "PreconditionFailedException (412)",
+        "RequestEntityTooLargeException (413)",
+        "UnsupportedMediaTypeException (415)",
+        "MisdirectedRequestException (421)",
+        "UnprocessableEntityException (422)",
+        "TeapotException (418)",
+        "TooManyRequestsException (429)",
+        "InternalServerErrorException (500)",
+        "NotImplementedException (501)",
+        "BadGatewayException (502)",
+        "ServiceUnavailableException (503)",
+        "GatewayTimeoutException (504)",
+        "HTTPVersionNotSupportedException (505)"
       ],
       "built_in_exceptions_ws": [
-        "GoingAwayException", "ProtocolErrorException", "UnsupportedDataException", "InvalidPayloadException",
-        "PolicyViolationException", "MessageTooBigException", "WSInternalErrorException",
-        "NotSubscribedException", "TopicNotFoundException"
+        "GoingAwayException",
+        "ProtocolErrorException",
+        "UnsupportedDataException",
+        "InvalidPayloadException",
+        "PolicyViolationException",
+        "MessageTooBigException",
+        "WSInternalErrorException",
+        "NotSubscribedException",
+        "TopicNotFoundException"
       ]
     },
     "trace": {
       "responsibility": "Request tracing and observability",
-      "tracer": "type Tracer (zero value ready): Enabled() bool, Emit(Event), Listen(func(Event)) (stop func()); synchronous, no recover, 0 allocs. There is no event bus and no EventName constant.",
+      "tracer": "type Tracer (zero value ready): Enabled() bool, Emit(Event), Listen(func(Event)) (stop func()); synchronous, no recover, 0 allocs. There is no event bus. core keeps one Tracer per app, unexported: EnableAccessLog() adds its only listener.",
       "trace_stages": [
-        "middleware", "guard", "pre_interceptor", "post_interceptor",
-        "exception_filter", "pipe", "handler", "complete"
+        "middleware",
+        "guard",
+        "pre_interceptor",
+        "post_interceptor",
+        "exception_filter",
+        "pipe",
+        "handler",
+        "complete"
       ],
       "notes": "No \"handshake\" stage exists. Interceptor is split into pre_interceptor/post_interceptor (two constants), not one combined \"interceptor\". Exception filter stage string is \"exception_filter\", not \"filter\".",
-      "transports": ["HTTP", "WS"]
+      "transports": [
+        "HTTP",
+        "WS"
+      ]
     },
     "memorybroker": {
       "responsibility": "Lightweight in-process topic-based pub/sub broker (no queue groups, no persistence, no ack/retry)",
@@ -243,8 +350,13 @@
             "Close() error"
           ],
           "removed_in_simplification": [
-            "Once(topic, handler)", "SubscribeQueue(topic, group, handler)",
-            "Off(topic)", "ListenerCount(topic)", "Topics()", "Clear()", "Stats()"
+            "Once(topic, handler)",
+            "SubscribeQueue(topic, group, handler)",
+            "Off(topic)",
+            "ListenerCount(topic)",
+            "Topics()",
+            "Clear()",
+            "Stats()"
           ]
         },
         "Message": {
@@ -267,7 +379,10 @@
           "description": "func(msg *Message) - Handler invoked on publish"
         },
         "sentinel_errors": [
-          "ErrClosed", "ErrNilHandler", "ErrEmptyTopic", "ErrForeignSubscription"
+          "ErrClosed",
+          "ErrNilHandler",
+          "ErrEmptyTopic",
+          "ErrForeignSubscription"
         ]
       },
       "pattern_types": [
@@ -292,10 +407,7 @@
         "MemoryCache": {
           "description": "In-memory cache, 256 shards, each an independently-locked map",
           "constructors": [
-            "NewMemoryCache(opts ...Option) *MemoryCache - the only constructor; no persistence variant exists"
-          ],
-          "options": [
-            "WithMaxEntries(n int) Option - caps total entries (default DefaultMaxEntries=100000); n<=0 means unlimited"
+            "NewMemoryCache() *MemoryCache - the only constructor; no options, no persistence variant"
           ],
           "methods": [
             "Get(ctx, key string) ([]byte, bool)",
@@ -315,7 +427,7 @@
       ],
       "key_characteristics": [
         "Sharded (256 shards) for concurrent R/W",
-        "Approximate sampling-based eviction when WithMaxEntries cap is hit (see notes — not LFU)",
+        "No entry cap: only expired entries are removed (background sweep every 5 s, plus a bounded cleanup every 128 writes per shard)",
         "Automatic background sweep every 5s/256 shards, stopped by Stop()",
         "Thread-safe all operations except Stop() double-call (see notes)",
         "Context-based API (conforms to modules/cache.Cache)"
@@ -326,11 +438,11 @@
     "NEVER hold onto context after request completes",
     "NEVER mutate context after guard stage",
     "NEVER call provider.NewProvider() manually",
-    "NEVER panic in guard (return bool instead)",
-    "NEVER call next() multiple times in middleware",
     "NEVER access raw websocket.Conn in handlers (use Publisher)",
     "NEVER retain pooled objects beyond request lifetime",
-    "Module initialization order is SACRED - do not reorder"
+    "Code after next() runs before the next layer, not after the handler: post-handler work belongs in an interceptor's Pipe operators",
+    "Configuration methods (BindGlobal*, Enable*, SetLogger) only before Create",
+    "Providers are fields, never handler parameters"
   ],
   "common_mistakes": [
     "Type mismatch between provider and handler parameter",

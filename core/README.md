@@ -13,6 +13,10 @@
     - [SetLogger and Logger](#setlogger-and-logger)
     - [Configuration methods](#configuration-methods)
   - [Modules and lifecycle](#modules-and-lifecycle)
+    - [ModuleBuilder](#modulebuilder)
+    - [`Module` fields](#module-fields)
+    - [Prefix and ID](#prefix-and-id)
+    - [Provider and Controller](#provider-and-controller)
     - [Providers](#providers)
     - [Hooks](#hooks)
     - [Two apps in one process](#two-apps-in-one-process)
@@ -20,6 +24,10 @@
   - [Server](#server)
     - [Listen, ListenTLS and Serve](#listen-listentls-and-serve)
     - [ServerOptions](#serveroptions)
+      - [ShutdownTimeout](#shutdowntimeout)
+      - [MaxRequestBodyBytes](#maxrequestbodybytes)
+      - [TLSConfig](#tlsconfig)
+      - [H2C](#h2c)
     - [Startup errors and logs](#startup-errors-and-logs)
     - [Protocols](#protocols)
     - [Graceful shutdown and Stop](#graceful-shutdown-and-stop)
@@ -117,7 +125,7 @@ func main() {
 
 ## `App`
 
-`App` holds everything it wires: its modules, providers, layers, routes, logger and publisher, the HTTP router, the optional WebSocket server and the trace event bus. Configure it with the methods below, wire it once with `Create`, then serve with `Listen`, `ListenTLS` or `Serve` (see [Server](#server)).
+`App` holds everything it wires: its modules, providers, layers, routes, logger and publisher, the HTTP router, the optional WebSocket server and the request tracer. Configure it with the methods below, wire it once with `Create`, then serve with `Listen`, `ListenTLS` or `Serve` (see [Server](#server)).
 
 ### New
 
@@ -170,8 +178,6 @@ app.SetLogger(log.WrapLogger(myLogger, []string{"password"}))
 app.Logger().Info("Started")
 ```
 
-Migration: `UseLogger(l)` → `SetLogger(l)`; `UseLogOptions(o)` → `SetLogger(log.NewLog(o))`; `UseLogger(l)` with `MaskFields` → `SetLogger(log.WrapLogger(l, fields))`; `app.Logger.Info(…)` → `app.Logger().Info(…)`.
-
 #### Rules
 - `SetLogger(nil)` panics `invalid app: SetLogger needs a logger`.
 - A logger wrapped with `log.WrapLogger(l, fields)` keeps its masking rules.
@@ -194,7 +200,129 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 
 ## Modules and lifecycle
 
-A module groups controllers and providers and imports other modules: `*Module` values or module funcs (`func(...) *core.Module`). Module funcs are called once per app, whatever the number of modules that import them; their arguments resolve from the global providers, then `common.Logger` and `common.Publisher`.
+A module groups controllers and providers and imports other modules: `*Module` values or module funcs (`func(...) *core.Module`). Module funcs are called once per app, whatever the number of modules that import them, while the tree is discovered. Their arguments resolve from the global providers known at that point (the root module's, and those of `IsGlobal` modules discovered before the call), then `common.Logger` and `common.Publisher`; an argument with no provider panics `dependency injection: can't resolve argument of '<func>' …`. An `IsGlobal` module imported next to the module func is not visible to it yet: import it from a module discovered earlier, or list its providers in the root.
+
+### ModuleBuilder
+
+```go
+func ModuleBuilder() *moduleBuilder
+func (m *moduleBuilder) Imports(modules ...any) *moduleBuilder
+func (m *moduleBuilder) Providers(providers ...Provider) *moduleBuilder
+func (m *moduleBuilder) Controllers(controllers ...Controller) *moduleBuilder
+func (m *moduleBuilder) Build() *Module
+```
+
+`ModuleBuilder()` starts a module. `Imports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `Build()` returns the `*Module`.
+
+#### Parameters
+- `Imports`: `...any`, each a `*Module` or a module func whose type starts with `func(` and returns `*core.Module`.
+- `Providers`: `...Provider`, provider values (see [Provider and Controller](#provider-and-controller)).
+- `Controllers`: `...Controller`, controller values.
+
+#### Returns
+- `ModuleBuilder`, `Imports`, `Providers`, `Controllers`: `*moduleBuilder`, the same builder.
+- `Build`: `*Module`, a new module with its own `ID()` and a resolved `Name`.
+
+#### Usage
+
+```go
+var UserModule = core.ModuleBuilder().
+	Controllers(UserController{}).
+	Providers(GreetingService{}).
+	Build()
+
+var AppModule = core.ModuleBuilder().
+	Imports(UserModule).
+	Build()
+```
+
+#### Rules
+- An import that is neither a `*Module` nor a module func panics `invalid module: can't pass '<type>' type as module` when `Build` runs.
+- `Name` is `<package>.<variable>` of the variable the module is assigned to (a `var X = func() *core.Module {…}` or a `var X = factory()` included), else `<package>.<function>` of the function that calls `Build`. A module built as an argument of `Imports` gets its own factory's name, never the outer variable's.
+- Chained calls accumulate: `Providers(p1).Providers(p2)` lists both.
+
+### `Module` fields
+
+#### Name
+Type: `string`
+
+Default: resolved by `Build` (see the rules above)
+
+Required: `false`
+
+The name used in the `InstanceLoader` startup line. A module with an empty name logs no line.
+
+#### IsGlobal
+Type: `bool`
+
+Default: `false`
+
+Required: `false`
+
+Makes the module's providers visible to every module of the app (see [Providers](#providers)).
+
+#### OnInit
+Type: `func()`
+
+Default: `nil`
+
+Required: `false`
+
+Runs when the module is initialized, before its providers are constructed (see [Hooks](#hooks)).
+
+#### OnReady
+Type: `func()`
+
+Default: `nil`
+
+Required: `false`
+
+Runs once at the end of `Create` (see [Hooks](#hooks)).
+
+#### OnShutdown
+Type: `func()`
+
+Default: `nil`
+
+Required: `false`
+
+Runs once when the app shuts down or `Stop()` is called (see [Hooks](#hooks) and [Graceful shutdown and Stop](#graceful-shutdown-and-stop)).
+
+```go
+var CacheModule = func() *core.Module {
+	m := core.ModuleBuilder().Providers(GreetingService{}).Build()
+	m.IsGlobal = true
+	m.OnShutdown = func() { /* close connections */ }
+	return m
+}()
+```
+
+### Prefix and ID
+
+```go
+func (m *Module) Prefix(prefix string) *Module
+func (m *Module) ID() string
+```
+
+`Prefix` adds a path prefix to every route of the module and of the modules it imports, and returns the module. A prefix added to an importing module goes in front: a child with `Prefix("v1")` imported by a root with `Prefix("api")` serves `/api/v1/ping`, and `/ping` and `/v1/ping` answer 404. `ID` returns the identifier `Build` gave the module, unique per built module.
+
+```go
+var V1Module = core.ModuleBuilder().Controllers(UserController{}).Build().Prefix("v1")
+```
+
+### Provider and Controller
+
+```go
+type Provider interface {
+	NewProvider() Provider
+}
+
+type Controller interface {
+	NewController() Controller
+}
+```
+
+A provider's `NewProvider` (once per app) and a controller's `NewController` are called after their exported fields were injected; what they return is what the app keeps. A controller embeds `common.HTTP` for HTTP routes or `common.WS` for WebSocket events, and binds its module layers in `NewController` (`BindMiddleware`, `BindGuard`, `BindInterceptor`, `BindExceptionFilter`).
 
 ### Providers
 
@@ -260,12 +388,51 @@ A server that only listens on loopback uses `Serve` with a listener on `127.0.0.
 
 ### ServerOptions
 
-| Field | Default | Effect |
-|---|---|---|
-| `ShutdownTimeout time.Duration` | `0` = 30 s (negative too) | How long running requests may finish during a shutdown |
-| `MaxRequestBodyBytes int64` | `0` = 10 MiB | Request body cap; a negative value turns the cap off; a body over the cap answers 413 (declared or chunked) |
-| `TLSConfig *tls.Config` | `nil` | `ListenTLS` and `Serve`: the TLS configuration; it is cloned, never modified |
-| `H2C bool` | `false` | `Listen` and `Serve` without TLS: also accept unencrypted HTTP/2 |
+Pass `nil` for the defaults. A zero field takes its default too.
+
+#### ShutdownTimeout
+Type: `time.Duration`
+
+Default: `0`, which means 30 s (a negative value too)
+
+Required: `false`
+
+How long running requests may finish during a shutdown.
+
+#### MaxRequestBodyBytes
+Type: `int64`
+
+Default: `0`, which means 10 MiB
+
+Required: `false`
+
+The request body cap. A negative value turns the cap off. A body over the cap answers 413, whether its length is declared or chunked.
+
+#### TLSConfig
+Type: `*tls.Config`
+
+Default: `nil`
+
+Required: `false` (`ListenTLS` needs it when no certificate files are given)
+
+The TLS configuration of `ListenTLS` and `Serve`. It is cloned, never modified.
+
+#### H2C
+Type: `bool`
+
+Default: `false`
+
+Required: `false`
+
+For `Listen` and `Serve` without TLS: also accept unencrypted HTTP/2.
+
+```go
+err := app.Listen(8080, &core.ServerOptions{
+	ShutdownTimeout:     10 * time.Second,
+	MaxRequestBodyBytes: 1 << 20,
+	H2C:                 true,
+})
+```
 
 The options are read once, when the call starts: changing the struct later has no effect.
 
@@ -533,7 +700,7 @@ WS handlers reply with their last result as the message.
 
 ### Trace events
 
-With a listener on the app's `trace.Tracer` (the access log is one), each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
+Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
 
 Every event carries `ID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic) and `Code`. `Enabled()` is asked once per request: a request that started without a listener emits nothing. With `EnableAccessLog()`, the access log is stopped once at shutdown, after the `OnShutdown` hooks, so the lines of the last requests are written before the process exits.
 
@@ -552,7 +719,8 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 
 ## Other exported types
 
-`Module` (built by `ModuleBuilder()`; `Prefix`, `ID`, the `Name`, `IsGlobal`, `OnInit`, `OnReady` and `OnShutdown` fields), `Provider`, `Controller`, `HTTP`, `WS`, `WSConfig`, `NewWS`, `WSConnmgr`, `WSConnection`, `WSPayload`, `WSPayloadType` and the WebSocket layer types are documented with the rest of the server in a later revision of this README.
+- `HTTP` is the app's HTTP router and layer store. It has no exported fields or methods: you never build or use one.
+- The WebSocket side (`WS`, `NewWS`, `WSConfig`, `WSConnmgr`, `NewWSConnmgr`, `WSConnection`, `WSPayload`, `WSPayloadType` and its `Type…` constants) is documented with the WebSocket review of this package. `EnableWS(&core.WSConfig{Path: "/ws"})` turns it on.
 
 ## Performance notes
 
@@ -598,6 +766,11 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz, Go 1.27.4), `g
 | BenchmarkReturnHTTP_PointerToStruct | 273 | 62 | 2 |
 | BenchmarkReturnHTTP_InterfaceString | 60 | 43 | 1 |
 | BenchmarkTraceHTTPCatch_NoListener | 22 | 0 | 0 |
+| BenchmarkModuleBuilderBuild (cold) | 8073 | 824 | 10 |
+| BenchmarkCreate_FiveControllers (cold) | 41706 | 27392 | 378 |
+| BenchmarkCreate_ChainedProviders (cold) | 118651 | 78177 | 697 |
+| BenchmarkCreate_StaticSubmodules (cold) | 73707 | 69824 | 496 |
+| BenchmarkCreate_DynamicSubmodules (cold) | 62788 | 6720 | 66 |
 
 Against the previous dispatch (same machine, `benchstat`, 5 runs): Static 837 → 636 ns (9 → 6 allocations), Chain 1,277 → 806 ns (13 → 10), NotFound 2,387 → 523 ns (23 → 3), MethodNotAllowed 2,285 → 464 ns (23 → 4), Exception 1,913 → 1,570 ns (10 → 6), MultiInterceptor 1,827 → 972 ns (15 → 9).
 

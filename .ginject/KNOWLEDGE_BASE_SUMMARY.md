@@ -153,20 +153,20 @@ A complete, machine-optimized knowledge base for the Ginject framework that enab
 ### Never (with consequences)
 1. Hold context after request — stale data
 2. Mutate context after guard — bypass guard logic
-3. Panic in guard — unhandled panic
+3. Expect code after `next()` to run after the handler — it runs before the next layer
 4. Call next() multiple times — double processing
 5. Call NewProvider() manually — breaks DI
 6. Access raw websocket.Conn — message corruption
-7. Create circular dependencies — stack overflow
-8. Reorder app.Create() steps — undefined behavior
+7. Call a configuration method after `Create` — `invalid app: …` panic
+8. Change a module after giving it to `Create` — undefined behavior
 
 ### Always (best practices)
-1. Inject dependencies via handler parameters
+1. Inject providers via exported fields; request data via handler parameters
 2. Use middleware for request/response transformation
 3. Use guard for authentication/authorization
 4. Use exception filter for error recovery
 5. Use Publisher for WebSocket fanout
-6. Make providers singletons
+6. Keep shared provider state behind a pointer (one instance per app, injected by value)
 7. Call next() exactly once per middleware
 
 ---
@@ -335,8 +335,8 @@ Note: `ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILD
 ### Prevents Common Mistakes
 - ✅ Type mismatches (provider vs parameter)
 - ✅ Context leaks (holding after request)
-- ✅ Panics in guards (unrecoverable)
-- ✅ Circular dependencies
+- ✅ Expecting exception filters to catch middleware panics
+- ✅ Calling the old server and logger APIs (see `core/README.md` for the current ones)
 - ✅ Middleware calling next() multiple times
 
 ---

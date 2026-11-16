@@ -285,16 +285,14 @@ func (c UserController) NewController() Controller {
 }
 
 // Routes automatically discovered:
-func (c UserController) READ_BY_ID() { /* GET /:id */ }
+func (c UserController) READ_BY_ID() { /* GET /{ID} */ }
 func (c UserController) CREATE() { /* POST / */ }
 ```
 
 ### 8.2 Instance Lifecycle
 
-- Controller instantiated per-request
-- NewController() factory method called to get instance
-- Fields with types matching providers are injected via reflection
-- After request, controller discarded (no pooling)
+- Controller constructed once per app at `Create()`: fields with provider types are injected, then `NewController()` is called
+- Every request runs the handler method on that value (a value receiver gets a copy per call)
 
 ---
 

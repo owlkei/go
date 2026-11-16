@@ -90,30 +90,39 @@ package-reference.md (independent API reference)
 ## Core Framework Concepts (Quick Summary)
 
 ### 1. Module → Controller → Provider Pattern
-- **Module**: Composition root (controllers, providers, imports)
-- **Controller**: HTTP/WS handler container
-- **Provider**: Injected business logic
+- **Module**: Composition root (controllers, providers, imports), built with `core.ModuleBuilder()…Build()`
+- **Controller**: HTTP/WS handler container (embeds `common.HTTP` and/or `common.WS`)
+- **Provider**: Injected business logic, constructed once per app
 
-### 2. Request Pipeline (Sequential)
+### 2. Request Lifecycle (the spec: [request-pipeline.md](request-pipeline.md) § 1)
 ```
-[Global Middleware] → [Module Middleware] → [Guard] → 
-[Interceptor Pre] → [Handler] → [Interceptor Post] → [Exception Filter]
+global middleware → module middleware → global guard → module guard →
+global pre-interceptor → module pre-interceptor → main handler →
+module post-interceptor → global post-interceptor → response
+error in a middleware      → the HTTP layer's fixed error response (no exception filter)
+error from a guard onwards → module exception filter → global exception filter → built-in filter
 ```
 
-### 3. Dependency Injection (Reflection-based)
-- All handler parameters injected automatically
-- No tags needed — type matching only
-- Provider types must match parameter types exactly
+### 3. Dependency Injection (Reflection at `Create()` only)
+- Handler parameters are planned once at `Create()` (`core/fn_plan.go`); a request runs the plan
+- No tags needed: provider fields match by type identity (package path + type), handler parameters by type identity
+- An unresolvable dependency panics at `Create()` (`dependency injection: …`)
 
 ### 4. WebSocket Model
-- NOT streaming — RPC-over-WS with pub/sub
-- Each message = complete request/response cycle
-- Fanout via memorybroker.Publish() or Publisher interface
+- NOT streaming: RPC-over-WS with pub/sub
+- Each message = complete request/response cycle; middlewares run only at the handshake
+- Fanout via the injected `common.Publisher`
 
 ### 5. Exception Handling
-- Only exception filters can recover panics
-- Guards must return bool, not panic
-- Stack traces captured on panic
+- A panic from a guard onwards reaches the route's exception filters; a middleware panic gets the fixed error response
+- Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack)
+
+### 6. Server and Lifecycle
+- `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*core.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `H2C`)
+- Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`, then `OnShutdown` hooks in reverse init order
+- One logger API: `app.SetLogger(l)` before `Create`, read with `app.Logger()`
+- Request tracing: one internal `trace.Tracer` per app; `EnableAccessLog()` is its only listener
+- Details: `core/README.md`, [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md)
 
 ---
 
@@ -122,47 +131,12 @@ package-reference.md (independent API reference)
 | Rule | Why | Consequence |
 |------|-----|------------|
 | Never hold context after request | Context is pooled, reused | Stale data, wrong request |
-| Never mutate context after guard | Guard made decisions based on original | Bypass guard logic |
-| Never panic in guard | Guard panics not caught | Unhandled panic, crash |
-| Call next() exactly once | Multiple calls = double processing | Handler called twice |
-| Never call NewProvider() manually | Defeats DI, breaks pooling | Lifecycle violations |
+| Never keep a `next` across requests | `next()` belongs to one request | It does nothing on a later request |
+| Code after `next()` is not "after the handler" | The chain is linear | Use an interceptor's `Pipe` operators for post-handler work |
+| Never call NewProvider() manually | The app constructs each provider once and injects its fields first | Uninjected fields, a second instance |
 | Never access raw conn in WS | Concurrent with fanout | Message corruption |
-| Module init order sacred | Dependencies between init steps | Undefined behavior, panic |
-| Provider type must match parameter | Reflection uses type.String() | Dependency resolution fails |
-
----
-
-## File Organization (Recommended)
-
-```
-myapp/
-├── .ginject/                 ← AI knowledge base (this directory)
-│   ├── architecture-core-concepts.md
-│   ├── routing-system.md
-│   ├── handler-execution.md
-│   ├── request-pipeline.md
-│   ├── websocket-system.md
-│   ├── modules-and-providers.md
-│   ├── package-reference.md
-│   ├── anti-patterns-gotchas.md
-│   ├── ai-guidance-quick-reference.md
-│   ├── metadata-api-index.json
-│   ├── metadata-concurrency-model.json
-│   ├── metadata-performance.json
-│   ├── metadata-lifecycles.json
-│   └── INDEX.md              ← This file
-├── modules/
-│   ├── users/
-│   │   ├── user_controller.go
-│   │   ├── user_service.go
-│   │   └── user_module.go
-│   ├── products/
-│   └── shared/
-├── common/
-│   ├── middleware.go
-│   └── guards.go
-└── main.go
-```
+| Configuration methods before `Create` | They panic after it | `invalid app: <Method> must be called before Create` |
+| Provider type must match field type exactly | Keys are package path + type | Dependency resolution fails at `Create()` |
 
 ---
 
@@ -185,10 +159,9 @@ myapp/
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md#decision-tree-how-do-i-implement-this-feature)
 
 **Steps**:
-1. Option 1: Middleware (runs before everything)
-2. Option 2: Pipeable (transforms specific parameter)
-3. Option 3: Validate in handler
-4. Do NOT validate in guard
+1. Preferred: a pipe (a value type with `Transform`, see `common/pipe.go`) that binds and validates one parameter, panicking an exception on bad input
+2. Or validate in the handler and panic `exception.BadRequestException(...)`
+3. Guards decide access (`true` / `false`), not input shape
 
 ### "I need authentication"
 **Files to read**:
@@ -207,9 +180,9 @@ myapp/
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md)
 
 **Steps**:
-1. Call `app.EnableWS()` before `app.Create()`
+1. Call `app.EnableWS(&core.WSConfig{Path: "/ws"})` before `app.Create()`
 2. Embed `common.WS` in controller
-3. Create method: `ON_TOPIC_NAME()`
+3. Create method: `SUBSCRIBE_chat_PERSON_ANY()` (see [websocket-system.md](websocket-system.md))
 4. Inject `common.Publisher` for fanout
 5. Call `publisher.Publish(topic, data)`
 
@@ -220,9 +193,9 @@ myapp/
 
 **Steps**:
 1. Panic with `exception.BadRequestException(...)`
-2. Framework catches in exception filter
-3. Exception filter writes error response
-4. Can create custom exception filter
+2. From a guard onwards the route's exception filters catch it (module, then global, then the built-in one)
+3. The built-in filter writes `{"code","error","message"}`; bind a custom filter with `BindExceptionFilter` / `BindGlobalExceptionFilters`
+4. A panic in a middleware skips the filters: the HTTP layer writes the same fixed format
 
 ### "I need a database connection"
 **Files to read**:
@@ -278,40 +251,39 @@ All `metadata-*.json` files contain structured data for AI parsing:
 
 **Common mistakes to avoid**:
 - Holding context after request
-- Type mismatch (provider vs parameter)
-- Panicking in guard/interceptor
-- Calling next() multiple times
+- Type mismatch (provider vs field or parameter)
+- Expecting code after `next()` to run after the handler
 - Accessing raw websocket.Conn
-- Circular dependencies
 - Manual NewProvider() calls
-- Mutating context after guard
+- APIs remembered from older versions: check `core/README.md` and `go doc ./core` first
 
 **Performance-conscious generation**:
-- Minimize handler parameters (reflect cost ~5-10μs per param)
-- Avoid exceptions in hot path
-- Keep middleware count low
+- Reflection runs at `Create()`, not per request; per-request costs are in `core/README.md` › Benchmarks
+- A non-exception panic costs about 25 µs (stack capture for the log): panic exceptions
 - Profile before optimizing
 
 ---
 
 ## Version & Updates
 
-**Knowledge Base Version**: 1.1  
-**Ginject Version**: Pre-v1.0 (production readiness: 6.2/10)  
-**Last Updated**: 2026-09-25 (major correctness pass — see "2026-09-25 Correction Pass" below)  
-**Coverage**: 20+ packages, 100+ public APIs, complete lifecycle documentation
+**Knowledge Base Version**: 1.2  
+**Last Updated**: 2026-11-16 (roadmap 0003: dispatch, server, per-app container, `trace.Tracer`)
+
+### 2026-11-16 Update (roadmap 0003)
+
+Designs 0007-0010: the request lifecycle is a written spec; `Listen(port, opts)`, `ListenTLS`, `Serve`, `Stop` and `ServerOptions`; graceful shutdown; modules, providers, layers and routes are per app (two apps in one process are independent); `SetLogger` / `Logger()` are the only logger API; `trace.Tracer` is the tracing primitive. Pages rewritten against the code: startup-lifecycle-analysis, modules-and-providers, the lifecycle and API metadata, and the provider / panic sections of every other page.
 
 ### 2026-09-25 Correction Pass
 
-A source-verified audit found and fixed a large number of fabricated/stale APIs across nearly every doc in this knowledge base — the most severe being: `common.REST` (doesn't exist; real type is `common.HTTP`), `App.SetMaxBodySize`/`ctx.HTTPContext.InitWithMaxBodySize`/`SetDeadline`/`IsDeadlineExceeded` (all fabricated, no per-request deadline API exists), `memorycache.PersistenceConfig`/`NewMemoryCacheWithConfig` (fabricated — memorycache has no persistence), `Guarder`/`Interceptable`/`ExceptionFilterable` declared as compile-time interfaces (they're actually `any`, checked via reflection), `ExceptionFilterable.Catch`'s parameter order (real order is `(*ctx.HTTPContext, *exception.Exception)`, not the reverse), and `routing.Router.Match`'s signature. `package-reference.md` was rewritten from scratch (58 individual findings). New coverage added: the `common.Construct` singleton-by-type-name caveat for Middleware/Guard/Interceptor/ExceptionFilter (a real, previously undocumented footgun), the HTTP request body size cap (10MB, no setter), CORS's two config-time panic conditions, and `Module.OnShutdown`'s actual (non-LIFO) call order. If you're reading this after a long gap, spot-check anything load-bearing against source before trusting it — this file's own history shows confident-looking fabrications can persist for a long time undetected.
+A source-verified audit found and fixed fabricated APIs (`common.REST`, `App.SetMaxBodySize`, per-request deadlines, `memorycache` persistence, `Guarder` / `Interceptable` / `ExceptionFilterable` as compile-time interfaces: they are `any`, checked by method shape). Spot-check anything load-bearing against source before trusting it.
 
 ---
 
 ## Related Documentation
 
 **In Repository**:
-- `CLAUDE.md` — Framework overview for developers (note: as of 2026-09-25 it still shows `ExceptionFilterable: Catch(*exception.Exception, *ctx.HTTPContext)` with the parameter order reversed from actual source — see this KB's `common` package reference before trusting it)
-- `modules/storage/README.md`, `middlewares/cors/README.md`, `modules/config/README.md` — per-package docs not duplicated here
+- `CLAUDE.md` — Framework overview, commands and workflow
+- Package READMEs (`core/README.md`, `log/README.md`, `trace/README.md`, `accesslog/README.md`, `modules/*/README.md`, …) — per-package API docs not duplicated here
 
 **`ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILDING_WITH_GINJECT.md` do not exist anywhere in this repository** — these were referenced by earlier versions of this doc but were never real files (verified 2026-09-25). Do not tell a user to consult them.
 
@@ -345,23 +317,4 @@ A source-verified audit found and fixed a large number of fabricated/stale APIs 
 
 ---
 
-## Future Enhancements
-
-Potential additions to knowledge base:
-- [ ] Call graphs for critical paths
-- [ ] Performance profiling results
-- [ ] Example applications
-- [ ] Testing patterns & strategies
-- [ ] Deployment & scaling guide
-- [ ] Troubleshooting guide
-- [ ] Migration guides for versions
-- [ ] Integration examples (gRPC, GraphQL, etc.)
-
----
-
-**Last Section: Trust This Knowledge Base**
-
-Every piece of information here was derived from actual source code analysis, not assumptions. All documented APIs, lifecycles, and invariants are verified against implementation.
-
-This knowledge base is the source of truth for AI code generation on Ginject. Future implementations should defer to this documentation, not rediscover the same patterns.
-
+The code is the source of truth: when this knowledge base disagrees with it, fix the doc in the same change.
