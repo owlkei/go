@@ -658,10 +658,11 @@ Rate limiting stays opt-in: turn on `guards/throttler` (or limit at the proxy) i
 
 A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`: with a handler that returns `"public"`, `GET /static/a.txt` serves `public/a.txt`, `GET /static/sub/x.txt` serves `public/sub/x.txt`, `GET /static` is the directory itself and `GET /staticzzz` answers 404.
 
-- A file is served with `http.ServeFile`.
-- A directory answers its `index.html` when it exists (with `http.ServeFile`'s redirect to the slash-terminated URL), otherwise the 404 body. No response ever contains a directory listing.
+- A file is served with `http.ServeFile` (ranges, `If-Modified-Since`, content type by extension). Under a wildcard route (`SERVE_<x>_ANY`, `SERVE_ANY_OF_<x>`) the file is opened through `os.Root` on the served directory, with `http.ServeFileFS`.
+- A directory answers its `index.html` when it exists (with the redirect to the slash-terminated URL), otherwise the 404 body. No response ever contains a directory listing.
 - A resolved path outside the served directory answers `400` `{"code":400,"error":"Bad Request","message":"Invalid URL path"}`; a missing file, or a result that is not a string, answers the 404 body.
-- Dot files inside the served directory are served (`.well-known` must work): serve a directory that holds only public files.
+- Under a wildcard route, a path with a segment that starts with `.` (`.env`, `.git/config`, `css/.secret`) answers the 404 body, except `.well-known` (RFC 8615). A symbolic link is followed only when its target stays inside the served directory; otherwise the 404 body. Still serve a directory that holds only public files.
+- The path a handler returns is trusted as is: dot directories in it and symbolic links above the served directory are the application's choice.
 
 ## Response writer
 

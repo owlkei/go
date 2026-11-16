@@ -95,7 +95,9 @@ wants its own response writes it and returns without `next()`.
   `Deprecated URL usage`.
 - `SERVE` routes never list a directory: a directory answers its `index.html` (with
   `http.ServeFile`'s redirect to the slash-terminated URL) or 404; a path outside the served
-  directory answers 400 `Invalid URL path`.
+  directory answers 400 `Invalid URL path`. Wildcard `SERVE` routes open files through `os.Root`
+  (`serveFromRoot` in `core/http.go`): dot segments other than `.well-known` and symbolic links
+  leaving the served directory answer 404.
 
 ### 1.4 Where it lives in the code
 

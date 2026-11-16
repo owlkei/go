@@ -444,15 +444,18 @@ func serveContent(ex *httpExchange, serveIndex int, result any) {
 
 	r := ex.Request
 	if serveIndex != 0 {
+		root := path.Clean(dir)
 		segments := strings.Split(str.RemoveDup(r.URL.Path, '/'), "/")
-		root := dir
+		dir = root
 		if serveIndex < len(segments) {
-			dir = path.Join(dir, strings.Join(segments[serveIndex:], "/"))
+			dir = path.Join(root, strings.Join(segments[serveIndex:], "/"))
 		}
 		if dir != root && !strings.HasPrefix(dir, root+"/") {
 			writeJSONError(&ex.writer, stdHTTP.StatusBadRequest, invalidURLBody)
 			return
 		}
+		serveFromRoot(ex, root, strings.TrimPrefix(strings.TrimPrefix(dir, root), "/"))
+		return
 	}
 
 	info, err := os.Stat(dir)
@@ -471,6 +474,48 @@ func serveContent(ex *httpExchange, serveIndex int, result any) {
 		}
 	}
 	stdHTTP.ServeFile(&ex.writer, r, dir)
+}
+
+func serveFromRoot(ex *httpExchange, rootDir, rel string) {
+	if hasHiddenSegment(rel) {
+		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		return
+	}
+	root, err := os.OpenRoot(rootDir)
+	if err != nil {
+		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		return
+	}
+	defer func() { _ = root.Close() }()
+	name := rel
+	if name == "" {
+		name = "."
+	}
+	info, err := root.Stat(name)
+	if err != nil {
+		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		return
+	}
+	if info.IsDir() {
+		index := path.Join(name, "index.html")
+		if indexInfo, err := root.Stat(index); err != nil || indexInfo.IsDir() {
+			writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+			return
+		}
+		if strings.HasSuffix(ex.Request.URL.Path, "/") {
+			name = index
+		}
+	}
+	stdHTTP.ServeFileFS(&ex.writer, ex.Request, root.FS(), name)
+}
+
+func hasHiddenSegment(rel string) bool {
+	for segment := range strings.SplitSeq(rel, "/") {
+		if len(segment) > 0 && segment[0] == '.' && segment != ".well-known" {
+			return true
+		}
+	}
+	return false
 }
 
 func (http *HTTP) recoverRequest(ex *httpExchange) {
