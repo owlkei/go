@@ -532,23 +532,14 @@ c.BindExceptionFilter(func(ex *exception.Exception, httpCtx *ctx.HTTPContext) {
 
 ### 7.1 GOTCHA: Reflection Overhead in Hot Path
 
-**Problem**:
-```go
-// Handler invocation uses reflection
-// Not fast in hot path (high-traffic routes)
-
-invokeHTTPHandlerByProviders(handler, ..., httpCtx, ...)
-    // Reflects on handler signature each time
-    // ~5-10μs per dependency
-    // With 5 dependencies: 25-50μs per request
-```
+**Problem**: the handler is still called through `reflect.Value.Call` (about 200 ns and one allocation on the reference machine, plus one per result that is not pointer-shaped). The argument plan is built once at `Create()` (`newHTTPHandlerPlan`, design 0006): a request walks no types, builds no keys and makes no map lookups for its arguments, and pipe prototypes are not rebuilt.
 
 **Mitigation**:
-- Minimize handler parameters
-- Cache handler signatures (framework does this)
-- Profile hot handlers
+- Don't try to cache handler signatures yourself: the framework plans them at `Create()`
+- Pipes cost what their `Transform` costs (a `Bind` and the boxed result): profile hot DTOs
+- Handlers with more than 8 parameters allocate their argument list
 
-**Rule**: Be aware of reflection cost in high-traffic routes
+**Rule**: Treat the call itself as a fixed ~200 ns floor; optimize accessors and pipes, not parameter counts
 
 ---
 
@@ -576,6 +567,21 @@ exception.NewException(...)
 **Rule**: Exceptions are expensive, avoid in hot path
 
 ---
+
+### 7.3 GOTCHA: Handler Results by Kind
+
+- A handler returning a pointer (`*User`, `(int, *User)`) writes the pointee as JSON (a nil pointer writes `null`); it used to write the address as text.
+- A result declared as `any` holding a string is written as text (`text/plain`); numbers, bools, maps and pointers in an `any` stay JSON (`7` is `application/json`).
+- An array (`[3]int`) is JSON. A `chan`, `uintptr` or `unsafe.Pointer` writes nothing.
+- A string result is text even if it contains JSON: return a map or struct for a JSON body.
+
+**Rule**: Return a struct, map or pointer for JSON; a string (or an `any` holding one) for text. Table in `core/README.md` › Results.
+
+### 7.4 GOTCHA: Pipe Parameters
+
+- A pipe parameter must be a value type: `func (c X) READ(dto *SearchDTO)` panics at `Create()` (`pipe '*…SearchDTO' … must not be a pointer`).
+- `Transform` must return the parameter's type (or one assignable to it): `return &dto` or `return nil` answers a 500 exception (`pipe …: Transform returned …, want …`) and the handler is not called.
+- A type from another package that prints like a framework type (your own `ctx.HTTPContext`) is not injected: `Create()` panics.
 
 ## 8. Testing Gotchas
 

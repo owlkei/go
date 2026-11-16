@@ -300,7 +300,7 @@ type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
 ```
 Handler or middleware or interceptor panics
     ↓
-Panic recovered by invokeHTTPHandlerByProviders()
+Panic recovered by HTTP.handleRequest() (core/http.go)
     ↓
 common.NormalizeRecovered(panicValue) → *exception.Exception
     ↓

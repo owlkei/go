@@ -129,7 +129,7 @@
       }
     ],
     "panics_handled": true,
-    "panic_handling_location": "invokeHTTPHandlerByProviders() - only place panics are caught",
+    "panic_handling_location": "HTTP.handleRequest() in core/http.go (handler, pipes, guards, interceptors); buildUseMiddleware() per middleware",
     "context_mutation_rules": {
       "safe_to_mutate_in": ["Middleware", "Interceptor (pre)", "Handler"],
       "dangerous_to_mutate_in": ["Guard (semantically wrong)", "Interceptor (post)", "Exception filter"],
@@ -278,7 +278,7 @@
         "from": "REGISTERED",
         "to": "INJECTED",
         "stage": "Handler invocation",
-        "action": "getHTTPDependency() or getWSDependency() looks up provider",
+        "action": "newHTTPHandlerPlan() / newWSHandlerPlan() at Create() resolve each handler parameter once (pipe prototypes get providers injected); a request runs the plan",
         "effects": [
           "provider.NewProvider() called",
           "Instance created (or singleton returned)",

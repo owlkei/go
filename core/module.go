@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/routing"
 )
@@ -66,6 +65,9 @@ type Module struct {
 	WSExceptionFilters []common.WSLayer
 
 	WSMainHandlers []common.WSLayer
+
+	httpPlanByPattern map[string]*httpHandlerPlan
+	wsPlanByEvent     map[string]*wsHandlerPlan
 }
 
 func (m *Module) injectGlobalProviders() {
@@ -344,10 +346,20 @@ func (m *Module) bindHTTPController(controller Controller, injectedProviders map
 	m.bindHTTPGuards(controller, controllerType, controllerPath, &http, injectedProviders)
 	m.bindHTTPInterceptors(controller, controllerType, controllerPath, &http, injectedProviders)
 
+	planByName := make(map[string]*httpHandlerPlan, len(http.RouterMap))
 	for pattern, handler := range http.RouterMap {
-		if err := isInjectableHandler(handler, injectedProviders, knownHTTPDependencyKeys); err != nil {
-			panic(color.FmtRed("%s", err.Error()))
+		name := http.PatternToFuncNameMap[pattern]
+		plan, ok := planByName[name]
+		if !ok {
+			method, _ := controllerType.MethodByName(name)
+			plan = newHTTPHandlerPlan(controllerValue, method, injectedProviders)
+			planByName[name] = plan
 		}
+		if m.httpPlanByPattern == nil {
+			m.httpPlanByPattern = make(map[string]*httpHandlerPlan)
+		}
+		m.httpPlanByPattern[pattern] = plan
+
 		method, route, version := routing.PatternToMethodRouteVersion(pattern)
 		m.HTTPMainHandlers = append(m.HTTPMainHandlers, common.HTTPLayer{
 			ControllerPath:  controllerPath,
@@ -459,11 +471,15 @@ func (m *Module) bindWSController(controller Controller, injectedProviders map[s
 	controllerValue := reflect.ValueOf(controller)
 	ws := controllerValue.FieldByName(fieldNameByRole["ws"]).Interface().(common.WS)
 
+	methodByEvent := make(map[string]reflect.Method)
 	for j := 0; j < controllerType.NumMethod(); j++ {
-		methodName := controllerType.Method(j).Name
+		method := controllerType.Method(j)
 
 		handler := controllerValue.Method(j).Interface()
-		ws.AddHandlerToEventMap(methodName, handler)
+		ws.AddHandlerToEventMap(method.Name, handler)
+		if eventName, ok := common.ParseWSFuncNameToEvent(method.Name); ok {
+			methodByEvent[eventName] = method
+		}
 	}
 
 	m.bindWSGuards(controller, controllerType, &ws, injectedProviders)
@@ -471,9 +487,10 @@ func (m *Module) bindWSController(controller Controller, injectedProviders map[s
 	m.bindWSExceptionFilters(controller, controllerType, &ws, injectedProviders)
 
 	for eventName, handler := range ws.EventMap {
-		if err := isInjectableHandler(handler, injectedProviders, knownWSDependencyKeys); err != nil {
-			panic(color.FmtRed("%s", err.Error()))
+		if m.wsPlanByEvent == nil {
+			m.wsPlanByEvent = make(map[string]*wsHandlerPlan)
 		}
+		m.wsPlanByEvent[eventName] = newWSHandlerPlan(controllerValue, methodByEvent[eventName], injectedProviders)
 
 		m.WSMainHandlers = append(m.WSMainHandlers, common.WSLayer{
 			EventName: eventName,

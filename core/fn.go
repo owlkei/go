@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go/token"
@@ -13,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dangduoc08/ginject/event"
@@ -23,91 +21,13 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/trace"
+	"golang.org/x/net/websocket"
 )
 
 var pkgFromControllerKeyReg = regexp.MustCompile(`\[.*?\]`)
 
 func isDynamicModule(moduleType string) bool {
 	return strings.HasPrefix(moduleType, "func(") && strings.HasSuffix(moduleType, "*core.Module")
-}
-
-func getFnArgs(f any, injectedProviders map[string]Provider, cb func(string, int, reflect.Value)) {
-	getFnArgsByType(reflect.TypeOf(f), injectedProviders, cb)
-}
-
-type argClassification struct {
-	key        string
-	isPipeable bool
-}
-
-var argClassificationCache sync.Map
-
-func classifyArgType(argType reflect.Type) argClassification {
-	if cached, ok := argClassificationCache.Load(argType); ok {
-		return cached.(argClassification)
-	}
-
-	argAnyValue := reflect.New(argType).Elem().Interface()
-
-	var classification argClassification
-	switch argAnyValue.(type) {
-	case common.ContextPipeable:
-		classification = argClassification{key: common.ContextPipeableKey, isPipeable: true}
-	case common.BodyPipeable:
-		classification = argClassification{key: common.BodyPipeableKey, isPipeable: true}
-	case common.FormPipeable:
-		classification = argClassification{key: common.FormPipeableKey, isPipeable: true}
-	case common.QueryPipeable:
-		classification = argClassification{key: common.QueryPipeableKey, isPipeable: true}
-	case common.HeaderPipeable:
-		classification = argClassification{key: common.HeaderPipeableKey, isPipeable: true}
-	case common.ParamPipeable:
-		classification = argClassification{key: common.ParamPipeableKey, isPipeable: true}
-	case common.FilePipeable:
-		classification = argClassification{key: common.FilePipeableKey, isPipeable: true}
-	case common.WSPayloadPipeable:
-		classification = argClassification{key: common.WSPayloadPipeableKey, isPipeable: true}
-	default:
-		classification = argClassification{key: argType.PkgPath() + "/" + argType.String()}
-	}
-
-	argClassificationCache.Store(argType, classification)
-	return classification
-}
-
-func getFnArgsByType(injectableFnType reflect.Type, injectedProviders map[string]Provider, cb func(string, int, reflect.Value)) {
-	for i := 0; i < injectableFnType.NumIn(); i++ {
-		argType := injectableFnType.In(i)
-		classification := classifyArgType(argType)
-
-		if !classification.isPipeable {
-			cb(classification.key, i, reflect.Value{})
-			continue
-		}
-
-		newArg, err := injectDependencies(reflect.New(argType).Elem().Interface(), "pipe", injectedProviders)
-		if err != nil {
-			panic(err)
-		}
-
-		cb(classification.key, i, newArg)
-	}
-}
-
-func isInjectableHandler(handler any, injectedProviders map[string]Provider, knownKeys map[string]int) error {
-	var e error
-
-	getFnArgs(handler, injectedProviders, func(arg string, i int, pipeValue reflect.Value) {
-		if _, ok := knownKeys[arg]; !ok {
-			e = fmt.Errorf(
-				"dependency injection: can't resolve dependencies of the '%v'. Please make sure that the argument dependency at index [%v] is available in the handler",
-				reflect.TypeOf(handler).String(),
-				i,
-			)
-		}
-	})
-
-	return e
 }
 
 func isInjectedProvider(providerFieldType reflect.Type) bool {
@@ -132,15 +52,6 @@ func genFieldKey(t reflect.Type) string {
 	return t.PkgPath() + "/" + t.String()
 }
 
-func snapshotGlobalProviders() map[string]Provider {
-	snapshot := make(map[string]Provider)
-	globalProviderByKey.Range(func(k, v any) bool {
-		snapshot[k.(string)] = v.(Provider)
-		return true
-	})
-	return snapshot
-}
-
 func createStaticModuleFromDynamicModule(dynamicModule any) *Module {
 	dynamicModuleType := reflect.TypeOf(dynamicModule)
 	var args []reflect.Value
@@ -156,7 +67,8 @@ func createStaticModuleFromDynamicModule(dynamicModule any) *Module {
 		)
 	}
 
-	getFnArgs(dynamicModule, snapshotGlobalProviders(), func(dynamicArgKey string, i int, pipeValue reflect.Value) {
+	for i := 0; i < dynamicModuleType.NumIn(); i++ {
+		dynamicArgKey := genFieldKey(dynamicModuleType.In(i))
 		if p, ok := globalProviderByKey.Load(dynamicArgKey); ok {
 			args = append(args, reflect.ValueOf(p))
 		} else if iface, ok := globalInterfaceByKey.Load(dynamicArgKey); ok {
@@ -164,7 +76,7 @@ func createStaticModuleFromDynamicModule(dynamicModule any) *Module {
 		} else {
 			panic(genError(dynamicModuleType, dynamicArgKey, i))
 		}
-	})
+	}
 
 	return reflect.ValueOf(dynamicModule).Call(args)[0].Interface().(*Module)
 }
@@ -283,87 +195,20 @@ func logBoostrap(port int) {
 	_, _ = fmt.Fprint(os.Stdout, "\n"+accessURLs+divider+host+lan+divider+close)
 }
 
-func getHTTPDependency(k string, c *ctx.HTTPContext, pipeValue reflect.Value) any {
-	switch k {
-	case httpContextKey:
-		return c
-	case requestKey:
-		return c.Request
-	case responseKey:
-		return c.ResponseWriter
-	case bodyKey:
-		return c.Body()
-	case formKey:
-		return c.Form()
-	case queryKey:
-		return c.Query()
-	case headerKey:
-		return c.Header()
-	case paramKey:
-		return c.Param()
-	case fileKey:
-		return c.File()
-	case nextKey:
-		return c.Next
-	case redirectKey:
-		return c.Redirect
-	case publisherKey:
-		p, _ := globalInterfaceByKey.Load(publisherKey)
-		return p
-	case common.ContextPipeableKey:
-		return pipeValue.
-			Interface().(common.ContextPipeable).
-			Transform(c, common.ArgumentMetadata{
-				ParamType: common.ContextPipeableKey,
-			})
-	case common.BodyPipeableKey:
-		return pipeValue.
-			Interface().(common.BodyPipeable).
-			Transform(c.Body(), common.ArgumentMetadata{
-				ParamType: common.BodyPipeableKey,
-			})
-	case common.FormPipeableKey:
-		return pipeValue.
-			Interface().(common.FormPipeable).
-			Transform(c.Form(), common.ArgumentMetadata{
-				ParamType: common.FormPipeableKey,
-			})
-	case common.QueryPipeableKey:
-		return pipeValue.
-			Interface().(common.QueryPipeable).
-			Transform(c.Query(), common.ArgumentMetadata{
-				ParamType: common.QueryPipeableKey,
-			})
-	case common.HeaderPipeableKey:
-		return pipeValue.
-			Interface().(common.HeaderPipeable).
-			Transform(c.Header(), common.ArgumentMetadata{
-				ParamType: common.HeaderPipeableKey,
-			})
-	case common.ParamPipeableKey:
-		return pipeValue.
-			Interface().(common.ParamPipeable).
-			Transform(c.Param(), common.ArgumentMetadata{
-				ParamType: common.ParamPipeableKey,
-			})
-	case common.FilePipeableKey:
-		return pipeValue.
-			Interface().(common.FilePipeable).
-			Transform(c.File(), common.ArgumentMetadata{
-				ParamType: common.FilePipeableKey,
-			})
-	}
-
-	return knownHTTPDependencyKeys
-}
-
 func returnHTTP(c *ctx.HTTPContext, data reflect.Value) {
 	switch data.Kind() {
+	case reflect.Interface:
+		if elem := data.Elem(); elem.Kind() == reflect.String {
+			c.Text(elem.String())
+			return
+		}
+		c.JSON(data.Interface())
 	case
 		reflect.Map,
 		reflect.Slice,
 		reflect.Struct,
-		reflect.Interface:
+		reflect.Array,
+		reflect.Pointer:
 		c.JSON(data.Interface())
 	case reflect.Bool:
 		c.Text(strconv.FormatBool(data.Bool()))
@@ -385,68 +230,14 @@ func returnHTTP(c *ctx.HTTPContext, data reflect.Value) {
 		c.Text(strconv.FormatFloat(data.Float(), 'g', -1, 32))
 	case reflect.Float64:
 		c.Text(strconv.FormatFloat(data.Float(), 'g', -1, 64))
-	case
-		reflect.Complex64,
-		reflect.Complex128:
-		c.Text(fmt.Sprint(data.Interface()))
-	case
-		reflect.Pointer,
-		reflect.UnsafePointer:
-		c.Text(fmt.Sprint(data.UnsafePointer()))
-	case
-		reflect.String:
+	case reflect.Complex64:
+		c.Text(strconv.FormatComplex(data.Complex(), 'g', -1, 64))
+	case reflect.Complex128:
+		c.Text(strconv.FormatComplex(data.Complex(), 'g', -1, 128))
+	case reflect.String:
 		c.Text(data.String())
-	case
-		reflect.Func:
+	case reflect.Func:
 		c.Text(data.Type().String())
-	}
-}
-
-func toWSMessage(data reflect.Value) string {
-	switch data.Kind() {
-	case
-		reflect.Map,
-		reflect.Slice,
-		reflect.Struct,
-		reflect.Interface:
-		jsonBuf, _ := json.Marshal(data.Interface())
-		return string(jsonBuf)
-	case reflect.Bool:
-		return strconv.FormatBool(data.Bool())
-	case
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		return strconv.FormatInt(data.Int(), 10)
-	case
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64:
-		return strconv.FormatUint(data.Uint(), 10)
-	case reflect.Float32:
-		return strconv.FormatFloat(data.Float(), 'g', -1, 32)
-	case reflect.Float64:
-		return strconv.FormatFloat(data.Float(), 'g', -1, 64)
-	case
-		reflect.Complex64,
-		reflect.Complex128:
-		return fmt.Sprint(data.Interface())
-	case
-		reflect.Pointer,
-		reflect.UnsafePointer:
-		return fmt.Sprint(data.UnsafePointer())
-	case
-		reflect.String:
-		return data.String()
-	case
-		reflect.Func:
-		return data.Type().String()
-	default:
-		return data.String()
 	}
 }
 
@@ -477,94 +268,6 @@ func toUniqueControllers(module *Module, controllers *[]Controller) {
 	}
 
 	*controllers = uniqueControllers
-}
-
-func invokeHTTPHandlerByProviders(f any, injectedProviders map[string]Provider, c *ctx.HTTPContext, ev *event.Event, pipeElapsed *time.Duration, handlerCalled *bool) []reflect.Value {
-	fType := reflect.TypeOf(f)
-	args := make([]reflect.Value, 0, fType.NumIn())
-	hasListeners := ev.HasListeners(trace.EventName)
-
-	getFnArgsByType(fType, injectedProviders, func(dynamicArgKey string, i int, pipeValue reflect.Value) {
-		if _, ok := knownHTTPDependencyKeys[dynamicArgKey]; ok {
-			if pipeValue.IsValid() && hasListeners {
-				start := time.Now()
-				defer func() {
-					d := time.Since(start)
-					*pipeElapsed += d
-					ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StagePipe, Name: pipeValue.Elem().Type().String(), Transport: trace.TransportHTTP, Duration: d})
-				}()
-				dep := getHTTPDependency(dynamicArgKey, c, pipeValue)
-				args = append(args, reflect.ValueOf(dep))
-				return
-			}
-			args = append(args, reflect.ValueOf(getHTTPDependency(dynamicArgKey, c, pipeValue)))
-		} else {
-			panic(fmt.Errorf(
-				"dependency injection: can't resolve dependencies of the %v. Please make sure that the argument dependency at index [%v] is available in the handler",
-				fType.String(),
-				i,
-			))
-		}
-	})
-
-	*handlerCalled = true
-	return reflect.ValueOf(f).Call(args)
-}
-
-func getWSDependency(k string, c *ctx.WSContext, pipeValue reflect.Value) any {
-	switch k {
-	case wsContextKey:
-		return c
-	case wsConnectionKey:
-		return c.Conn
-	case wsPayloadKey:
-		return c.WSPayload()
-	case nextKey:
-		return c.Next
-	case publisherKey:
-		p, _ := globalInterfaceByKey.Load(publisherKey)
-		return p
-	case common.WSPayloadPipeableKey:
-		return pipeValue.
-			Interface().(common.WSPayloadPipeable).
-			Transform(c.WSPayload(), common.ArgumentMetadata{
-				ParamType: common.WSPayloadPipeableKey,
-			})
-	}
-
-	return knownWSDependencyKeys
-}
-
-func invokeWSHandlerByProviders(f any, injectedProviders map[string]Provider, c *ctx.WSContext, ev *event.Event, pipeElapsed *time.Duration, handlerCalled *bool) []reflect.Value {
-	fType := reflect.TypeOf(f)
-	args := make([]reflect.Value, 0, fType.NumIn())
-	hasListeners := ev.HasListeners(trace.EventName)
-
-	getFnArgsByType(fType, injectedProviders, func(dynamicArgKey string, i int, pipeValue reflect.Value) {
-		if _, ok := knownWSDependencyKeys[dynamicArgKey]; ok {
-			if pipeValue.IsValid() && hasListeners {
-				start := time.Now()
-				defer func() {
-					d := time.Since(start)
-					*pipeElapsed += d
-					ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StagePipe, Name: pipeValue.Elem().Type().String(), Transport: trace.TransportWS, Duration: d})
-				}()
-				dep := getWSDependency(dynamicArgKey, c, pipeValue)
-				args = append(args, reflect.ValueOf(dep))
-				return
-			}
-			args = append(args, reflect.ValueOf(getWSDependency(dynamicArgKey, c, pipeValue)))
-		} else {
-			panic(fmt.Errorf(
-				"dependency injection: can't resolve dependencies of the %v. Please make sure that the argument dependency at index [%v] is available in the handler",
-				fType.String(),
-				i,
-			))
-		}
-	})
-
-	*handlerCalled = true
-	return reflect.ValueOf(f).Call(args)
 }
 
 func buildUseMiddleware(useFn common.Use, event *event.Event, name, transport string) ctx.HTTPHandler {
@@ -648,4 +351,367 @@ func traceWSCatch(ev *event.Event, name string, fn common.WSCatch) common.WSCatc
 		}()
 		fn(c, ex)
 	}
+}
+
+const handlerStackArgs = 8
+
+var (
+	httpContextType    = reflect.TypeFor[*ctx.HTTPContext]()
+	requestType        = reflect.TypeFor[*http.Request]()
+	responseWriterType = reflect.TypeFor[http.ResponseWriter]()
+	bodyType           = reflect.TypeFor[ctx.Body]()
+	formType           = reflect.TypeFor[ctx.Form]()
+	queryType          = reflect.TypeFor[ctx.Query]()
+	headerType         = reflect.TypeFor[ctx.Header]()
+	paramType          = reflect.TypeFor[ctx.Param]()
+	fileType           = reflect.TypeFor[ctx.File]()
+	redirectType       = reflect.TypeFor[ctx.Redirect]()
+	wsContextType      = reflect.TypeFor[*ctx.WSContext]()
+	wsConnType         = reflect.TypeFor[*websocket.Conn]()
+	wsPayloadType      = reflect.TypeFor[ctx.WSPayload]()
+	nextType           = reflect.TypeFor[ctx.Next]()
+	publisherType      = reflect.TypeFor[common.Publisher]()
+
+	nilResponseWriter = reflect.Zero(responseWriterType)
+)
+
+type pipeKind[C any] struct {
+	typ  reflect.Type
+	key  string
+	bind func(prototype any, meta common.ArgumentMetadata) func(C) any
+}
+
+var httpPipeKinds = []pipeKind[*ctx.HTTPContext]{
+	{reflect.TypeFor[common.ContextPipeable](), common.ContextPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.ContextPipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c, meta) }
+	}},
+	{reflect.TypeFor[common.BodyPipeable](), common.BodyPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.BodyPipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c.Body(), meta) }
+	}},
+	{reflect.TypeFor[common.FormPipeable](), common.FormPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.FormPipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c.Form(), meta) }
+	}},
+	{reflect.TypeFor[common.QueryPipeable](), common.QueryPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.QueryPipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c.Query(), meta) }
+	}},
+	{reflect.TypeFor[common.HeaderPipeable](), common.HeaderPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.HeaderPipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c.Header(), meta) }
+	}},
+	{reflect.TypeFor[common.ParamPipeable](), common.ParamPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.ParamPipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c.Param(), meta) }
+	}},
+	{reflect.TypeFor[common.FilePipeable](), common.FilePipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.HTTPContext) any {
+		p := prototype.(common.FilePipeable)
+		return func(c *ctx.HTTPContext) any { return p.Transform(c.File(), meta) }
+	}},
+}
+
+var wsPipeKinds = []pipeKind[*ctx.WSContext]{
+	{reflect.TypeFor[common.WSPayloadPipeable](), common.WSPayloadPipeableKey, func(prototype any, meta common.ArgumentMetadata) func(*ctx.WSContext) any {
+		p := prototype.(common.WSPayloadPipeable)
+		return func(c *ctx.WSContext) any { return p.Transform(c.WSPayload(), meta) }
+	}},
+}
+
+type handlerArgKind uint8
+
+const (
+	handlerArgContext handlerArgKind = iota
+	handlerArgRequest
+	handlerArgResponseWriter
+	handlerArgBody
+	handlerArgForm
+	handlerArgQuery
+	handlerArgHeader
+	handlerArgParam
+	handlerArgFile
+	handlerArgRedirect
+	handlerArgConn
+	handlerArgWSPayload
+	handlerArgNext
+	handlerArgFixed
+	handlerArgPipe
+)
+
+type handlerPipe[C ctx.Context] struct {
+	typ       reflect.Type
+	name      string
+	transform func(C) any
+}
+
+func (p *handlerPipe[C]) resolve(c C) reflect.Value {
+	out := p.transform(c)
+	if out == nil {
+		panic(exception.InternalServerErrorException("pipe " + p.name + ": Transform returned nil, want " + p.name))
+	}
+	v := reflect.ValueOf(out)
+	if t := v.Type(); t != p.typ && !t.AssignableTo(p.typ) {
+		panic(exception.InternalServerErrorException("pipe " + p.name + ": Transform returned " + t.String() + ", want " + p.name))
+	}
+	return v
+}
+
+func (p *handlerPipe[C]) resolveTraced(c C, ev *event.Event, transport string, elapsed *time.Duration) reflect.Value {
+	start := time.Now()
+	defer func() {
+		d := time.Since(start)
+		*elapsed += d
+		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StagePipe, Name: p.name, Transport: transport, Duration: d})
+	}()
+	return p.resolve(c)
+}
+
+type handlerArg[C ctx.Context] struct {
+	kind  handlerArgKind
+	fixed reflect.Value
+	pipe  handlerPipe[C]
+}
+
+type handlerSignature struct {
+	method   reflect.Method
+	funcType string
+}
+
+func newHandlerSignature(recv reflect.Value, method reflect.Method) handlerSignature {
+	return handlerSignature{method: method, funcType: recv.Method(method.Index).Type().String()}
+}
+
+func (s handlerSignature) numIn() int {
+	return s.method.Type.NumIn() - 1
+}
+
+func (s handlerSignature) unresolved(i int) error {
+	return errors.New(color.FmtRed(
+		"dependency injection: can't resolve dependencies of the '%v'. Please make sure that the argument dependency at index [%v] is available in the handler",
+		s.funcType,
+		i,
+	))
+}
+
+func (s handlerSignature) publisher(i int) reflect.Value {
+	p, ok := globalInterfaceByKey.Load(publisherKey)
+	if !ok {
+		panic(s.unresolved(i))
+	}
+	if p == nil {
+		return reflect.Zero(publisherType)
+	}
+	return reflect.ValueOf(p)
+}
+
+func newHandlerArg[C ctx.Context](s handlerSignature, i int, kindByType map[reflect.Type]handlerArgKind, pipeKinds []pipeKind[C], contextType string, injectedProviders map[string]Provider) handlerArg[C] {
+	t := s.method.Type.In(i + 1)
+	if s.method.Type.IsVariadic() && i == s.numIn()-1 {
+		panic(s.unresolved(i))
+	}
+	if kind, ok := kindByType[t]; ok {
+		return handlerArg[C]{kind: kind}
+	}
+	if t == publisherType {
+		return handlerArg[C]{kind: handlerArgFixed, fixed: s.publisher(i)}
+	}
+	if t.Kind() == reflect.Interface {
+		panic(s.unresolved(i))
+	}
+	for _, pk := range pipeKinds {
+		if !t.Implements(pk.typ) {
+			continue
+		}
+		if t.Kind() == reflect.Pointer {
+			panic(errors.New(color.FmtRed(
+				"dependency injection: pipe '%v' of the '%v' must not be a pointer",
+				t.String(),
+				s.funcType,
+			)))
+		}
+		meta := common.ArgumentMetadata{ContextType: contextType, ParamType: pk.key}
+		return handlerArg[C]{
+			kind: handlerArgPipe,
+			pipe: handlerPipe[C]{typ: t, name: t.String(), transform: pk.bind(newPipePrototype(t, injectedProviders), meta)},
+		}
+	}
+	panic(s.unresolved(i))
+}
+
+func newPipePrototype(t reflect.Type, injectedProviders map[string]Provider) any {
+	if t.Kind() != reflect.Struct {
+		return reflect.Zero(t).Interface()
+	}
+	_, _ = ctx.BinderOf(t)
+	prototype, err := injectDependencies(reflect.Zero(t).Interface(), "pipe", injectedProviders)
+	if err != nil {
+		panic(err)
+	}
+	return prototype.Elem().Interface()
+}
+
+var httpArgKindByType = map[reflect.Type]handlerArgKind{
+	httpContextType:    handlerArgContext,
+	requestType:        handlerArgRequest,
+	responseWriterType: handlerArgResponseWriter,
+	bodyType:           handlerArgBody,
+	formType:           handlerArgForm,
+	queryType:          handlerArgQuery,
+	headerType:         handlerArgHeader,
+	paramType:          handlerArgParam,
+	fileType:           handlerArgFile,
+	redirectType:       handlerArgRedirect,
+	nextType:           handlerArgNext,
+}
+
+var wsArgKindByType = map[reflect.Type]handlerArgKind{
+	wsContextType: handlerArgContext,
+	wsConnType:    handlerArgConn,
+	wsPayloadType: handlerArgWSPayload,
+	nextType:      handlerArgNext,
+}
+
+func handlerCallArgs(stack []reflect.Value, recv reflect.Value, numIn int) []reflect.Value {
+	in := stack
+	if numIn >= len(stack) {
+		in = make([]reflect.Value, numIn+1)
+	}
+	in = in[:numIn+1]
+	in[0] = recv
+	return in
+}
+
+type httpHandlerPlan struct {
+	fn   reflect.Value
+	recv reflect.Value
+	name string
+	args []handlerArg[*ctx.HTTPContext]
+}
+
+func newHTTPHandlerPlan(recv reflect.Value, method reflect.Method, injectedProviders map[string]Provider) *httpHandlerPlan {
+	s := newHandlerSignature(recv, method)
+	p := &httpHandlerPlan{fn: method.Func, recv: recv, name: method.Name, args: make([]handlerArg[*ctx.HTTPContext], s.numIn())}
+	for i := range p.args {
+		p.args[i] = newHandlerArg(s, i, httpArgKindByType, httpPipeKinds, common.ContextTypeHTTP, injectedProviders)
+	}
+	return p
+}
+
+func resolveHTTPArg(a *handlerArg[*ctx.HTTPContext], c *ctx.HTTPContext) reflect.Value {
+	switch a.kind {
+	case handlerArgContext:
+		return reflect.ValueOf(c)
+	case handlerArgRequest:
+		return reflect.ValueOf(c.Request)
+	case handlerArgResponseWriter:
+		if c.ResponseWriter == nil {
+			return nilResponseWriter
+		}
+		return reflect.ValueOf(c.ResponseWriter)
+	case handlerArgBody:
+		return reflect.ValueOf(c.Body())
+	case handlerArgForm:
+		return reflect.ValueOf(c.Form())
+	case handlerArgQuery:
+		return reflect.ValueOf(c.Query())
+	case handlerArgHeader:
+		return reflect.ValueOf(c.Header())
+	case handlerArgParam:
+		return reflect.ValueOf(c.Param())
+	case handlerArgFile:
+		return reflect.ValueOf(c.File())
+	case handlerArgRedirect:
+		return reflect.ValueOf(c.Redirect)
+	case handlerArgNext:
+		return reflect.ValueOf(c.Next)
+	case handlerArgFixed:
+		return a.fixed
+	}
+	return a.pipe.resolve(c)
+}
+
+func (p *httpHandlerPlan) invoke(c *ctx.HTTPContext, ev *event.Event) []reflect.Value {
+	var stack [handlerStackArgs + 1]reflect.Value
+	in := handlerCallArgs(stack[:], p.recv, len(p.args))
+	if ev.HasListeners(trace.EventName) {
+		return p.invokeTraced(c, ev, in)
+	}
+	for i := range p.args {
+		in[i+1] = resolveHTTPArg(&p.args[i], c)
+	}
+	return p.fn.Call(in)
+}
+
+func (p *httpHandlerPlan) invokeTraced(c *ctx.HTTPContext, ev *event.Event, in []reflect.Value) []reflect.Value {
+	start := time.Now()
+	var pipes time.Duration
+	for i := range p.args {
+		a := &p.args[i]
+		if a.kind == handlerArgPipe {
+			in[i+1] = a.pipe.resolveTraced(c, ev, trace.TransportHTTP, &pipes)
+		} else {
+			in[i+1] = resolveHTTPArg(a, c)
+		}
+	}
+	defer func() {
+		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageHandler, Name: p.name, Duration: time.Since(start) - pipes})
+	}()
+	return p.fn.Call(in)
+}
+
+type wsHandlerPlan struct {
+	fn   reflect.Value
+	recv reflect.Value
+	args []handlerArg[*ctx.WSContext]
+}
+
+func newWSHandlerPlan(recv reflect.Value, method reflect.Method, injectedProviders map[string]Provider) *wsHandlerPlan {
+	s := newHandlerSignature(recv, method)
+	p := &wsHandlerPlan{fn: method.Func, recv: recv, args: make([]handlerArg[*ctx.WSContext], s.numIn())}
+	for i := range p.args {
+		p.args[i] = newHandlerArg(s, i, wsArgKindByType, wsPipeKinds, common.ContextTypeWS, injectedProviders)
+	}
+	return p
+}
+
+func resolveWSArg(a *handlerArg[*ctx.WSContext], c *ctx.WSContext) reflect.Value {
+	switch a.kind {
+	case handlerArgContext:
+		return reflect.ValueOf(c)
+	case handlerArgConn:
+		return reflect.ValueOf(c.Conn)
+	case handlerArgWSPayload:
+		return reflect.ValueOf(c.WSPayload())
+	case handlerArgNext:
+		return reflect.ValueOf(c.Next)
+	case handlerArgFixed:
+		return a.fixed
+	}
+	return a.pipe.resolve(c)
+}
+
+func (p *wsHandlerPlan) invoke(c *ctx.WSContext, ev *event.Event) []reflect.Value {
+	var stack [handlerStackArgs + 1]reflect.Value
+	in := handlerCallArgs(stack[:], p.recv, len(p.args))
+	if ev.HasListeners(trace.EventName) {
+		return p.invokeTraced(c, ev, in)
+	}
+	for i := range p.args {
+		in[i+1] = resolveWSArg(&p.args[i], c)
+	}
+	return p.fn.Call(in)
+}
+
+func (p *wsHandlerPlan) invokeTraced(c *ctx.WSContext, ev *event.Event, in []reflect.Value) []reflect.Value {
+	var pipes time.Duration
+	for i := range p.args {
+		a := &p.args[i]
+		if a.kind == handlerArgPipe {
+			in[i+1] = a.pipe.resolveTraced(c, ev, trace.TransportWS, &pipes)
+		} else {
+			in[i+1] = resolveWSArg(a, c)
+		}
+	}
+	return p.fn.Call(in)
 }

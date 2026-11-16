@@ -4,12 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strings"
-	"sync"
 	"testing"
-	"time"
+	"unsafe"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
@@ -206,41 +203,6 @@ func TestReturnHTTPSlice(t *testing.T) {
 	}
 }
 
-func TestToWSMessageString(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf("hello"))
-	if got != "hello" {
-		t.Error(test.DiffMessage(got, "hello", "toWSMessage string"))
-	}
-}
-
-func TestToWSMessageInt(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf(42))
-	if got != "42" {
-		t.Error(test.DiffMessage(got, "42", "toWSMessage int"))
-	}
-}
-
-func TestToWSMessageBool(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf(true))
-	if got != "true" {
-		t.Error(test.DiffMessage(got, "true", "toWSMessage bool"))
-	}
-}
-
-func TestToWSMessageMap(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf(map[string]any{"k": "v"}))
-	if got == "" {
-		t.Error(test.DiffMessage(got, "non-empty JSON", "toWSMessage map"))
-	}
-}
-
-func TestToWSMessageSlice(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf([]int{1, 2}))
-	if got == "" {
-		t.Error(test.DiffMessage(got, "non-empty JSON", "toWSMessage slice"))
-	}
-}
-
 func TestGetLocalIP(t *testing.T) {
 	ip := getLocalIP()
 	if ip != "" {
@@ -250,484 +212,9 @@ func TestGetLocalIP(t *testing.T) {
 	}
 }
 
-func TestGetDependencyContext(t *testing.T) {
-	c := newHTTPContext()
-	got := getHTTPDependency(httpContextKey, c, reflect.Value{})
-	if got != c {
-		t.Error(test.DiffMessage(got, c, "getHTTPDependency httpContextKey"))
-	}
-}
-
-func TestGetDependencyRequest(t *testing.T) {
-	c := newHTTPContext()
-	got := getHTTPDependency(requestKey, c, reflect.Value{})
-	if got != c.Request {
-		t.Error(test.DiffMessage(got, c.Request, "getHTTPDependency requestKey"))
-	}
-}
-
-func TestGetDependencyResponse(t *testing.T) {
-	c := newHTTPContext()
-	got := getHTTPDependency(responseKey, c, reflect.Value{})
-	if got != c.ResponseWriter {
-		t.Error(test.DiffMessage(got, c.ResponseWriter, "getHTTPDependency responseKey"))
-	}
-}
-
-func TestGetDependencyUnknownReturnsDependencies(t *testing.T) {
-	c := newHTTPContext()
-	got := getHTTPDependency("unknown-key", c, reflect.Value{})
-	if got == nil {
-		t.Error(test.DiffMessage(nil, "dependencies map", "getHTTPDependency unknown key should return dependencies"))
-	}
-}
-
 type fnTestProvider struct{ Tag string }
 
 func (p fnTestProvider) NewProvider() Provider { return p }
-
-type fnContextPipeableDTO struct{ P fnTestProvider }
-
-func (d fnContextPipeableDTO) Transform(*ctx.HTTPContext, common.ArgumentMetadata) any { return nil }
-
-type fnBodyPipeableDTO struct{ P fnTestProvider }
-
-func (d fnBodyPipeableDTO) Transform(ctx.Body, common.ArgumentMetadata) any { return nil }
-
-type fnFormPipeableDTO struct{}
-
-func (d fnFormPipeableDTO) Transform(ctx.Form, common.ArgumentMetadata) any { return nil }
-
-type fnQueryPipeableDTO struct{}
-
-func (d fnQueryPipeableDTO) Transform(ctx.Query, common.ArgumentMetadata) any { return nil }
-
-type fnHeaderPipeableDTO struct{}
-
-func (d fnHeaderPipeableDTO) Transform(ctx.Header, common.ArgumentMetadata) any { return nil }
-
-type fnParamPipeableDTO struct{}
-
-func (d fnParamPipeableDTO) Transform(ctx.Param, common.ArgumentMetadata) any { return nil }
-
-type fnFilePipeableDTO struct{}
-
-func (d fnFilePipeableDTO) Transform(ctx.File, common.ArgumentMetadata) any { return nil }
-
-type fnWSPayloadPipeableDTO struct{}
-
-func (d fnWSPayloadPipeableDTO) Transform(ctx.WSPayload, common.ArgumentMetadata) any { return nil }
-
-func TestGetFnArgsByType_NonPipeableResolvesTypeKey(t *testing.T) {
-	handler := func(*ctx.HTTPContext) {}
-	fType := reflect.TypeOf(handler)
-
-	var gotKey string
-	var gotIndex int
-	getFnArgsByType(fType, nil, func(key string, i int, _ reflect.Value) {
-		gotKey = key
-		gotIndex = i
-	})
-
-	if gotKey != httpContextKey {
-		t.Error(test.DiffMessage(gotKey, httpContextKey, "non-pipeable param should resolve to its PkgPath+String key"))
-	}
-	if gotIndex != 0 {
-		t.Error(test.DiffMessage(gotIndex, 0, "single param should be reported at index 0"))
-	}
-}
-
-func TestGetFnArgsByType_ContextPipeableInjectsProvider(t *testing.T) {
-	handler := func(fnContextPipeableDTO) {}
-	fType := reflect.TypeOf(handler)
-	injectedProviders := map[string]Provider{
-		genFieldKey(reflect.TypeOf(fnTestProvider{})): fnTestProvider{Tag: "injected"},
-	}
-
-	var gotKey string
-	var gotValue reflect.Value
-	getFnArgsByType(fType, injectedProviders, func(key string, i int, v reflect.Value) {
-		gotKey = key
-		gotValue = v
-	})
-
-	if gotKey != common.ContextPipeableKey {
-		t.Error(test.DiffMessage(gotKey, common.ContextPipeableKey, "ContextPipeable param should resolve to ContextPipeableKey"))
-	}
-	dto, ok := gotValue.Interface().(*fnContextPipeableDTO)
-	if !ok {
-		t.Fatalf("expected resolved value to be a *fnContextPipeableDTO, got %T", gotValue.Interface())
-	}
-	if dto.P.Tag != "injected" {
-		t.Error(test.DiffMessage(dto.P.Tag, "injected", "ContextPipeable DTO's provider field should be injected from injectedProviders"))
-	}
-}
-
-func TestGetFnArgsByType_BodyPipeableInjectsProvider(t *testing.T) {
-	handler := func(fnBodyPipeableDTO) {}
-	fType := reflect.TypeOf(handler)
-	injectedProviders := map[string]Provider{
-		genFieldKey(reflect.TypeOf(fnTestProvider{})): fnTestProvider{Tag: "injected"},
-	}
-
-	var gotKey string
-	var gotValue reflect.Value
-	getFnArgsByType(fType, injectedProviders, func(key string, i int, v reflect.Value) {
-		gotKey = key
-		gotValue = v
-	})
-
-	if gotKey != common.BodyPipeableKey {
-		t.Error(test.DiffMessage(gotKey, common.BodyPipeableKey, "BodyPipeable param should resolve to BodyPipeableKey"))
-	}
-	dto := gotValue.Interface().(*fnBodyPipeableDTO)
-	if dto.P.Tag != "injected" {
-		t.Error(test.DiffMessage(dto.P.Tag, "injected", "BodyPipeable DTO's provider field should be injected from injectedProviders"))
-	}
-}
-
-func TestGetFnArgsByType_AllPipeableKindsResolveTheirKey(t *testing.T) {
-	cases := []struct {
-		name    string
-		handler any
-		wantKey string
-	}{
-		{"form", func(fnFormPipeableDTO) {}, common.FormPipeableKey},
-		{"query", func(fnQueryPipeableDTO) {}, common.QueryPipeableKey},
-		{"header", func(fnHeaderPipeableDTO) {}, common.HeaderPipeableKey},
-		{"param", func(fnParamPipeableDTO) {}, common.ParamPipeableKey},
-		{"file", func(fnFilePipeableDTO) {}, common.FilePipeableKey},
-		{"wsPayload", func(fnWSPayloadPipeableDTO) {}, common.WSPayloadPipeableKey},
-	}
-
-	for _, c := range cases {
-		var gotKey string
-		getFnArgsByType(reflect.TypeOf(c.handler), map[string]Provider{}, func(key string, i int, _ reflect.Value) {
-			gotKey = key
-		})
-		if gotKey != c.wantKey {
-			t.Error(test.DiffMessage(gotKey, c.wantKey, c.name+"Pipeable param should resolve to "+c.wantKey))
-		}
-	}
-}
-
-func TestGetFnArgsByType_MultipleParamsResolveInOrder(t *testing.T) {
-	handler := func(*ctx.HTTPContext, fnQueryPipeableDTO, *http.Request) {}
-	fType := reflect.TypeOf(handler)
-
-	var gotKeys []string
-	var gotIndexes []int
-	getFnArgsByType(fType, map[string]Provider{}, func(key string, i int, _ reflect.Value) {
-		gotKeys = append(gotKeys, key)
-		gotIndexes = append(gotIndexes, i)
-	})
-
-	wantKeys := []string{httpContextKey, common.QueryPipeableKey, requestKey}
-	for i, want := range wantKeys {
-		if gotKeys[i] != want {
-			t.Error(test.DiffMessage(gotKeys[i], want, "param order should be preserved"))
-		}
-		if gotIndexes[i] != i {
-			t.Error(test.DiffMessage(gotIndexes[i], i, "param index should match its position"))
-		}
-	}
-}
-
-func TestGetFnArgsByType_ConcurrentCallsNoDataRace(t *testing.T) {
-	handlers := []any{
-		func(*ctx.HTTPContext) {},
-		func(fnContextPipeableDTO) {},
-		func(fnBodyPipeableDTO) {},
-		func(*http.Request, http.ResponseWriter) {},
-	}
-	injectedProviders := map[string]Provider{
-		genFieldKey(reflect.TypeOf(fnTestProvider{})): fnTestProvider{Tag: "injected"},
-	}
-
-	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		for _, h := range handlers {
-			wg.Add(1)
-			go func(handler any) {
-				defer wg.Done()
-				getFnArgsByType(reflect.TypeOf(handler), injectedProviders, func(string, int, reflect.Value) {})
-			}(h)
-		}
-	}
-	wg.Wait()
-}
-
-type tracedQueryPipeDTO struct{}
-
-func (d tracedQueryPipeDTO) Transform(ctx.Query, common.ArgumentMetadata) any {
-	return tracedQueryPipeDTO{}
-}
-
-type tracedWSPayloadPipeDTO struct{}
-
-func (d tracedWSPayloadPipeDTO) Transform(ctx.WSPayload, common.ArgumentMetadata) any {
-	return tracedWSPayloadPipeDTO{}
-}
-
-func TestInvokeHTTPHandlerByProviders_PipeEmitsStagePipeEvent(t *testing.T) {
-	ev := event.NewEvent()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		if te.Stage == trace.StagePipe {
-			d := te
-			got = &d
-		}
-	})
-
-	c := newHTTPContext()
-	handler := func(tracedQueryPipeDTO) {}
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	invokeHTTPHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-
-	if got == nil {
-		t.Fatal("expected a pipe trace event for a Pipeable param")
-	}
-	if got.Stage != trace.StagePipe || got.Transport != trace.TransportHTTP {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Transport}, []any{trace.StagePipe, trace.TransportHTTP}, "pipe trace event stage/transport"))
-	}
-	if !strings.Contains(got.Name, "tracedQueryPipeDTO") {
-		t.Error(test.DiffMessage(got.Name, "contains tracedQueryPipeDTO", "pipe trace event name should identify the concrete pipe type"))
-	}
-	if pipeElapsed <= 0 {
-		t.Error(test.DiffMessage(pipeElapsed, ">0", "invokeHTTPHandlerByProviders should accumulate the pipe duration"))
-	}
-	if !handlerCalled {
-		t.Error(test.DiffMessage(false, true, "handlerCalled should be true once the handler body executes"))
-	}
-}
-
-func TestInvokeHTTPHandlerByProviders_NonPipeableParamDoesNotEmitStagePipe(t *testing.T) {
-	ev := event.NewEvent()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-
-	c := newHTTPContext()
-	handler := func(*ctx.HTTPContext) {}
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	invokeHTTPHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-
-	if got != nil {
-		t.Error(test.DiffMessage(got.Stage, "<no event>", "a non-Pipeable param must not emit any trace event"))
-	}
-	if pipeElapsed != 0 {
-		t.Error(test.DiffMessage(pipeElapsed, time.Duration(0), "a non-Pipeable param must not contribute to pipe duration"))
-	}
-}
-
-func TestInvokeHTTPHandlerByProviders_NoListeners_SkipsPipeTracing(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	handler := func(tracedQueryPipeDTO) {}
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	invokeHTTPHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-
-	if pipeElapsed != 0 {
-		t.Error(test.DiffMessage(pipeElapsed, time.Duration(0), "with no trace listeners attached, pipe timing should be skipped entirely"))
-	}
-}
-
-func TestInvokeWSHandlerByProviders_PipeEmitsStagePipeEvent(t *testing.T) {
-	ev := event.NewEvent()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		if te.Stage == trace.StagePipe {
-			d := te
-			got = &d
-		}
-	})
-
-	c := ctx.NewWSContext()
-	handler := func(tracedWSPayloadPipeDTO) {}
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	invokeWSHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-
-	if got == nil {
-		t.Fatal("expected a pipe trace event for a WSPayloadPipeable param")
-	}
-	if got.Stage != trace.StagePipe || got.Transport != trace.TransportWS {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Transport}, []any{trace.StagePipe, trace.TransportWS}, "pipe trace event stage/transport"))
-	}
-	if pipeElapsed <= 0 {
-		t.Error(test.DiffMessage(pipeElapsed, ">0", "invokeWSHandlerByProviders should accumulate the pipe duration"))
-	}
-	if !handlerCalled {
-		t.Error(test.DiffMessage(false, true, "handlerCalled should be true once the handler body executes"))
-	}
-}
-
-func TestInvokeWSHandlerByProviders_NonPipeableParamDoesNotEmitStagePipe(t *testing.T) {
-	ev := event.NewEvent()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-
-	c := ctx.NewWSContext()
-	handler := func(*ctx.WSContext) {}
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	invokeWSHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-
-	if got != nil {
-		t.Error(test.DiffMessage(got.Stage, "<no event>", "a non-Pipeable param must not emit any trace event"))
-	}
-	if pipeElapsed != 0 {
-		t.Error(test.DiffMessage(pipeElapsed, time.Duration(0), "a non-Pipeable param must not contribute to pipe duration"))
-	}
-}
-
-type panickingQueryPipeDTO struct{}
-
-func (d panickingQueryPipeDTO) Transform(ctx.Query, common.ArgumentMetadata) any {
-	time.Sleep(time.Millisecond)
-	panic("boom: query validation failed")
-}
-
-type panickingWSPayloadPipeDTO struct{}
-
-func (d panickingWSPayloadPipeDTO) Transform(ctx.WSPayload, common.ArgumentMetadata) any {
-	time.Sleep(time.Millisecond)
-	panic("boom: payload validation failed")
-}
-
-func TestInvokeHTTPHandlerByProviders_PipePanicStillEmitsStagePipeEvent(t *testing.T) {
-	ev := event.NewEvent()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		if te.Stage == trace.StagePipe {
-			d := te
-			got = &d
-		}
-	})
-
-	c := newHTTPContext()
-	handler := func(panickingQueryPipeDTO) {}
-
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	var recovered any
-	func() {
-		defer func() { recovered = recover() }()
-		invokeHTTPHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-	}()
-
-	if recovered != "boom: query validation failed" {
-		t.Fatal(test.DiffMessage(recovered, "boom: query validation failed", "the pipe's panic must propagate unchanged"))
-	}
-	if got == nil {
-		t.Fatal(test.DiffMessage(nil, "non-nil", "expected a pipe trace event even though Transform panicked"))
-	}
-	if got.Stage != trace.StagePipe || got.Transport != trace.TransportHTTP {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Transport}, []any{trace.StagePipe, trace.TransportHTTP}, "pipe trace event stage/transport"))
-	}
-	if !strings.Contains(got.Name, "panickingQueryPipeDTO") {
-		t.Error(test.DiffMessage(got.Name, "contains panickingQueryPipeDTO", "pipe trace event name should identify the concrete pipe type"))
-	}
-	if got.Duration <= 0 {
-		t.Error(test.DiffMessage(got.Duration, ">0", "pipe trace event should report elapsed time up to the panic"))
-	}
-	if handlerCalled {
-		t.Error(test.DiffMessage(true, false, "handlerCalled must stay false when a pipe panics before the handler body is ever reached"))
-	}
-}
-
-func TestInvokeWSHandlerByProviders_PipePanicStillEmitsStagePipeEvent(t *testing.T) {
-	ev := event.NewEvent()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		if te.Stage == trace.StagePipe {
-			d := te
-			got = &d
-		}
-	})
-
-	c := ctx.NewWSContext()
-	handler := func(panickingWSPayloadPipeDTO) {}
-
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	var recovered any
-	func() {
-		defer func() { recovered = recover() }()
-		invokeWSHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-	}()
-
-	if recovered != "boom: payload validation failed" {
-		t.Fatal(test.DiffMessage(recovered, "boom: payload validation failed", "the pipe's panic must propagate unchanged"))
-	}
-	if got == nil {
-		t.Fatal(test.DiffMessage(nil, "non-nil", "expected a pipe trace event even though Transform panicked"))
-	}
-	if got.Stage != trace.StagePipe || got.Transport != trace.TransportWS {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Transport}, []any{trace.StagePipe, trace.TransportWS}, "pipe trace event stage/transport"))
-	}
-	if got.Duration <= 0 {
-		t.Error(test.DiffMessage(got.Duration, ">0", "pipe trace event should report elapsed time up to the panic"))
-	}
-	if handlerCalled {
-		t.Error(test.DiffMessage(true, false, "handlerCalled must stay false when a pipe panics before the handler body is ever reached"))
-	}
-}
-
-func TestInvokeHTTPHandlerByProviders_HandlerCalledTrueWhenHandlerBodyPanics(t *testing.T) {
-	ev := event.NewEvent()
-	ev.On(trace.EventName, func(args ...any) {})
-
-	c := newHTTPContext()
-	handler := func(tracedQueryPipeDTO) { panic("handler exploded") }
-
-	var pipeElapsed time.Duration
-	var handlerCalled bool
-	var recovered any
-	func() {
-		defer func() { recovered = recover() }()
-		invokeHTTPHandlerByProviders(handler, nil, c, ev, &pipeElapsed, &handlerCalled)
-	}()
-
-	if recovered != "handler exploded" {
-		t.Fatal(test.DiffMessage(recovered, "handler exploded", "the handler body's own panic must propagate unchanged"))
-	}
-	if !handlerCalled {
-		t.Error(test.DiffMessage(false, true, "handlerCalled should be true once the handler body starts executing, even if it then panics"))
-	}
-	if pipeElapsed <= 0 {
-		t.Error(test.DiffMessage(pipeElapsed, ">0", "pipeElapsed should still reflect the successfully-completed pipe's duration"))
-	}
-}
-
-func TestIsInjectableHandlerValid(t *testing.T) {
-	handler := func(c *ctx.HTTPContext) {}
-	err := isInjectableHandler(handler, nil, knownHTTPDependencyKeys)
-	if err != nil {
-		t.Error(test.DiffMessage(err, nil, "isInjectableHandler valid handler"))
-	}
-}
-
-func TestIsInjectableHandlerInvalid(t *testing.T) {
-	type unknownType struct{}
-	handler := func(_ unknownType) {}
-	err := isInjectableHandler(handler, nil, knownHTTPDependencyKeys)
-	if err == nil {
-		t.Error(test.DiffMessage(nil, "error", "isInjectableHandler with unknown arg should return error"))
-	}
-}
 
 func TestReturnHTTPFloat(t *testing.T) {
 	c := newHTTPContext()
@@ -744,20 +231,6 @@ func TestReturnHTTPUint(t *testing.T) {
 	returnHTTP(c, reflect.ValueOf(uint(7)))
 	if w.Body.String() != "7" {
 		t.Error(test.DiffMessage(w.Body.String(), "7", "returnHTTP uint"))
-	}
-}
-
-func TestToWSMessageFloat(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf(3.5))
-	if got != "3.5" {
-		t.Error(test.DiffMessage(got, "3.5", "toWSMessage float64"))
-	}
-}
-
-func TestToWSMessageUint(t *testing.T) {
-	got := toWSMessage(reflect.ValueOf(uint(7)))
-	if got != "7" {
-		t.Error(test.DiffMessage(got, "7", "toWSMessage uint"))
 	}
 }
 
@@ -996,4 +469,229 @@ func TestLogBoostrapNoPanic(t *testing.T) {
 		}
 	}()
 	logBoostrap(8080)
+}
+
+type returnUser struct {
+	Name string `json:"name"`
+}
+
+func anyValue(v any) reflect.Value {
+	return reflect.ValueOf(&v).Elem()
+}
+
+func writeReturn(t *testing.T, c *ctx.HTTPContext, v reflect.Value) {
+	t.Helper()
+	defer func() {
+		if rec := recover(); rec != nil {
+			t.Error(test.DiffMessage(rec, "no panic", "returnHTTP must not panic on a result a handler can return"))
+		}
+	}()
+	returnHTTP(c, v)
+}
+
+func recorderOf(c *ctx.HTTPContext) *httptest.ResponseRecorder {
+	return c.ResponseWriter.(*httptest.ResponseRecorder)
+}
+
+func TestReturnHTTP_InterfaceString(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue("ok"))
+	w := recorderOf(c)
+	if w.Body.String() != "ok" {
+		t.Error(test.DiffMessage(w.Body.String(), "ok", "B18: an any holding a string is written as text"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Error(test.DiffMessage(got, "text/plain; charset=utf-8", "B18: an any holding a string is text/plain"))
+	}
+}
+
+func TestReturnHTTP_InterfaceStringThatIsNotJSON(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue("not json {"))
+	w := recorderOf(c)
+	if w.Body.String() != "not json {" {
+		t.Error(test.DiffMessage(w.Body.String(), "not json {", "B18: text that is not JSON must not reach the JSON encoder"))
+	}
+}
+
+func TestReturnHTTP_InterfaceInt(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue(42))
+	w := recorderOf(c)
+	if w.Body.String() != "42" {
+		t.Error(test.DiffMessage(w.Body.String(), "42", "B18 (Q2): an any holding an int keeps its body"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B18 (Q2): an any holding an int keeps its JSON content type"))
+	}
+}
+
+func TestReturnHTTP_InterfaceBool(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue(true))
+	w := recorderOf(c)
+	if w.Body.String() != "true" {
+		t.Error(test.DiffMessage(w.Body.String(), "true", "B18 (Q2): an any holding a bool keeps its body"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B18 (Q2): an any holding a bool keeps its JSON content type"))
+	}
+}
+
+func TestReturnHTTP_InterfaceFloat(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue(100000000.0))
+	w := recorderOf(c)
+	if w.Body.String() != "100000000" {
+		t.Error(test.DiffMessage(w.Body.String(), "100000000", "B18 (Q2): an any holding a float keeps JSON digits"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B18 (Q2): an any holding a float keeps its JSON content type"))
+	}
+}
+
+func TestReturnHTTP_InterfaceMap(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue(map[string]any{"k": "v"}))
+	w := recorderOf(c)
+	if w.Body.String() != `{"k":"v"}` {
+		t.Error(test.DiffMessage(w.Body.String(), `{"k":"v"}`, "B18: an any holding a map is JSON"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B18: an any holding a map is application/json"))
+	}
+}
+
+func TestReturnHTTP_InterfacePointer(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, anyValue(&returnUser{Name: "a"}))
+	w := recorderOf(c)
+	if w.Body.String() != `{"name":"a"}` {
+		t.Error(test.DiffMessage(w.Body.String(), `{"name":"a"}`, "B18, B19: an any holding a pointer is the pointee's JSON"))
+	}
+}
+
+func TestReturnHTTP_NilInterface(t *testing.T) {
+	c := newHTTPContext()
+	var v any
+	writeReturn(t, c, reflect.ValueOf(&v).Elem())
+	w := recorderOf(c)
+	if w.Body.String() != "null" {
+		t.Error(test.DiffMessage(w.Body.String(), "null", "B18: a nil interface writes null"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B18: a nil interface is application/json"))
+	}
+}
+
+func TestReturnHTTP_InvalidValueWritesNothing(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(nil))
+	w := recorderOf(c)
+	if w.Body.Len() != 0 {
+		t.Error(test.DiffMessage(w.Body.String(), "", "B18: an invalid Value writes no body"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "" {
+		t.Error(test.DiffMessage(got, "", "B18: an invalid Value sets no content type"))
+	}
+}
+
+func TestReturnHTTP_Struct(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(returnUser{Name: "a"}))
+	w := recorderOf(c)
+	if w.Body.String() != `{"name":"a"}` {
+		t.Error(test.DiffMessage(w.Body.String(), `{"name":"a"}`, "B19: a struct is JSON"))
+	}
+}
+
+func TestReturnHTTP_Array(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf([3]int{1, 2, 3}))
+	w := recorderOf(c)
+	if w.Body.String() != "[1,2,3]" {
+		t.Error(test.DiffMessage(w.Body.String(), "[1,2,3]", "B19: an array is JSON"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B19: an array is application/json"))
+	}
+}
+
+func TestReturnHTTP_PointerToStruct(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(&returnUser{Name: "a"}))
+	w := recorderOf(c)
+	if w.Body.String() != `{"name":"a"}` {
+		t.Error(test.DiffMessage(w.Body.String(), `{"name":"a"}`, "B19: a pointer is the pointee's JSON, never an address"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B19: a pointer is application/json"))
+	}
+}
+
+func TestReturnHTTP_NilPointer(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf((*returnUser)(nil)))
+	w := recorderOf(c)
+	if w.Body.String() != "null" {
+		t.Error(test.DiffMessage(w.Body.String(), "null", "B19: a nil pointer writes null"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B19: a nil pointer is application/json"))
+	}
+}
+
+func TestReturnHTTP_Func(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(func() {}))
+	w := recorderOf(c)
+	if w.Body.String() != "func()" {
+		t.Error(test.DiffMessage(w.Body.String(), "func()", "B19: a func writes its type"))
+	}
+}
+
+func TestReturnHTTP_Complex(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(complex(1, 2)))
+	w := recorderOf(c)
+	if w.Body.String() != "(1+2i)" {
+		t.Error(test.DiffMessage(w.Body.String(), "(1+2i)", "B19: a complex number is text"))
+	}
+}
+
+func TestReturnHTTP_FloatUsesGFormat(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(100000000.0))
+	w := recorderOf(c)
+	if w.Body.String() != "1e+08" {
+		t.Error(test.DiffMessage(w.Body.String(), "1e+08", "B19: a float is text in strconv 'g' format"))
+	}
+}
+
+func TestReturnHTTP_UnsafePointerWritesNothing(t *testing.T) {
+	c := newHTTPContext()
+	x := 1
+	writeReturn(t, c, reflect.ValueOf(unsafe.Pointer(&x)))
+	w := recorderOf(c)
+	if w.Body.Len() != 0 {
+		t.Error(test.DiffMessage(w.Body.String(), "", "B19: an unsafe pointer writes nothing, never its address"))
+	}
+}
+
+func TestReturnHTTP_ChanWritesNothing(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(make(chan int)))
+	w := recorderOf(c)
+	if w.Body.Len() != 0 {
+		t.Error(test.DiffMessage(w.Body.String(), "", "B19: a chan writes nothing"))
+	}
+}
+
+func TestReturnHTTP_UintptrWritesNothing(t *testing.T) {
+	c := newHTTPContext()
+	writeReturn(t, c, reflect.ValueOf(uintptr(1)))
+	w := recorderOf(c)
+	if w.Body.Len() != 0 {
+		t.Error(test.DiffMessage(w.Body.String(), "", "B19: a uintptr writes nothing"))
+	}
 }

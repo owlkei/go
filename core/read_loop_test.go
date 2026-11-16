@@ -29,11 +29,12 @@ func newTestWSBare(t testing.TB) *WS {
 	ws.releaseCtx = func(c *ctx.WSContext) {
 		c.Reset()
 	}
-	ev := event.NewEvent()
-	ws.resolveAndCallHandler = func(f any, c *ctx.WSContext) []reflect.Value {
-		var pipeElapsed time.Duration
-		var handlerCalled bool
-		return invokeWSHandlerByProviders(f, nil, c, ev, &pipeElapsed, &handlerCalled)
+	ws.resolveAndCallHandler = func(_ string, f any, c *ctx.WSContext) []reflect.Value {
+		args := make([]reflect.Value, reflect.TypeOf(f).NumIn())
+		for i := range args {
+			args[i] = reflect.ValueOf(c.WSPayload())
+		}
+		return reflect.ValueOf(f).Call(args)
 	}
 	ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {}
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {}

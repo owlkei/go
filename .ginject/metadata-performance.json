@@ -70,10 +70,9 @@
     }
   },
   "dependency_resolution_cost": {
-    "per_dependency": "5-10 μs (reflection overhead)",
-    "with_5_params": "25-50 μs",
-    "with_10_params": "50-100 μs",
-    "optimization": "getFnArgsByType() caches handler signatures"
+    "source": "docs/design/0006-injection.md; core/README.md holds the benchmark table",
+    "model": "one argument plan per handler built at Create(); a call is one reflect.Value.Call plus the accessors and pipes",
+    "optimization": "no per-request type walking, key building, map lookups or argument-list construction; pipe prototypes built once"
   },
   "routing_performance": {
     "source": "docs/design/0002-routing.md; routing/README.md and internal/ds/README.md hold the benchmark tables",
@@ -145,9 +144,9 @@
   },
   "optimization_opportunities": {
     "opportunity_1": {
-      "name": "Pre-allocate handler args slice",
-      "current": "allocated inside invokeHTTPHandlerByProviders",
-      "potential_savings": "10-20% per request"
+      "name": "Typed handler call without reflect.Value.Call",
+      "current": "done for the argument list (stack array, design 0006); the call itself stays reflect.Value.Call (Q1 of design 0006: unsafe or an opt-in method-value API, neither approved)",
+      "potential_savings": "about 200 ns per request for the signatures it could cover"
     },
     "opportunity_2": {
       "name": "Cache route-specific handler chains",

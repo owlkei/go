@@ -429,7 +429,7 @@ Methods:
 ### 5.2 Panic Recovery
 
 **Recovery Points**:
-1. **Handler invocation**: `invokeHTTPHandlerByProviders()` wraps handler call in recover()
+1. **Request pipeline**: `HTTP.handleRequest()` (`core/http.go`) recovers panics of guards, interceptors, pipes and the handler (`httpHandlerPlan.invoke` itself never recovers)
 2. **Middleware execution**: `buildUseMiddleware()` wraps middleware call in recover()
 3. **Anywhere else**: Panic propagates to exception filter
 

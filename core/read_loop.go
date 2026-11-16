@@ -196,7 +196,7 @@ func dispatchWSEvent(conn *WSConnection, ws *WS, pattern, topic string, item wse
 		}
 	}()
 
-	data := ws.resolveAndCallHandler(item.Handler, c)
+	data := ws.resolveAndCallHandler(pattern, item.Handler, c)
 
 	if aggregations := c.Aggregations(); len(aggregations) > 0 {
 		var aggregatedData any

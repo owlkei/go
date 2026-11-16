@@ -27,14 +27,14 @@ type WSConfig struct {
 	event             *event.Event
 	broker            *memorybroker.Broker
 
-	resolveAndCallHandler func(f any, c *ctx.WSContext) []reflect.Value
+	resolveAndCallHandler func(pattern string, f any, c *ctx.WSContext) []reflect.Value
 	newCtx                func() *ctx.WSContext
 	releaseCtx            func(c *ctx.WSContext)
 }
 
 type WS struct {
 	catchFnsByEvent       map[string][]common.WSCatch
-	resolveAndCallHandler func(f any, c *ctx.WSContext) []reflect.Value
+	resolveAndCallHandler func(pattern string, f any, c *ctx.WSContext) []reflect.Value
 	connmgr               *WSConnmgr
 	path                  string
 	globalMiddlewares     []ctx.HTTPHandler

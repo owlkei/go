@@ -3,7 +3,6 @@ package core
 import (
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -12,46 +11,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 	"golang.org/x/net/websocket"
 )
-
-func TestKnownHTTPDependencyKeys_IncludesPublisherKey(t *testing.T) {
-	if _, ok := knownHTTPDependencyKeys[publisherKey]; !ok {
-		t.Error(test.DiffMessage(ok, true, "knownHTTPDependencyKeys should include publisherKey"))
-	}
-}
-
-func TestKnownWSDependencyKeys_IncludesPublisherKey(t *testing.T) {
-	if _, ok := knownWSDependencyKeys[publisherKey]; !ok {
-		t.Error(test.DiffMessage(ok, true, "knownWSDependencyKeys should include publisherKey"))
-	}
-}
-
-func TestGetHTTPDependency_ResolvesPublisher(t *testing.T) {
-	app := New()
-
-	got := getHTTPDependency(publisherKey, nil, reflect.Value{})
-	p, ok := got.(common.Publisher)
-	if !ok {
-		t.Fatalf("expected common.Publisher, got %T", got)
-	}
-	if err := p.Publish("some.topic"); err != nil {
-		t.Error(test.DiffMessage(err, nil, "Publish through the resolved dependency should not error"))
-	}
-	_ = app
-}
-
-func TestGetWSDependency_ResolvesPublisher(t *testing.T) {
-	app := New()
-
-	got := getWSDependency(publisherKey, nil, reflect.Value{})
-	p, ok := got.(common.Publisher)
-	if !ok {
-		t.Fatalf("expected common.Publisher, got %T", got)
-	}
-	if err := p.Publish("some.topic"); err != nil {
-		t.Error(test.DiffMessage(err, nil, "Publish through the resolved dependency should not error"))
-	}
-	_ = app
-}
 
 func TestPublisher_SharesBrokerWithWSConnmgr(t *testing.T) {
 	resetModuleGlobals()

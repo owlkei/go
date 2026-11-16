@@ -73,54 +73,7 @@ type App struct {
 	shutdownChan chan struct{}
 }
 
-const (
-	httpContextKey  = "/*ctx.HTTPContext"
-	wsContextKey    = "/*ctx.WSContext"
-	wsConnectionKey = "/*websocket.Conn"
-	requestKey      = "/*http.Request"
-	responseKey     = "net/http/http.ResponseWriter"
-	bodyKey         = "github.com/dangduoc08/ginject/ctx/ctx.Body"
-	formKey         = "github.com/dangduoc08/ginject/ctx/ctx.Form"
-	queryKey        = "github.com/dangduoc08/ginject/ctx/ctx.Query"
-	headerKey       = "github.com/dangduoc08/ginject/ctx/ctx.Header"
-	paramKey        = "github.com/dangduoc08/ginject/ctx/ctx.Param"
-	fileKey         = "github.com/dangduoc08/ginject/ctx/ctx.File"
-	wsPayloadKey    = "github.com/dangduoc08/ginject/ctx/ctx.WSPayload"
-	nextKey         = "/func()"
-	redirectKey     = "/func(string)"
-	publisherKey    = "github.com/dangduoc08/ginject/common/common.Publisher"
-)
-
-var knownHTTPDependencyKeys = map[string]int{
-	httpContextKey:            1,
-	requestKey:                1,
-	responseKey:               1,
-	bodyKey:                   1,
-	formKey:                   1,
-	queryKey:                  1,
-	headerKey:                 1,
-	paramKey:                  1,
-	fileKey:                   1,
-	nextKey:                   1,
-	redirectKey:               1,
-	publisherKey:              1,
-	common.ContextPipeableKey: 1,
-	common.BodyPipeableKey:    1,
-	common.FormPipeableKey:    1,
-	common.QueryPipeableKey:   1,
-	common.HeaderPipeableKey:  1,
-	common.ParamPipeableKey:   1,
-	common.FilePipeableKey:    1,
-}
-
-var knownWSDependencyKeys = map[string]int{
-	wsContextKey:                1,
-	wsConnectionKey:             1,
-	wsPayloadKey:                1,
-	nextKey:                     1,
-	publisherKey:                1,
-	common.WSPayloadPipeableKey: 1,
-}
+const publisherKey = "github.com/dangduoc08/ginject/common/common.Publisher"
 
 func New() *App {
 	app := &App{
@@ -241,10 +194,9 @@ func (app *App) initWS(injectedProviders map[string]Provider) {
 	app.wsConfig.logger = app.Logger
 	app.wsConfig.event = app.event
 	app.wsConfig.broker = &app.broker
-	app.wsConfig.resolveAndCallHandler = func(f any, c *ctx.WSContext) []reflect.Value {
-		var pipeElapsed time.Duration
-		var handlerCalled bool
-		return invokeWSHandlerByProviders(f, injectedProviders, c, app.event, &pipeElapsed, &handlerCalled)
+	planByEvent := app.module.wsPlanByEvent
+	app.wsConfig.resolveAndCallHandler = func(pattern string, _ any, c *ctx.WSContext) []reflect.Value {
+		return planByEvent[pattern].invoke(c, app.event)
 	}
 	app.wsConfig.newCtx = func() *ctx.WSContext { return app.wsCtxPool.Get().(*ctx.WSContext) }
 	app.wsConfig.releaseCtx = app.releaseWSCtx
@@ -297,35 +249,14 @@ func (app *App) initProviders(m *Module) map[string]Provider {
 	}
 	app.injectedProviders = injectedProviders
 
-	nameByPattern := make(map[string]string, len(app.module.HTTPMainHandlers))
-	for _, mh := range app.module.HTTPMainHandlers {
-		nameByPattern[mh.Pattern] = mh.Name
+	planByPattern := make(map[string]*httpHandlerPlan, len(app.module.HTTPMainHandlers))
+	for _, h := range app.module.HTTPMainHandlers {
+		httpMethod := routing.OperationsMapHTTPMethods[h.Method]
+		planByPattern[routing.MethodRouteVersionToPattern(httpMethod, h.Route, h.Version)] = app.module.httpPlanByPattern[h.Pattern]
 	}
-
-	resolveAndCallHandler := func(pattern string, f any, c *ctx.HTTPContext) []reflect.Value {
-		if !app.event.HasListeners(trace.EventName) {
-			var pipeElapsed time.Duration
-			var handlerCalled bool
-			return invokeHTTPHandlerByProviders(f, injectedProviders, c, app.event, &pipeElapsed, &handlerCalled)
-		}
-
-		start := time.Now()
-		var pipeElapsed time.Duration
-		var handlerCalled bool
-		defer func() {
-			if !handlerCalled {
-				return
-			}
-			app.event.Emit(trace.EventName, trace.Event{
-				ID:       c.GetID(),
-				Stage:    trace.StageHandler,
-				Name:     nameByPattern[pattern],
-				Duration: time.Since(start) - pipeElapsed,
-			})
-		}()
-		return invokeHTTPHandlerByProviders(f, injectedProviders, c, app.event, &pipeElapsed, &handlerCalled)
+	app.http.resolveAndCallHandler = func(pattern string, _ any, c *ctx.HTTPContext) []reflect.Value {
+		return planByPattern[pattern].invoke(c, app.event)
 	}
-	app.http.resolveAndCallHandler = resolveAndCallHandler
 
 	return injectedProviders
 }

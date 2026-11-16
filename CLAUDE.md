@@ -131,10 +131,12 @@ Contracts:
 
 ### Handler Injection
 
-Handler method parameters are injected by type — declare them in the handler signature and the framework resolves them from the request context. The allowed sets are `knownHTTPDependencyKeys` / `knownWSDependencyKeys` in `core/app.go`:
+Handler method parameters are injected by type (type identity, not the printed name) — declare them in the handler signature and the framework resolves them from the request context. Each handler gets an argument plan once at `Create()` (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `core/fn.go`, design 0006); a request only runs it. The allowed sets (table in `core/README.md` › Handler injection):
 
-- HTTP: `*ctx.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ctx.Body`, `ctx.Form`, `ctx.Query`, `ctx.Header`, `ctx.Param`, `ctx.File`, `ctx.Next`, `ctx.Redirect`, `common.Publisher`, and the `*Pipeable` types of `common/pipe.go` (a struct with `Transform`).
-- WS: `*ctx.WSContext`, `*websocket.Conn`, `ctx.WSPayload`, `ctx.Next`, `common.Publisher`, `common.WSPayloadPipeable`.
+- HTTP: `*ctx.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ctx.Body`, `ctx.Form`, `ctx.Query`, `ctx.Header`, `ctx.Param`, `ctx.File`, `ctx.Next`, `ctx.Redirect`, `common.Publisher`, and value types implementing the HTTP `*Pipeable` interfaces of `common/pipe.go` (a type with `Transform`; a pointer pipe parameter is refused).
+- WS: `*ctx.WSContext`, `*websocket.Conn`, `ctx.WSPayload`, `ctx.Next`, `common.Publisher`, value types implementing `common.WSPayloadPipeable`.
+
+Anything else panics at `Create()` with `"dependency injection: ..."`.
 
 All types are re-exported from the root `ginject` package (`aliases.go`).
 
@@ -168,4 +170,4 @@ Message format is `"<category>: <detail>"`:
 - `"invalid module: ..."` (`core/module_builder.go`)
 - `"dependency injection: ..."` (`core/fn.go`)
 
-These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. The one exception is `invokeHandlerByProviders` in `core/fn.go`, which panics during per-request handling and is caught by `core/http.go`'s `recover()` — it stays a plain, uncolored `fmt.Errorf`.
+These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. An unresolvable handler argument is a `Create()` panic too; the only per-request panic of injection is a pipe whose `Transform` returns a wrong value, an uncolored `exception.InternalServerErrorException` that `core/http.go`'s `recover()` turns into a 500.

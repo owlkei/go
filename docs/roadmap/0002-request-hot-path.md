@@ -28,7 +28,7 @@ the commit), README.
 | 3 | Request context: `ctx` (`Init` and the request ID: hot spots 2 and 4; JSON writing: 3; header writes: 5; query and body binding: 10) | tdd | docs/design/0003-ctx.md | 1 | deep dive done | done |
 | 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | done |
 | 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | done |
-| 6 | Handler injection: `core/fn.go` (argument resolution and `reflect.Value.Call` per request: hot spot 1, the largest) | tdd | docs/design/0006-injection.md | 3, 5 | deep dive done for `fn.go`; the rest of `core` untouched | todo |
+| 6 | Handler injection: `core/fn.go` (argument resolution and `reflect.Value.Call` per request: hot spot 1, the largest) | tdd | docs/design/0006-injection.md | 3, 5 | deep dive done for `fn.go`; the rest of `core` untouched | done |
 | 7 | Measure: rerun `make bench-compare` and the load test, compare with the baseline | light | - | 1-6 | `docs/review/http-0002.md` with before → after per scenario | todo |
 
 ## Decisions
@@ -84,3 +84,10 @@ the commit), README.
   `DeepEqual`). WS files of `common` and `core/read_loop.go` changed only for the shared API; the
   tester updated `core/read_loop_test.go` to the approved `BuildWSInterceptMiddleware` signature and
   added the design's three end-to-end `core` tests. `sample/shop` got its own context key type.
+- Step 6: done. Handler plans built at `Create()`: Invoke_QueryPipe 1,537 → 350 ns (11 → 2
+  allocs). End to end (10 alternating runs): Static 1.61 → 1.22 µs, Param 3.80 → 3.04, Query
+  6.35 → 4.34 (37 → 28 allocs), JSONBody 8.99 → 6.46, Chain 4.57 → 4.03, Exception 4.01 → 2.70;
+  geomean −22 %. FiveBuiltins misses the design's < 550 ns (738 ns). Chain uses about 120 B more
+  per request with the same allocation count (suspected: `reflect.Call` copying the large
+  controller receiver; unconfirmed, for 0003). Found for 0003: `SERVE_<x>_ANY` compiles to the
+  glob `/<x>*/`, so it never serves `/<x>/...` — pre-existing (verified on `f036f50`).

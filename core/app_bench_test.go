@@ -3,11 +3,7 @@ package core
 import (
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
-	"time"
-
-	"github.com/dangduoc08/ginject/ctx"
 )
 
 func BenchmarkServeHTTP(b *testing.B) {
@@ -17,24 +13,8 @@ func BenchmarkServeHTTP(b *testing.B) {
 	r := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
 	w := httptest.NewRecorder()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		app.ServeHTTP(w, r)
-	}
-}
-
-func BenchmarkProvideAndInvoke(b *testing.B) {
-	app := New()
-	app.Create(ModuleBuilder().Build())
-
-	c := ctx.NewHTTPContext()
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	handler := func() reflect.Value { return reflect.ValueOf("bench") }
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var pipeElapsed time.Duration
-		var handlerCalled bool
-		invokeHTTPHandlerByProviders(handler, app.injectedProviders, c, app.event, &pipeElapsed, &handlerCalled)
 	}
 }

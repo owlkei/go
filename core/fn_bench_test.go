@@ -1,157 +1,234 @@
 package core
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/trace"
+	"golang.org/x/net/websocket"
 )
 
-func returnHTTPOld(c *ctx.HTTPContext, data reflect.Value) {
-	switch data.Type().Kind() {
-	case
-		reflect.Map,
-		reflect.Slice,
-		reflect.Struct,
-		reflect.Interface:
-		c.JSON(data.Interface())
-	case
-		reflect.Bool,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Float32,
-		reflect.Float64,
-		reflect.Complex64,
-		reflect.Complex128:
-		c.Text(fmt.Sprint(data))
-	case
-		reflect.Pointer,
-		reflect.UnsafePointer:
-		c.Text(fmt.Sprint(data.UnsafePointer()))
-	case
-		reflect.String:
-		c.Text(data.Interface().(string))
-	case
-		reflect.Func:
-		c.Text(data.Type().String())
-	}
+type benchQueryDTO struct {
+	Name string
+	Page int
 }
 
-func toWSMessageOld(data reflect.Value) string {
-	switch data.Type().Kind() {
-	case
-		reflect.Map,
-		reflect.Slice,
-		reflect.Struct,
-		reflect.Interface:
-		return fmt.Sprint(data.Interface())
-	case
-		reflect.Bool,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Uint,
-		reflect.Uint8,
-		reflect.Uint16,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Float32,
-		reflect.Float64,
-		reflect.Complex64,
-		reflect.Complex128:
-		return fmt.Sprint(data)
-	case
-		reflect.Pointer,
-		reflect.UnsafePointer:
-		return fmt.Sprint(data.UnsafePointer())
-	case
-		reflect.String:
-		return data.Interface().(string)
-	case
-		reflect.Func:
-		return data.Type().String()
-	default:
-		return data.String()
-	}
+func (d benchQueryDTO) Transform(ctx.Query, common.ArgumentMetadata) any { return d }
+
+type benchProviderDTO struct {
+	P    fnTestProvider
+	Name string
 }
 
-func traceHTTPHandlerOld(ev *event.Event, stage, name string, h ctx.HTTPHandler) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) {
-		start := time.Now()
-		defer func() {
-			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: stage, Name: name, Duration: time.Since(start)})
-		}()
-		h(c)
-	}
+func (d benchProviderDTO) Transform(ctx.Body, common.ArgumentMetadata) any { return d }
+
+type benchWSDTO struct {
+	Topic string
 }
 
-func traceHTTPCatchOld(ev *event.Event, name string, fn common.HTTPCatch) common.HTTPCatch {
-	return func(c *ctx.HTTPContext, ex *exception.Exception) {
-		start := time.Now()
-		defer func() {
-			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Duration: time.Since(start)})
-		}()
-		fn(c, ex)
-	}
+func (d benchWSDTO) Transform(ctx.WSPayload, common.ArgumentMetadata) any { return d }
+
+type benchPlanCtl struct{}
+
+func (benchPlanCtl) NoArgs() string { return "ok" }
+func (benchPlanCtl) Param(ctx.Param) ctx.Map {
+	return nil
+}
+func (benchPlanCtl) QueryPipe(benchQueryDTO) ctx.Map               { return nil }
+func (benchPlanCtl) BodyPipeWithProvider(benchProviderDTO) ctx.Map { return nil }
+func (benchPlanCtl) FiveBuiltins(*ctx.HTTPContext, *http.Request, http.ResponseWriter, ctx.Query, ctx.Header) {
+}
+func (benchPlanCtl) Payload(ctx.WSPayload)  {}
+func (benchPlanCtl) PayloadPipe(benchWSDTO) {}
+
+func benchPlanContext() *ctx.HTTPContext {
+	c := benchHTTPContext("/?name=ann&page=2")
+	c.SetID()
+	c.ParamKeys = map[string][]int{"id": {0}}
+	c.ParamValues = []string{"7"}
+	return c
 }
 
-func BenchmarkGetFnArgsByType_NonPipeable(b *testing.B) {
-	handler := func(*ctx.HTTPContext, *http.Request, http.ResponseWriter) {}
-	fType := reflect.TypeOf(handler)
-	injectedProviders := map[string]Provider{}
-	cb := func(string, int, reflect.Value) {}
+func benchHTTPPlan(b *testing.B, name string) *httpHandlerPlan {
+	b.Helper()
+	recv, m := planMethod(b, benchPlanCtl{}, name)
+	return newHTTPHandlerPlan(recv, m, planProviders())
+}
 
+func BenchmarkHTTPHandlerPlan_Invoke_NoArgs(b *testing.B) {
+	plan := benchHTTPPlan(b, "NoArgs")
+	c := benchPlanContext()
+	ev := event.NewEvent()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		getFnArgsByType(fType, injectedProviders, cb)
+	for b.Loop() {
+		plan.invoke(c, ev)
 	}
 }
 
-func BenchmarkGetFnArgsByType_MixedPipeable(b *testing.B) {
-	handler := func(*ctx.HTTPContext, fnContextPipeableDTO, fnQueryPipeableDTO) {}
-	fType := reflect.TypeOf(handler)
-	injectedProviders := map[string]Provider{
-		genFieldKey(reflect.TypeOf(fnTestProvider{})): fnTestProvider{Tag: "injected"},
-	}
-	cb := func(string, int, reflect.Value) {}
-
+func BenchmarkHTTPHandlerPlan_Invoke_Param(b *testing.B) {
+	plan := benchHTTPPlan(b, "Param")
+	c := benchPlanContext()
+	ev := event.NewEvent()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		getFnArgsByType(fType, injectedProviders, cb)
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe(b *testing.B) {
+	plan := benchHTTPPlan(b, "QueryPipe")
+	c := benchPlanContext()
+	ev := event.NewEvent()
+	b.ReportAllocs()
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func BenchmarkHTTPHandlerPlan_Invoke_BodyPipeWithProvider(b *testing.B) {
+	plan := benchHTTPPlan(b, "BodyPipeWithProvider")
+	c := benchPlanContext()
+	ev := event.NewEvent()
+	b.ReportAllocs()
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func BenchmarkHTTPHandlerPlan_Invoke_FiveBuiltins(b *testing.B) {
+	plan := benchHTTPPlan(b, "FiveBuiltins")
+	c := benchPlanContext()
+	ev := event.NewEvent()
+	b.ReportAllocs()
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe_Traced(b *testing.B) {
+	plan := benchHTTPPlan(b, "QueryPipe")
+	c := benchPlanContext()
+	ev := event.NewEvent()
+	ev.On(trace.EventName, func(args ...any) {})
+	b.ReportAllocs()
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func benchWSPlan(b *testing.B, name string) *wsHandlerPlan {
+	b.Helper()
+	recv, m := planMethod(b, benchPlanCtl{}, name)
+	return newWSHandlerPlan(recv, m, nil)
+}
+
+func benchWSContext() *ctx.WSContext {
+	c := ctx.NewWSContext()
+	c.Init(&websocket.Conn{})
+	c.SetWSPayload(ctx.WSPayload{"topic": "chat"})
+	return c
+}
+
+func BenchmarkWSHandlerPlan_Invoke_Payload(b *testing.B) {
+	plan := benchWSPlan(b, "Payload")
+	c := benchWSContext()
+	ev := event.NewEvent()
+	b.ReportAllocs()
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func BenchmarkWSHandlerPlan_Invoke_PayloadPipe(b *testing.B) {
+	plan := benchWSPlan(b, "PayloadPipe")
+	c := benchWSContext()
+	ev := event.NewEvent()
+	b.ReportAllocs()
+	for b.Loop() {
+		plan.invoke(c, ev)
+	}
+}
+
+func BenchmarkNewHTTPHandlerPlan(b *testing.B) {
+	recv, m := planMethod(b, benchPlanCtl{}, "QueryPipe")
+	providers := planProviders()
+	b.ReportAllocs()
+	for b.Loop() {
+		newHTTPHandlerPlan(recv, m, providers)
+	}
+}
+
+func BenchmarkReturnHTTP_String(b *testing.B) {
+	c := newHTTPContext()
+	v := reflect.ValueOf("hello world")
+	b.ReportAllocs()
+	for b.Loop() {
+		returnHTTP(c, v)
+	}
+}
+
+func BenchmarkReturnHTTP_Int(b *testing.B) {
+	c := newHTTPContext()
+	v := reflect.ValueOf(123456)
+	b.ReportAllocs()
+	for b.Loop() {
+		returnHTTP(c, v)
+	}
+}
+
+func BenchmarkReturnHTTP_Float(b *testing.B) {
+	c := newHTTPContext()
+	v := reflect.ValueOf(3.14159)
+	b.ReportAllocs()
+	for b.Loop() {
+		returnHTTP(c, v)
+	}
+}
+
+func BenchmarkReturnHTTP_Map(b *testing.B) {
+	c := newHTTPContext()
+	v := reflect.ValueOf(ctx.Map{"message": "ok", "count": 3})
+	b.ReportAllocs()
+	for b.Loop() {
+		returnHTTP(c, v)
+	}
+}
+
+func BenchmarkReturnHTTP_PointerToStruct(b *testing.B) {
+	c := newHTTPContext()
+	v := reflect.ValueOf(&returnUser{Name: "ann"})
+	b.ReportAllocs()
+	for b.Loop() {
+		returnHTTP(c, v)
+	}
+}
+
+func BenchmarkReturnHTTP_InterfaceString(b *testing.B) {
+	c := newHTTPContext()
+	v := anyValue("hello world")
+	b.ReportAllocs()
+	for b.Loop() {
+		returnHTTP(c, v)
 	}
 }
 
 func BenchmarkGetPkgFromControllerKey(b *testing.B) {
 	key := "[123456789]github.com/dangduoc08/ginject/sample/modules/user.UserController"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		getPkgFromControllerKey(key)
 	}
 }
 
 func BenchmarkGenFieldKey(b *testing.B) {
 	t := reflect.TypeOf(&mockProvider{})
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		genFieldKey(t)
 	}
 }
@@ -159,16 +236,16 @@ func BenchmarkGenFieldKey(b *testing.B) {
 func BenchmarkGenControllerKey(b *testing.B) {
 	m := ModuleBuilder().Build()
 	c := &mockController{}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		genControllerKey(m, c)
 	}
 }
 
 func BenchmarkIsDynamicModule(b *testing.B) {
 	s := "func(pkg.Provider) *core.Module"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		isDynamicModule(s)
 	}
 }
@@ -177,175 +254,41 @@ func BenchmarkToUniqueControllers(b *testing.B) {
 	m := ModuleBuilder().Build()
 	c1 := &mockController{}
 	c2 := &mockController{}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.ReportAllocs()
+	for b.Loop() {
 		controllers := []Controller{c1, c2, c1, c2, c1}
 		toUniqueControllers(m, &controllers)
 	}
 }
 
-func BenchmarkReturnHTTPString_Old(b *testing.B) {
-	c := newHTTPContext()
-	v := reflect.ValueOf("hello world")
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		returnHTTPOld(c, v)
-	}
-}
-
-func BenchmarkReturnHTTPString_New(b *testing.B) {
-	c := newHTTPContext()
-	v := reflect.ValueOf("hello world")
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		returnHTTP(c, v)
-	}
-}
-
-func BenchmarkReturnHTTPInt_Old(b *testing.B) {
-	c := newHTTPContext()
-	v := reflect.ValueOf(123456)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		returnHTTPOld(c, v)
-	}
-}
-
-func BenchmarkReturnHTTPInt_New(b *testing.B) {
-	c := newHTTPContext()
-	v := reflect.ValueOf(123456)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		returnHTTP(c, v)
-	}
-}
-
-func BenchmarkReturnHTTPFloat_Old(b *testing.B) {
-	c := newHTTPContext()
-	v := reflect.ValueOf(3.14159)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		returnHTTPOld(c, v)
-	}
-}
-
-func BenchmarkReturnHTTPFloat_New(b *testing.B) {
-	c := newHTTPContext()
-	v := reflect.ValueOf(3.14159)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		returnHTTP(c, v)
-	}
-}
-
-func BenchmarkToWSMessageString_Old(b *testing.B) {
-	v := reflect.ValueOf("hello world")
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		toWSMessageOld(v)
-	}
-}
-
-func BenchmarkToWSMessageString_New(b *testing.B) {
-	v := reflect.ValueOf("hello world")
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		toWSMessage(v)
-	}
-}
-
-func BenchmarkToWSMessageInt_Old(b *testing.B) {
-	v := reflect.ValueOf(123456)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		toWSMessageOld(v)
-	}
-}
-
-func BenchmarkToWSMessageInt_New(b *testing.B) {
-	v := reflect.ValueOf(123456)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		toWSMessage(v)
-	}
-}
-
-func BenchmarkTraceHTTPHandler_NoListener_Old(b *testing.B) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	h := traceHTTPHandlerOld(ev, trace.StageGuard, "bench.Guard", func(c *ctx.HTTPContext) {})
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		h(c)
-	}
-}
-
-func BenchmarkTraceHTTPHandler_NoListener_New(b *testing.B) {
+func BenchmarkTraceHTTPHandler_NoListener(b *testing.B) {
 	ev := event.NewEvent()
 	c := newHTTPContext()
 	h := traceHTTPHandler(ev, trace.StageGuard, "bench.Guard", func(c *ctx.HTTPContext) {})
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		h(c)
 	}
 }
 
-func BenchmarkTraceHTTPHandler_WithListener_Old(b *testing.B) {
-	ev := event.NewEvent()
-	ev.On(trace.EventName, func(args ...any) {})
-	c := newHTTPContext()
-	h := traceHTTPHandlerOld(ev, trace.StageGuard, "bench.Guard", func(c *ctx.HTTPContext) {})
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		h(c)
-	}
-}
-
-func BenchmarkTraceHTTPHandler_WithListener_New(b *testing.B) {
+func BenchmarkTraceHTTPHandler_WithListener(b *testing.B) {
 	ev := event.NewEvent()
 	ev.On(trace.EventName, func(args ...any) {})
 	c := newHTTPContext()
 	h := traceHTTPHandler(ev, trace.StageGuard, "bench.Guard", func(c *ctx.HTTPContext) {})
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		h(c)
 	}
 }
 
-func BenchmarkTraceHTTPCatch_NoListener_Old(b *testing.B) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	ex := exception.BadRequestException("bad")
-	fn := traceHTTPCatchOld(ev, "bench.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		fn(c, &ex)
-	}
-}
-
-func BenchmarkTraceHTTPCatch_NoListener_New(b *testing.B) {
+func BenchmarkTraceHTTPCatch_NoListener(b *testing.B) {
 	ev := event.NewEvent()
 	c := newHTTPContext()
 	ex := exception.BadRequestException("bad")
 	fn := traceHTTPCatch(ev, "bench.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		fn(c, &ex)
 	}
 }
@@ -356,8 +299,7 @@ func BenchmarkBuildUseMiddleware_NoListener(b *testing.B) {
 	c.Next = func() {}
 	mw := buildUseMiddleware(func(r *http.Request, w http.ResponseWriter, next ctx.Next) { next() }, ev, "bench.Middleware", trace.TransportHTTP)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		mw(c)
 	}
 }
@@ -369,8 +311,7 @@ func BenchmarkBuildUseMiddleware_WithListener(b *testing.B) {
 	c.Next = func() {}
 	mw := buildUseMiddleware(func(r *http.Request, w http.ResponseWriter, next ctx.Next) { next() }, ev, "bench.Middleware", trace.TransportHTTP)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		mw(c)
 	}
 }

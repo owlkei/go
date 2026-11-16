@@ -2,210 +2,83 @@
 
 **Optimization**: Pseudo-code, decision trees, state machines. Focus on exact execution order and invariants.
 
-## 1. HTTP Handler Invocation
+## 1. Handler Plans (design 0006)
 
-### 1.1 Invocation Flow
+Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `core/fn.go`
+(`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `core/module.go`
+(`bindHTTPController` / `bindWSController` build the plans into `Module.httpPlanByPattern` /
+`wsPlanByEvent`) and `core/app.go` (`resolveAndCallHandler` looks the plan up and calls `invoke`).
 
-**Function**: `invokeHTTPHandlerByProviders(f, injectedProviders, httpCtx, event, pipeElapsed, handlerCalled)`
+### 1.1 Building a plan (cold, `Create()`)
 
-**Pseudo-Code**:
 ```
-func invokeHTTPHandlerByProviders(
-    f any,                           // handler function (e.g., UserController.READ_BY_ID)
-    injectedProviders map[string]Provider,
-    c *ctx.HTTPContext,
-    ev *event.Event,
-    pipeElapsed *time.Duration,
-    handlerCalled *bool
-) []reflect.Value {
-    
-    // Step 1: Reflect on handler signature
-    fType := reflect.TypeOf(f)
-    args := []reflect.Value{}
-    
-    // Step 2: For each parameter in handler signature
-    for i := 0; i < fType.NumIn(); i++ {
-        paramType := fType.In(i)
-        dynamicArgKey := genProviderKey(paramType)
-        
-        // Step 3a: Check if it's a built-in dependency
-        if _, isBuiltIn := knownHTTPDependencyKeys[dynamicArgKey]; isBuiltIn {
-            
-            // Step 3b: If it's a Pipeable with listeners, emit trace
-            if isPipeable(dynamicArgKey) && ev.HasListeners(trace.EventName) {
-                start := time.Now()
-                dep := getHTTPDependency(dynamicArgKey, c, pipeValue)
-                args.append(reflect.ValueOf(dep))
-                *pipeElapsed += time.Since(start)
-                ev.Emit(trace.EventName, trace.Event{...})
-            } else {
-                // Step 3c: Direct injection without tracing
-                dep := getHTTPDependency(dynamicArgKey, c, pipeValue)
-                args.append(reflect.ValueOf(dep))
-            }
-        } else {
-            // Step 3d: Unknown parameter type
-            panic(fmt.Errorf(
-                "dependency injection: can't resolve dependencies. Param [%d] of type %v not available",
-                i, paramType
-            ))
-        }
-    }
-    
-    // Step 4: Call handler with resolved args
-    *handlerCalled = true
-    return reflect.ValueOf(f).Call(args)
-}
+newHTTPHandlerPlan(recv, method, injectedProviders):
+    funcType = recv.Method(method.Index).Type().String()   // without receiver, for messages
+    for i, t in method.Type.In(1..):
+        variadic last parameter            → panic unresolved(funcType, i)
+        t in httpArgKindByType             → step {kind}          // type identity, not names
+        t == common.Publisher              → step {fixed: publisher stored now}  // none stored → panic unresolved
+        t is an interface                  → panic unresolved
+        t implements an HTTP pipe interface (Context, Body, Form, Query, Header, Param, File, in that order):
+            t is a pointer                 → panic "pipe '<t>' of the '<funcType>' must not be a pointer"
+            ctx.BinderOf(t) if struct (cache warm-up, result ignored)
+            prototype = injectDependencies(zero t, "pipe", injectedProviders)   // struct; zero value otherwise
+            step {pipe: Transform bound to the prototype, meta {ContextType: "http", ParamType: key}}
+        otherwise                          → panic unresolved
 ```
 
-### 1.2 Dependency Resolution: getHTTPDependency()
+`unresolved` is `"dependency injection: can't resolve dependencies of the '<funcType>'. Please make
+sure that the argument dependency at index [<i>] is available in the handler"` in `color.FmtRed`.
+Building calls neither the handler nor any `Transform`; the plan is immutable afterwards.
 
-**Decision Tree**:
+| Parameter type | HTTP | WS | Argument |
+|---|---|---|---|
+| `*ctx.HTTPContext` | yes | no | `c` |
+| `*http.Request` | yes | no | `c.Request` |
+| `http.ResponseWriter` | yes | no | `c.ResponseWriter` (nil → typed nil) |
+| `ctx.Body`, `Form`, `Query`, `Header`, `Param`, `File` | yes | no | the accessor |
+| `ctx.Redirect` | yes | no | `c.Redirect` |
+| `*ctx.WSContext` | no | yes | `c` |
+| `*websocket.Conn` (`golang.org/x/net/websocket`) | no | yes | `c.Conn` |
+| `ctx.WSPayload` | no | yes | `c.WSPayload()` |
+| `ctx.Next` | yes | yes | `c.Next` |
+| `common.Publisher` | yes | yes | stored value, fixed at build |
+| value type implementing an HTTP `*Pipeable` | yes | no | `Transform` result |
+| value type implementing `common.WSPayloadPipeable` | no | yes | `Transform` result |
+
+### 1.2 Invoking (hot, every request or message)
+
 ```
-dynamicArgKey = genProviderKey(paramType)
-
-if dynamicArgKey == httpContextKey:          // *ctx.HTTPContext
-    return c
-    
-if dynamicArgKey == requestKey:              // *http.Request
-    return c.Request
-    
-if dynamicArgKey == responseKey:             // http.ResponseWriter
-    return c.ResponseWriter
-    
-if dynamicArgKey == bodyKey:                 // ctx.Body
-    return c.body (parsed from c.Request.Body)
-    
-if dynamicArgKey == queryKey:                // ctx.Query
-    return c.query (parsed from c.Request.URL.Query())
-    
-if dynamicArgKey == headerKey:               // ctx.Header
-    return c.header (from c.Request.Header)
-    
-if dynamicArgKey == paramKey:                // ctx.Param
-    return c.param (from route params)
-    
-if dynamicArgKey == formKey:                 // ctx.Form
-    return c.form (from c.Request.Form)
-    
-if dynamicArgKey == fileKey:                 // ctx.File
-    return c.file (from multipart upload)
-    
-if dynamicArgKey == nextKey:                 // ctx.Next (function)
-    return c.Next (middleware chain continuation)
-    
-if dynamicArgKey == redirectKey:             // ctx.Redirect (function)
-    return func(url string) { c.Redirect(url) }
-    
-if dynamicArgKey == publisherKey:            // common.Publisher
-    return globalInterfaceByKey.Load(publisherKey)
-    
-if dynamicArgKey == "Pipeable*":             // Custom Pipeable
-    return pipeValue.Interface().(Pipeable).Transform(...)
-    
-else:
-    panic("unknown dependency")
+invoke(c, ev):
+    in = local [9]reflect.Value (heap slice above 8 parameters); in[0] = receiver
+    if ev has trace listeners → invokeTraced
+    for each step: in[i+1] = step(c)                 // switch on kind, or the bound Transform
+    return method.Func.Call(in)                       // one reflection hop
 ```
 
-### 1.3 Pipeable Dependencies (Custom Transforms)
+- **Order:** arguments left to right, all before the handler. A panic while resolving an argument
+  (an accessor's exception such as 413, a `Transform` panic) propagates unchanged; later arguments
+  are not resolved and the handler is not called.
+- **Pipe receivers:** the prototype is held as an interface value; a value-receiver `Transform`
+  gets its own copy, so changes to the receiver never leak into the next or a concurrent request.
+- **Wrong pipe result:** `nil` or a value not assignable to the parameter type panics
+  `exception.InternalServerErrorException("pipe <T>: Transform returned <dynamic type|nil>, want <T>")`.
+- **Tracing (HTTP):** one `pipe` event per pipe argument (also when it panics or is refused) and a
+  `handler` event (method name, duration minus the pipes) after the handler returns or panics, not
+  when an argument failed. **WS:** `pipe` events only.
 
-**Pipeable Interface**:
-```go
-type Pipeable interface {
-    Transform(raw any, metadata ArgumentMetadata) any
-}
-```
+### 1.3 Concurrency
 
-**Purpose**: Custom transformation of request data
-
-**Examples**:
-- `BodyPipeable`: Parse JSON/XML body into struct
-- `QueryPipeable`: Validate/transform query params
-- `ParamPipeable`: Convert `:id` string to int
-- `HeaderPipeable`: Extract/validate specific headers
-
-**How It Works**:
-1. Handler declares parameter type that implements Pipeable
-2. At invocation: `pipeValue.Interface().(Pipeable).Transform(rawData, metadata)`
-3. Pipeable returns transformed/validated data
-4. Handler receives transformed data
-
-**Binding inside a Transform**: `q.Bind(dto)` / `q.BindValue(dto)` (and the same on `Body`, `Form`, `Header`, `Param`, `WSPayload`) look up the struct type's plan with `ctx.BinderOf` (built once per type, cached in a `sync.Map`): a warm bind does no type walking or tag parsing. `BindValue` skips the `[]FieldLevel` and costs half of `Bind` or less. Design 0006 calls `ctx.BinderOf` at `Create()` for pipe argument types to warm the cache and report `ctx.ErrBindTarget` early.
-
-**Performance Note**: Pipeable transforms are traced separately if tracing enabled
+Plans are built under `moduleGlobalMu` during `Create()` and read-only afterwards; requests share
+them without a lock. The argument array lives on the request's stack.
 
 ---
 
-## 2. WebSocket Handler Invocation
+## 2. WebSocket Handlers
 
-### 2.1 invokeWSHandlerByProviders()
-
-**Nearly identical to HTTP**, but for WS dependencies:
-
-**Pseudo-Code**:
-```
-func invokeWSHandlerByProviders(
-    f any,
-    injectedProviders map[string]Provider,
-    c *ctx.WSContext,
-    ev *event.Event,
-    pipeElapsed *time.Duration,
-    handlerCalled *bool
-) []reflect.Value {
-    
-    fType := reflect.TypeOf(f)
-    args := []reflect.Value{}
-    
-    for i := 0; i < fType.NumIn(); i++ {
-        paramType := fType.In(i)
-        dynamicArgKey := genProviderKey(paramType)
-        
-        if _, isBuiltIn := knownWSDependencyKeys[dynamicArgKey]; !isBuiltIn {
-            panic("dependency not found")
-        }
-        
-        dep := getWSDependency(dynamicArgKey, c, pipeValue)
-        args.append(reflect.ValueOf(dep))
-    }
-    
-    *handlerCalled = true
-    return reflect.ValueOf(f).Call(args)
-}
-```
-
-### 2.2 WebSocket-Specific Dependencies: getWSDependency()
-
-**Decision Tree**:
-```
-if dynamicArgKey == wsContextKey:            // *ctx.WSContext
-    return c
-    
-if dynamicArgKey == wsConnectionKey:         // *websocket.Conn
-    return c.Conn
-    
-if dynamicArgKey == wsPayloadKey:            // ctx.WSPayload
-    return c.WSPayload() (current message)
-    
-if dynamicArgKey == nextKey:                 // ctx.Next
-    return c.Next
-    
-if dynamicArgKey == publisherKey:            // common.Publisher
-    return globalInterfaceByKey.Load(publisherKey)
-    
-if dynamicArgKey == wsPayloadPipeableKey:    // Custom Pipeable
-    return pipeValue.Interface().(WSPayloadPipeable).Transform(...)
-    
-else:
-    panic("WS dependency not found")
-```
-
-**Available in WS but NOT HTTP**:
-- `*ctx.WSContext`
-- `*websocket.Conn`
-- `ctx.WSPayload`
-
-**NOT Available in WS**:
-- Body, Query, Header, Param, Form, File (HTTP-specific)
+Same plan with the WS rows of the table; `ArgumentMetadata.ContextType` is `"ws"`. The read loop
+calls `ws.resolveAndCallHandler(pattern, item.Handler, c)`; the pattern is the matched event and
+selects the plan. The handler's last result is the reply message.
 
 ---
 
@@ -264,20 +137,9 @@ func (e EmailService) NewProvider() Provider {
 
 ### 4.1 Panic Recovery
 
-**Point of Recovery**: `invokeHTTPHandlerByProviders()` has implicit panic recovery via defer
-
-**Pseudo-Code**:
-```
-// In core/http.go or routing layer
-defer func() {
-    if rec := recover(); rec != nil {
-        ex := common.NormalizeRecovered(rec)
-        // Call exception filters with ex
-    }
-}()
-
-invokeHTTPHandlerByProviders(...) // If this panics, recover catches it
-```
+**Point of Recovery**: `HTTP.handleRequest()` in `core/http.go` defers a `recover()` that runs the
+route's exception filter chain (`common.RunHTTPCatchChain`). `invoke` never recovers; on WS,
+`dispatchWSEvent` in `core/read_loop.go` recovers into `runCatchChain`.
 
 ### 4.2 No Per-Request Timeout Check
 
@@ -287,7 +149,8 @@ There is no deadline check before handler invocation — `ctx.HTTPContext.IsDead
 
 | Error | Cause | Recovery |
 |-------|-------|----------|
-| `dependency injection: can't resolve` | Unknown parameter type | Panic → exception filter |
+| `dependency injection: can't resolve` | Unknown parameter type | Panic at `Create()` (never per request) |
+| `pipe <T>: Transform returned …, want <T>` | `Transform` returned nil or another type | 500 exception → exception filter |
 | `panic(exception.BadRequestException(...))` | Validation failure | Caught by exception filter |
 | `return nil` from handler | No return value | OK, handler can return any type |
 | Timeout exceeded | Handler takes too long | Panic with RequestTimeoutException |
@@ -296,80 +159,38 @@ There is no deadline check before handler invocation — `ctx.HTTPContext.IsDead
 
 ## 5. Return Value Handling
 
-### 5.1 Handler Return Types
+### 5.1 HTTP results
 
-**HTTP Handlers**:
-- `func() string` → write as text/plain
-- `func() []byte` → write as binary
-- `func() map[string]any` → write as JSON
-- `func() *MyStruct` → write as JSON
-- `func() error` → if error, call exception filter
-- `func()` (no return) → write empty 200 OK
+A handler returns nothing, one value, or `(status, value)`. With two or more results,
+`setStatusCode` applies the first one when it is an `int` (or an `any` holding one) with a known
+status text; the second is written; a third is ignored. `returnHTTP(c, v)` by kind:
 
-**Return Value Processing**:
-```
-returnValues := reflect.ValueOf(f).Call(args)
+| Kind | Response |
+|---|---|
+| `Map`, `Slice`, `Struct`, `Array`, `Pointer` | `c.JSON(v)` (pointee JSON; nil pointer → `null`) |
+| `Interface` | holding a string → `c.Text`; otherwise `c.JSON` (numbers and bools stay `application/json`; nil → `null`) |
+| `String` | `c.Text` |
+| bool, integers, floats (`'g'`), complex | `c.Text` with `strconv` formatting |
+| `Func` | `c.Text(type string)` |
+| `Chan`, `Uintptr`, `UnsafePointer`, invalid `Value` | nothing |
 
-if len(returnValues) > 0 {
-    retVal := returnValues[0].Interface()
-    
-    if err, ok := retVal.(error); ok {
-        // Handle as exception
-        panic(err)
-    }
-    
-    // Otherwise, write to response
-    c.JSON(retVal)
-}
-```
+Interceptors call `returnHTTP(c, reflect.ValueOf(data))`, so their data is written by its dynamic
+kind. `SERVE_…` routes serve the returned path instead.
 
 ### 5.2 WebSocket Handlers
 
-**Return Types**:
-- Similar to HTTP, but response sent via WebSocket message
-- No HTTP status code (WS uses close codes instead)
+The last result is sent as the `event` reply's `Message` (JSON-encoded by the connection).
 
 ---
 
 ## 6. Dependency Resolution Performance
 
-### 6.1 Benchmarks
-
-**Typical Costs** (from code comments):
-- Per-injection reflection: 5-10 μs
-- Context pooling allocation: ~500 ns
-- Route matching: O(1) for exact, O(log n) for wildcard
-- Full request (simple handler, no I/O): 1-2 ms
-
-### 6.2 Optimization: getFnArgsByType() Caching
-
-**Optimization**: Handler argument types are cached to avoid repeated reflection
-
-**Pseudo-Code**:
-```
-var handlerArgTypeCache = make(map[string][]string)
-
-func getFnArgsByType(fType reflect.Type, ...) {
-    cacheKey := fType.String()
-    
-    if cachedArgTypes, ok := handlerArgTypeCache[cacheKey]; ok {
-        // Use cached arg types
-        for _, argType := range cachedArgTypes {
-            // Process cached types
-        }
-    } else {
-        // Reflect on handler for first time
-        argTypes := []string{}
-        for i := 0; i < fType.NumIn(); i++ {
-            argType := fType.In(i).String()
-            argTypes = append(argTypes, argType)
-        }
-        handlerArgTypeCache[cacheKey] = argTypes
-    }
-}
-```
-
-**Impact**: Reduces reflection cost on repeated calls to same handler
+Numbers: `core/README.md` › Benchmarks and design 0006 › Performance. A call costs one
+`reflect.Value.Call` (about 200 ns and one allocation for the result slice, plus one per result that
+is not pointer-shaped) plus whatever the accessors and pipes do. The plan removed per-request type
+walking, key building, map lookups, argument-list construction and pipe prototype rebuilding.
+A typed call without reflection needs `unsafe` or an opt-in method-value API (design 0006 Q1): not
+approved.
 
 ---
 
@@ -401,23 +222,29 @@ func getFnArgsByType(fType reflect.Type, ...) {
 
 ### 8.1 Parameter Type Matching
 
-**GOTCHA**: Provider type must match parameter type exactly
+**GOTCHA**: Providers are injected into controller (and pipe) **fields**, not handler parameters.
+A provider type as a handler parameter is an unknown type and panics at `Create()`. Field types
+must match the provider type exactly:
 
 ```go
 // Provider registered as
 type UserService struct { ... }
 func (u UserService) NewProvider() Provider { return u }
 
-// Handler expects
-func (c UserController) READ(us *UserService) { // WRONG!
-    // Parameter is *UserService, provider is UserService
-    // Type keys don't match: "*main.UserService" vs "main.UserService"
-    // Result: panic("dependency injection: can't resolve")
+// WRONG: a provider as a handler parameter
+func (c UserController) READ(us UserService) {}
+// Result at Create(): "dependency injection: can't resolve dependencies of the 'func(main.UserService)' ..."
+
+// WRONG: field type differs from the provider type
+type UserController struct {
+    common.HTTP
+    UserService *UserService // provider is UserService: unresolved
 }
 
-// Correct:
-func (c UserController) READ(us UserService) { // RIGHT!
-    // Both are UserService, types match
+// RIGHT: same type, as a field
+type UserController struct {
+    common.HTTP
+    UserService UserService
 }
 ```
 
