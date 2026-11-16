@@ -42,5 +42,7 @@ func main() {
 			Build(),
 	)
 
-	app.Logger.Fatal("AppError", "error", app.Listen(confs.ENV.Port))
+	if err := app.Listen(confs.ENV.Port, nil); err != nil {
+		app.Logger.Fatal("AppError", "error", err)
+	}
 }

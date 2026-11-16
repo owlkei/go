@@ -8,11 +8,18 @@
   - [`App`](#app)
     - [New](#new)
     - [Create](#create)
-    - [Listen and Stop](#listen-and-stop)
     - [ServeHTTP](#servehttp)
     - [Get](#get)
     - [Configuration methods](#configuration-methods)
-    - [Constants](#constants)
+  - [Server](#server)
+    - [Listen, ListenTLS and Serve](#listen-listentls-and-serve)
+    - [ServerOptions](#serveroptions)
+    - [Startup errors and logs](#startup-errors-and-logs)
+    - [Protocols](#protocols)
+    - [Graceful shutdown and Stop](#graceful-shutdown-and-stop)
+    - [Timeouts and limits](#timeouts-and-limits)
+    - [Deploying](#deploying)
+    - [Advanced: your own server](#advanced-your-own-server)
   - [Request lifecycle](#request-lifecycle)
     - [Lifecycle rules](#lifecycle-rules)
   - [Errors in middleware](#errors-in-middleware)
@@ -94,7 +101,7 @@ func main() {
 			Providers(GreetingService{}).
 			Build(),
 	)
-	if err := app.Listen(3000); err != nil {
+	if err := app.Listen(3000, nil); err != nil {
 		panic(err)
 	}
 }
@@ -104,11 +111,11 @@ func main() {
 
 ## `App`
 
-`App` holds the module tree, the HTTP router, the optional WebSocket server and the trace event bus. Configure it with the methods below, wire it once with `Create`, then serve with `Listen` (or mount it as an `http.Handler`).
+`App` holds the module tree, the HTTP router, the optional WebSocket server and the trace event bus. Configure it with the methods below, wire it once with `Create`, then serve with `Listen`, `ListenTLS` or `Serve` (see [Server](#server)).
 
 ### New
 
-Returns an `App` with the default request body limit (`DefaultMaxRequestBodyBytes`), the built-in exception filters and a `common.Publisher` backed by an in-memory broker.
+Returns an `App` with the default request body limit (10 MiB), the built-in exception filters and a `common.Publisher` backed by an in-memory broker.
 
 #### Returns
 - 1st value: `*App`
@@ -128,13 +135,9 @@ Builds the module tree from the root module, creates the providers and controlle
 app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
 ```
 
-### Listen and Stop
-
-`Listen(port int) error` logs the modules, routes and WebSocket events, then serves on `:<port>` with the default server timeouts (see [Constants](#constants)). On `SIGINT` or `SIGTERM` it runs the modules' `OnShutdown` hooks and shuts the server down gracefully within 30 seconds. `Stop()` runs the `OnShutdown` hooks once.
-
 ### ServeHTTP
 
-`ServeHTTP(w http.ResponseWriter, r *http.Request)` serves one request: it caps a request body at `DefaultMaxRequestBodyBytes` (a request without a body, `nil` or `http.NoBody`, is not wrapped), takes a pooled context, sets the `X-Request-Id` header, runs the [request lifecycle](#request-lifecycle) and, with a trace listener, emits the `complete` event, whose `Code` is the status actually written (`200` when nothing was written). Requests to the WebSocket path are upgraded when `EnableWS` was called.
+`ServeHTTP(w http.ResponseWriter, r *http.Request)` serves one request: it caps a request body at the app's limit (10 MiB, or the `MaxRequestBodyBytes` of the serving call; a request without a body, `nil` or `http.NoBody`, is not wrapped), takes a pooled context, sets the `X-Request-Id` header, runs the [request lifecycle](#request-lifecycle) and, with a trace listener, emits the `complete` event, whose `Code` is the status actually written (`200` when nothing was written). Requests to the WebSocket path are upgraded when `EnableWS` was called.
 
 ### Get
 
@@ -161,16 +164,135 @@ Each returns the `App` so calls can be chained. Call them before `Create`.
 | `UseLogger(common.Logger)` | A custom logger |
 | `UseLogOptions(*log.LogOptions)` | Options of the built-in logger |
 
-### Constants
+## Server
 
-| Constant | Value |
+### Listen, ListenTLS and Serve
+
+```go
+func (app *App) Listen(port int, opts *ServerOptions) error
+func (app *App) ListenTLS(port int, certFile, keyFile string, opts *ServerOptions) error
+func (app *App) Serve(l net.Listener, opts *ServerOptions) error
+```
+
+Call one of them once, after `Create`. Each one blocks until the server has stopped. `nil` options give the safe defaults.
+
+- `Listen` listens on TCP `:<port>` (every interface) and serves HTTP/1.1.
+- `ListenTLS` does the same with TLS, and serves HTTP/2 as well. Pass a certificate and key file, or two empty names and a `TLSConfig` that supplies certificates (`Certificates`, `GetCertificate` or `GetConfigForClient`).
+- `Serve` serves on a listener you made: a loopback or Unix socket address, systemd socket activation, or `127.0.0.1:0` in a test. It serves TLS when `TLSConfig` is set, plain HTTP otherwise.
+
+```go
+if err := app.Listen(8080, nil); err != nil {
+	app.Logger.Fatal("AppError", "error", err)
+}
+
+err := app.ListenTLS(443, "cert.pem", "key.pem", nil)
+
+err := app.ListenTLS(443, "", "", &core.ServerOptions{TLSConfig: manager.TLSConfig()})
+
+l, _ := net.Listen("tcp", "127.0.0.1:8080")
+err := app.Serve(l, nil)
+```
+
+A server that only listens on loopback uses `Serve` with a listener on `127.0.0.1`: `Listen` always binds every interface.
+
+### ServerOptions
+
+| Field | Default | Effect |
+|---|---|---|
+| `ShutdownTimeout time.Duration` | `0` = 30 s (negative too) | How long running requests may finish during a shutdown |
+| `MaxRequestBodyBytes int64` | `0` = 10 MiB | Request body cap; a negative value turns the cap off; a body over the cap answers 413 (declared or chunked) |
+| `TLSConfig *tls.Config` | `nil` | `ListenTLS` and `Serve`: the TLS configuration; it is cloned, never modified |
+| `H2C bool` | `false` | `Listen` and `Serve` without TLS: also accept unencrypted HTTP/2 |
+
+The options are read once, when the call starts: changing the struct later has no effect.
+
+### Startup errors and logs
+
+The serving calls return an error, and never fall back to plain HTTP, when:
+
+| Case | Error |
 |---|---|
-| `DefaultMaxRequestBodyBytes` | `10 << 20` (10 MB) |
-| `DefaultMaxHeaderBytes` | `1 << 20` (1 MB) |
-| `DefaultReadHeaderTimeout` | `2 * time.Second` |
-| `DefaultReadTimeout` | `5 * time.Second` |
-| `DefaultWriteTimeout` | `15 * time.Second` |
-| `DefaultIdleTimeout` | `60 * time.Second` |
+| Called before `Create` | `core: Create must be called before serving` |
+| The app is already serving | `core: app is already serving` |
+| The app has stopped | `core: app is stopped` |
+| `Listen` with a `TLSConfig` | `core: TLSConfig is set: use ListenTLS, or Serve with your listener` |
+| `ListenTLS`, or `Serve` with a `TLSConfig`, with `H2C` | `core: H2C applies to connections without TLS` |
+| No certificate source, or only one of the file names | `core: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates` |
+| The certificate pair can't be loaded | `core: load TLS certificate: <err>` |
+| The port can't be bound (in use, out of range) | `core: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
+
+In these cases nothing is logged, no hook runs, a listener passed to `Serve` is left open, and the port stays free. After a bind error the app can be served again.
+
+Once the address is bound, the app logs through its logger: one `InstanceLoader` line per named module, one `RouteExplorer` line per route (sorted), one `WebSocketEvent` line per event, then `ServerListening` with `address` (the bound address: `Listen(0, nil)` logs the port the system chose), `tls` and `protocols`. The colored access-URL banner is printed only when stdout is a terminal. Errors of the server itself (a failed TLS handshake, for example) are logged as `Logger.Warn("HTTPServer", "message", <line>)`.
+
+### Protocols
+
+| Server | Protocols |
+|---|---|
+| `Listen`, `Serve` without TLS | HTTP/1.1 only; an HTTP/2 prior-knowledge client is not served as HTTP/2 |
+| `ListenTLS`, `Serve` with TLS | HTTP/1.1 and HTTP/2, chosen by ALPN. A `TLSConfig.NextProtos` without `h2` turns HTTP/2 off |
+| `H2C: true` | HTTP/1.1 and unencrypted HTTP/2 with prior knowledge on the same port. An `Upgrade: h2c` request is answered as HTTP/1.1 |
+
+A handler sees `r.Proto == "HTTP/2.0"` for an HTTP/2 client. WebSocket needs HTTP/1.1: `wss://` clients negotiate it by ALPN, so `EnableWS` works on a TLS server, and an upgrade sent over HTTP/2 is refused. Use `H2C` only on a hop you trust, such as behind a TLS-terminating proxy: never expose an h2c port to the internet.
+
+### Graceful shutdown and Stop
+
+A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `ShutdownSignal` (with `signal`) or `Shutdown`:
+
+1. The app stops intercepting `SIGINT` and `SIGTERM`: a second signal ends the process the default way, even during the drain or a hook.
+2. The listener closes (new connections are refused) and idle keep-alive connections close at once.
+3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
+4. The modules' `OnShutdown` hooks run, after the last request returned, once each, root module first. A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
+5. The serving call returns `nil`, `core: shutdown timed out after <timeout>` when step 3 timed out, or `core: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
+
+After that the app is stopped: a new serving call returns `core: app is stopped`, while `ServeHTTP` still answers.
+
+`Stop()` is safe from any goroutine and any number of times. On a serving app it runs the shutdown above and returns when the hooks have finished. On an app that is not serving, it runs the hooks once and marks the app stopped. The hooks run once per app: later calls wait for the first one, and a call from inside a hook returns at once. Called from a request handler, `Stop()` waits for that same request, so call it as `go app.Stop()` there.
+
+WebSocket connections are not drained: they end when the process exits.
+
+### Timeouts and limits
+
+Every server gets these limits. They are not options.
+
+| Setting | Value | Why |
+|---|---|---|
+| `ReadHeaderTimeout` | 5 s | Disconnects a client that never finishes its headers (slowloris) |
+| `ReadTimeout` (headers and body) | 30 s | Disconnects a client that stalls in the body; 10 MiB in 30 s needs about 2.7 Mbit/s |
+| `WriteTimeout` | 30 s | Disconnects a client that doesn't read the response |
+| `IdleTimeout` (keep-alive) | 75 s | Longer than the 60 s idle timeout of common proxies, so a proxy never reuses a connection the server just closed |
+| `MaxHeaderBytes` | 64 KiB | Headers over the limit answer 431 |
+| Request body | 10 MiB | `MaxRequestBodyBytes` |
+
+A handler that needs longer (a large upload or download, server-sent events) extends its own deadline:
+
+```go
+func (instance FileController) READ_export(c *ctx.HTTPContext) {
+	_ = http.NewResponseController(c.ResponseWriter).SetWriteDeadline(time.Time{})
+}
+```
+
+A panic in a handler answers the fixed 500 and the server keeps serving.
+
+### Deploying
+
+- Run behind a TLS-terminating proxy with `Listen` (add `H2C: true` when the proxy speaks h2c), or serve HTTPS yourself with `ListenTLS`. For certificate rotation without a restart, use `TLSConfig.GetCertificate`; `autocert.Manager.TLSConfig()` fits `TLSConfig`.
+- Set the proxy's idle timeout below 75 s.
+- On Kubernetes, add a `preStop` sleep so the endpoint is removed before `SIGTERM` arrives.
+
+### Advanced: your own server
+
+`App` is an `http.Handler`, so you can run it in a server you configure yourself: other timeouts, several listeners, HTTP/3, or mounting under another mux.
+
+```go
+server := &http.Server{Addr: ":8080", Handler: app, ReadHeaderTimeout: 10 * time.Second}
+```
+
+Caveats:
+
+- No listener, timeouts or signal handling come from Ginject: set them on your server.
+- The body cap is 10 MiB.
+- No graceful shutdown: call `server.Shutdown`, then `app.Stop()` to run the `OnShutdown` hooks.
 
 ## Request lifecycle
 
@@ -379,6 +501,7 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 - **No closure without middleware.** A route without middleware gets a shared no-op `c.Next`; with middlewares, one closure and one flag per request, passed to every `Use` (a closure kept on the pooled context would let a leaked `next` continue another request). Guards and interceptors are called directly, and a refused guard reaches the filters without a panic.
 - **One listener check, one recover.** `HasListeners` is asked once per request; `handleRequest` holds the request's only `defer` / `recover`, and `ServeHTTP` releases the context in straight-line code.
 - **Fixed bodies.** The 404, 405, 410 and fixed 500 bodies are byte slices built once; a miss tries only the methods that have routes for the `Allow` header, which comes from a table built once.
+- **One atomic load for the body cap.** The cap is an `atomic.Int64` written when a serving call starts and loaded only for a request with a body (about 1 ns, no allocation). The rest of the server code runs once per start or stop.
 - **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ParamValues`, whose capacity `Reset` keeps.
 - **Tracking writer in the pooled exchange.** The writer lives next to the context in the pool, so it costs no allocation.
 - **The cost of an unexpected panic.** A non-exception panic captures up to 4 KiB of stack for its log line: about 25 µs and 7.6 KB per request, against about 1.6 µs for an exception.

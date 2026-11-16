@@ -114,7 +114,7 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
 - **Provider**: any struct implementing `NewProvider() Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
 - **Controller**: any struct implementing `NewController() Controller`. Must embed `common.HTTP` (HTTP) and/or `common.WS` (WebSocket) to register routes. There is no `common.REST`.
 - **Module**: built with `core.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()`. Modules compose the app tree. Set `IsGlobal: true` to make providers available everywhere.
-- **App**: created via `core.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port)`.
+- **App**: created via `core.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `core.ServerOptions`, `core/README.md` › Server).
 
 ### REST Route Convention
 

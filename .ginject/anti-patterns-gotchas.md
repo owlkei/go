@@ -729,11 +729,11 @@ func (c UploadController) CREATE(body ctx.Body) any {
 }
 ```
 
-**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at a fixed `DefaultMaxRequestBodyBytes` (10MB), set once in `core.App.New()`. **There is no public setter** — do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over 10MB causes `ctx.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
+**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless the serving call sets `ServerOptions.MaxRequestBodyBytes` (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `ctx.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
 
-**RIGHT**: Document the 10MB ceiling to callers of the API; if a larger limit is genuinely needed, it currently requires modifying `core/app.go`'s `maxRequestBodyBytes` field handling — there's no config-time API for it yet.
+**RIGHT**: Raise the cap for the whole app with `app.Listen(port, &core.ServerOptions{MaxRequestBodyBytes: 50 << 20})`; there is no per-route cap.
 
-**Rule**: Any handler that accepts uploads must account for the fixed 10MB cap and the 413 it produces; don't assume a configurable or unlimited body size.
+**Rule**: Any handler that accepts uploads must account for the app-wide cap and the 413 it produces; don't assume an unlimited body size.
 
 ## 12. CORS Configuration Gotchas
 

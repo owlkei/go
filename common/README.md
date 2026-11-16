@@ -121,7 +121,7 @@ func main() {
 			Controllers(UserController{}).
 			Build(),
 	)
-	app.Listen(8080)
+	app.Listen(8080, nil)
 }
 ```
 

@@ -145,7 +145,7 @@ runs the route's exception filters (`HTTP.catch`). `invoke` never recovers; on W
 
 ### 4.2 No Per-Request Timeout Check
 
-There is no deadline check before handler invocation — `ctx.HTTPContext.IsDeadlineExceeded()` does not exist (verified absent from `ctx/http_context.go`), and no code in `core/fn_plan.go`'s handler-invocation path references it or `exception.RequestTimeoutException` at all. A handler runs to completion regardless of how long it takes; only the underlying `http.Server`'s connection-level timeouts (`ReadTimeout`/`WriteTimeout`, set once in `core.App.Listen()`) provide any time bound, and those act on the connection, not the handler goroutine.
+There is no deadline check before handler invocation — `ctx.HTTPContext.IsDeadlineExceeded()` does not exist (verified absent from `ctx/http_context.go`), and no code in `core/fn_plan.go`'s handler-invocation path references it or `exception.RequestTimeoutException` at all. A handler runs to completion regardless of how long it takes; only the underlying `http.Server`'s connection-level timeouts (`ReadTimeout`/`WriteTimeout`, set once by the serving call, `core/server.go`) provide any time bound, and those act on the connection, not the handler goroutine.
 
 ### 4.3 Common Handler Errors
 

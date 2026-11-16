@@ -180,7 +180,7 @@ func newBodyLimitApp(t *testing.T, limit int64) *App {
 	resetModuleGlobals()
 
 	app := New()
-	app.maxRequestBodyBytes = limit
+	app.maxRequestBodyBytes.Store(limit)
 	app.Create(ModuleBuilder().Controllers(bodyLimitController{}).Build())
 
 	return app
@@ -190,28 +190,8 @@ func TestNew_AppliesDefaultBodyLimit(t *testing.T) {
 	resetModuleGlobals()
 
 	app := New()
-	if app.maxRequestBodyBytes != DefaultMaxRequestBodyBytes {
-		t.Error(test.DiffMessage(app.maxRequestBodyBytes, DefaultMaxRequestBodyBytes, "a new app must cap request bodies by default, not read them unbounded"))
-	}
-}
-
-func TestDefaultHTTPServerLimits_Values(t *testing.T) {
-	cases := []struct {
-		name string
-		got  any
-		want any
-	}{
-		{"DefaultMaxHeaderBytes", DefaultMaxHeaderBytes, 1 << 20},
-		{"DefaultReadHeaderTimeout", DefaultReadHeaderTimeout, 2 * time.Second},
-		{"DefaultReadTimeout", DefaultReadTimeout, 5 * time.Second},
-		{"DefaultWriteTimeout", DefaultWriteTimeout, 15 * time.Second},
-		{"DefaultIdleTimeout", DefaultIdleTimeout, 60 * time.Second},
-	}
-
-	for _, c := range cases {
-		if c.got != c.want {
-			t.Error(test.DiffMessage(c.got, c.want, c.name+" must keep its documented value; Listen() relies on it as the http.Server default"))
-		}
+	if app.maxRequestBodyBytes.Load() != 10<<20 {
+		t.Error(test.DiffMessage(app.maxRequestBodyBytes.Load(), int64(10<<20), "O3: a new app must cap request bodies at 10 MiB, not read them unbounded"))
 	}
 }
 
@@ -247,8 +227,8 @@ func TestServeHTTPBodyWithinLimit_Succeeds(t *testing.T) {
 	}
 }
 
-func TestServeHTTPBodyLimit_ZeroDisablesCap(t *testing.T) {
-	app := newBodyLimitApp(t, 0)
+func TestServeHTTPBodyLimit_NegativeDisablesCap(t *testing.T) {
+	app := newBodyLimitApp(t, -1)
 
 	payload := `{"k":"` + strings.Repeat("a", 4096) + `"}`
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
@@ -1073,9 +1053,7 @@ func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
 	app.UseLogger(logger)
 	app.Create(testListenModule())
 
-	if err := app.Listen(-1); err == nil {
-		t.Fatal(test.DiffMessage(nil, "error", "Listen(-1) should fail immediately with an invalid port"))
-	}
+	serveOnce(t, app)
 
 	call := logger.findCall("InstanceLoader")
 	if call == nil {
@@ -1096,9 +1074,7 @@ func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
 	m.Name = ""
 	app.Create(m)
 
-	if err := app.Listen(-1); err == nil {
-		t.Fatal(test.DiffMessage(nil, "error", "Listen(-1) should fail immediately with an invalid port"))
-	}
+	serveOnce(t, app)
 
 	if call := logger.findCall("InstanceLoader"); call != nil {
 		t.Error(test.DiffMessage(call.msg, "<no InstanceLoader log>", "module log should be skipped when Name is unresolved"))
@@ -1119,9 +1095,7 @@ func TestListen_LogsNestedModuleNamesRecursively(t *testing.T) {
 	app.UseLogger(logger)
 	app.Create(testListenParentModule())
 
-	if err := app.Listen(-1); err == nil {
-		t.Fatal(test.DiffMessage(nil, "error", "Listen(-1) should fail immediately with an invalid port"))
-	}
+	serveOnce(t, app)
 
 	calls := logger.findAllCalls("InstanceLoader")
 	gotNames := make(map[string]bool, len(calls))

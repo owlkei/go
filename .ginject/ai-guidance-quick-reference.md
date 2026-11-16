@@ -208,7 +208,7 @@ Error Scenario
   │
   ├─ "Request timeout (handler takes too long)"
   │   ├─ NOT built in — there is no httpCtx.SetDeadline()/IsDeadlineExceeded(), no automatic 408
-  │   ├─ Only server-level ReadTimeout/WriteTimeout exist (fixed, core.App.Listen()), unrelated to handler duration
+  │   ├─ Only server-level ReadTimeout/WriteTimeout exist (fixed, set by the serving call), unrelated to handler duration
   │   └─ To bound a slow handler yourself: wrap the slow call in your own context.WithTimeout and panic(exception.RequestTimeoutException(...)) on ctx.Err()
   │
   ├─ "Internal server error (unexpected panic)"
@@ -340,8 +340,8 @@ Pattern Question
   │       Fix: always wrap as ^...$ , e.g. regexp.MustCompile(`^https://.*\.trusted\.com$`)
   │
   └─ "Should I assume request bodies are unlimited or add app.SetMaxBodySize(...)?"
-      └─ NO - fixed 10MB cap (DefaultMaxRequestBodyBytes), no such setter exists
-          Result: SetMaxBodySize won't compile; bodies over 10MB panic 413 from ctx.Body()
+      └─ NO - 10 MiB cap by default; change it with app.Listen(port, &core.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)
+          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from ctx.Body()
 ```
 
 ---

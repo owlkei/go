@@ -65,14 +65,16 @@ Sequential phases (NO CONCURRENCY):
 
 **Key Point**: All initialization is SEQUENTIAL within `Create()`, NOT concurrent.
 
-### Phase 3: Server Start (`app.Listen(port)`)
+### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`)
 
 ```
-app.Listen(port)
+app.Listen(port, nil)
+  ├─ Bind the address (a bind error returns here: nothing logged, no hook)
   ├─ Log module initialization status
   ├─ Log HTTP routes
   ├─ Log WS events (if enabled)
-  └─ Start HTTP server (IMMEDIATELY ACCEPTING CONNECTIONS)
+  ├─ Log ServerListening (address, tls, protocols)
+  └─ Serve (IMMEDIATELY ACCEPTING CONNECTIONS)
 ```
 
 **Key Point**: HTTP server accepts connections IMMEDIATELY after this call.
@@ -180,7 +182,7 @@ moduleTree := core.ModuleBuilder().
 
 ### Shutdown: `OnShutdown` (the counterpart this doc's title implies, documented here for completeness)
 
-`core.Module.OnShutdown func()` fires on SIGINT/SIGTERM (via `serveWithGracefulShutdown`) or a direct `app.Stop()` call — both funnel into `callOnShutdown()`, guarded by `app.shutdownOnce` so it runs exactly once regardless of which path triggered it (`core/app.go`).
+`core.Module.OnShutdown func()` fires on SIGINT/SIGTERM or `app.Stop()` while serving, **after** the server has drained its running requests (or after `ShutdownTimeout`), or on a direct `app.Stop()` of an app that is not serving — all paths funnel into `runShutdownHooks()`, guarded by `app.shutdownOnce` so it runs exactly once (`core/server.go`). A hook that panics is logged as `OnShutdownPanic` and the others still run.
 
 **Common misconception to avoid generating**: `OnShutdown` is called in the **same** module-tree order as `OnReady` — a single pre-order walk of `collectModules()`. It is **NOT** reversed/LIFO relative to `OnReady`, even though that would be the intuitive symmetric-teardown assumption.
 
@@ -289,7 +291,7 @@ if err := verifyServices(); err != nil {
 }
 
 // Now start listening
-app.Listen(8080)
+app.Listen(8080, nil)
 ```
 
 ---
@@ -319,12 +321,11 @@ func (m *Module) NewModule() *Module {
 }
 ```
 
-**File**: `core/app.go:727-783`
+**File**: `core/server.go`
 ```go
-func (app *App) Listen(port int) error {
-    // ... logging ...
-    server := &http.Server{...}
-    return app.serveWithGracefulShutdown(server)  // Starts listening
+func (app *App) Listen(port int, opts *ServerOptions) error {
+    // ... options, bind ...
+    return app.serve(l, o)  // logs, serves, shuts down on a signal or Stop
 }
 ```
 

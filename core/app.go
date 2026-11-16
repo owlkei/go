@@ -1,16 +1,11 @@
 package core
 
 import (
-	"context"
-	"fmt"
-	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"reflect"
-	"sort"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"github.com/dangduoc08/ginject/accesslog"
@@ -19,10 +14,8 @@ import (
 	"github.com/dangduoc08/ginject/devtool"
 	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/memorybroker"
-	"github.com/dangduoc08/ginject/routing"
 	"github.com/dangduoc08/ginject/trace"
 	"github.com/dangduoc08/ginject/versioning"
 	"golang.org/x/net/websocket"
@@ -31,17 +24,6 @@ import (
 var injectableInterfaces = []string{
 	"github.com/dangduoc08/ginject/common/common.Logger",
 }
-
-const (
-	DefaultMaxRequestBodyBytes = 10 << 20 // 10 MB
-
-	DefaultMaxHeaderBytes = 1 << 20 // 1 MB
-
-	DefaultReadHeaderTimeout = 2 * time.Second
-	DefaultReadTimeout       = 5 * time.Second
-	DefaultWriteTimeout      = 15 * time.Second
-	DefaultIdleTimeout       = 60 * time.Second
-)
 
 type App struct {
 	http      *HTTP
@@ -73,11 +55,18 @@ type App struct {
 	Logger     common.Logger
 	LogOptions *log.LogOptions
 
-	maxRequestBodyBytes int64
+	maxRequestBodyBytes atomic.Int64
+	serverDefaults      serverDefaults
+	notifySignals       func() (<-chan os.Signal, func())
 
-	readyOnce    sync.Once
-	shutdownOnce sync.Once
-	shutdownChan chan struct{}
+	readyOnce sync.Once
+
+	serveMu        sync.Mutex
+	serveState     serveState
+	stopRequest    chan struct{}
+	isRunningHooks bool
+	shutdownOnce   sync.Once
+	shutdownDone   chan struct{}
 }
 
 func New() *App {
@@ -96,9 +85,11 @@ func New() *App {
 				return ctx.NewWSContext()
 			},
 		},
-		shutdownChan:        make(chan struct{}),
-		maxRequestBodyBytes: DefaultMaxRequestBodyBytes,
+		serverDefaults: newServerDefaults(),
+		notifySignals:  notifyShutdownSignals,
+		shutdownDone:   make(chan struct{}),
 	}
+	app.maxRequestBodyBytes.Store(defaultMaxRequestBodyBytes)
 
 	globalInterfaceByKey.Store(publisherKey, common.Publisher(
 		newPublisher(app.broker),
@@ -110,8 +101,10 @@ func New() *App {
 }
 
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Body != nil && r.Body != http.NoBody && app.maxRequestBodyBytes > 0 {
-		r.Body = http.MaxBytesReader(w, r.Body, app.maxRequestBodyBytes)
+	if r.Body != nil && r.Body != http.NoBody {
+		if limit := app.maxRequestBodyBytes.Load(); limit > 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+		}
 	}
 
 	ex := app.ctxPool.Get().(*httpExchange)
@@ -555,111 +548,6 @@ func (app *App) Get(p Provider) any {
 	return app.injectedProviders[genProviderKey(p)]
 }
 
-func (app *App) Listen(port int) error {
-	for _, m := range app.module.collectModules() {
-		if m.Name != "" {
-			app.Logger.Info("InstanceLoader", "module", fmt.Sprintf("%v initialized", m.Name))
-		}
-	}
-
-	var routeArr []string
-	for _, h := range app.module.HTTPMainHandlers {
-		routeArr = append(routeArr, h.Pattern)
-	}
-	sort.Strings(routeArr)
-
-	for _, routeName := range routeArr {
-		m, r, v := routing.PatternToMethodRouteVersion(routeName)
-		if r == "" {
-			r = "/"
-		}
-		args := []any{"method", m, "route", r}
-		if v != "" {
-			args = append(args, "version", v)
-		}
-		app.Logger.Info(
-			"RouteExplorer",
-			args...,
-		)
-	}
-
-	if app.isWSEnabled {
-
-		for _, eventName := range app.module.WSMainHandlers {
-			app.Logger.Info(
-				"WebSocketEvent",
-				"event", eventName.EventName,
-			)
-		}
-	}
-
-	addr := fmt.Sprintf(":%v", port)
-
-	server := &http.Server{
-		Addr:    addr,
-		Handler: app,
-
-		ReadHeaderTimeout: DefaultReadHeaderTimeout,
-		ReadTimeout:       DefaultReadTimeout,
-		WriteTimeout:      DefaultWriteTimeout,
-		IdleTimeout:       DefaultIdleTimeout,
-
-		MaxHeaderBytes: DefaultMaxHeaderBytes,
-	}
-
-	logBoostrap(port)
-
-	return app.serveWithGracefulShutdown(server)
-}
-
-func logBoostrap(port int) {
-	accessURLs := color.FmtBold("%s", color.FmtBGYellow(" GG! Here Are Your Access URLs: ")) + "\n"
-	divider := color.FmtDim("--------------------------------------------") + "\n"
-	host := color.FmtBold("%s", color.FmtWhite("Localhost: ")) + color.FmtMagenta("%v:%v", "localhost", port) + "\n"
-	lan := color.FmtBold("%s", color.FmtWhite("      LAN: ")) + color.FmtMagenta("%v:%v", getLocalIP(), port) + "\n"
-	close := color.FmtItalic("%s", color.FmtGreen("Press CTRL+C to stop")) + "\n"
-
-	_, _ = fmt.Fprint(os.Stdout, "\n"+accessURLs+divider+host+lan+divider+close)
-}
-
-func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
-	}
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-	return ""
-}
-
-func (app *App) serveWithGracefulShutdown(server *http.Server) error {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	httpListernErrChan := make(chan error, 1)
-	go func() {
-		httpListernErrChan <- server.ListenAndServe()
-	}()
-
-	select {
-	case err := <-httpListernErrChan:
-		return err
-	case sig := <-sigChan:
-		app.Logger.Info("ShutdownSignal", "signal", sig.String())
-		app.callOnShutdown()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		return server.Shutdown(ctx)
-	}
-}
-
 func (app *App) initDevtool() {
 	if !app.isDevtoolEnabled {
 		return
@@ -685,19 +573,4 @@ func (app *App) callOnReady() {
 			}
 		}
 	})
-}
-
-func (app *App) callOnShutdown() {
-	app.shutdownOnce.Do(func() {
-		for _, m := range app.module.collectModules() {
-			if m.OnShutdown != nil {
-				m.OnShutdown()
-			}
-		}
-		close(app.shutdownChan)
-	})
-}
-
-func (app *App) Stop() {
-	app.callOnShutdown()
 }

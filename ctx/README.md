@@ -87,7 +87,7 @@ func main() {
 			Controllers(SearchController{}).
 			Build(),
 	)
-	if err := app.Listen(3000); err != nil {
+	if err := app.Listen(3000, nil); err != nil {
 		panic(err)
 	}
 }

@@ -304,7 +304,7 @@ type HTTPContext struct {
 }
 ```
 
-**No `Deadline` field, `SetDeadline()`, or `IsDeadlineExceeded()` method exist on `HTTPContext`** — verified absent from `ctx/http_context.go`. Do not generate code that calls them. There is no per-request deadline API in this framework; the only timeouts are server-level (`http.Server.ReadTimeout`/`WriteTimeout`/etc., fixed in `core.App.Listen()` — see invariant #8 below).
+**No `Deadline` field, `SetDeadline()`, or `IsDeadlineExceeded()` method exist on `HTTPContext`** — verified absent from `ctx/http_context.go`. Do not generate code that calls them. There is no per-request deadline API in this framework; the only timeouts are server-level (`http.Server.ReadTimeout`/`WriteTimeout`/etc., fixed by the serving call, `core/server.go` — see invariant #8 below).
 
 **Lifecycle**:
 1. Allocated from pool via `app.ctxPool.Get()`
@@ -560,8 +560,8 @@ type ExceptionFilterable any // matched by its method:
    - Global state is read-only after app.Create()
 
 8. **Request Body Size**:
-   - Every request body is capped at `DefaultMaxRequestBodyBytes` (10MB) by default, enforced via `http.MaxBytesReader` in `App.ServeHTTP` (core/app.go)
-   - There is currently NO public setter to change this at runtime — the field (`app.maxRequestBodyBytes`) is only set at construction
+   - Every request body is capped at 10 MiB by default, enforced via `http.MaxBytesReader` in `App.ServeHTTP` (core/app.go)
+   - The only way to change it is `ServerOptions.MaxRequestBodyBytes` of the serving call (negative = no cap); the `atomic.Int64` field `app.maxRequestBodyBytes` is written when that call starts
    - Exceeding the cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw panic (ctx/http_body.go)
 
 9. **Cross-Cutting Concern Instances** (Guard/Middleware/Interceptor/ExceptionFilter):

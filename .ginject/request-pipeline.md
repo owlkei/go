@@ -467,13 +467,13 @@ the built-in filter answers 403 {"code":403,"error":"Forbidden","message":"Acces
 
 ### 7.3 Timeout Handling
 
-**There is no per-request deadline API.** `ctx.HTTPContext` has no `SetDeadline`/`IsDeadlineExceeded`/`Deadline` field (verified absent from `ctx/http_context.go`) — do not generate handler code that calls them. The only timeouts are set once, server-wide, in `core.App.Listen()`:
+**There is no per-request deadline API.** `ctx.HTTPContext` has no `SetDeadline`/`IsDeadlineExceeded`/`Deadline` field (verified absent from `ctx/http_context.go`) — do not generate handler code that calls them. The only timeouts are set once, server-wide, by the serving call (`Listen` / `ListenTLS` / `Serve`, `core/server.go`), not configurable:
 
 ```
-DefaultReadHeaderTimeout = 2s
-DefaultReadTimeout       = 5s
-DefaultWriteTimeout      = 15s
-DefaultIdleTimeout       = 60s
+ReadHeaderTimeout = 5s
+ReadTimeout       = 30s
+WriteTimeout      = 30s
+IdleTimeout       = 75s
 ```
 
 These apply to the underlying `http.Server` connection, not to individual handler execution — there's no built-in way to cap how long a single handler is allowed to run. If a handler needs a deadline (e.g. for a slow downstream call), it must create its own `context.WithTimeout` internally.

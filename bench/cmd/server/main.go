@@ -18,7 +18,7 @@ func main() {
 	var err error
 	switch *framework {
 	case "ginject":
-		err = bench.NewGinjectApp().Listen(*port)
+		err = bench.NewGinjectApp().Listen(*port, nil)
 	case "nethttp":
 		err = http.ListenAndServe(addr, bench.NewNetHTTP())
 	case "gin":

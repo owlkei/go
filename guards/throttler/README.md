@@ -75,7 +75,7 @@ func main() {
 			Controllers(APIController{}).
 			Build(),
 	)
-	app.Listen(8080)
+	app.Listen(8080, nil)
 }
 ```
 

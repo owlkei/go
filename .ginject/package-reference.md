@@ -29,8 +29,10 @@ type App struct {
 |--------|---------|
 | `New() *App` | Create app instance |
 | `Create(m *Module)` | Initialize app with module tree — call exactly once |
-| `Listen(port int) error` | Start HTTP server, blocks until shutdown |
-| `Stop()` | Trigger graceful shutdown programmatically (idempotent via `shutdownOnce`) |
+| `Listen(port int, opts *ServerOptions) error` | Start the HTTP server on `:<port>` (`nil` = safe defaults), blocks until shutdown |
+| `ListenTLS(port int, certFile, keyFile string, opts *ServerOptions) error` | The same over TLS, HTTP/2 by ALPN |
+| `Serve(l net.Listener, opts *ServerOptions) error` | Serve on the caller's listener (TLS when `opts.TLSConfig` is set) |
+| `Stop()` | Graceful shutdown of a serving app (drain, then `OnShutdown` hooks once); on an app that is not serving, runs the hooks and marks it stopped; blocks until the hooks finished |
 | `Get(p Provider) any` | Look up an already-injected provider by type |
 | `ServeHTTP(w, r)` | HTTP handler (auto-called by Go stdlib) |
 | `BindGlobalMiddlewares(fn ...common.MiddlewareFn) *App` | Register global middleware |
@@ -44,22 +46,21 @@ type App struct {
 | `UseLogger(logger common.Logger) *App` | Replace the default logger |
 | `UseLogOptions(opts *log.LogOptions) *App` | Configure the default logger |
 
-**There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is a fixed, unexported field (`maxRequestBodyBytes`) set once in `New()` to `DefaultMaxRequestBodyBytes` — see "HTTP Server Defaults" below.
+**There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `ServerOptions.MaxRequestBodyBytes` of the serving call (0 = 10 MiB, negative = no cap), stored in the unexported `atomic.Int64` `maxRequestBodyBytes` (10 MiB from `New()`) — see "HTTP Server Defaults" below.
 
 ### HTTP Server Defaults
 
-Constants (`core/app.go`), all currently hardcoded with no public setters:
+`core/server.go`; the only options are the four fields of `ServerOptions` (`ShutdownTimeout` 0 = 30 s, `MaxRequestBodyBytes` 0 = 10 MiB / negative = off, `TLSConfig`, `H2C`). The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
 
-| Constant | Value | Applied in |
-|----------|-------|------------|
-| `DefaultMaxRequestBodyBytes` | `10 << 20` (10MB) | `ServeHTTP` wraps `r.Body` in `http.MaxBytesReader(w, r.Body, app.maxRequestBodyBytes)` before `c.Init` |
-| `DefaultMaxHeaderBytes` | `1 << 20` (1MB) | `http.Server.MaxHeaderBytes` in `Listen()` |
-| `DefaultReadHeaderTimeout` | `2 * time.Second` | `http.Server.ReadHeaderTimeout` |
-| `DefaultReadTimeout` | `5 * time.Second` | `http.Server.ReadTimeout` |
-| `DefaultWriteTimeout` | `15 * time.Second` | `http.Server.WriteTimeout` |
-| `DefaultIdleTimeout` | `60 * time.Second` | `http.Server.IdleTimeout` |
+| Setting | Value |
+|----------|-------|
+| `ReadHeaderTimeout` | 5 s |
+| `ReadTimeout` | 30 s |
+| `WriteTimeout` | 30 s (a handler extends it with `http.NewResponseController(w).SetWriteDeadline`) |
+| `IdleTimeout` | 75 s |
+| `MaxHeaderBytes` | 64 KiB (431 beyond) |
 
-Exceeding the body cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw error. These four timeouts bound the connection, not handler execution time — there is no per-handler deadline (see `ctx` section).
+Exceeding the body cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw error. These timeouts bound the connection, not handler execution time — there is no per-handler deadline (see `ctx` section). Full rules: `core/README.md` › Server.
 
 ### Module
 

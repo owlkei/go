@@ -80,7 +80,9 @@ var UserModule = func() *core.Module {
 func main() {
     app := core.New()
     app.Create(core.ModuleBuilder().Imports(UserModule).Build())
-    app.Logger.Fatal("AppError", "error", app.Listen(3000))
+    if err := app.Listen(3000, nil); err != nil {
+        app.Logger.Fatal("AppError", "error", err)
+    }
 }
 ```
 
@@ -110,7 +112,9 @@ app.EnableVersioning(versioning.Versioning{
 })
 
 app.Create(RootModule)
-app.Logger.Fatal("AppError", "error", app.Listen(3000))
+if err := app.Listen(3000, nil); err != nil {
+    app.Logger.Fatal("AppError", "error", err)
+}
 ```
 
 ### Module
