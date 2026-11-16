@@ -7,7 +7,7 @@ from here.
 
 Decided 2026-11-16: Ginject replaces `golang.org/x/net/websocket` (its last dependency; its own
 documentation points to other packages) with an implementation of its own, once the HTTP roadmaps
-(0003, 0004) are done. It becomes part of the WebSocket roadmap (0005).
+(0003 to 0005) are done. It becomes part of the WebSocket roadmap (0006).
 
 - **Why:** no dependency left in `go.mod`; hot-path control by the rules of `.ginject/conventions.md`
   (buffer reuse, low allocations); backpressure, limits, trace and devtools hooks at the frame
@@ -22,12 +22,12 @@ documentation points to other packages) with an implementation of its own, once 
   benchmarks against `coder/websocket` and `gorilla/websocket` in `bench/`.
 - **Joins the remaining WebSocket work:** acks, backpressure, limits, hooks, shutdown, broker.
 
-## Public API surface (after roadmap 0004)
+## Public API surface (after roadmap 0005)
 
 Decided 2026-11-16 (Product principles in `CLAUDE.md`): Ginject exports about 607 functions, types and
 methods outside `sample/` and `bench/`, most of them framework internals (`common.Construct`,
 `BuildHTTPInterceptMiddleware`, the `common.InsertedRoutes` global, `routing` internals,
-`ctx.BinderOf`, the devtool builder). A dedicated roadmap, after 0004 and before WebSocket: review
+`ctx.BinderOf`, the devtool builder). A dedicated roadmap, after 0005 and before WebSocket: review
 every exported name, move internals to `internal/` or unexport them, collapse duplicate ways of doing
 one job, and rewrite the docs around the resulting surface.
 
