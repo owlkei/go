@@ -1,6 +1,6 @@
 # 0009: Lifecycle and DI wiring
 
-Status: Approved
+Status: Implemented
 Packages: `core` (`app.go`, `module.go`, `module_builder.go`, `fn.go`, new `container.go`), `common`
 (route and event registries, `Construct`, the `SERVE` route DSL), `devtool` (the snapshot bug), `log`
 (`NewLog`, `WrapLogger`)

@@ -1,6 +1,6 @@
 # 0003: Server and production
 
-Status: Running
+Status: Done
 
 ## Goal
 Finish the HTTP core: the rest of `core` (request dispatch, the 404 path, the server, lifecycle and
@@ -29,7 +29,7 @@ README, the file rule.
 | 3 | Lifecycle and DI wiring (cold): `Create`, modules, providers, `OnInit` / `OnReady` / `OnShutdown`, the package-level registries (a second `App` in one process answers 404), `EnableDevtool` without versioning, `SERVE_<x>_ANY` never matching `/<x>/...` | tdd | docs/design/0009-lifecycle.md | 1 | deep dive done; two `App`s in one process work independently | done |
 | 4 | Logging and tracing: `log`, `accesslog` (per-request work is hot), `trace`, `event` (the event bus every request checks) | tdd | docs/design/0010-observability.md | 1 | deep dive done; access log on costs a bounded, measured amount per request | done |
 | 5 | `core` README completed (server, lifecycle, production options), `.ginject/` updated (`/kb update core`) | light | - | 1-4 | README covers every exported API of `core` (HTTP side); KB matches the code | done |
-| 6 | Measure: rerun `make bench-compare` and the load test, compare with 0002 and the baseline; production checklist results | light | - | 1-5 | `docs/review/http-0003.md` | todo |
+| 6 | Measure: rerun `make bench-compare` and the load test, compare with 0002 and the baseline; production checklist results | light | - | 1-5 | `docs/review/http-0003.md` | done |
 
 ## Decisions
 - Breaking the public API is allowed; the architecture stays (Module → Controller → Provider, the
@@ -97,3 +97,4 @@ README, the file rule.
 - 2026-11-16: step 4 done. Deviations: no WS handler event (design 0006 B15 kept); non-string keys become two `!BADKEY` attributes; JSON escapes C1 controls; P8 field cache always on (the -20 % not proven). Five test mistakes fixed by the tester. Access log on: Static +1.1 µs, Chain +2.7 µs (targets +1 µs, +2.5 µs, slightly over; worker formatting overlaps the run); 12 goroutines Chain 1.55× (target under 2×).
 - 2026-11-16: step 5 done. Found: a module func passed to `Imports` cannot use providers of an `IsGlobal` module imported next to it (discovered later); documented, left for the review.
 - 2026-11-16: review: 2 high (module funcs blind to sibling globals; Stop during hooks returned for every caller), 3 medium, 5 low. Fixed H1, H2, M1, M2, L2-L5; M3 measured (field cache -30 to -68 %, kept). Left open: L1 (stack capture per non-exception panic is unbounded under a panic flood).
+- 2026-11-16: step 6 done (`docs/review/http-0003.md`): NotFound 0.55× net/http; checklist C1-C18 pass; access log on: Static +0.98 µs (met), Chain +2.82 µs (0.3 µs over target). Roadmap done; `make check` green.

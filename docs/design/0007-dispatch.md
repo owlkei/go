@@ -1,6 +1,6 @@
 # 0007: Request dispatch and the request lifecycle
 
-Status: Approved
+Status: Implemented
 Packages: `core` (`app.go`, `http.go`, `fn.go`, `default.go`, new `http_writer.go`; one function of
 `ws.go`), `ctx` (`Reset`), `exception` (`AppendJSON`), `common` (dead code removed)
 

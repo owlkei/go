@@ -1,6 +1,6 @@
 # 0010: Observability (`log`, `accesslog`, `trace`, `event`)
 
-Status: Approved
+Status: Implemented
 Packages: `log`, `accesslog`, `trace`, `event` (removed, see Q1), `internal/color`; the trace call
 sites of `core`. Roadmap: `docs/roadmap/0003-server-and-production.md`, step 4. Depends on designs
 0007 (dispatch: who emits which event, the `UnhandledPanic` line), 0008 (shutdown) and 0009

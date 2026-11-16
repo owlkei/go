@@ -1,6 +1,6 @@
 # 0008: Production server
 
-Status: Approved
+Status: Implemented
 Packages: `core` (`app.go`, new `server.go`)
 
 Roadmap: `docs/roadmap/0003-server-and-production.md`, step 2. Depends on design 0007 (the writer
