@@ -1,7 +1,6 @@
 package throttler
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,14 +10,14 @@ import (
 	"github.com/dangduoc08/ginject/memorycache"
 )
 
-func benchGuard(strategy Strategy) Throttler {
-	return Throttler{
-		Limit:    1000,
+func benchGuard(b *testing.B, strategy Strategy) activator {
+	return compile(b, Throttler{
+		Limit:    1 << 40,
 		TTL:      time.Minute,
 		Strategy: strategy,
 		KeyFunc:  func(*ctx.HTTPContext) string { return "benchkey" },
 		Backend:  memorycache.NewMemoryCache(nil),
-	}
+	})
 }
 
 func benchCtx() *ctx.HTTPContext {
@@ -30,77 +29,36 @@ func benchCtx() *ctx.HTTPContext {
 	return c
 }
 
-func BenchmarkFixedWindow(b *testing.B) {
-	g := benchGuard(FixedWindow)
-	bg := context.Background()
-	for b.Loop() {
-		g.fixedWindow(bg, "ip")
+func BenchmarkCanActivate(b *testing.B) {
+	for _, s := range allStrategies {
+		b.Run(s.name, func(b *testing.B) {
+			g := benchGuard(b, s.strategy)
+			c := benchCtx()
+			for b.Loop() {
+				g.CanActivate(c)
+			}
+		})
 	}
 }
 
-func BenchmarkSlidingWindow(b *testing.B) {
-	g := benchGuard(SlidingWindow)
-	bg := context.Background()
-	for b.Loop() {
-		g.slidingWindow(bg, "ip")
+func BenchmarkCanActivate_Parallel(b *testing.B) {
+	for _, s := range allStrategies {
+		b.Run(s.name, func(b *testing.B) {
+			g := benchGuard(b, s.strategy)
+			b.RunParallel(func(pb *testing.PB) {
+				c := benchCtx()
+				for pb.Next() {
+					g.CanActivate(c)
+				}
+			})
+		})
 	}
 }
 
-func BenchmarkTokenBucket(b *testing.B) {
-	g := benchGuard(TokenBucket)
-	bg := context.Background()
-	for b.Loop() {
-		g.tokenBucket(bg, "ip")
-	}
-}
-
-func BenchmarkDefaultKeyFunc_RemoteAddr(b *testing.B) {
+func BenchmarkCanActivate_DefaultKey(b *testing.B) {
+	g := compile(b, Throttler{Limit: 1 << 40})
 	c := benchCtx()
 	for b.Loop() {
-		defaultThrottlerKeyFunc(c)
-	}
-}
-
-func BenchmarkDefaultKeyFunc_XForwardedFor(b *testing.B) {
-	c := benchCtx()
-	c.Request.Header.Set("X-Forwarded-For", "203.0.113.1, 10.0.0.1")
-	for b.Loop() {
-		defaultThrottlerKeyFunc(c)
-	}
-}
-
-func BenchmarkGuard_Allow(b *testing.B) {
-	g := Throttler{
-		Limit:    1 << 62,
-		TTL:      time.Minute,
-		Strategy: FixedWindow,
-		KeyFunc:  func(*ctx.HTTPContext) string { return "benchkey" },
-		Backend:  memorycache.NewMemoryCache(nil),
-	}
-	for b.Loop() {
-		c := benchCtx()
 		g.CanActivate(c)
 	}
-}
-
-func BenchmarkFixedWindow_Parallel(b *testing.B) {
-	g := benchGuard(FixedWindow)
-	bg := context.Background()
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			g.fixedWindow(bg, "ip")
-		}
-	})
-}
-
-func BenchmarkTokenBucket_Parallel(b *testing.B) {
-	g := benchGuard(TokenBucket)
-	bg := context.Background()
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			g.tokenBucket(bg, "ip")
-		}
-	})
 }

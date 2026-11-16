@@ -1,124 +1,109 @@
 # Throttler Guard
 
-*Rate limiting guard for the Ginject framework with three strategies: fixed-window, sliding-window, and token-bucket algorithms. Integrates with any cache backend and provides standard rate-limit headers.*
-
----
-
-## Table of Contents
+*`throttler` limits how many requests each client can make in a period of time, and answers `429 Too Many Requests` with `Retry-After` once a client goes over its limit.*
 
 - [Throttler Guard](#throttler-guard)
   - [Key Features](#key-features)
+  - [Why you need it](#why-you-need-it)
   - [Usage](#usage)
-  - [Strategies](#strategies)
+  - [Behind a proxy or load balancer](#behind-a-proxy-or-load-balancer)
   - [`Throttler` Struct](#throttler-struct)
     - [Limit](#limit)
     - [TTL](#ttl)
     - [Strategy](#strategy)
     - [KeyFunc](#keyfunc)
     - [Backend](#backend)
+  - [Constants](#constants)
   - [`Throttler` Methods](#throttler-methods)
     - [NewGuard](#newguard)
-    - [CanActivate](#canactivate)
-  - [Default Key Function](#default-key-function)
-  - [Response Headers](#response-headers)
+  - [Response headers](#response-headers)
+  - [How the client is identified](#how-the-client-is-identified)
+  - [Limits and memory](#limits-and-memory)
+  - [Throttler or loadshed](#throttler-or-loadshed)
   - [Benchmarks](#benchmarks)
 
----
-
 ## Key Features
+- Safe by default: the client is its IP address as resolved by `proxy`; no request header is read
+  by the throttler, so a client cannot buy a new budget by sending a new `X-Forwarded-For`
+- IPv6 clients are limited per /64 network, since one end site holds at least a /64 (RFC 6177)
+- Exact under concurrency: with `Limit: 100`, 100 requests pass, never 101, whatever the number of
+  goroutines
+- Bounded memory: the default store keeps at most 32,768 clients (about 5 MiB when full)
+- No background goroutine and no timer while the store is empty
+- Three strategies: fixed window (default), sliding window, token bucket
 
-- **Three rate-limiting strategies** — fixed-window (efficient), sliding-window (accurate), token-bucket (fair)
-- **Backend-agnostic** — works with any cache implementation (in-memory, Redis, etc.)
-- **Automatic rate-limit headers** — sets `X-RateLimit-*` and `Retry-After` per RFC 6585
-- **Smart key extraction** — default key function detects `X-Real-IP`, `X-Forwarded-For`, or `RemoteAddr`
-- **Per-IP isolation** — each client tracked independently with zero crosstalk
-- **Panic on limit exceeded** — returns `TooManyRequestsException` with 429 status
+## Why you need it
 
----
+Without a limit, one client can call a login, search or upload route as fast as its connection
+allows: password guessing, scraping, or a bill for every downstream call your handler makes
+(OWASP API Security Top 10, API4 "Unrestricted resource consumption"). The throttler gives every
+client its own budget per route group and refuses the rest with a status code clients and HTTP
+libraries understand (RFC 6585 § 4).
 
 ## Usage
+
+Bind a `Throttler` value as a guard. Ginject calls `NewGuard` once at `Create()`, so every request
+to the bound handlers shares one budget per client:
 
 ```go
 package main
 
 import (
+	"time"
+
+	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/guards/throttler"
-	"time"
 )
 
-type APIController struct {
-	common.REST
+type LoginController struct {
+	common.HTTP
 	common.Guard
 }
 
-func (c APIController) NewController() core.Controller {
-	// 100 requests per minute per IP
-	guard := throttler.Throttler{
-		Limit:    100,
-		TTL:      time.Minute,
-		Strategy: throttler.TokenBucket, // or FixedWindow, SlidingWindow
-	}.NewGuard()
-
-	c.BindGuard(guard, c.READ, c.CREATE)
-	return c
+func (instance LoginController) NewController() core.Controller {
+	instance.BindGuard(throttler.Throttler{
+		Limit: 10,
+		TTL:   time.Minute,
+	}, instance.CREATE_login)
+	return instance
 }
 
-func (c APIController) READ() {
-	// This request counts against the rate limit
+func (instance LoginController) CREATE_login() string {
+	return "ok"
 }
 
 func main() {
 	app := core.New()
 	app.Create(
 		core.ModuleBuilder().
-			Controllers(APIController{}).
+			Controllers(LoginController{}).
 			Build(),
 	)
 	app.Listen(8080, nil)
 }
 ```
 
----
+To limit the whole app, bind it globally: `app.BindGlobalGuards(throttler.Throttler{})`.
 
-## Strategies
+Two bindings with the same options and no `KeyFunc` share one throttler, and so one budget. To give two route
+groups separate budgets, give them different options (for example a different `Limit`).
 
-The `Strategy` constant controls the rate-limiting algorithm:
+## Behind a proxy or load balancer
 
-### FixedWindow (default)
-
-Divides time into fixed buckets (e.g., 1-minute windows). Requests are counted within the current window; when the window resets, the counter resets to zero.
-
-- **Pros**: Simple, O(1) per request, low overhead
-- **Cons**: Allows burst at window boundaries (e.g., limit of 10 allows up to 20 requests if 10 come at the end of window 1 and 10 at the start of window 2)
+Behind a proxy every request arrives from the proxy's address, so every client would share one
+budget. Bind the `proxy` middleware with the addresses of your proxies; the throttler then limits
+the real client:
 
 ```go
-throttler.Throttler{Strategy: throttler.FixedWindow}
+app.BindGlobalMiddlewares(proxy.Proxy{
+	TrustedProxies: []string{"10.0.0.0/8"},
+})
 ```
 
-### SlidingWindow
-
-Tracks a moving time window that slides continuously. On each request, older requests outside the window are discounted proportionally.
-
-- **Pros**: Prevents boundary bursts, more accurate than fixed-window
-- **Cons**: Slightly higher overhead (tracks two windows)
-
-```go
-throttler.Throttler{Strategy: throttler.SlidingWindow}
-```
-
-### TokenBucket
-
-Requests consume tokens from a bucket that refills continuously at a fixed rate. Allows brief bursts up to the bucket capacity.
-
-- **Pros**: Fair, handles varying load well, allows brief bursts
-- **Cons**: Slightly higher overhead (float-point arithmetic)
-
-```go
-throttler.Throttler{Strategy: throttler.TokenBucket}
-```
-
----
+`proxy` reads `X-Forwarded-For` (or `Forwarded`) only from the peers you list, and only the entries
+your proxies wrote. Without `proxy`, the client is the connection's address (`r.RemoteAddr`). See
+`middlewares/proxy/README.md`.
 
 ## `Throttler` Struct
 
@@ -130,13 +115,11 @@ Default: `100`
 
 Required: `false`
 
-Maximum number of requests allowed within each TTL window. A zero or negative value defaults to 100.
+The number of requests a client may make in each `TTL`. A zero or negative value means 100.
 
 ```go
-throttler.Throttler{Limit: 50} // 50 requests per TTL
+throttler.Throttler{Limit: 50}
 ```
-
----
 
 ### TTL
 
@@ -146,13 +129,13 @@ Default: `time.Minute`
 
 Required: `false`
 
-Duration of each rate-limit window. After each TTL, the request count resets. A zero or negative value defaults to 1 minute.
+The length of the window (fixed and sliding window), or the time the token bucket takes to refill
+completely. A zero or negative value means one minute. Windows are counted in whole seconds: a
+`TTL` under one second counts as one second for the fixed and sliding windows.
 
 ```go
-throttler.Throttler{TTL: 30 * time.Second} // 30-second windows
+throttler.Throttler{TTL: 30 * time.Second}
 ```
-
----
 
 ### Strategy
 
@@ -162,205 +145,160 @@ Default: `FixedWindow`
 
 Required: `false`
 
-The rate-limiting algorithm to use: `FixedWindow`, `SlidingWindow`, or `TokenBucket`. If omitted, defaults to `FixedWindow`.
+The counting algorithm. See [Constants](#constants). An unknown value panics at `Create()`.
 
 ```go
 throttler.Throttler{Strategy: throttler.TokenBucket}
 ```
 
----
-
 ### KeyFunc
 
 Type: `func(*ctx.HTTPContext) string`
 
-Default: `defaultThrottlerKeyFunc` (extracts IP from `X-Real-IP`, `X-Forwarded-For`, or `RemoteAddr`)
+Default: the client IP (see [How the client is identified](#how-the-client-is-identified))
 
 Required: `false`
 
-Function that extracts a unique identifier from the request context. Called once per request to determine which bucket to charge. Allows per-user, per-API-key, or custom rate limiting.
+Returns the identity to charge, for example a user or an API key. A key longer than 128 bytes is
+stored as `h:` and 16 hex digits of a hash of it, so a client cannot store large keys. Read the
+client address with `proxy.ClientIP(c.Request)`, never from a request header yourself: a header is
+whatever the client sends.
 
 ```go
 throttler.Throttler{
 	KeyFunc: func(c *ctx.HTTPContext) string {
-		// Rate limit by API key instead of IP
-		return c.Request.Header.Get("Authorization")
+		if user := c.Request.Header.Get("X-User-ID"); user != "" {
+			return "user:" + user
+		}
+		return proxy.ClientIP(c.Request).String()
 	},
 }
 ```
-
----
 
 ### Backend
 
 Type: `cache.Cache`
 
-Default: `memorycache.NewMemoryCache(nil)`
+Default: a `memorycache.MemoryCache` bounded to 32,768 entries, one per throttler
 
 Required: `false`
 
-The cache backend used to store request counts. Any implementation of the `cache.Cache` interface works. If nil, a new in-memory cache is created.
+Where the counters live. Pass a shared store (such as Redis behind `cache.Cache`) when several
+instances of the app must share one budget, or when you need more than 32,768 clients. If the
+backend returns an error, the request is allowed: the throttler fails open rather than taking the
+app down with its store.
 
 ```go
 throttler.Throttler{
-	Backend: redisCache, // or any cache.Cache implementation
+	Backend: memorycache.NewMemoryCache(&memorycache.MemoryCacheOptions{MaxEntries: 262144}),
 }
 ```
 
----
+## Constants
+
+| Constant | Behavior | Use it for |
+|---|---|---|
+| `FixedWindow` (default) | Counts requests per window of `TTL`; the count resets at each window start. One atomic `Incr` per request. | Most routes. A client can make up to twice `Limit` across a window boundary. |
+| `SlidingWindow` | Weights the previous window's count by the part of it still inside the last `TTL`, plus the current count. Refused requests are not counted. | Routes where the boundary burst matters (login, password reset). |
+| `TokenBucket` | A bucket of `Limit` tokens refills continuously over `TTL`; each request takes one. | Allowing short bursts while keeping a steady average rate. |
 
 ## `Throttler` Methods
 
 ### NewGuard
 
-Applies defaults to the `Throttler` and returns itself, ready to be used as a guard.
+Applies the defaults and returns the compiled guard. Ginject calls it for you when you bind a
+`Throttler`; call it yourself only to use the guard outside Ginject's binding.
 
 **Signature**
 
 ```go
-func (g Throttler) NewGuard() Throttler
+func (instance Throttler) NewGuard() common.Guarder
 ```
-
-**Parameters**
-
-None (receiver is the `Throttler` instance).
 
 **Returns**
 
-- 1st value: `Throttler` — the configured throttler with defaults applied
+- 1st value: `common.Guarder`: the compiled guard, with `CanActivate(*ctx.HTTPContext) bool`
 
 **Rules**
 
-- A zero or negative `Limit` defaults to 100
-- A zero or negative `TTL` defaults to 1 minute
-- A nil `KeyFunc` defaults to the built-in IP extraction function
-- A nil `Backend` defaults to a new in-memory cache
+- A zero `Throttler` limits to 100 requests per minute with `FixedWindow`
+- Creating a guard and serving requests starts no goroutine
+- The guard allows a request (`true`) or panics with `exception.TooManyRequestsException` (429)
+- With one key and one window, any number of concurrent requests get exactly `Limit` allowed, with
+  every strategy
+- Different keys have independent budgets
+- The default key is the client IP: IPv4 as is, IPv6 masked to its /64, the IPv4-mapped IPv6 form
+  is the IPv4 address, and every unresolvable peer shares the key `unknown`
+- The source port is not part of the key: all connections of one client share one budget
+- No request header changes the default key, however many are sent
+- `KeyFunc` replaces the default key; keys longer than 128 bytes are hashed, keys of 128 bytes or
+  less are kept as they are, and two long keys stay distinct
+- Any key, including binary data, is counted without a panic
+- A backend error allows the request
+- With the default store, a flood of distinct keys never stores more than 32,768 entries: each new
+  key past the bound evicts another
 
-**Usage**
+## Response headers
 
-```go
-guard := throttler.Throttler{Limit: 50, TTL: 30 * time.Second}.NewGuard()
-c.BindGuard(guard, c.READ)
-```
-
----
-
-### CanActivate
-
-Checks if the request is within the rate limit. Sets rate-limit headers on the response. Panics with `TooManyRequestsException` if the limit is exceeded.
-
-**Signature**
-
-```go
-func (g Throttler) CanActivate(c *ctx.HTTPContext) bool
-```
-
-**Parameters**
-
-- 1st parameter: `*ctx.HTTPContext` — the HTTP request context
-
-**Returns**
-
-- 1st value: `bool` — always `true` on success; panics if limit exceeded
-
-**Rules**
-
-- Always sets `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers
-- If limit exceeded, also sets `Retry-After` header with seconds until reset
-- Panics with `TooManyRequestsException` (429 status) if the limit is exceeded
-- Different keys (IPs) are tracked independently
-
-**Usage**
-
-```go
-func (c UserController) NewController() core.Controller {
-	guard := throttler.Throttler{Limit: 100}.NewGuard()
-	c.BindGuard(guard, c.CREATE, c.UPDATE)
-	return c
-}
-```
-
----
-
-## Default Key Function
-
-The built-in `KeyFunc` extracts the client IP address in this priority order:
-
-1. **`X-Real-IP` header** — trusted proxy indicator (highest priority)
-2. **`X-Forwarded-For` header** — first IP from the list (if multiple)
-3. **`RemoteAddr`** — raw connection address (fallback)
-
-This works correctly behind most reverse proxies (Nginx, Cloudflare, HAProxy, etc.) without configuration.
-
-**Custom Key Function Example**
-
-```go
-throttler.Throttler{
-	KeyFunc: func(c *ctx.HTTPContext) string {
-		// Rate limit by user ID instead of IP
-		userID := c.Request.Header.Get("X-User-ID")
-		if userID != "" {
-			return "user:" + userID
-		}
-		// Fallback to IP
-		return c.Request.Header.Get("X-Forwarded-For")
-	},
-}
-```
-
----
-
-## Response Headers
-
-The throttler always sets the following headers on every response:
-
-| Header | Value | Purpose |
+| Header | When | Value |
 |---|---|---|
-| `X-RateLimit-Limit` | `<limit>` | Maximum requests allowed in this window |
-| `X-RateLimit-Remaining` | `<count>` | Requests remaining until limit (capped at 0 if exceeded) |
-| `X-RateLimit-Reset` | `<unix-timestamp>` | Unix timestamp when the limit resets |
-| `Retry-After` | `<seconds>` | **(only when limit exceeded)** Seconds to wait before retrying |
+| `X-RateLimit-Limit` | every response | `Limit` |
+| `X-RateLimit-Remaining` | every response | requests left in the window; `0` once refused |
+| `X-RateLimit-Reset` | every response | Unix time (seconds) when the window resets, or when a token is next available |
+| `Retry-After` | refusals only | seconds until `X-RateLimit-Reset` (RFC 9110 § 10.2.3) |
 
-**Example Headers (successful request)**
+A refusal is `429 Too Many Requests` with the fixed message `Too Many Requests`.
 
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1719700260
-```
+## How the client is identified
 
-**Example Headers (limit exceeded)**
+The default key is `proxy.ClientIP(c.Request)`: the connection's address, or the client that
+`proxy` resolved from the headers of a trusted proxy.
 
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 0
-X-RateLimit-Reset: 1719700260
-Retry-After: 30
-```
+- **IPv4:** the address, without the port.
+- **IPv6:** the /64 network (`2001:db8:1:2::`). Providers hand every customer a /64 or more, so one
+  client can use 2^64 addresses; limiting each address would give it 2^64 budgets.
+- **Unknown:** a peer address that cannot be parsed counts under the single key `unknown`.
 
----
+## Limits and memory
+
+| | Value |
+|---|---|
+| Clients in the default store | 32,768 (no option: pass your own `Backend` for more) |
+| Memory per stored client | about 150 bytes (IPv4 key), 165 bytes (IPv6 key), 280 bytes (128-byte custom key) |
+| Memory with a full default store | about 4.7 MiB (IPv4), 5.2 MiB (IPv6), 8.7 MiB with 128-byte custom keys |
+| Memory of an idle throttler | about 14 KiB |
+| Key length | 128 bytes; longer keys are hashed |
+| Goroutines and timers | none while the store is empty; the store's expiry timer runs only while it holds counters |
+
+When the default store is full, a new client evicts an older counter (CLOCK order, an
+approximation of least recently used). The evicted client starts again with a full budget: under
+more than 32,768 active clients the throttler fails open for the least active ones, rather than
+refusing new clients, which a flood of new keys would otherwise lock out.
+
+## Throttler or loadshed
+
+The throttler limits **each client**: it protects you from one client that asks too much, and it
+answers `429`. `middlewares/loadshed` limits **the whole server**: it refuses work when the server
+is overloaded, whoever sends it, and answers `503`. They solve different problems and work
+together: bind `loadshed` to keep the server healthy, and the throttler on routes that one client
+must not abuse.
 
 ## Benchmarks
 
-Benchmarks were run on an Intel Core i7-9750H CPU @ 2.60 GHz with `go test -bench=. -benchmem`.
+Measured on an Intel Core i7-9750H @ 2.60 GHz, Go 1.27.4, with
+`go test -run='^$' -bench . -benchmem -count 5 -cpu 1,2` (medians). Results depend on the machine
+and were captured when this README was written. Every benchmark allows the request with the default
+memory store; the header map is a fresh `httptest.ResponseRecorder` map.
 
-Results are machine-dependent and were captured at documentation generation time (July 30, 2026).
-
-| Benchmark | Operations | Time per op | Allocs | Bytes |
+| Benchmark | -cpu 1 | -cpu 2 | B/op | allocs/op |
 |---|---|---|---|---|
-| `BenchmarkFixedWindow` (check limit, fixed window) | 2,102,038 | 567.3 ns/op | 5 | 56 B/op |
-| `BenchmarkSlidingWindow` (check limit, sliding window) | 1,793,104 | 711.0 ns/op | 7 | 88 B/op |
-| `BenchmarkTokenBucket` (check limit, token bucket) | 2,532,129 | 512.3 ns/op | 4 | 56 B/op |
-| `BenchmarkDefaultKeyFunc_RemoteAddr` (extract IP) | 8,599,416 | 146.1 ns/op | 1 | 16 B/op |
-| `BenchmarkDefaultKeyFunc_XForwardedFor` (extract from header) | 7,851,532 | 159.5 ns/op | 1 | 16 B/op |
-| `BenchmarkGuard_Allow` (full guard check + headers) | 375,856 | 3,445 ns/op | 28 | 5,996 B/op |
-| `BenchmarkFixedWindow_Parallel` (concurrent fixed window) | 2,133,231 | 586.3 ns/op | 5 | 56 B/op |
-| `BenchmarkTokenBucket_Parallel` (concurrent token bucket) | 2,151,934 | 556.6 ns/op | 4 | 56 B/op |
+| `CanActivate/FixedWindow` | 424 ns | 360 ns | 104 | 6 |
+| `CanActivate/SlidingWindow` | 554 ns | 479 ns | 144 | 8 |
+| `CanActivate/TokenBucket` | 553 ns | 475 ns | 128 | 8 |
+| `CanActivate_Parallel/FixedWindow` | 418 ns | 251 ns | 104 | 6 |
+| `CanActivate_Parallel/SlidingWindow` | 561 ns | 485 ns | 144 | 8 |
+| `CanActivate_Parallel/TokenBucket` | 550 ns | 521 ns | 128 | 8 |
+| `CanActivate_DefaultKey` (client IP key) | 505 ns | 461 ns | 104 | 6 |
 
-**Key observations:**
-
-- **Algorithm overhead**: token-bucket (~512ns) < fixed-window (~567ns) < sliding-window (~711ns)
-- **IP extraction**: very fast (~150ns), dominated by header parsing
-- **Full guard overhead**: ~3.4µs for a complete check including header setting
-- **Concurrency**: all strategies scale well under parallel load with minimal lock contention
-- **Memory**: small allocations (4-7 per request), predictable and stable
+The allocations are the stored key (one), the three response header values and their numbers.
+The sliding window and the token bucket also allocate the value they store.
