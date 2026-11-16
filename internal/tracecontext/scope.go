@@ -33,8 +33,7 @@ type Scope struct {
 	Parent     string
 	LogSlot    atomic.Value
 
-	traceparent string
-	headers     [2]string
+	headers [2]string
 }
 
 type scopeKey struct{}
@@ -76,16 +75,17 @@ func NewRequest(parent context.Context, h http.Header, now time.Time) (context.C
 		}
 	}
 	if s.Parent == "" {
-		putTraceID(text[traceIDStart:traceIDEnd], now)
+		putTraceAndSpan(text[traceIDStart:traceIDEnd], text[parentIDStart:parentIDEnd], now)
+	} else {
+		putSpanID(text[parentIDStart:parentIDEnd])
 	}
-	putSpanID(text[parentIDStart:parentIDEnd])
 	s.setTraceparent(&text, flags)
-	s.Request = s.traceparent[parentIDStart:parentIDEnd]
+	s.Request = s.headers[1][parentIDStart:parentIDEnd]
+	s.headers[0] = s.Request
 	s.Upstream = s.Parent
 	if s.Upstream == "" {
 		s.Upstream = upstreamRequestID(h[requestIDHeader])
 	}
-	s.headers = [2]string{s.Request, s.traceparent}
 	o.Context = parent
 	return o, s
 }
@@ -95,18 +95,18 @@ func NewMessage(parent context.Context, now time.Time) (context.Context, *Scope)
 	s := &o.value
 	var text [traceparentLength]byte
 	flags := byte(ownFlags)
-	if conn := ScopeOf(parent); conn != nil && len(conn.traceparent) == traceparentLength {
+	if conn := ScopeOf(parent); conn != nil && len(conn.headers[1]) == traceparentLength {
 		copy(text[traceIDStart:traceIDEnd], conn.TraceID)
-		flags, _ = hexByte(conn.traceparent[flagsStart], conn.traceparent[flagsStart+1])
+		flags, _ = hexByte(conn.headers[1][flagsStart], conn.headers[1][flagsStart+1])
 		s.Connection = conn.Request
 		s.Parent = conn.Request
+		putSpanID(text[parentIDStart:parentIDEnd])
 	} else {
-		putTraceID(text[traceIDStart:traceIDEnd], now)
+		putTraceAndSpan(text[traceIDStart:traceIDEnd], text[parentIDStart:parentIDEnd], now)
 		parent = context.Background()
 	}
-	putSpanID(text[parentIDStart:parentIDEnd])
 	s.setTraceparent(&text, flags)
-	s.Message = s.traceparent[parentIDStart:parentIDEnd]
+	s.Message = s.headers[1][parentIDStart:parentIDEnd]
 	o.Context = parent
 	return o, s
 }
@@ -117,8 +117,8 @@ func (s *Scope) setTraceparent(text *[traceparentLength]byte, flags byte) {
 	text[parentIDEnd] = '-'
 	text[flagsStart] = hexDigits[flags>>4]
 	text[flagsStart+1] = hexDigits[flags&0x0f]
-	s.traceparent = string(text[:])
-	s.TraceID = s.traceparent[traceIDStart:traceIDEnd]
+	s.headers[1] = string(text[:])
+	s.TraceID = s.headers[1][traceIDStart:traceIDEnd]
 }
 
 func upstreamRequestID(values []string) string {
@@ -172,7 +172,7 @@ func appendArg(dst []any, key, value string) []any {
 }
 
 func (s *Scope) Traceparent() string {
-	return s.traceparent
+	return s.headers[1]
 }
 
 func (s *Scope) SpanID() string {

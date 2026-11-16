@@ -112,6 +112,8 @@ wants its own response writes it and returns without `next()`.
 - Trace scope (design 0011, `internal/tracecontext`): the request ID is always ours; one valid
   `traceparent` continues the trace ID, anything else is ignored silently. Middleware, guards,
   interceptors, filters and the handler read the same `*Scope` (`r.Context()` / `c.Context()`).
+  Outbound calls continue the trace through `trace.Transport(base)` on an `http.Client` and a request
+  built with `c.Context()`: it sends the scope's own `traceparent` (design 0013).
 - `HTTP.handleRequest` (`core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
   while middlewares run (a panic there is the HTTP layer's) and the route's filter list from the
   first guard on.

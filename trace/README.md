@@ -11,6 +11,8 @@
     - [Enabled](#enabled)
     - [Emit](#emit)
     - [Listen](#listen)
+  - [Outbound calls](#outbound-calls)
+    - [Transport](#transport)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
@@ -144,9 +146,85 @@ defer stop()
 - An `Emit` that started before `stop` returned may still call the listener once.
 - `Listen`, `stop`, `Enabled` and `Emit` are safe for concurrent use.
 
+## Outbound calls
+
+A service that calls another service over HTTP continues the incoming request's trace by wrapping its
+`http.RoundTripper` with `Transport`. Any service that reads W3C Trace Context then joins your trace.
+A Ginject service you call logs the same `trace_id`, and its `upstream` is your request ID.
+
+`Transport` is not related to the `TransportHTTP` and `TransportWS` values of `Event.Transport`:
+those name the protocol of a traced unit, while `Transport` is an `http.RoundTripper` for outbound
+calls.
+
+### Transport
+
+Returns an `http.RoundTripper` that adds the `traceparent` header of the trace scope in the request's
+context, then calls `base`.
+
+#### Parameters
+- 1st parameter: `http.RoundTripper`
+
+- Description: The transport that sends the request. `nil` uses `http.DefaultTransport`, read at each call.
+
+#### Returns
+- 1st value: `http.RoundTripper`
+
+- Description: The wrapper. It is safe for concurrent use and has a `CloseIdleConnections` method.
+
+#### Usage
+
+```go
+var client = &http.Client{Transport: trace.Transport(nil), Timeout: 10 * time.Second}
+
+func (instance UserController) READ_profile(c *ctx.HTTPContext) any {
+	req, err := http.NewRequestWithContext(c.Context(), http.MethodGet, "https://accounts.example.com/me", nil)
+	if err != nil {
+		return err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	return res.StatusCode
+}
+```
+
+Build the request with the context Ginject gives you (`c.Context()` of an HTTP or WebSocket context,
+or any context derived from it with `context.WithTimeout`, `WithCancel` or `WithValue`). The context
+keeps working after the request ended, for example in a goroutine you started from the handler.
+
+#### Rules
+- With a trace scope in the context, the request sent is a copy of yours with one added header,
+  `Traceparent: 00-<trace ID>-<span ID>-<flags>`. The trace ID and the flags are the request's (a
+  client's valid `traceparent` continues its own trace and flags). The span ID is your request ID
+  (the `X-Request-Id` of your response), or the message ID for a WebSocket message.
+- Every call made with the same context carries the same value, including each hop of a redirect
+  that `http.Client` follows.
+- Your request is never changed: its header map keeps its entries, gets no `Traceparent` key, and a
+  `nil` header map stays `nil`. The copy has the same method, URL, body, length and context, and a
+  deep copy of your headers.
+- A `Traceparent` key you set yourself wins, whatever it holds, and the request passes through as it
+  is. To send no trace header for one call, set the key with no value:
+  `req.Header["Traceparent"] = nil`. Only the canonical key `Traceparent` is looked up.
+- Without a trace scope (for example `context.Background()`), the request passes through as it is
+  and the wrapper allocates nothing.
+- Nothing else is added: no `tracestate`, no `X-Request-Id`, no forwarded client address.
+- The response and the error of `base` are returned unchanged.
+- `CloseIdleConnections` calls the same method of `base` (of `http.DefaultTransport` for a `nil`
+  base) when it has one, so `http.Client.CloseIdleConnections` keeps working.
+
+#### Security
+- The trace ID and your request ID go to every host you call with the request's context, third
+  parties and redirect targets included. Set the key yourself, or opt out with an empty key, for
+  hosts that must not see them.
+- The value is built only from IDs that Ginject generated or validated (lower-case hex), so it can't
+  inject a header.
+
 ## Performance notes
 
 - The listeners are an immutable slice behind an `atomic.Pointer`: `Enabled` is one atomic load, `Emit` one load and direct typed calls, with no lock and no boxing of the event. An `Event` is 160 bytes, passed by value. `Listen` and `stop` copy the slice under a mutex (bootstrap and shutdown only).
+- `Transport` without a trace scope, or with your own `Traceparent` key, is one context lookup and allocates nothing. With a scope it copies the request and its header map once per call, as the `http.RoundTripper` contract requires (5 allocations with three headers): small next to a network round trip. It holds only `base` and keeps nothing between calls.
 
 ## Benchmarks
 
@@ -160,7 +238,10 @@ go test -run '^$' -bench . -benchmem ./trace/
 goos: darwin
 goarch: amd64
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkTracer_Enabled-12          	1000000000	         1.066 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTracer_Emit-12             	145073950	         8.275 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTracer_Emit_Parallel-12    	901271748	         1.449 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTransport_NoScope-12           	179169152	         6.667 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTransport_ExistingHeader-12    	68880050	        17.88 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTransport_Scope-12             	 2589052	       462.2 ns/op	     784 B/op	       5 allocs/op
+BenchmarkTracer_Enabled-12              	1000000000	         1.111 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTracer_Emit-12                 	137298514	         8.747 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTracer_Emit_Parallel-12        	857145403	         1.547 ns/op	       0 B/op	       0 allocs/op
 ```

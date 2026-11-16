@@ -2,7 +2,6 @@ package tracecontext
 
 import (
 	"cmp"
-	"encoding/hex"
 	"fmt"
 	"slices"
 	"strconv"
@@ -95,93 +94,6 @@ func TestNewTraceID_RandomTail(t *testing.T) {
 			if !ok {
 				t.Error(test.DiffMessage(fmt.Sprintf("digit %x never at tail position %d", digit, i), "every digit at every position", "G2: the last 20 characters are random"))
 			}
-		}
-	}
-}
-
-func primeSpanStream(t *testing.T, r *streamReader) string {
-	t.Helper()
-	for range 200 {
-		id := NewSpanID()
-		if r.reads() > 0 {
-			return id
-		}
-	}
-	t.Fatal(test.DiffMessage(r.reads(), "> 0", "G3: the source refills from crypto/rand"))
-	return ""
-}
-
-func TestSource_StreamEqualsReader(t *testing.T) {
-	r := &streamReader{}
-	installReader(t, r)
-
-	const count = 151
-	ids := make([]string, 0, count)
-	ids = append(ids, primeSpanStream(t, r))
-	for len(ids) < count {
-		ids = append(ids, NewSpanID())
-	}
-
-	got := make([]byte, 0, 8*count)
-	for _, id := range ids {
-		raw, err := hex.DecodeString(id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, raw...)
-	}
-	want := make([]byte, len(got))
-	for i := range want {
-		want[i] = streamByte(i)
-	}
-	if !slices.Equal(got, want) {
-		t.Error(test.DiffMessage(hex.EncodeToString(got[:32]), hex.EncodeToString(want[:32]), "G3, H1: the bytes of consecutive IDs are the reader's stream in order, across a refill"))
-	}
-	if r.reads() != 3 {
-		t.Error(test.DiffMessage(r.reads(), 3, "G3, H1: 151 span IDs need three 512-byte refills"))
-	}
-}
-
-func TestSource_ReadsInBlocksOf512OnDemand(t *testing.T) {
-	r := &streamReader{}
-	installReader(t, r)
-
-	primeSpanStream(t, r)
-	for range 63 {
-		NewSpanID()
-	}
-	if r.reads() != 1 {
-		t.Error(test.DiffMessage(r.reads(), 1, "H1: 64 span IDs come from one refill"))
-	}
-	NewSpanID()
-	if r.reads() != 2 {
-		t.Error(test.DiffMessage(r.reads(), 2, "H1: the 65th span ID triggers the next refill"))
-	}
-	for i, size := range r.sizes {
-		if size != 512 {
-			t.Error(test.DiffMessage(size, 512, fmt.Sprintf("H1: refill %d reads the whole 512-byte buffer with one call", i)))
-		}
-	}
-}
-
-func TestNewTraceID_TailIsReaderStream(t *testing.T) {
-	r := &streamReader{}
-	installReader(t, r)
-
-	primeSpanStream(t, r)
-	now := time.UnixMilli(1763300000123)
-	for i := range 20 {
-		id := NewTraceID(now)
-		tail, err := hex.DecodeString(id[12:])
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := make([]byte, 10)
-		for j := range want {
-			want[j] = streamByte(8 + 10*i + j)
-		}
-		if !slices.Equal(tail, want) {
-			t.Fatal(test.DiffMessage(hex.EncodeToString(tail), hex.EncodeToString(want), fmt.Sprintf("G3: trace ID %d takes 10 random bytes from the stream", i)))
 		}
 	}
 }

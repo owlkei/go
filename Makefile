@@ -34,6 +34,7 @@ check: ## Everything CI runs: format, vet, lint, tests
 	go vet ./...
 	golangci-lint run
 	go test ./... -cover -race
+	go test ./core -run '^TestTrace_(NoListenerGeneratesOneID|ListenerGeneratesOneIDPerStage)$$' -count 1
 
 BENCH_COUNT ?= 5
 

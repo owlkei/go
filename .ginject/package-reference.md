@@ -539,7 +539,15 @@ type Tracer struct{ /* unexported; the zero value is ready */ }
 func (t *Tracer) Enabled() bool                        // one atomic load
 func (t *Tracer) Emit(e Event)                         // synchronous, in registration order, no recover, 0 allocs
 func (t *Tracer) Listen(fn func(Event)) (stop func())  // stop removes exactly that registration
+
+func Transport(base http.RoundTripper) http.RoundTripper // design 0013; nil base = http.DefaultTransport at each call
 ```
+
+- `Transport` (`trace/http_transport.go`) adds `Traceparent: <Scope.Traceparent()>` (the request's or
+  message's own span, the scope's flags) to a shallow copy of an outbound request whose context carries a
+  trace scope; without a scope, or when the caller's header map already has the canonical
+  `Traceparent` key (even with no value: the opt-out), the same request passes through untouched.
+  Nothing else is added (no `tracestate`, no `X-Request-Id`). It forwards `CloseIdleConnections`.
 
 - There is no event bus (design 0010). `core` holds one `trace.Tracer`
   per app (`app.tracer`); the access log is its only listener today. Every event carries `Transport`.
@@ -786,7 +794,7 @@ type Helmet struct {
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
 - `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS); there is no `id` key.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
-- `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`). All random bytes from one 512-byte `crypto/rand` buffer behind a mutex.
+- `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`). All random bytes from `crypto/rand`, through a `sync.Pool` of 512-byte sources (504-byte refills, no mutex, design 0013); one 18-byte read per new trace (tail + request ID), 8 bytes for a continued trace or a message under a connection.
 - `internal/logpipe` — the output pipeline of the built-in logger (design 0012): `Level` (`Debug`…`Fatal`), `Sink` (`Write`, `StartAsync`, `StopAsync`, `Flush`), `New`, `Stdout`, `SetStdout` (tests), `FlushTimeout` (2 s), `AccessLine` (the access log's line handed to the built-in logger).
 - `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.
 - `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe). Not importable from outside the module.

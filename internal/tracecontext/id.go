@@ -10,15 +10,28 @@ import (
 const (
 	spanIDBytes    = 8
 	traceTimeBytes = 6
-	traceIDBytes   = 16
-	sourceSize     = 512
+	traceTailBytes = 10
+	traceIDBytes   = traceTimeBytes + traceTailBytes
+	scopeBytes     = traceTailBytes + spanIDBytes
+	sourceSize     = 504
 )
 
-var source struct {
-	mu   sync.Mutex
+type source struct {
 	buf  [sourceSize]byte
 	left int
 }
+
+func (s *source) read(dst []byte) {
+	if s.left < len(dst) {
+		_, _ = rand.Read(s.buf[:])
+		s.left = sourceSize
+	}
+	start := sourceSize - s.left
+	copy(dst, s.buf[start:start+len(dst)])
+	s.left -= len(dst)
+}
+
+var sources = sync.Pool{New: func() any { return new(source) }}
 
 func NewSpanID() string {
 	var text [2 * spanIDBytes]byte
@@ -34,11 +47,24 @@ func NewTraceID(now time.Time) string {
 
 func putSpanID(dst []byte) {
 	var raw [spanIDBytes]byte
-	readNonZero(raw[:])
+	readNonZero(raw[:], len(raw))
 	hex.Encode(dst, raw[:])
 }
 
 func putTraceID(dst []byte, now time.Time) {
+	var tail [traceTailBytes]byte
+	readNonZero(tail[:], len(tail))
+	encodeTraceID(dst, now, tail[:])
+}
+
+func putTraceAndSpan(traceDst, spanDst []byte, now time.Time) {
+	var raw [scopeBytes]byte
+	readNonZero(raw[:], traceTailBytes)
+	encodeTraceID(traceDst, now, raw[:traceTailBytes])
+	hex.Encode(spanDst, raw[traceTailBytes:])
+}
+
+func encodeTraceID(dst []byte, now time.Time, tail []byte) {
 	var raw [traceIDBytes]byte
 	ms := uint64(now.UnixMilli())
 	raw[0] = byte(ms >> 40)
@@ -47,29 +73,26 @@ func putTraceID(dst []byte, now time.Time) {
 	raw[3] = byte(ms >> 16)
 	raw[4] = byte(ms >> 8)
 	raw[5] = byte(ms)
-	readNonZero(raw[traceTimeBytes:])
+	copy(raw[traceTimeBytes:], tail)
 	hex.Encode(dst, raw[:])
 }
 
-func readNonZero(dst []byte) {
+func readNonZero(dst []byte, split int) {
+	s := sources.Get().(*source)
 	for {
-		readRandom(dst)
-		for _, b := range dst {
-			if b != 0 {
-				return
-			}
+		s.read(dst)
+		if !allZero(dst[:split]) && !allZero(dst[split:]) {
+			break
 		}
 	}
+	sources.Put(s)
 }
 
-func readRandom(dst []byte) {
-	source.mu.Lock()
-	if source.left < len(dst) {
-		_, _ = rand.Read(source.buf[:])
-		source.left = sourceSize
+func allZero(b []byte) bool {
+	for _, c := range b {
+		if c != 0 {
+			return false
+		}
 	}
-	start := sourceSize - source.left
-	copy(dst, source.buf[start:start+len(dst)])
-	source.left -= len(dst)
-	source.mu.Unlock()
+	return len(b) > 0
 }

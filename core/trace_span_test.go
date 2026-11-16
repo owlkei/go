@@ -358,7 +358,7 @@ func TestTrace_NoListenerGeneratesOneID(t *testing.T) {
 	if drawn < requests*perRequest-512 {
 		t.Error(test.DiffMessage(drawn, ">= "+"17,488", "G3: a request draws 18 random bytes (a trace ID tail and its own ID) from crypto/rand"))
 	}
-	if limit := int64(requests*perRequest*11/10 + 1024); drawn > limit {
+	if limit := int64(requests*perRequest*11/10 + 1024); !raceEnabled && drawn > limit {
 		t.Error(test.DiffMessage(drawn, "<= "+"20,824", "E5: with no listener a request generates no ID beyond its own (a stage span ID is 8 more bytes)"))
 	}
 }
@@ -389,7 +389,7 @@ func TestTrace_ListenerGeneratesOneIDPerStage(t *testing.T) {
 	if completes.Load() != requests || stages.Load() == 0 {
 		t.Fatal(test.DiffMessage([]int64{completes.Load(), stages.Load()}, "<500 completes and some stages>", "fixture: the listener saw every request"))
 	}
-	if drawn < want-512 || drawn > want*11/10+1024 {
+	if drawn < want-512 || (!raceEnabled && drawn > want*11/10+1024) {
 		t.Error(test.DiffMessage(drawn, want, "E3, E5: each stage span ID is 8 random bytes, only while a listener exists"))
 	}
 }

@@ -38,7 +38,7 @@ The package is internal: only code in the Ginject module can import it. Users re
 ## Key Features
 - W3C Trace Context: 128-bit trace IDs, 64-bit span IDs, `traceparent` parsed and written
 - Time-ordered trace IDs (ULID layout in hex)
-- Every random bit from `crypto/rand`, through one 512-byte buffer
+- Every random bit from `crypto/rand`, through small per-processor buffers and no lock
 - The request ID is always ours; a client only continues the trace ID
 - A scope is immutable and outlives the request: kept contexts read their own IDs forever
 
@@ -184,7 +184,7 @@ traceID := tracecontext.NewTraceID(time.Now())
 #### Rules
 - The first 12 characters are `now.UnixMilli()` as a 48-bit big-endian number; times in the same millisecond share them.
 - IDs made 1 ms apart sort as strings in creation order.
-- The last 20 characters are random (every digit appears at every position) and are the next 10 bytes of the random stream.
+- The last 20 characters are random (every digit appears at every position) and are 10 consecutive bytes of the random stream.
 - 10,000,000 IDs made in one millisecond hold no duplicate; parallel generation makes no duplicate.
 - It costs one allocation (the string).
 
@@ -242,7 +242,8 @@ r = r.WithContext(scopeCtx)
 - The outgoing flags are the incoming flags `& 0x03`, or `03` for a trace we start.
 - A parent that already carries a scope changes nothing: the new scope is built from the headers and is the nearest one.
 - The context keeps the parent's values, deadline and cancellation; `WithCancel` on it starts no goroutine.
-- It costs two allocations, with or without an incoming `traceparent`.
+- It costs two allocations, with or without an incoming `traceparent`: the context that holds the scope and the 55-byte `traceparent` string.
+- A new trace takes its trace ID tail and its request ID from one 18-byte random draw; a continued trace draws only the 8 bytes of the request ID. A draw whose ID or tail is all zeros is drawn again.
 
 ### NewMessage
 
@@ -265,7 +266,7 @@ messageCtx, scope := tracecontext.NewMessage(conn.Request().Context(), time.Now(
 
 #### Rules
 - With a connection scope in `parent`: the trace and flags are the connection's, `Connection` and `Parent` are its `Request`, `Message` is fresh, `Request` and `Upstream` are empty.
-- Without one: a new trace with flags `03`, `Connection` and `Parent` empty.
+- Without one: a new trace with flags `03`, `Connection` and `Parent` empty. Its trace tail and message ID come from one 18-byte draw; under a connection the message draws 8 bytes.
 - The message context is done when the connection's context ends.
 - It costs at most three allocations.
 
@@ -362,11 +363,15 @@ Returns the scope's own span ID: `Request`, or `Message` when `Request` is empty
 
 Returns the prebuilt one-element values of the `X-Request-Id` and `Traceparent` response headers of a
 request scope, so setting them costs no allocation. The slices are backed by the scope: never write
-them in place.
+them in place. On a message scope the `X-Request-Id` value is `""` and the `Traceparent` value is the
+message's `Traceparent()`.
 
 #### Returns
 1. `requestID` `[]string`: `[Request]`.
 2. `traceparent` `[]string`: `[Traceparent()]`.
+
+#### Rules
+- The `traceparent` value is always `Traceparent()`.
 
 #### Usage
 
@@ -384,10 +389,11 @@ w.Header()["Traceparent"] = traceparent
 - A trace ID shows its creation time to the millisecond.
 
 ## Performance notes
-- **Random buffer (approved heavy technique H1).** IDs copy their bytes out of one package-level 512-byte buffer behind a `sync.Mutex`; the buffer is filled on first use and refilled with one `crypto/rand.Read` when fewer bytes are left than an ID needs (unused bytes are dropped). A request draws 18 bytes (a trace tail and its own ID), so one system call serves about 28 requests instead of one per request. A test replaces `crypto/rand.Reader` and checks that consecutive IDs are the reader's stream in order across refills, in 512-byte reads.
-- **Idle cost:** 512 bytes and a mutex, no goroutine, no timer.
+- **Random sources in a `sync.Pool` (approved heavy technique H1, design 0013).** IDs copy their bytes out of a 512-byte source taken from a `sync.Pool` and put back before the function returns, so no goroutine waits on another and no lock is taken. A source holds 504 random bytes: it fills on its first read and refills with one `crypto/rand.Read` of exactly 504 bytes when fewer bytes are left than a read needs (the leftover is dropped). A new trace draws 18 bytes at once, so one system call serves 28 requests. A source is used by one goroutine at a time, so no random byte is handed out twice. Tests replace `crypto/rand.Reader` and check that a source returns the reader's stream in order across refills, that each ID is one run of that stream and that every reader call asks for 504 bytes.
+- **Idle cost:** no goroutine, no timer. The pool keeps about one source per processor that made an ID recently (at most about 12 KiB with 12 processors) and empties itself after two garbage collections without traffic; the first ID after that costs one 512-byte allocation and one `crypto/rand.Read`.
+- **`Traceparent()` is the header value.** The scope stores the `traceparent` once, in the array that `Headers` returns.
 - **One string per scope.** The 55-byte `traceparent` is the only string a scope allocates: `TraceID` and `Request` (or `Message`) are substrings of it.
-- **One context per scope.** The scope lives inside its context value (240 B with the string), together with the one-element header arrays that `Headers` returns.
+- **One context per scope.** The scope lives inside its context value (224 B with the string), together with the one-element header arrays that `Headers` returns.
 - `ScopeOf` walks `Value` once and allocates nothing.
 
 ## Benchmarks
@@ -399,19 +405,19 @@ goos: darwin
 goarch: amd64
 pkg: github.com/dangduoc08/ginject/internal/tracecontext
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkNewSpanID-12                             	32031282	        37.09 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewSpanID_Parallel-12                    	13496560	        89.37 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewTraceID-12                            	22737229	        50.07 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewTraceID_Parallel-12                   	11309940	       112.5 ns/op	       0 B/op	       0 allocs/op
-BenchmarkScopeOf-12                               	126213189	         9.482 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewRequest_OwnTrace-12                   	 7307185	       159.3 ns/op	     240 B/op	       2 allocs/op
-BenchmarkNewRequest_ContinuesTrace-12             	 6713929	       179.5 ns/op	     240 B/op	       2 allocs/op
-BenchmarkNewMessage-12                            	10487131	       114.4 ns/op	     240 B/op	       2 allocs/op
-BenchmarkScope_AppendArgs-12                      	21880845	        55.00 ns/op	      48 B/op	       3 allocs/op
-BenchmarkParseTraceparent-12                      	27643794	        42.97 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseTraceparent_FutureVersionLong-12    	18691779	        63.02 ns/op	      64 B/op	       1 allocs/op
-BenchmarkParseTraceparent_Invalid-12              	199376446	         6.015 ns/op	       0 B/op	       0 allocs/op
-BenchmarkParseTraceparent_OneMegabyte-12          	239747076	         4.986 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewSpanID-12                             	25177364	        41.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewSpanID_Parallel-12                    	24549900	        43.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewTraceID-12                            	19814092	        58.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewTraceID_Parallel-12                   	40376914	        34.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkScopeOf-12                               	128670400	         9.321 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewRequest_OwnTrace-12                   	 6996877	       171.0 ns/op	     224 B/op	       2 allocs/op
+BenchmarkNewRequest_ContinuesTrace-12             	 6039922	       197.7 ns/op	     224 B/op	       2 allocs/op
+BenchmarkNewMessage-12                            	 9192940	       131.0 ns/op	     224 B/op	       2 allocs/op
+BenchmarkScope_AppendArgs-12                      	20874886	        59.33 ns/op	      48 B/op	       3 allocs/op
+BenchmarkParseTraceparent-12                      	24797931	        45.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseTraceparent_FutureVersionLong-12    	17991895	        67.61 ns/op	      64 B/op	       1 allocs/op
+BenchmarkParseTraceparent_Invalid-12              	189637357	         6.313 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseTraceparent_OneMegabyte-12          	234890870	         5.112 ns/op	       0 B/op	       0 allocs/op
 ```
 
 The ID benchmarks show no allocation because their result does not escape there.

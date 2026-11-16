@@ -2,6 +2,7 @@ package tracecontext
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -536,5 +537,118 @@ func TestScope_AppendArgs_SkipsEveryEmptyValue(t *testing.T) {
 	want := []any{KeyUpstream, "u"}
 	if !slices.Equal(got, want) {
 		t.Error(test.DiffMessage(got, want, "L1: only non-empty values are appended"))
+	}
+}
+
+func streamDelta(from, to byte) int {
+	return ((int(to)-int(from))%251 + 251) % 251
+}
+
+func hasDelta(starts []byte, delta int) bool {
+	for i := 1; i < len(starts); i++ {
+		if streamDelta(starts[i-1], starts[i]) == delta {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNewRequest_OneReadOf18Bytes(t *testing.T) {
+	installReader(t, &streamReader{})
+	resetSources()
+
+	starts := make([]byte, 0, 100)
+	for i := range 100 {
+		_, s := NewRequest(t.Context(), nil, fixedNow)
+		raw := mustDecode(t, s.TraceID[12:]+s.Request)
+		if !isConsecutive(raw) {
+			t.Fatal(test.DiffMessage(hex.EncodeToString(raw), "<18 consecutive stream values>", fmt.Sprintf("R3: request %d: the request ID's bytes directly follow the trace tail's", i)))
+		}
+		starts = append(starts, raw[0])
+	}
+	if !hasDelta(starts, 18) {
+		t.Error(test.DiffMessage(starts, "<consecutive requests 18 stream bytes apart>", "R3: a request consumes 18 bytes"))
+	}
+}
+
+func TestNewRequest_ContinuedTraceReads8Bytes(t *testing.T) {
+	installReader(t, &streamReader{})
+	resetSources()
+
+	h := headerOf("Traceparent", validHeader)
+	starts := make([]byte, 0, 100)
+	for i := range 100 {
+		_, s := NewRequest(t.Context(), h, fixedNow)
+		if s.TraceID != validTraceID {
+			t.Fatal(test.DiffMessage(s.TraceID, validTraceID, "R3: the trace ID is the header's"))
+		}
+		raw := mustDecode(t, s.Request)
+		if !isConsecutive(raw) {
+			t.Fatal(test.DiffMessage(hex.EncodeToString(raw), "<8 consecutive stream values>", fmt.Sprintf("R3: request %d: the request ID is one run of the stream", i)))
+		}
+		starts = append(starts, raw[0])
+	}
+	if !hasDelta(starts, 8) {
+		t.Error(test.DiffMessage(starts, "<consecutive requests 8 stream bytes apart>", "R3: a continued trace consumes 8 bytes"))
+	}
+}
+
+func TestNewMessage_UnderConnectionReads8Bytes(t *testing.T) {
+	installReader(t, &streamReader{})
+	resetSources()
+
+	connCtx, _ := connectionContext(t, "01")
+	starts := make([]byte, 0, 100)
+	for i := range 100 {
+		_, s := NewMessage(connCtx, fixedNow)
+		raw := mustDecode(t, s.Message)
+		if !isConsecutive(raw) {
+			t.Fatal(test.DiffMessage(hex.EncodeToString(raw), "<8 consecutive stream values>", fmt.Sprintf("R3: message %d: the ID is one run of the stream", i)))
+		}
+		starts = append(starts, raw[0])
+	}
+	if !hasDelta(starts, 8) {
+		t.Error(test.DiffMessage(starts, "<consecutive messages 8 stream bytes apart>", "R3: a message under a connection consumes 8 bytes"))
+	}
+}
+
+func TestNewMessage_WithoutConnectionReads18Bytes(t *testing.T) {
+	installReader(t, &streamReader{})
+	resetSources()
+
+	starts := make([]byte, 0, 100)
+	for i := range 100 {
+		_, s := NewMessage(t.Context(), fixedNow)
+		raw := mustDecode(t, s.TraceID[12:]+s.Message)
+		if !isConsecutive(raw) {
+			t.Fatal(test.DiffMessage(hex.EncodeToString(raw), "<18 consecutive stream values>", fmt.Sprintf("R3: message %d: the ID's bytes follow the trace tail's", i)))
+		}
+		starts = append(starts, raw[0])
+	}
+	if !hasDelta(starts, 18) {
+		t.Error(test.DiffMessage(starts, "<consecutive messages 18 stream bytes apart>", "R3: a message without a connection consumes 18 bytes"))
+	}
+}
+
+func TestScope_TraceparentIsHeaderValue(t *testing.T) {
+	for _, h := range []http.Header{nil, headerOf("Traceparent", validHeader)} {
+		_, s := NewRequest(t.Context(), h, fixedNow)
+		_, traceparent := s.Headers()
+		if len(traceparent) != 1 || s.Traceparent() != traceparent[0] {
+			t.Error(test.DiffMessage(s.Traceparent(), traceparent, "R6: Traceparent() equals the second slice of Headers()"))
+		}
+	}
+	_, m := NewMessage(t.Context(), fixedNow)
+	_, traceparent := m.Headers()
+	if m.Traceparent() == "" || len(traceparent) != 1 || traceparent[0] != m.Traceparent() {
+		t.Error(test.DiffMessage(m.Traceparent(), traceparent, "R6: a message's Headers() carries its traceparent"))
+	}
+}
+
+func TestNewRequest_TwoAllocations(t *testing.T) {
+	for _, h := range []http.Header{nil, headerOf("Traceparent", validHeader, "X-Request-Id", "abc")} {
+		if got := testing.AllocsPerRun(500, func() { NewRequest(context.Background(), h, fixedNow) }); got > 2 {
+			t.Error(test.DiffMessage(got, "<= 2", "R8: NewRequest allocates the scope context and the traceparent string only"))
+		}
 	}
 }
