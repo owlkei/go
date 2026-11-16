@@ -71,3 +71,29 @@ more CPU on 2 CPUs than on 1 (`docs/review/http-0004.md`, follow-up). A short ba
 writer waits up to about 1 ms or 16 KiB before writing, a timer armed only while the queue is not
 empty, Fatal and shutdown flush at once) would remove most of it. Costs: up to about 1 ms of log
 latency and one more state in the sink. Needs a design addendum to 0012.
+
+## New storage and HTTP client modules (after roadmap 0005)
+
+Decided 2026-11-17: the old `modules/storage` (embedded append-only document store, known data-loss
+risks in transactions and compaction) is removed in roadmap 0005. A new storage module gets its own
+roadmap, starting with requirements: an embedded engine of our own or adapters over existing
+databases (SQLite, Postgres…), memory and disk bounds for small machines, crash safety proven by
+injected crashes, and the API surface (one obvious way).
+
+`modules/httpclient` is removed in 0005 too and rewritten in the same roadmap (requirements first:
+timeouts, response size limits, retries only for idempotent requests, redirect bounds, SSRF guards
+for user-supplied URLs). Until then apps use `net/http` with `trace.Transport` (0005 step 2).
+
+## Timeout interceptor (with the interceptor review)
+
+Decided 2026-11-17 (roadmap 0005 discussion): a timeout per route or controller is a built-in
+interceptor, not a middleware.
+
+- The timeout is a `RequestTimeoutException` that goes through the exception filters (same JSON as
+  every other error, customizable), unlike a middleware error (the fixed HTTP-layer response).
+- It wraps WebSocket messages and future trigger points (scheduler) the same way: one obvious way.
+- The server's timeouts (0003) already bound the whole request, middlewares and guards included.
+- Hard part for the design: Go can't stop a handler goroutine, so the timeout is cooperative (a
+  deadline on `c.Context()`). Answering early while the handler still runs must never let it write
+  into a pooled `HTTPContext` reused by another request: either the context returns to the pool only
+  after the handler returns, or the response writer is detached from the pooled context.
