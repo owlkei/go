@@ -181,7 +181,7 @@ defer c.Reset()
 
 ### GetID and Context
 
-`GetID() string` returns the request ID, which `core` also sends as the `X-Request-Id` response header. `Context() context.Context` (promoted from `Request`) returns the request's context, which carries the trace scope that loggers and `modules/httpclient` read.
+`GetID() string` returns the request ID, which `core` also sends as the `X-Request-Id` response header. `Context() context.Context` (promoted from `Request`) returns the request's context, which carries the trace scope that loggers and `trace.Transport` (outbound `net/http` calls) read.
 
 ```go
 func (ctl UsersController) READ(c *ctx.HTTPContext) string {

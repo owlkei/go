@@ -24,7 +24,7 @@ A NestJS-inspired dependency injection web framework for Go. Build structured, m
   - [Built-in Modules](#built-in-modules)
     - [Config](#config)
     - [Cache](#cache)
-    - [HTTP Client](#http-client)
+    - [Outbound HTTP calls](#outbound-http-calls)
   - [Built-in Middlewares](#built-in-middlewares)
     - [CORS](#cors)
     - [Helmet](#helmet)
@@ -586,46 +586,35 @@ func (c *UserController) READ_BY_ID(param ginject.Param) any {
 | `IsGlobal` | `bool`   | Make `CacheService` available everywhere    |
 | `OnInit`   | `func()` | Lifecycle hook before module injection      |
 
-### HTTP Client
+### Outbound HTTP calls
 
-Axios-inspired outbound HTTP client with middleware chain, retry, streaming, SSE, SSRF protection, and timing. See the [HTTP Client module documentation](modules/httpclient/README.md) for full details.
+Ginject ships no HTTP client module. Call other services with `net/http` and wrap the transport with
+`trace.Transport`, so the request continues the incoming request's trace (`Traceparent`). See the
+[trace documentation](trace/README.md#outbound-calls) for the rules.
 
 ```go
-import "github.com/dangduoc08/ginject/modules/httpclient"
+import (
+    "net/http"
+    "time"
 
-core.ModuleBuilder().
-    Imports(
-        httpclient.Register(&httpclient.HttpClientModuleOptions{
-            IsGlobal: true,
-            BaseURL:  "https://api.example.com",
-        }),
-    ).
-    Build()
+    "github.com/dangduoc08/ginject/trace"
+)
 
-// Inject ClientService into any provider or controller
-type UserService struct {
-    httpclient.ClientService
-}
+var client = &http.Client{Transport: trace.Transport(nil), Timeout: 10 * time.Second}
 
-func (s *UserService) FetchUser(id string) (*User, error) {
-    resp, err := s.Get("/users/" + id).Send()
+func (instance UserController) READ_profile(c *ctx.HTTPContext) any {
+    req, err := http.NewRequestWithContext(c.Context(), http.MethodGet, "https://accounts.example.com/me", nil)
     if err != nil {
-        return nil, err
+        return err
     }
-    var user User
-    return &user, resp.JSON(&user)
+    res, err := client.Do(req)
+    if err != nil {
+        return err
+    }
+    defer res.Body.Close()
+    return res.StatusCode
 }
 ```
-
-**`HttpClientModuleOptions`:**
-
-| Field      | Type                  | Description                                      |
-|------------|-----------------------|--------------------------------------------------|
-| `IsGlobal` | `bool`                | Make `ClientService` available everywhere        |
-| `BaseURL`  | `string`              | Prepended to every relative request path         |
-| `Headers`  | `map[string]string`   | Default headers sent on every request            |
-| `Timeout`  | `time.Duration`       | Client-level timeout for all requests            |
-| `OnInit`   | `func()`              | Lifecycle hook before module injection           |
 
 ---
 

@@ -5,7 +5,6 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/modules/httpclient"
 )
 
 type Controller struct {
@@ -15,7 +14,6 @@ type Controller struct {
 	common.Guard
 	common.Interceptor
 	common.ExceptionFilter
-	httpclient.ClientService
 }
 
 func (instance Controller) NewController() core.Controller {

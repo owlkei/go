@@ -85,9 +85,8 @@ don't mass-rewrite the exceptions.
   (`memorycache/memory_cache.go`), the `memorybroker` errors. Callers compare them with `==` or
   `errors.Is`.
 - **Wrap with `%w`** and the package prefix when adding context:
-  `fmt.Errorf("httpclient: JSON marshal: %w", err)`.
-- Known inconsistency: `modules/storage/errors.go` prefixes `store:` instead of `storage:`; a few
-  `core` errors have no prefix (`"root not found: %s"`). Follow the rule in new code.
+  `fmt.Errorf("core: listen on %s: %w", address, err)` (`core/server.go`).
+- Known inconsistency: a few `core` errors have no prefix (`"root not found: %s"`). Follow the rule in new code.
 
 ## Concurrency
 

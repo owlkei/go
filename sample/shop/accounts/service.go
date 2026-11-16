@@ -10,64 +10,39 @@ import (
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/crypto"
 	"github.com/dangduoc08/ginject/modules/cache"
-	dbstorage "github.com/dangduoc08/ginject/modules/storage"
 )
 
 const (
-	usersTable     = "users"
 	sessionTTL     = 24 * time.Hour
 	sessionKeyPath = "session:"
 )
 
 type UserService struct {
-	Store dbstorage.StoreService
+	Users UserRepository
 	Cache cache.CacheService
 }
 
 func (svc UserService) NewProvider() core.Provider {
-	svc.users().Schema(dbstorage.ModelSchema{
-		Fields: []dbstorage.FieldSchema{
-			{Name: "email", Index: true},
-		},
-	})
-
 	return svc
 }
 
-func (svc UserService) users() *dbstorage.Model {
-	return svc.Store.Model(usersTable)
-}
-
 func (svc UserService) Register(email, name, password string) (User, error) {
-	existing, err := svc.users().Find().Where("email", dbstorage.OpEq, email).Exec()
-	if err != nil {
-		return User{}, exception.InternalServerErrorException("failed to look up email")
-	}
-	if len(existing) > 0 {
-		return User{}, exception.ConflictException("email is already registered")
-	}
-
-	doc, err := svc.users().Create(map[string]any{
-		"email":        email,
-		"name":         name,
-		"passwordHash": hashPassword(password),
-	})
+	id, err := crypto.UUID()
 	if err != nil {
 		return User{}, exception.InternalServerErrorException("failed to create user")
 	}
 
-	return userFromDocument(doc), nil
+	user := User{ID: id, Email: email, Name: name}
+	if !svc.Users.Create(user, hashPassword(password)) {
+		return User{}, exception.ConflictException("email is already registered")
+	}
+
+	return user, nil
 }
 
 func (svc UserService) Authenticate(email, password string) (User, string, error) {
-	docs, err := svc.users().Find().Where("email", dbstorage.OpEq, email).Exec()
-	if err != nil || len(docs) == 0 {
-		return User{}, "", exception.UnauthorizedException("invalid email or password")
-	}
-
-	doc := docs[0]
-	passwordHash, _ := doc.Data["passwordHash"].(string)
-	if passwordHash != hashPassword(password) {
+	user, passwordHash, ok := svc.Users.ByEmail(email)
+	if !ok || passwordHash != hashPassword(password) {
 		return User{}, "", exception.UnauthorizedException("invalid email or password")
 	}
 
@@ -76,11 +51,11 @@ func (svc UserService) Authenticate(email, password string) (User, string, error
 		return User{}, "", exception.InternalServerErrorException("failed to start session")
 	}
 
-	if err := svc.Cache.Set(context.Background(), sessionKey(token), []byte(doc.ID), sessionTTL); err != nil {
+	if err := svc.Cache.Set(context.Background(), sessionKey(token), []byte(user.ID), sessionTTL); err != nil {
 		return User{}, "", exception.InternalServerErrorException("failed to start session")
 	}
 
-	return userFromDocument(doc), token, nil
+	return user, token, nil
 }
 
 func (svc UserService) Logout(token string) {
@@ -93,27 +68,11 @@ func (svc UserService) UserBySession(token string) (User, bool) {
 		return User{}, false
 	}
 
-	doc, err := svc.users().FindByID(string(userID))
-	if err != nil {
-		return User{}, false
-	}
-
-	return userFromDocument(doc), true
+	return svc.Users.ByID(string(userID))
 }
 
 func sessionKey(token string) string {
 	return sessionKeyPath + token
-}
-
-func userFromDocument(doc dbstorage.Document) User {
-	email, _ := doc.Data["email"].(string)
-	name, _ := doc.Data["name"].(string)
-
-	return User{
-		ID:    doc.ID,
-		Email: email,
-		Name:  name,
-	}
 }
 
 func hashPassword(password string) string {

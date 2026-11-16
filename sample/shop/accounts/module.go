@@ -7,8 +7,8 @@ import (
 
 var Module = func() *core.Module {
 	var module = core.ModuleBuilder().
-		Imports(infra.StorageModule, infra.CacheModule).
-		Providers(UserService{}).
+		Imports(infra.CacheModule).
+		Providers(UserRepository{}, UserService{}).
 		Controllers(SessionsController{}).
 		Build()
 

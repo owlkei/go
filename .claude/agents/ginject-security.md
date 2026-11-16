@@ -31,11 +31,11 @@ The caller says the mode: **audit** (default: report only, edit nothing) or **fi
 - `golangci-lint run --enable-only gosec ./...` and triage: drop false positives with a reason
   (integer conversions bounded by construction, `math/rand` in benchmarks), keep real ones.
 - Review the request path the framework owns, in this order: body and multipart limits
-  (`ctx/`, `core/http.go`), file serving and path traversal (`FILE` routes, `modules/storage`),
+  (`ctx/`, `core/http.go`), file serving and path traversal (`FILE` routes),
   header and response splitting, redirects (open redirect), CORS / CSRF / helmet defaults
   (`middlewares/`), WebSocket origin checks, message size and backpressure (`core/ws*.go`), panics
   reachable from input (a crash is a DoS), timeouts and slow clients (server defaults), outbound
-  requests (`modules/httpclient`: SSRF, TLS verification, redirect limits), crypto and token
+  requests (`trace.Transport`: header injection, what it forwards), crypto and token
   comparison (`internal/crypto`), logs that leak secrets (`log/`, `accesslog/`).
 - Rate each finding **critical / high / medium / low** by exploitability in an app built on Ginject.
 

@@ -670,41 +670,7 @@ type Cache interface {
 
 **There is no package-level `NewCacheModule()` function** — use `cache.Register(opts)`. No LFU eviction anywhere (see `memorycache` package below for the real CLOCK eviction).
 
-## Package: `modules/httpclient`
-
-**Responsibility**: HTTP client wrapper with a fluent request builder
-
-```go
-func Register(opts *HTTPClientModuleOptions) *core.Module   // package name: httpclient
-
-type HTTPClientModuleOptions struct {
-    IsGlobal bool
-    BaseURL  string
-    Headers  map[string]string
-    Timeout  time.Duration
-    OnInit   func()
-}
-```
-
-Provides `ClientService` (**not** `HTTPClientService`) with `Get/Post/Put/Patch/Delete/Head/Options(path string) RequestBuilder`. **There is no `NewHTTPClientModule()` function.**
-`Send()` on a builder whose `Context(ctx)` carries a trace scope sets `Traceparent` (unless the caller set one); `X-Request-Id` and `tracestate` are never forwarded.
-
-## Package: `modules/storage`
-
-**Responsibility**: Embedded, crash-safe document database (append-only binary segments, no external DB) — see `modules/storage/README.md` for the full API (queries, indexes, transactions)
-
-```go
-func Register(opts *StoreModuleOptions) *core.Module   // package name: storage
-
-type StoreModuleOptions struct {
-    IsGlobal         bool
-    Path             string   // required — panics if empty
-    OnInit           func()
-    DisableGitignore bool
-}
-```
-
-Provides `StoreService{DB *DB}`. This package was entirely absent from earlier versions of this doc despite being a substantial subsystem (`store.go`, `query.go`, `index.go`, `record.go`, `document.go`, `engine.go`, `tx.go`) — consult its own README rather than assuming an API shape here.
+Ginject has no HTTP client or storage module: outbound calls use `net/http` with `trace.Transport` (see `trace/README.md`).
 
 ---
 
@@ -744,15 +710,28 @@ Errors: `ErrEmptyKey`, `ErrNegativeTTL` (a negative ttl writes nothing), `ErrEnt
 
 ```go
 type Throttler struct {
-    Limit    int64                        // default 100 via NewGuard()
+    Limit    int64                        // default 100
     TTL      time.Duration                // default time.Minute
-    Strategy Strategy                     // FixedWindow (default 0) | SlidingWindow | TokenBucket
-    KeyFunc  func(*ctx.HTTPContext) string
-    Backend  cache.Cache                  // defaults to memorycache.NewMemoryCache(nil)
+    Strategy Strategy                     // FixedWindow (default 0) | SlidingWindow | TokenBucket; unknown panics
+    KeyFunc  func(*ctx.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
+    Backend  cache.Cache                  // default: one memorycache per guard, MaxEntries 32,768 (CLOCK eviction)
 }
-func (g Throttler) NewGuard() Throttler
-func (g Throttler) CanActivate(c *ctx.HTTPContext) bool
+func (instance Throttler) NewGuard() common.Guarder // the compiled *guard (CanActivate, inspect.Snapshotter)
 ```
+
+- Bind the `Throttler` value (`BindGuard(throttler.Throttler{...})`); `construct` calls `NewGuard` once.
+  Equal options share one compiled guard and one budget (layer cache).
+- No request header is read for the default key; trust goes through `proxy` (design 0014 T1).
+- Keys over 128 bytes become `h:` + 16 hex digits of a per-guard `maphash` (T2).
+- Fixed window: one `Incr` per request (counts refusals too). Sliding window (one 24-byte entry per
+  key: window id, previous and current count; refusals not stored) and token bucket (16 bytes) run
+  Get + Set under one of 64 mutexes picked by `maphash` of the stored key, unlocked with `defer`
+  so a panicking custom `Backend` never leaves a stripe locked (coordinator decision).
+- Backend errors allow the request (T7). No goroutine; the store's expiry timer only while it holds TTL entries.
+- Snapshot (`name: throttler`): limit, ttl, strategy, key, backend, and with the default store
+  maxKeys / keys / evictions (from `inspect.CacheStateOf`), then rejected (an atomic, refusals only).
+- Memory: idle about 14 KiB (the store's shards + 512 B of mutexes); about 150 B per entry (IPv4 key), 280 B (128-byte key); full store about 4.7 MiB (IPv4),
+  5.2 MiB (IPv6), 8.7 MiB with 128-byte custom keys. Per request 6 allocs (fixed window), 8 (the others).
 
 ### `middlewares/proxy` (design 0014)
 
@@ -826,6 +805,17 @@ type Compress struct { MinSize int } // default 1024
 ```
 
 gzip at `BestSpeed` for candidates (not `HEAD`, no `Range`, no `Upgrade`, `Accept-Encoding` names gzip with q ≠ 0 in its first 256 bytes) whose response is compressible text, at least `MinSize`, not encoded, not `204`/`206`/`304`, no `no-transform`. `Vary: Accept-Encoding` on every response. At most 8 writers per instance (pooled, design-approved `sync.Pool`); none free → sent uncompressed. Uses `internal/httphook` to wrap the writer and finish at the end of the exchange.
+
+### `middlewares/loadshed` (new, design 0014)
+
+```go
+type LoadShed struct {
+    MaxInFlight int // 0: adaptive (default); 1-1,000,000: fixed limit
+    MaxQueue    int // 0: 64; negative: no queue; at most 65,536
+}
+```
+
+Bounds requests between admission and the end of their exchange (released through an `internal/httphook` `OnDone` hook, also on panic, 404, abort and at the WS handshake). Over the limit: FIFO queue of `MaxQueue` for 100 ms, then `503` + `Retry-After: 1`, message `Server is busy` (`panic(&busy)`); a request whose context ends while waiting gets nothing. Adaptive mode: bounds read once in `NewMiddleware` (`min` = `GOMAXPROCS`, `max` = smallest of `GOMEMLIMIT` / cgroup `memory.max` / v1 `memory.limit_in_bytes` ÷ 4 MiB, else 256 × `GOMAXPROCS`, clamped 64-4,096; start 16 × `GOMAXPROCS`); windows of 32 samples (sum and count packed in one atomic word), quiet-sample baseline, gradient `clamp(1.5 × baseline / avg, 0.5, 1)`, probe at `min` admissions when saturated and the baseline is unknown or older than 30 s. A queued request's sample excludes its wait in loadshed's own queue (measured when a slot is handed to it). No goroutine, no timer while idle; admitted request: 0 allocations. Implements `inspect.Snapshotter` (`mode`, `limit`, `queue`, `wait`, `retry_after`, `in_flight`, `waiting`, `refused_*`, and in adaptive mode `min`, `max`, `probes`, `probing`, `baseline`, `average`).
 
 Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `httpsredirect`, `helmet`, `cors`, `csrf`, `compress`.
 

@@ -6,7 +6,7 @@ argument-hint: "[audit | fix] [package or area]"
 # Security: $ARGUMENTS
 
 The first word is the mode, `audit` when missing; the rest narrows the code review to a package or an
-area (`middlewares`, `websocket`, `httpclient`). Dependency and toolchain checks always cover the
+area (`middlewares`, `websocket`, `trace`). Dependency and toolchain checks always cover the
 whole module.
 
 Run `ginject-security` with the mode, the scope and today's date (so it knows what "latest" means).
