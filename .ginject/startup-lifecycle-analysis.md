@@ -49,11 +49,14 @@ Create(m)
   ├─ container.addInterface(common.Logger)
   ├─ container.wire(m)                      core/container.go
   │    ├─ addGlobals(root)                  the root's providers are global
+  │    ├─ scanGlobals(root)                 walks the static *Module imports first: every IsGlobal
+  │    │                                    module's providers become global, at any depth
   │    ├─ discover(root)                    depth first, each module once:
-  │    │     IsGlobal → its providers become global;
   │    │     module funcs are called here (arguments from global providers, then Logger, Publisher);
+  │    │     the provider of an argument is built after its owner module's OnInit (which then
+  │    │     does not run again); each func's result is scanned for globals before the next call;
   │    │     visible providers and controllers per module, prefixes per controller
-  │    ├─ for each module in init order: OnInit(), then provide() each of its providers
+  │    ├─ for each module in init order: OnInit() (unless already run), then provide() each provider
   │    │     (a provider is constructed after the providers its fields name, once per app)
   │    └─ injectController() for every controller of the tree (fields injected, then NewController)
   ├─ initWS()                               only when EnableWS was called
@@ -65,6 +68,17 @@ Create(m)
   ├─ initAccessLog()                        the tracer's only listener, when EnableAccessLog was called
   └─ callOnReady()                          OnReady of every module, in init order; then isCreated = true
 ```
+
+**Why this order** (do not reorder without re-checking each step):
+1. `wire` runs first: it initializes the modules, injects the controllers and fills `app.container`,
+   which every later step reads.
+2. `initWS` runs right after it and before `initExceptionFilters`, `initGuards`, `initInterceptors`
+   and `initMainHandlers`: those write into `app.ws` (`catchFnsByEvent`, `eventMatcher`) whenever the
+   app has WS handlers. `app.ws` stays nil without `EnableWS`, so each of those call sites checks
+   `app.ws != nil`.
+3. `initDevtool` runs after the routes and layers exist: it reads them for its snapshot.
+4. `callOnReady` runs last. Only then is the app marked created, so a `Create` that did not finish
+   runs no `OnShutdown`.
 
 **Init order**: a module after every module it imports, imports in `Imports(…)` order, each module once
 per app. Root importing A and C, both importing B: B, A, C, root.
@@ -103,7 +117,9 @@ SIGINT / SIGTERM / app.Stop()
   └─ the serving call returns nil, "core: shutdown timed out after <timeout>" or "core: serve: <err>"
 ```
 
-`app.Stop()` on an app that is not serving runs the hooks once and marks the app stopped. WebSocket
+`app.Stop()` on an app that is not serving runs the hooks once and marks the app stopped. Every
+`Stop()` waits until the hooks have finished, except one called from inside an `OnShutdown` hook
+(the goroutine running the hooks): it returns at once instead of deadlocking. WebSocket
 connections are not drained: they end when the process exits.
 
 ---

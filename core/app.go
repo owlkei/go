@@ -62,7 +62,7 @@ type App struct {
 	serveMu        sync.Mutex
 	serveState     serveState
 	stopRequest    chan struct{}
-	isRunningHooks bool
+	hooksGoroutine uint64
 	shutdownOnce   sync.Once
 	shutdownDone   chan struct{}
 }
@@ -157,24 +157,6 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	app.releaseCtx(ex)
 }
 
-// Order matters here and is easy to break by accident:
-//
-//  1. wire must run first: it initializes the modules (imports first, OnInit
-//     then providers), injects the controllers and fills app.container, which
-//     everything below reads from.
-//  2. initWS must run right after that, and BEFORE initExceptionFilters/
-//     initGuards/initInterceptors/initMainHandlers: those functions write
-//     into app.ws.catchFnsByEvent / app.ws.eventMatcher whenever the app has
-//     WS handlers. app.ws stays nil if EnableWS was never called, so every one
-//     of those call sites is guarded with app.ws != nil.
-//  3. initDevtool must run after the routes and layers exist: it reads them to
-//     build the devtool snapshot.
-//  4. callOnReady must run last, after all initialization is complete. Only
-//     then is the app marked created, so a Create that did not finish runs no
-//     OnShutdown.
-//
-// Do not reorder these calls without re-checking every init* function for
-// an unguarded app.ws.* access.
 func (app *App) Create(m *Module) {
 	if m == nil {
 		panic(color.FmtRed("invalid module: Create needs a root module"))

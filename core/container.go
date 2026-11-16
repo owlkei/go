@@ -22,16 +22,19 @@ var fieldNameByRole = map[string]string{
 }
 
 type container struct {
-	moduleByFunc    map[uintptr]*Module
-	importsByModule map[*Module][]*Module
-	visibleByModule map[*Module]map[string]struct{}
-	modules         []*Module
+	moduleByFunc       map[uintptr]*Module
+	scannedModules     map[*Module]struct{}
+	initializedModules map[*Module]struct{}
+	importsByModule    map[*Module][]*Module
+	visibleByModule    map[*Module]map[string]struct{}
+	modules            []*Module
 
-	declaredByKey  map[string]Provider
-	ownerByKey     map[string]*Module
-	globalByKey    map[string]Provider
-	providerByKey  map[string]Provider
-	interfaceByKey map[string]any
+	declaredByKey    map[string]Provider
+	ownerByKey       map[string]*Module
+	globalByKey      map[string]Provider
+	globalOwnerByKey map[string]*Module
+	providerByKey    map[string]Provider
+	interfaceByKey   map[string]any
 
 	controllerKeysByModule map[*Module][]string
 	controllerByKey        map[string]Controller
@@ -67,6 +70,9 @@ type layerEntry struct {
 func newContainer() *container {
 	return &container{
 		moduleByFunc:           make(map[uintptr]*Module),
+		scannedModules:         make(map[*Module]struct{}),
+		initializedModules:     make(map[*Module]struct{}),
+		globalOwnerByKey:       make(map[string]*Module),
 		importsByModule:        make(map[*Module][]*Module),
 		visibleByModule:        make(map[*Module]map[string]struct{}),
 		declaredByKey:          make(map[string]Provider),
@@ -85,11 +91,12 @@ func newContainer() *container {
 	}
 }
 
-func (c *container) addGlobal(p Provider) {
+func (c *container) addGlobal(p Provider) string {
 	key := genProviderKey(p)
 	if _, ok := c.globalByKey[key]; !ok {
 		c.globalByKey[key] = p
 	}
+	return key
 }
 
 func (c *container) addInterface(key string, v any) {
@@ -110,12 +117,11 @@ func (c *container) global(key string) (Provider, bool) {
 
 func (c *container) wire(root *Module) {
 	c.addGlobals(root)
+	c.scanGlobals(root)
 	c.discover(root)
 
 	for _, m := range c.modules {
-		if m.OnInit != nil {
-			m.OnInit()
-		}
+		c.initModule(m)
 		for _, p := range m.providers {
 			c.provide(genProviderKey(p))
 		}
@@ -128,7 +134,35 @@ func (c *container) wire(root *Module) {
 
 func (c *container) addGlobals(m *Module) {
 	for _, p := range m.providers {
-		c.addGlobal(p)
+		key := c.addGlobal(p)
+		if _, ok := c.globalOwnerByKey[key]; !ok {
+			c.globalOwnerByKey[key] = m
+		}
+	}
+}
+
+func (c *container) scanGlobals(m *Module) {
+	if _, ok := c.scannedModules[m]; ok {
+		return
+	}
+	c.scannedModules[m] = struct{}{}
+	if m.IsGlobal {
+		c.addGlobals(m)
+	}
+	for _, imported := range m.imports {
+		if staticModule, ok := imported.(*Module); ok {
+			c.scanGlobals(staticModule)
+		}
+	}
+}
+
+func (c *container) initModule(m *Module) {
+	if _, ok := c.initializedModules[m]; ok {
+		return
+	}
+	c.initializedModules[m] = struct{}{}
+	if m.OnInit != nil {
+		m.OnInit()
 	}
 }
 
@@ -137,9 +171,6 @@ func (c *container) discover(m *Module) {
 		return
 	}
 	c.importsByModule[m] = nil
-	if m.IsGlobal {
-		c.addGlobals(m)
-	}
 
 	imports := make([]*Module, 0, len(m.imports))
 	for _, imported := range m.imports {
@@ -210,6 +241,9 @@ func (c *container) callModuleFunc(moduleFunc any) *Module {
 	args := make([]reflect.Value, 0, moduleFuncType.NumIn())
 	for i := 0; i < moduleFuncType.NumIn(); i++ {
 		argKey := genFieldKey(moduleFuncType.In(i))
+		if owner, ok := c.globalOwnerByKey[argKey]; ok {
+			c.initModule(owner)
+		}
 		if p, ok := c.global(argKey); ok {
 			args = append(args, reflect.ValueOf(p))
 		} else if v, ok := c.interfaceFor(argKey); ok {
@@ -228,6 +262,7 @@ func (c *container) callModuleFunc(moduleFunc any) *Module {
 
 	m := reflect.ValueOf(moduleFunc).Call(args)[0].Interface().(*Module)
 	c.moduleByFunc[ptr] = m
+	c.scanGlobals(m)
 	return m
 }
 

@@ -84,11 +84,13 @@ var AppModule = core.ModuleBuilder().
 
 `Imports` also accepts a function whose type starts with `func(` and returns `*core.Module`. The app
 calls it once (per app, whatever the number of importers) while discovering the tree, **before** it
-discovers the importing module's other imports. Its arguments resolve from the global providers known
-at that point (the root module's providers, and those of `IsGlobal` modules discovered earlier), then
-`common.Logger` and `common.Publisher`; a provider used this way is constructed then. An unresolvable
-argument panics `dependency injection: can't resolve argument of '<func>' …`: an `IsGlobal` module
-imported next to the module func is not visible to it yet.
+discovers the importing module's other imports. Before any module func runs, `scanGlobals` walks the
+static `*Module` imports from the root, so its arguments resolve from the global providers of the whole
+static tree (the root module's providers, and those of every `IsGlobal` module at any depth, imported
+before or after the func), then `common.Logger` and `common.Publisher`. Each func's result is scanned
+the same way before the next func is called. A provider used this way is constructed then, after the
+`OnInit` of the module that declares it (that hook then does not run again). An unresolvable
+argument panics `dependency injection: can't resolve argument of '<func>' …`.
 
 ```go
 type ReportService struct{}
@@ -234,7 +236,7 @@ var InfraModule = func() *core.Module {
 
 - The providers of the root module and of every `IsGlobal` module (at any import depth) are visible to every module
 - A global module still has to be in the tree (imported somewhere) to be discovered
-- Module funcs' arguments resolve only from the global providers discovered before the call (the root's, and earlier `IsGlobal` modules'), then `common.Logger` and `common.Publisher`
+- Module funcs' arguments resolve only from global providers (the root's and every `IsGlobal` module's of the static tree, plus those returned by funcs called earlier), then `common.Logger` and `common.Publisher`
 
 ---
 

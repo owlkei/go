@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
@@ -504,11 +505,45 @@ func mtWSSubscribe(t *testing.T, app *App, topic string) WSPayload {
 	if err := websocket.JSON.Send(conn, WSPayload{Type: TypeSubscribe, ID: "1", Topic: []string{topic}}); err != nil {
 		t.Fatal(err)
 	}
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	var reply WSPayload
 	if err := websocket.JSON.Receive(conn, &reply); err != nil {
 		t.Fatal(err)
 	}
+	if reply.Type == TypePing {
+		t.Fatal(test.DiffMessage(reply.Type, "a reply to the subscribe", "mtWSSubscribe got a keep-alive ping instead of a reply"))
+	}
 	return reply
+}
+
+func mtWSSend(t *testing.T, app *App, topic string) {
+	t.Helper()
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var connected WSPayload
+	if err := websocket.JSON.Receive(conn, &connected); err != nil {
+		t.Fatal(err)
+	}
+	if err := websocket.JSON.Send(conn, WSPayload{Type: TypeSubscribe, ID: "1", Topic: []string{topic}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-mtWSExFilterSignal:
+	case <-time.After(2 * time.Second):
+		t.Fatal(test.DiffMessage("timeout", "the filter ran", "the WS exception filter must run for "+topic))
+	}
 }
 
 func mtWSApp(t *testing.T, root *Module) *App {
@@ -653,8 +688,11 @@ var mtWSExFilterSeen createRecorder
 
 type mtExFilterOneFieldWS struct{ P mtLocalProvider }
 
+var mtWSExFilterSignal = make(chan struct{}, 8)
+
 func (e mtExFilterOneFieldWS) Catch(_ *ctx.WSContext, _ *exception.Exception) {
 	mtWSExFilterSeen.add(e.P.Source)
+	mtWSExFilterSignal <- struct{}{}
 }
 
 type mtDenyGuardWS struct{}
@@ -694,8 +732,8 @@ func TestCreate_WSExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T)
 		Providers(mtLocalProvider{}).
 		Controllers(mtWSExFilterController0{}, mtWSExFilterController1{}).
 		Build())
-	mtWSSubscribe(t, app, "mtwsexfilterc0")
-	mtWSSubscribe(t, app, "mtwsexfilterc1")
+	mtWSSend(t, app, "mtwsexfilterc0")
+	mtWSSend(t, app, "mtwsexfilterc1")
 
 	if got := sprint(mtWSExFilterSeen.list()); got != "[local local]" {
 		t.Error(test.DiffMessage(got, "[local local]", "each controller's WS filter resolves its provider field and runs"))

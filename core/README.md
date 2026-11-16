@@ -200,7 +200,7 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 
 ## Modules and lifecycle
 
-A module groups controllers and providers and imports other modules: `*Module` values or module funcs (`func(...) *core.Module`). Module funcs are called once per app, whatever the number of modules that import them, while the tree is discovered. Their arguments resolve from the global providers known at that point (the root module's, and those of `IsGlobal` modules discovered before the call), then `common.Logger` and `common.Publisher`; an argument with no provider panics `dependency injection: can't resolve argument of '<func>' …`. An `IsGlobal` module imported next to the module func is not visible to it yet: import it from a module discovered earlier, or list its providers in the root.
+A module groups controllers and providers and imports other modules: `*Module` values or module funcs (`func(...) *core.Module`). Module funcs are called once per app, whatever the number of modules that import them, while the tree is discovered. Their arguments resolve from the global providers (the root module's, and those of every `IsGlobal` module of the tree, at any import depth and in any import order), then `common.Logger` and `common.Publisher`; an argument with no provider panics `dependency injection: can't resolve argument of '<func>' …`. An `IsGlobal` module returned by a module func is visible to the module funcs called after it. The provider of an argument is built after the `OnInit` of the module that declares it, so that module's `OnInit` runs before the module func is called (and not again later).
 
 ### ModuleBuilder
 
@@ -477,7 +477,7 @@ A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `Shut
 
 After that the app is stopped: a new serving call returns `core: app is stopped`, while `ServeHTTP` still answers.
 
-`Stop()` is safe from any goroutine and any number of times. On a serving app it runs the shutdown above and returns when the hooks have finished. On an app that is not serving, it runs the hooks once and marks the app stopped. The hooks run once per app: later calls wait for the first one, and a call from inside a hook returns at once. Called from a request handler, `Stop()` waits for that same request, so call it as `go app.Stop()` there.
+`Stop()` is safe from any goroutine and any number of times. On a serving app it runs the shutdown above and returns when the hooks have finished. On an app that is not serving, it runs the hooks once and marks the app stopped. The hooks run once per app: every later call waits until the hooks have finished, from any goroutine, and only a call made from inside an `OnShutdown` hook returns at once. Called from a request handler, `Stop()` waits for that same request, so call it as `go app.Stop()` there.
 
 WebSocket connections are not drained: they end when the process exits.
 

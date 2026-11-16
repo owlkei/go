@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -122,12 +124,29 @@ func (app *App) Stop() {
 		app.serveState = serveStopping
 		close(app.stopRequest)
 	}
-	isRunningHooks := app.isRunningHooks
+	hooksGoroutine := app.hooksGoroutine
 	app.serveMu.Unlock()
 
-	if !isRunningHooks {
-		<-app.shutdownDone
+	if hooksGoroutine != 0 && hooksGoroutine == goroutineID() {
+		return
 	}
+	<-app.shutdownDone
+}
+
+func goroutineID() uint64 {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	header := bytes.TrimPrefix(buf[:n], []byte("goroutine "))
+	end := bytes.IndexByte(header, ' ')
+	if end < 0 {
+		return 0
+	}
+	id, err := strconv.ParseUint(string(header[:end]), 10, 64)
+	if err != nil {
+		return 0
+	}
+
+	return id
 }
 
 func newServerDefaults() serverDefaults {
@@ -400,7 +419,7 @@ func drain(server *http.Server, timeout time.Duration) error {
 func (app *App) runShutdownHooks() {
 	app.shutdownOnce.Do(func() {
 		app.serveMu.Lock()
-		app.isRunningHooks = true
+		app.hooksGoroutine = goroutineID()
 		isCreated := app.isCreated
 		app.serveMu.Unlock()
 
@@ -417,7 +436,7 @@ func (app *App) runShutdownHooks() {
 		}
 
 		app.serveMu.Lock()
-		app.isRunningHooks = false
+		app.hooksGoroutine = 0
 		app.serveState = serveStopped
 		app.serveMu.Unlock()
 		close(app.shutdownDone)
