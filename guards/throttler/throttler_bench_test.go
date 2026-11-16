@@ -17,7 +17,7 @@ func benchGuard(strategy Strategy) Throttler {
 		TTL:      time.Minute,
 		Strategy: strategy,
 		KeyFunc:  func(*ctx.HTTPContext) string { return "benchkey" },
-		Backend:  memorycache.NewMemoryCache(),
+		Backend:  memorycache.NewMemoryCache(nil),
 	}
 }
 
@@ -75,7 +75,7 @@ func BenchmarkGuard_Allow(b *testing.B) {
 		TTL:      time.Minute,
 		Strategy: FixedWindow,
 		KeyFunc:  func(*ctx.HTTPContext) string { return "benchkey" },
-		Backend:  memorycache.NewMemoryCache(),
+		Backend:  memorycache.NewMemoryCache(nil),
 	}
 	for b.Loop() {
 		c := benchCtx()

@@ -41,7 +41,7 @@ don't mass-rewrite the exceptions.
 ## Naming
 
 - **Receivers are one to three letters** from the type (`c`, `p`, `m`, `e`, `app`, `rb`): 683 of 737
-  methods outside `sample/`. `func (s *shard) evictLocked` (`memorycache/memory_cache.go:42`).
+  methods outside `sample/`. `func (s *shard) evictOneLocked` (`memorycache/memory_cache.go`).
 - **`instance` is the receiver of user-facing configuration types** whose value the user writes:
   `func (instance CORS) NewMiddleware()` (`middlewares/cors/cors.go:58`), the `csrf` and `helmet`
   middlewares, `log/log.go`, and every controller, provider, guard and filter in `sample/`. Use it
@@ -52,7 +52,7 @@ don't mass-rewrite the exceptions.
 - **Maps are named `<values>By<Key>`:** `entriesByKey`, `funcNameByEvent`, `routeByPattern`,
   `docsByTable`.
 - **`Locked` suffix** marks a method that expects its caller to hold the lock
-  (`evictLocked`).
+  (`evictOneLocked`).
 - **Constructors** are `New<Type>` (`NewMemoryCache`, `NewRouter`, `NewWSConnmgr`). Constants that
   name a looked-up method end in `MethodName` (`GuardMethodName = "CanActivate"`,
   `common/guard.go:10`).
@@ -79,7 +79,7 @@ don't mass-rewrite the exceptions.
 - **Runtime errors are values.** Sentinels are `Err<Reason>` in a `var` block, with messages
   prefixed by the package and a colon, lower case, no final period:
   `ErrEmptyKey = errors.New("memorycache: key must not be empty")`
-  (`memorycache/memory_cache.go:18`), the `memorybroker` errors. Callers compare them with `==` or
+  (`memorycache/memory_cache.go`), the `memorybroker` errors. Callers compare them with `==` or
   `errors.Is`.
 - **Wrap with `%w`** and the package prefix when adding context:
   `fmt.Errorf("httpclient: JSON marshal: %w", err)`.
@@ -90,8 +90,10 @@ don't mass-rewrite the exceptions.
 
 - Shared state sits behind `sync.Mutex` / `sync.RWMutex` fields named `mu` (10 of 12), next to the fields
   they guard (`shard` in `memorycache/memory_cache.go`). Hot shared maps are sharded.
-- Types with background goroutines expose a stop method (`MemoryCache.Stop`) and tests `defer`
-  it. Packages that touch shared state carry a `..._NoRace` / `Concurrent...` test run under `-race`
+- Prefer no background goroutine at all: work that must happen later runs on a timer armed only
+  while there is work, holding its owner through a `weak.Pointer` so an unreferenced owner is
+  collected and needs no stop method (`memorycache`'s sweep). Types that do own a goroutine expose a
+  stop method (`AccessLog.Stop`) and tests `defer` it. Packages that touch shared state carry a `..._NoRace` / `Concurrent...` test run under `-race`
   (`core/ws_connmgr_test.go`, `core/fn_test.go`).
 
 ## Performance: hot path and cold path

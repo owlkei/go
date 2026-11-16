@@ -2,6 +2,7 @@ package throttler
 
 import (
 	"context"
+	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -40,6 +41,23 @@ func (tc *testCache) SetNX(_ context.Context, key string, val []byte, _ time.Dur
 	}
 	tc.items[key] = append([]byte(nil), val...)
 	return true, nil
+}
+
+func (tc *testCache) Incr(_ context.Context, key string, delta int64, _ time.Duration) (int64, error) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	var cur int64
+	if v, ok := tc.items[key]; ok {
+		if len(v) != 8 {
+			return 0, memorycache.ErrNotCounter
+		}
+		cur = int64(binary.BigEndian.Uint64(v))
+	}
+	cur += delta
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(cur))
+	tc.items[key] = b
+	return cur, nil
 }
 
 func (tc *testCache) Delete(_ context.Context, key string) error {
@@ -370,7 +388,7 @@ func TestThrottler_WorksWithRealMemoryCache(t *testing.T) {
 		TTL:      time.Minute,
 		Strategy: FixedWindow,
 		KeyFunc:  func(*ctx.HTTPContext) string { return "ip" },
-		Backend:  memorycache.NewMemoryCache(),
+		Backend:  memorycache.NewMemoryCache(nil),
 	}
 	for i := 0; i < 3; i++ {
 		res := g.fixedWindow(context.Background(), "ip")

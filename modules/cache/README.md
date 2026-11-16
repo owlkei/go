@@ -1,186 +1,82 @@
 # Cache Module
 
-*Cache module is a part of the `Ginject` framework. Phase 1 ships a high-performance, thread-safe in-memory backend with TTL support. The abstraction is backend-portable: a future Redis or distributed backend requires no changes to application code.*
+*Cache module is a part of the `Ginject` framework. It gives every provider and controller a shared key-value cache with expiry and an atomic counter, backed by a bounded in-memory store by default and by any backend you write.*
 
 - [Cache Module](#cache-module)
   - [Key Features](#key-features)
-  - [Architecture Overview](#architecture-overview)
-    - [Cache Interface](#cache-interface)
-    - [Memory Backend](#memory-backend)
-    - [CacheService](#cacheservice)
   - [Usage](#usage)
-    - [Register the module](#register-the-module)
-    - [Inject CacheService](#inject-cacheservice)
-    - [Store and retrieve values](#store-and-retrieve-values)
-    - [TTL (time-to-live)](#ttl-time-to-live)
-    - [Delete an entry](#delete-an-entry)
   - [`CacheModuleOptions` Parameters](#cachemoduleoptions-parameters)
     - [IsGlobal](#isglobal)
     - [OnInit](#oninit)
+    - [Backend](#backend)
+  - [`CacheService`](#cacheservice)
   - [`CacheService` Methods](#cacheservice-methods)
     - [Get](#get)
     - [Set](#set)
     - [SetNX](#setnx)
+    - [Incr](#incr)
     - [Delete](#delete)
     - [Keys](#keys)
     - [TTL](#ttl)
-  - [API Semantics](#api-semantics)
-  - [Error Handling](#error-handling)
-  - [Performance Notes](#performance-notes)
-  - [Background Cleanup](#background-cleanup)
-  - [Future Backends](#future-backends)
-
----
+  - [Errors](#errors)
+  - [The `Cache` contract](#the-cache-contract)
+  - [Write your own backend](#write-your-own-backend)
 
 ## Key Features
 
-- Zero third-party dependencies
-- Thread-safe — passes `go test -race ./...`
-- TTL expiration with nanosecond precision
-- Sharded map design — 64 independent shards, minimal lock contention
-- Lazy expiry on Get + amortized cleanup on Set + background sweep
-- Value isolation — callers cannot mutate stored or returned bytes
-- Fail-closed on empty keys
-
----
-
-## Architecture Overview
-
-### Cache Interface
-
-```go
-type Cache interface {
-    Get(ctx context.Context, key string) ([]byte, bool)
-    Set(ctx context.Context, key string, val []byte, ttl time.Duration) error
-    SetNX(ctx context.Context, key string, val []byte, ttl time.Duration) (bool, error)
-    Delete(ctx context.Context, key string) error
-    Keys(ctx context.Context) []string
-    TTL(ctx context.Context, key string) (time.Duration, bool)
-}
-```
-
-The interface is backend-portable across in-memory, Redis, Memcached, or any distributed system. No backend-specific behaviour leaks through it.
-
-### Memory Backend
-
-The built-in `memoryCache` implementation uses:
-
-| Technique | Purpose |
-|-----------|---------|
-| 64 shards (power-of-2) | Spreads lock contention across shards |
-| Per-shard `sync.RWMutex` | Concurrent reads on distinct shards |
-| Inline FNV-1a hash | Zero-allocation key → shard mapping |
-| Unix-nanosecond timestamps | Sub-millisecond TTL precision, no `time.Time` boxing |
-| Copy-on-Set, copy-on-Get | Caller cannot corrupt stored data |
-| Amortized shard cleanup | Every 100th write per shard scans and evicts expired entries |
-| Background sweep goroutine | Sweeps all shards every 30 s for write-light / read-heavy patterns |
-
-### CacheService
-
-`CacheService` is the injectable `core.Provider`. It wraps any `Cache` backend and exposes the same three methods. The framework's DI system copies the `Backend` interface value at wiring time, so all injected instances share the same underlying cache.
-
----
+- **Ready to use:** `cache.Register(nil)` gives a bounded in-memory cache (65,536 entries, 16 MiB) that starts no goroutine and costs nothing while it is empty.
+- **One cache per module value:** every injected `CacheService` from one `Register` result shares one backend, even across apps.
+- **Atomic counters:** `Incr` counts correctly under concurrent requests, which `Get` followed by `Set` does not.
+- **Pluggable:** any type that implements `Cache` can replace the memory store without changing application code.
 
 ## Usage
-
-### Register the module
-
-Import the cache module in your root (or feature) module:
 
 ```go
 package main
 
 import (
-    "github.com/dangduoc08/ginject/core"
-    "github.com/dangduoc08/ginject/modules/cache"
+	"context"
+	"time"
+
+	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/modules/cache"
 )
+
+type VisitController struct {
+	common.HTTP
+	Cache cache.CacheService
+}
+
+func (instance VisitController) NewController() core.Controller {
+	return instance
+}
+
+func (instance VisitController) READ_visits() map[string]int64 {
+	visits, err := instance.Cache.Incr(context.Background(), "visits:today", 1, 24*time.Hour)
+	if err != nil {
+		return map[string]int64{"visits": 0}
+	}
+	return map[string]int64{"visits": visits}
+}
 
 func main() {
-    app := core.New()
-    app.Create(
-        core.ModuleBuilder().
-            Imports(
-                cache.Register(&cache.CacheModuleOptions{
-                    IsGlobal: true,
-                }),
-            ).
-            Controllers(AppController{}).
-            Build(),
-    )
-    app.Listen(8080, nil)
+	app := core.New()
+	app.Create(
+		core.ModuleBuilder().
+			Imports(cache.Register(nil)).
+			Controllers(VisitController{}).
+			Build(),
+	)
+	app.Listen(8080, nil)
 }
 ```
 
-Setting `IsGlobal: true` makes `CacheService` available everywhere without importing the module again.
-
-### Inject CacheService
-
-Declare `cache.CacheService` as a field in any provider or controller:
-
-```go
-type AppController struct {
-    common.REST
-    CacheService cache.CacheService
-}
-```
-
-The framework resolves and injects `CacheService` automatically.
-
-### Store and retrieve values
-
-All values are `[]byte`. Use `encoding/json`, `encoding/gob`, or any serialiser you prefer.
-
-```go
-import (
-    "context"
-    "encoding/json"
-    "time"
-)
-
-ctx := context.Background()
-
-type User struct {
-    ID   int    `json:"id"`
-    Name string `json:"name"`
-}
-
-// Store
-user := User{ID: 1, Name: "Alice"}
-data, _ := json.Marshal(user)
-_ = controller.CacheService.Set(ctx, "user:1", data, 5*time.Minute)
-
-// Retrieve
-raw, ok := controller.CacheService.Get(ctx, "user:1")
-if ok {
-    var u User
-    _ = json.Unmarshal(raw, &u)
-    fmt.Println(u.Name) // Alice
-}
-```
-
-### TTL (time-to-live)
-
-```go
-// Expires in 10 seconds
-_ = svc.Set(ctx, "session:abc", token, 10*time.Second)
-
-// Never expires (ttl = 0 or negative)
-_ = svc.Set(ctx, "config:featureFlag", value, 0)
-_ = svc.Set(ctx, "config:featureFlag", value, -1)  // also never expires
-```
-
-### Delete an entry
-
-```go
-err := svc.Delete(ctx, "session:abc")
-if err != nil {
-    // only errors on empty key
-}
-```
-
----
+`GET /visits` answers `{"visits":1}`, then `{"visits":2}`, and so on for 24 hours.
 
 ## `CacheModuleOptions` Parameters
+
+`Register(nil)` equals `Register(&cache.CacheModuleOptions{})`.
 
 ### IsGlobal
 
@@ -190,12 +86,10 @@ Default: `false`
 
 Required: `false`
 
-When `true`, `CacheService` is available in every module without explicit import.
+When `true`, `CacheService` can be injected in every module without importing the cache module there.
 
 ```go
-cache.Register(&cache.CacheModuleOptions{
-    IsGlobal: true,
-})
+cache.Register(&cache.CacheModuleOptions{IsGlobal: true})
 ```
 
 ### OnInit
@@ -206,289 +100,231 @@ Default: `nil`
 
 Required: `false`
 
-Called before the cache module is wired into the DI graph. Use it to pre-populate the cache or validate configuration.
+Runs once when the app that imports the module is created.
 
 ```go
 cache.Register(&cache.CacheModuleOptions{
-    OnInit: func() {
-        fmt.Println("cache module initialising")
-    },
+	OnInit: func() { fmt.Println("cache ready") },
 })
 ```
 
 ### Backend
 
-Type: `Cache`
+Type: `cache.Cache`
 
-Default: `memorycache.NewMemoryCache()`
+Default: `memorycache.NewMemoryCache(nil)`
 
 Required: `false`
 
-The cache backend implementation. If `nil`, defaults to a new in-memory cache. Implement the `Cache` interface to provide a custom backend (e.g., Redis, Memcached).
+The store behind the service, used as is when set. The default memory cache holds at most 65,536
+entries and 16 MiB of keys and values; for other bounds, pass your own:
 
 ```go
 cache.Register(&cache.CacheModuleOptions{
-    Backend: customRedisCache,
+	Backend: memorycache.NewMemoryCache(&memorycache.MemoryCacheOptions{MaxEntries: 200_000, MaxBytes: 64 << 20}),
 })
 ```
 
----
+See `memorycache/README.md` for its bounds, eviction and memory cost.
+
+## `CacheService`
+
+```go
+type CacheService struct {
+	Backend Cache
+}
+```
+
+The injectable provider. Declare a `cache.CacheService` field in a provider or controller and the
+framework fills it. `Register` creates the backend once, when it is called, so every copy of the
+service injected from that module value uses the same backend. Creating the module starts no
+goroutine and no timer.
 
 ## `CacheService` Methods
 
+Each method forwards its arguments to `Backend` and returns the backend's results unchanged. The
+rules below are those of the default memory backend, and the contract every backend must meet.
+
 ### Get
-
-Returns a copy of the stored value and `true` if the key exists and has not expired. Returns `nil, false` if the key is missing, expired, or empty.
-
-**Signature:**
 
 ```go
 func (cs *CacheService) Get(ctx context.Context, key string) ([]byte, bool)
 ```
 
-**Parameters:**
-- `ctx` — `context.Context` (passed to backend; used by future async backends)
-- `key` — cache key; must be non-empty
-
-**Returns:**
-- `[]byte` — a new copy of the stored bytes; safe to mutate
-- `bool` — `true` if a valid (non-expired) entry was found
-
-**Example:**
+Returns a copy of the value and `true` for a live entry, `(nil, false)` for a missing key, an
+expired entry or an empty key. A value stored as `nil` reads back as an empty, non-nil slice.
 
 ```go
-val, ok := svc.Get(ctx, "user:1")
-if !ok {
-    // cache miss — fetch from DB
-}
+raw, ok := instance.Cache.Get(ctx, "user:1")
 ```
 
 ### Set
-
-Stores the value under key. The stored copy is independent of `val` — mutations to `val` after calling `Set` do not affect the cache.
-
-**Signature:**
 
 ```go
 func (cs *CacheService) Set(ctx context.Context, key string, val []byte, ttl time.Duration) error
 ```
 
-**Parameters:**
-- `ctx` — `context.Context`
-- `key` — must be non-empty; returns `cache.ErrEmptyKey` otherwise
-- `val` — value bytes; `nil` and empty slice are both stored as an empty entry
-- `ttl` — expiry duration; `<= 0` means the entry never expires
-
-**Returns:**
-- `error` — non-nil only when `key` is empty
-
-**Example:**
+Stores a copy of `val` and replaces the expiry. `ttl` 0 never expires; a negative `ttl` is an error.
+Values are bytes: encode structs with `encoding/json` or any serializer.
 
 ```go
-err := svc.Set(ctx, "rate:user:42", []byte("5"), 1*time.Minute)
-if err != nil {
-    log.Fatal(err)
-}
+data, _ := json.Marshal(user)
+err := instance.Cache.Set(ctx, "user:1", data, 5*time.Minute)
 ```
 
 ### SetNX
-
-Sets the value only if the key does not currently exist (or has expired). The operation is atomic — the check and write happen under the same lock.
-
-**Signature:**
 
 ```go
 func (cs *CacheService) SetNX(ctx context.Context, key string, val []byte, ttl time.Duration) (bool, error)
 ```
 
-**Parameters:**
-- `ctx` — `context.Context`
-- `key` — must be non-empty; returns `(false, cache.ErrEmptyKey)` otherwise
-- `val` — value bytes; `nil` and empty slice are both stored as an empty entry
-- `ttl` — expiry duration; `<= 0` means the entry never expires
-
-**Returns:**
-- `(true, nil)` — key was absent (or expired); value has been stored
-- `(false, nil)` — key already exists and has not expired; nothing was written
-- `(false, error)` — key is empty
-
-**Example:**
+Writes only when the key has no live entry and returns `true` if it wrote. The check and the write
+are one atomic step, so concurrent callers get `true` exactly once: use it for locks and run-once
+work.
 
 ```go
-// Distributed lock / once-only initialisation
-ok, err := svc.SetNX(ctx, "init:done", []byte("1"), 24*time.Hour)
-if err != nil {
-    log.Fatal(err)
-}
-if !ok {
-    // another instance already ran init
-}
+ok, err := instance.Cache.SetNX(ctx, "lock:report", []byte("1"), time.Minute)
+```
+
+### Incr
+
+```go
+func (cs *CacheService) Incr(ctx context.Context, key string, delta int64, ttl time.Duration) (int64, error)
+```
+
+Adds `delta` to a counter and returns the new value, atomically. A missing or expired key starts
+at `delta` with `ttl`; an existing counter keeps its expiry (`ttl` is ignored), which is what a
+fixed time window needs. A counter is 8 bytes, big-endian, so `Get` and `Set` read and write it too.
+A key that holds another value returns `ErrNotCounter`.
+
+```go
+n, err := instance.Cache.Incr(ctx, "rate:"+clientIP, 1, time.Minute)
 ```
 
 ### Delete
-
-Removes the key from the cache. Deleting a missing key is a no-op (not an error).
-
-**Signature:**
 
 ```go
 func (cs *CacheService) Delete(ctx context.Context, key string) error
 ```
 
-**Parameters:**
-- `ctx` — `context.Context`
-- `key` — must be non-empty; returns `cache.ErrEmptyKey` otherwise
-
-**Returns:**
-- `error` — non-nil only when `key` is empty
-
-**Example:**
-
-```go
-_ = svc.Delete(ctx, "session:abc")
-```
+Removes the entry. A missing key is not an error; an empty key returns `ErrEmptyKey`.
 
 ### Keys
-
-Returns all non-expired keys currently in the cache. The order is not guaranteed. The returned slice is a new allocation — safe to mutate.
-
-**Signature:**
 
 ```go
 func (cs *CacheService) Keys(ctx context.Context) []string
 ```
 
-**Returns:**
-- `[]string` — snapshot of live keys at the moment of the call; may be empty but never nil
-
-**Example:**
-
-```go
-keys := svc.Keys(ctx)
-fmt.Println("cached keys:", keys)
-```
+Returns the live keys in no particular order, never `nil`. It may visit every entry: use it in
+tools and tests, not on a request path.
 
 ### TTL
-
-Returns the remaining time-to-live for a key.
-
-**Signature:**
 
 ```go
 func (cs *CacheService) TTL(ctx context.Context, key string) (time.Duration, bool)
 ```
 
-**Returns:**
-- `(0, false)` — key does not exist, is expired, or is empty
-- `(0, true)` — key exists with no expiry (set with `ttl <= 0`)
-- `(remaining, true)` — key exists and expires in `remaining` duration
+Returns `(remaining, true)` for an entry that expires, `(0, true)` for one that never expires, and
+`(0, false)` for a missing key, an expired entry or an empty key.
 
-**Example:**
+## Errors
 
 ```go
-d, ok := svc.TTL(ctx, "session:abc")
-if !ok {
-    // key missing or expired
-} else if d == 0 {
-    fmt.Println("permanent entry")
-} else {
-    fmt.Println("expires in", d)
+var (
+	ErrEmptyKey      = memorycache.ErrEmptyKey
+	ErrNegativeTTL   = memorycache.ErrNegativeTTL
+	ErrEntryTooLarge = memorycache.ErrEntryTooLarge
+	ErrNotCounter    = memorycache.ErrNotCounter
+)
+```
+
+| Error | When |
+|---|---|
+| `ErrEmptyKey` | `Set`, `SetNX`, `Incr` or `Delete` got the key `""`. |
+| `ErrNegativeTTL` | `Set`, `SetNX` or `Incr` got a `ttl` below zero. Nothing is written. |
+| `ErrEntryTooLarge` | The entry is larger than the backend allows (256 KiB of key and value with the default memory cache). |
+| `ErrNotCounter` | `Incr` found a live value that is not 8 bytes. |
+
+They are the same values as the `memorycache` errors. Compare them with `errors.Is`:
+
+```go
+if err := instance.Cache.Set(ctx, key, val, ttl); errors.Is(err, cache.ErrEntryTooLarge) {
+	return err
 }
 ```
 
----
-
-## API Semantics
-
-| Behaviour | Detail |
-|-----------|--------|
-| `ttl = 0` | Entry never expires |
-| `ttl < 0` | Entry never expires |
-| `ttl > 0` | Entry expires at `now + ttl` (nanosecond precision) |
-| Expired entry on Get | Returns `nil, false` — same as missing |
-| Empty key on Set/Delete/SetNX | Returns `cache.ErrEmptyKey` |
-| Empty key on Get | Returns `nil, false` (no error) |
-| Empty key on TTL | Returns `0, false` (no error) |
-| `nil` val on Set/SetNX | Stored as empty entry; Get returns `[]byte{}, true` |
-| Returned `[]byte` from Get | Independent copy — safe to mutate |
-| Stored `[]byte` from Set/SetNX | Independent copy — caller mutations do not affect cache |
-| Set | Always overwrites regardless of existence |
-| SetNX | Writes only if key is absent or expired; atomic check-and-set |
-| SetNX on expired key | Treats expired entry as absent — new value is stored |
-| Keys | Returns snapshot of live keys; expired keys excluded |
-| TTL on permanent key | Returns `0, true` |
-| TTL on expired/missing key | Returns `0, false` |
-| Concurrent access | All operations are goroutine-safe |
-
----
-
-## Error Handling
-
-The only error `Cache` operations return is `cache.ErrEmptyKey`:
+## The `Cache` contract
 
 ```go
-var ErrEmptyKey = errors.New("cache: key must not be empty")
-```
-
-Check for it explicitly:
-
-```go
-if err := svc.Set(ctx, key, val, ttl); errors.Is(err, cache.ErrEmptyKey) {
-    // validate key before calling Set
+type Cache interface {
+	Get(ctx context.Context, key string) ([]byte, bool)
+	Set(ctx context.Context, key string, val []byte, ttl time.Duration) error
+	SetNX(ctx context.Context, key string, val []byte, ttl time.Duration) (bool, error)
+	Incr(ctx context.Context, key string, delta int64, ttl time.Duration) (int64, error)
+	Delete(ctx context.Context, key string) error
+	Keys(ctx context.Context) []string
+	TTL(ctx context.Context, key string) (time.Duration, bool)
 }
 ```
 
----
+A backend meets the rules of the methods above:
 
-## Performance Notes
+- An entry written with `ttl > 0` is live until `ttl` has passed and absent from that instant for every method. `ttl == 0` never expires; `ttl < 0` returns `ErrNegativeTTL`.
+- Values are copied in and out: changing a slice passed to a write or returned by `Get` never changes the stored value.
+- `SetNX` and `Incr` are atomic per key.
+- A counter is 8 bytes, big-endian two's complement, and overflow wraps like `int64`, so `Get`, `Set` and `Incr` mix on one key on every backend.
+- Errors are the `cache.Err…` values (or wrap them), checked with `errors.Is`. `ErrEntryTooLarge` only applies to a backend with a size limit.
+- Whether a backend evicts entries, and which ones, is its own choice.
+- `ctx` is for backends that do I/O; the memory backend ignores it.
 
-Benchmark results on Intel Core i7-9750H (amd64, 12 threads):
+## Write your own backend
 
-| Operation | Throughput | ns/op | allocs/op |
-|-----------|-----------|-------|-----------|
-| Get (hit, single-thread) | 34 M/s | 36 | 1 |
-| Get (miss, single-thread) | 68 M/s | 19 | 0 |
-| Set (fixed key) | 22 M/s | 55 | 1 |
-| Get (parallel, 12 goroutines) | 270 M/s | 45 | 1 |
-| Set (parallel, 12 goroutines) | 26 M/s | 471 | 3 |
-| Mixed 75% Get / 25% Set (parallel) | 135 M/s | 89 | 2 |
-| Get (expired) | 12 M/s | 102 | 0 |
-
-The single allocation on `Get` is the output copy (`make([]byte, n)`). Callers that can tolerate the slice being overwritten on the next Get call could hold a reference to the internal storage, but that is intentionally not exposed to preserve backend portability.
-
----
-
-## Background Cleanup
-
-The in-memory backend starts one background goroutine per cache instance. It sweeps all 64 shards every **30 seconds** and removes expired entries. The sweep holds each shard's write lock for the duration of that shard's scan only — it never holds multiple shard locks simultaneously.
-
-This goroutine is complementary to:
-
-- **Lazy expiry**: expired entries return a miss immediately on `Get` without deleting from the map.
-- **Amortized cleanup**: every 100th `Set` to a shard triggers an inline scan of that shard.
-
-Together, these three strategies ensure expired entries are collected efficiently regardless of the read/write ratio.
-
-The goroutine exits when the process terminates. For graceful shutdown, the underlying `*memoryCache` exposes a `Stop()` method, but `CacheService` does not surface it — it is not required for correctness.
-
----
-
-## Future Backends
-
-To add a Redis backend, implement the `Cache` interface and pass it via a custom `Register` variant or factory:
+Implement the seven methods and pass the value as `Backend`. This backend puts every key of an app
+under a prefix in another cache; a Redis or Memcached backend has the same shape:
 
 ```go
-type redisCache struct { client *redis.Client }
+type prefixed struct {
+	prefix string
+	next   cache.Cache
+}
 
-func (r *redisCache) Get(ctx context.Context, key string) ([]byte, bool)                           { /* GET */ }
-func (r *redisCache) Set(ctx context.Context, key string, val []byte, ttl time.Duration) error     { /* SET EX */ }
-func (r *redisCache) SetNX(ctx context.Context, key string, val []byte, ttl time.Duration) (bool, error) { /* SET NX EX */ }
-func (r *redisCache) Delete(ctx context.Context, key string) error                                { /* DEL */ }
-func (r *redisCache) Keys(ctx context.Context) []string                                           { /* SCAN */ }
-func (r *redisCache) TTL(ctx context.Context, key string) (time.Duration, bool)                   { /* TTL */ }
+func (p prefixed) Get(ctx context.Context, key string) ([]byte, bool) {
+	return p.next.Get(ctx, p.prefix+key)
+}
 
-// Then wire it:
-svc := cache.CacheService{Backend: &redisCache{client: rdb}}
+func (p prefixed) Set(ctx context.Context, key string, val []byte, ttl time.Duration) error {
+	return p.next.Set(ctx, p.prefix+key, val, ttl)
+}
+
+func (p prefixed) SetNX(ctx context.Context, key string, val []byte, ttl time.Duration) (bool, error) {
+	return p.next.SetNX(ctx, p.prefix+key, val, ttl)
+}
+
+func (p prefixed) Incr(ctx context.Context, key string, delta int64, ttl time.Duration) (int64, error) {
+	return p.next.Incr(ctx, p.prefix+key, delta, ttl)
+}
+
+func (p prefixed) Delete(ctx context.Context, key string) error {
+	return p.next.Delete(ctx, p.prefix+key)
+}
+
+func (p prefixed) Keys(ctx context.Context) []string {
+	keys := []string{}
+	for _, key := range p.next.Keys(ctx) {
+		if rest, ok := strings.CutPrefix(key, p.prefix); ok {
+			keys = append(keys, rest)
+		}
+	}
+	return keys
+}
+
+func (p prefixed) TTL(ctx context.Context, key string) (time.Duration, bool) {
+	return p.next.TTL(ctx, p.prefix+key)
+}
+
+var Module = cache.Register(&cache.CacheModuleOptions{
+	Backend: prefixed{prefix: "shop:", next: memorycache.NewMemoryCache(nil)},
+})
 ```
 
-No application code changes are required — `CacheService` remains the same injectable type.
+Application code keeps injecting `cache.CacheService`; only the module's options change.

@@ -49,6 +49,18 @@
       "thread_safe": true,
       "synchronization": "64 shards (sync.Mutex + map + eviction list each), the line logged after the shard lock is released, atomic stopped flag"
     },
+    "memorycache.MemoryCache": {
+      "description": "Bounded in-memory cache (default backend of modules/cache and the throttler); no goroutine of its own",
+      "access": "any goroutine; the sweep runs on a short-lived runtime goroutine of a time.AfterFunc armed only while an entry with a ttl exists",
+      "thread_safe": true,
+      "synchronization": "64 shards, each a sync.RWMutex over its index map, entry array, free list, CLOCK hand and counters (Get / TTL / Keys read lock, writes write lock, never two shard locks); reference marks are uint32 through sync/atomic, hits / misses atomic per shard; a sync.Mutex guards the sweep's armed / dirty flags and timer, taken only while no shard lock is held"
+    },
+    "config.ConfigService": {
+      "description": "Configuration shared by every injected copy",
+      "access": "Get / Transform from any goroutine at any time; Set from any goroutine (meant for hooks)",
+      "thread_safe": true,
+      "synchronization": "atomic.Pointer to an immutable map; Set copies the map under a sync.Mutex and stores the new pointer (copy on write)"
+    },
     "logpipe.Sink": {
       "description": "Output pipeline of the built-in logger (one per output; stdout is process-wide)",
       "access": "callers append records; at most one writer goroutine, alive only while the queue is not empty",

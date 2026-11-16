@@ -1,7 +1,10 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -14,37 +17,6 @@ func BenchmarkIsValidKey_Valid(b *testing.B) {
 func BenchmarkIsValidKey_Invalid(b *testing.B) {
 	for b.Loop() {
 		isValidKey("2INVALID_KEY")
-	}
-}
-
-func BenchmarkMatchParams_Found(b *testing.B) {
-	v := "prefix_${KEY1}_middle_${KEY2}_suffix_${KEY3}"
-	for b.Loop() {
-		matchParams(v)
-	}
-}
-
-func BenchmarkMatchParams_None(b *testing.B) {
-	v := "no_params_here_at_all"
-	for b.Loop() {
-		matchParams(v)
-	}
-}
-
-func BenchmarkUnmarshal(b *testing.B) {
-	data := append([]byte(`KEY_1=1
-KEY2=22
-key_3=333
-KEY_5=666666
-KEY_6="#999=99 10"
-KEY_8=88888888
-`), newline)
-	for b.Loop() {
-		dotENV := &DotENV{
-			data:           data,
-			valuesByEnvKey: make(map[string]any, 8),
-		}
-		dotENV.Unmarshal()
 	}
 }
 
@@ -61,16 +33,59 @@ func BenchmarkFlatten(b *testing.B) {
 	}
 }
 
-func BenchmarkLoadOSEnv(b *testing.B) {
+func envFixture(b *testing.B) string {
+	b.Helper()
+	var sb strings.Builder
+	sb.WriteString("# bench fixture\n")
+	for i := 0; i < 40; i++ {
+		n := strconv.Itoa(i)
+		sb.WriteString("BENCH_KEY_" + n + "=value-" + n + " # comment\n")
+		sb.WriteString("BENCH_URL_" + n + "=postgres://host/db?sslmode=disable&n=" + n + "\n")
+		sb.WriteString("BENCH_QUOTED_" + n + "=\"line one\\nline two ${BENCH_KEY_" + n + "}\"\n")
+		sb.WriteString("BENCH_SINGLE_" + n + "='literal ${BENCH_KEY_" + n + "}'\n")
+	}
+	path := filepath.Join(b.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	return path
+}
+
+func BenchmarkRegister_File(b *testing.B) {
+	path := envFixture(b)
+	opts := &ConfigModuleOptions{ENVFilePaths: []string{path}}
+	b.ReportAllocs()
 	for b.Loop() {
-		loadOSEnv()
+		Register(opts)
 	}
 }
 
-func BenchmarkLoadDotENV(b *testing.B) {
-	envFilePath, _ := findRootDir(".env.test")
-	path := filepath.Join(envFilePath, ".env.test")
+func BenchmarkRegister_FileExpandVariables(b *testing.B) {
+	path := envFixture(b)
+	opts := &ConfigModuleOptions{ENVFilePaths: []string{path}, IsExpandVariables: true}
+	b.ReportAllocs()
 	for b.Loop() {
-		loadDotENV(path, false)
+		Register(opts)
+	}
+}
+
+func BenchmarkConfigService_Get(b *testing.B) {
+	var svc ConfigService
+	Register(&ConfigModuleOptions{IsIgnoreEnvFile: true, Hooks: []ConfigHookFn{func(s ConfigService) { svc = s }}})
+	svc.Set("BENCH_GET", "value")
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			svc.Get("BENCH_GET")
+		}
+	})
+}
+
+func BenchmarkConfigService_Set(b *testing.B) {
+	var svc ConfigService
+	Register(&ConfigModuleOptions{IsIgnoreEnvFile: true, Hooks: []ConfigHookFn{func(s ConfigService) { svc = s }}})
+	b.ReportAllocs()
+	for b.Loop() {
+		svc.Set("BENCH_SET", "value")
 	}
 }

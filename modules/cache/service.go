@@ -27,6 +27,10 @@ func (cs *CacheService) SetNX(ctx context.Context, key string, val []byte, ttl t
 	return cs.Backend.SetNX(ctx, key, val, ttl)
 }
 
+func (cs *CacheService) Incr(ctx context.Context, key string, delta int64, ttl time.Duration) (int64, error) {
+	return cs.Backend.Incr(ctx, key, delta, ttl)
+}
+
 func (cs *CacheService) Delete(ctx context.Context, key string) error {
 	return cs.Backend.Delete(ctx, key)
 }

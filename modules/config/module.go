@@ -1,8 +1,12 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dangduoc08/ginject/core"
@@ -29,13 +33,15 @@ func loadConfigOptions(opts *ConfigModuleOptions) *ConfigModuleOptions {
 	if opts == nil {
 		opts = &ConfigModuleOptions{}
 	}
+	if opts.IsIgnoreEnvFile && len(opts.ENVFilePaths) > 0 {
+		failConfig("IsIgnoreEnvFile is set with ENVFilePaths")
+	}
 
 	envFilePaths := opts.ENVFilePaths
-	if len(envFilePaths) == 0 {
-		rootDir, _ := findRootDir("go.mod")
-		defaultENVPath := filepath.Join(rootDir, ".env")
-		if _, err := os.Stat(defaultENVPath); err == nil {
-			envFilePaths = []string{defaultENVPath}
+	if len(envFilePaths) == 0 && !opts.IsIgnoreEnvFile {
+		defaultPath := defaultENVFilePath()
+		if _, err := os.Stat(defaultPath); !errors.Is(err, fs.ErrNotExist) {
+			envFilePaths = []string{defaultPath}
 		}
 	}
 
@@ -51,27 +57,12 @@ func loadConfigOptions(opts *ConfigModuleOptions) *ConfigModuleOptions {
 	}
 }
 
-func loadDotENV(path string, isExpandVariables bool) map[string]any {
-	dotENVMap := make(map[string]any)
-	data, err := os.ReadFile(path)
+func defaultENVFilePath() string {
+	dir, err := findRootDir("go.mod")
 	if err != nil {
-		panic(err)
+		dir, _ = os.Getwd()
 	}
-
-	data = append(data, newline)
-	dotENV := &DotENV{
-		data:           data,
-		valuesByEnvKey: dotENVMap,
-	}
-	dotENV.Unmarshal()
-
-	if isExpandVariables {
-		for key, value := range dotENVMap {
-			dotENVMap[key] = parseParamsToValue(key, value.(string), dotENVMap)
-		}
-	}
-
-	return dotENVMap
+	return filepath.Join(dir, ".env")
 }
 
 func loadOSEnv() map[string]any {
@@ -85,46 +76,43 @@ func loadOSEnv() map[string]any {
 	return osENVMap
 }
 
-func mergeIntoOSENV(osENV map[string]any, isOverride bool, envs ...map[string]any) {
+func mergeInto(valuesByKey map[string]any, isOverride bool, envs ...map[string]any) {
 	for _, env := range envs {
 		for key, value := range env {
-
-			if osENV[key] != nil && !isOverride {
+			if _, ok := valuesByKey[key]; ok && !isOverride {
 				continue
 			}
-			osENV[key] = value
+			valuesByKey[key] = value
 		}
 	}
 }
 
 func Register(opts *ConfigModuleOptions) *core.Module {
 	configOptions := loadConfigOptions(opts)
-	osENVMap := loadOSEnv()
 	envs := make([]map[string]any, 0, len(configOptions.ENVFilePaths)+len(configOptions.Loads))
 
-	if !configOptions.IsIgnoreEnvFile || len(configOptions.ENVFilePaths) > 0 {
-		for _, path := range configOptions.ENVFilePaths {
-			dotENVMap := loadDotENV(path, configOptions.IsExpandVariables)
-			envs = append(envs, dotENVMap)
+	for _, path := range configOptions.ENVFilePaths {
+		dotENVMap, err := loadDotEnv(path, configOptions.IsExpandVariables)
+		if err != nil {
+			failConfig(err.Error())
 		}
+		envs = append(envs, dotENVMap)
 	}
 
-	if len(configOptions.Loads) > 0 {
-		for _, loadCustomENV := range configOptions.Loads {
-			customENVMap := loadCustomENV()
-			customENVMap = flatten(customENVMap, make(map[string]any), "").(map[string]any)
-			envs = append(envs, customENVMap)
+	for i, loadCustomENV := range configOptions.Loads {
+		customENVMap, ok := flatten(maps.Clone(loadCustomENV()), nil, "").(map[string]any)
+		if !ok {
+			failConfig("Loads[" + strconv.Itoa(i) + "]: nested deeper than 32 levels")
 		}
+		envs = append(envs, customENVMap)
 	}
 
-	mergeIntoOSENV(osENVMap, configOptions.IsOverride, envs...)
-	configService := ConfigService{Config: osENVMap}
+	valuesByKey := loadOSEnv()
+	mergeInto(valuesByKey, configOptions.IsOverride, envs...)
+	configService := ConfigService{State: newConfigState(configOptions.ENVFilePaths, valuesByKey)}
 
-	if len(configOptions.Hooks) > 0 {
-		for _, hookFn := range configOptions.Hooks {
-			hookFn(configService)
-			configService.Config = osENVMap
-		}
+	for _, hookFn := range configOptions.Hooks {
+		hookFn(configService)
 	}
 
 	module := core.ModuleBuilder().

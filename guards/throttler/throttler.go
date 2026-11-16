@@ -42,7 +42,7 @@ func (g Throttler) NewGuard() Throttler {
 		g.KeyFunc = defaultThrottlerKeyFunc
 	}
 	if g.Backend == nil {
-		g.Backend = memorycache.NewMemoryCache()
+		g.Backend = memorycache.NewMemoryCache(nil)
 	}
 	return g
 }

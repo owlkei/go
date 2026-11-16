@@ -12,52 +12,6 @@ func TestIsValidKey_Empty(t *testing.T) {
 	}
 }
 
-func TestMatchParams_Found(t *testing.T) {
-	got := matchParams("${KEY1}_middle_${KEY2}")
-	if len(got) != 2 {
-		t.Error(test.DiffMessage(len(got), 2, "should find 2 params"))
-	}
-	if got[0] != "${KEY1}" {
-		t.Error(test.DiffMessage(got[0], "${KEY1}", "first param"))
-	}
-	if got[1] != "${KEY2}" {
-		t.Error(test.DiffMessage(got[1], "${KEY2}", "second param"))
-	}
-}
-
-func TestMatchParams_None(t *testing.T) {
-	got := matchParams("no_params_here")
-	if len(got) != 0 {
-		t.Error(test.DiffMessage(len(got), 0, "no params expected"))
-	}
-}
-
-func TestParseParamsToValue_Substitution(t *testing.T) {
-	envMap := map[string]any{"BASE": "hello"}
-	got := parseParamsToValue("RESULT", "${BASE}_world", envMap)
-	want := "hello_world"
-	if got != want {
-		t.Error(test.DiffMessage(got, want, "param substitution"))
-	}
-}
-
-func TestParseParamsToValue_NoParams(t *testing.T) {
-	envMap := map[string]any{}
-	got := parseParamsToValue("K", "plain_value", envMap)
-	if got != "plain_value" {
-		t.Error(test.DiffMessage(got, "plain_value", "no params passthrough"))
-	}
-}
-
-func TestParseParamsToValue_SelfReference(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "self-reference should panic"))
-		}
-	}()
-	parseParamsToValue("KEY", "${KEY}", map[string]any{"KEY": "val"})
-}
-
 func TestIsValidKey(t *testing.T) {
 	key1 := "DATABASE_URL"
 	expected1 := true

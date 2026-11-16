@@ -633,7 +633,14 @@ type ConfigModuleOptions struct {
 }
 ```
 
-Provides `ConfigService` (`Get(k string) any`, `Set(k string, v any)`, `Transform(s any) (any, []ctx.FieldLevel)`). **There is no package-level `NewConfigModule(envPath string)` function** — use `config.Register(opts)`.
+Provides `ConfigService{State *configState}` (`Get(k string) any`, `Set(k string, v any)`, `Transform(s any) (any, []ctx.FieldLevel)`). `State` is opaque (unexported type, no exported field or method): there is **no `ConfigService.Config` map and no `DotENV` type** any more. `Get` is an atomic load + map lookup; `Set` copies the map under a mutex (copy on write), so both are race-free at any time; `Set` on a zero `ConfigService{}` panics. `Transform` binds strings, and bools / integers / floats through their `strconv` text, skipping maps, slices and nil. **There is no package-level `NewConfigModule(envPath string)` function** — use `config.Register(opts)`.
+
+- Precedence: process env, then `ENVFilePaths` in order, then `Loads` in order; first source wins, last with `IsOverride`. Files never reach `os.Setenv`.
+- Default file: `.env` in the nearest directory upward with a `go.mod`, else the working directory; missing default is fine, listed paths must exist. `IsIgnoreEnvFile` reads no file; with `ENVFilePaths` it panics.
+- Strict parser (`dotenv.go`, byte loops, no regexp): `[export ]KEY=value`, `#` starts a comment only after a blank, no escapes unquoted, double quotes with `\n \r \t \\ \" \$`, literal single quotes, multiline quotes, BOM, CRLF. Expansion (`IsExpandVariables`) of `${NAME}` only (same file, then process env) with cycle detection.
+- Limits: 1 MiB regular file (FIFOs / devices refused before reading), 64 KiB per value after expansion, no NUL, `Loads` nesting ≤ 32.
+- Every failure is a `Register` panic `invalid config: <path>:<line>: <detail>` without any value.
+- `inspect.ConfigStateOf(service)` (internal, for devtools) returns the files read and the sorted key names, never values.
 
 ## Package: `modules/cache`
 
@@ -645,20 +652,23 @@ func Register(opts *CacheModuleOptions) *core.Module   // package name: cache
 type CacheModuleOptions struct {
     IsGlobal bool
     OnInit   CacheOnInitFn  // func()
-    Backend  Cache          // pluggable; defaults to memorycache.NewMemoryCache() if nil
+    Backend  Cache          // pluggable; defaults to memorycache.NewMemoryCache(nil) if nil
 }
 
 type Cache interface {
     Get(ctx context.Context, key string) ([]byte, bool)
     Set(ctx context.Context, key string, val []byte, ttl time.Duration) error
     SetNX(ctx context.Context, key string, val []byte, ttl time.Duration) (bool, error)
+    Incr(ctx context.Context, key string, delta int64, ttl time.Duration) (int64, error)
     Delete(ctx context.Context, key string) error
     Keys(ctx context.Context) []string
     TTL(ctx context.Context, key string) (time.Duration, bool)
 }
 ```
 
-**There is no package-level `NewCacheModule()` function** — use `cache.Register(opts)`. No LFU eviction anywhere (see `memorycache` package below for the real, non-LFU eviction).
+`CacheService{Backend Cache}` forwards all seven methods unchanged. `cache.ErrEmptyKey`, `ErrNegativeTTL`, `ErrEntryTooLarge`, `ErrNotCounter` are the `memorycache` sentinels (same values). The backend is created once per `Register` call and shared by every injected copy and every app built from that module value; `Register` starts no goroutine. Contract for any backend: exact expiry, copies in and out, atomic `SetNX` / `Incr`, counters 8 bytes big-endian, negative ttl is `ErrNegativeTTL`. There is no size option on the module: pass `Backend: memorycache.NewMemoryCache(&memorycache.MemoryCacheOptions{…})`.
+
+**There is no package-level `NewCacheModule()` function** — use `cache.Register(opts)`. No LFU eviction anywhere (see `memorycache` package below for the real CLOCK eviction).
 
 ## Package: `modules/httpclient`
 
@@ -700,10 +710,14 @@ Provides `StoreService{DB *DB}`. This package was entirely absent from earlier v
 
 ## Package: `memorycache`
 
-**Responsibility**: In-memory sharded byte cache with TTL — **no persistence of any kind**
+**Responsibility**: Bounded in-memory sharded byte cache with exact TTL and an atomic counter — **no persistence of any kind**
 
 ```go
-func NewMemoryCache() *MemoryCache   // the only constructor; no options
+type MemoryCacheOptions struct {
+    MaxEntries int   // default 65536; rounded down to a multiple of 64, minimum 64
+    MaxBytes   int64 // default 16 << 20; len(key)+len(val) summed; minimum 64 KiB
+}
+func NewMemoryCache(opts *MemoryCacheOptions) *MemoryCache // nil = defaults
 ```
 
 | Method | Signature |
@@ -711,18 +725,16 @@ func NewMemoryCache() *MemoryCache   // the only constructor; no options
 | `Get` | `Get(ctx, key string) ([]byte, bool)` |
 | `Set` | `Set(ctx, key string, val []byte, ttl time.Duration) error` |
 | `SetNX` | `SetNX(ctx, key string, val []byte, ttl time.Duration) (bool, error)` |
+| `Incr` | `Incr(ctx, key string, delta int64, ttl time.Duration) (int64, error)` — 8-byte big-endian counter; creates with `ttl`, keeps the expiry of a live counter |
 | `Delete` | `Delete(ctx, key string) error` |
 | `Keys` | `Keys(ctx) []string` |
 | `TTL` | `TTL(ctx, key string) (time.Duration, bool)` |
-| `Stop` | `Stop()` — stops the background sweep goroutine. **NOT idempotent**: a second call closes an already-closed channel and panics. No flush, no persistence. |
 
-**`PersistenceConfig` and `NewMemoryCacheWithConfig` do not exist and never have — do not generate them.** This was a fabrication repeated across multiple doc files; the package has zero file I/O.
+Errors: `ErrEmptyKey`, `ErrNegativeTTL` (a negative ttl writes nothing), `ErrEntryTooLarge` (`len(key)+len(val) > MaxBytes/64`), `ErrNotCounter`. **There is no `Stop`** (removed: nothing to stop).
 
-**No entry cap and no eviction policy.** Expired entries are removed by the background sweep and, every few writes, by a bounded expired-entry cleanup in `Set` (`evictLocked`, internal); live entries are never evicted.
+**`PersistenceConfig` and `NewMemoryCacheWithConfig` do not exist and never have — do not generate them.** The package has zero file I/O.
 
-`hashKey` uses `hash/maphash` with a random per-process seed (not FNV-1a) — shard placement is stable within a process but not reproducible across restarts; this closes a hash-flooding DoS vector present in an earlier hand-rolled FNV-1a implementation.
-
-**Key characteristics**: 256 shards, `sync.RWMutex` per shard, background sweep every 5s spread across shards, thread-safe except for the `Stop()` double-call caveat above. Conforms to `modules/cache.Cache`.
+**Key characteristics**: 64 shards (`hashKey(key) & 63`, `hash/maphash` with a per-process random seed), each a `sync.RWMutex` + index map + entry array + free list, padded to its own cache lines. Each shard holds `MaxEntries/64` entries and `MaxBytes/64` bytes; a write past a bound evicts in that shard by CLOCK (expired first, then entries whose reference mark — set by a `Get` hit or a rewrite — is clear). Time is the monotonic clock (`time.Since` of the cache's creation); an expired entry is absent at once for every method. No goroutine and no timer at creation: one `time.AfterFunc` sweep (every 5 s) is armed only while an entry with a ttl exists and holds the cache through a `weak.Pointer`, so an unreferenced cache is collected. Keys are `strings.Clone`d. `inspect.CacheStateOf(mc)` (internal) reports entries, bytes, bounds, hits, misses, evictions, expirations and whether the sweep is armed. Conforms to `modules/cache.Cache`. See `memorycache/README.md`.
 
 ---
 
@@ -736,7 +748,7 @@ type Throttler struct {
     TTL      time.Duration                // default time.Minute
     Strategy Strategy                     // FixedWindow (default 0) | SlidingWindow | TokenBucket
     KeyFunc  func(*ctx.HTTPContext) string
-    Backend  cache.Cache                  // defaults to memorycache.NewMemoryCache()
+    Backend  cache.Cache                  // defaults to memorycache.NewMemoryCache(nil)
 }
 func (g Throttler) NewGuard() Throttler
 func (g Throttler) CanActivate(c *ctx.HTTPContext) bool

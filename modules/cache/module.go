@@ -20,7 +20,7 @@ func Register(opts *CacheModuleOptions) *core.Module {
 
 	backend := opts.Backend
 	if backend == nil {
-		backend = memorycache.NewMemoryCache()
+		backend = memorycache.NewMemoryCache(nil)
 	}
 
 	svc := CacheService{

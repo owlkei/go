@@ -402,34 +402,39 @@
       ]
     },
     "memorycache": {
-      "responsibility": "In-memory sharded byte cache with TTL, no persistence",
+      "responsibility": "Bounded in-memory sharded byte cache with exact TTL and an atomic counter, no persistence",
       "public_types": {
+        "MemoryCacheOptions": {
+          "description": "MaxEntries int (default 65536, rounded down to a multiple of 64, minimum 64); MaxBytes int64 (default 16 MiB, minimum 64 KiB)"
+        },
         "MemoryCache": {
-          "description": "In-memory cache, 256 shards, each an independently-locked map",
+          "description": "In-memory cache, 64 shards with CLOCK eviction, bounded by MaxEntries and MaxBytes",
           "constructors": [
-            "NewMemoryCache() *MemoryCache - the only constructor; no options, no persistence variant"
+            "NewMemoryCache(opts *MemoryCacheOptions) *MemoryCache - nil means the defaults; starts no goroutine and no timer"
           ],
           "methods": [
             "Get(ctx, key string) ([]byte, bool)",
             "Set(ctx, key string, val []byte, ttl time.Duration) error",
             "SetNX(ctx, key string, val []byte, ttl time.Duration) (bool, error)",
+            "Incr(ctx, key string, delta int64, ttl time.Duration) (int64, error) - atomic 8-byte big-endian counter; a live counter keeps its expiry",
             "Delete(ctx, key string) error",
             "Keys(ctx) []string",
-            "TTL(ctx, key string) (time.Duration, bool)",
-            "Stop() - stops the background sweep goroutine; no flush, no persistence. NOT idempotent: calling it twice closes an already-closed channel and panics."
+            "TTL(ctx, key string) (time.Duration, bool)"
           ]
         }
       },
       "notes": [
         "No file-based persistence anywhere in this package. Do NOT invent PersistenceConfig / NewMemoryCacheWithConfig — they do not exist and never have in current source.",
-        "hashKey uses hash/maphash with a random per-process seed (not FNV-1a) — shard placement is stable within a process but not reproducible across restarts.",
-        "Eviction (admitLocked) is NOT LFU: on insert past the cap it samples up to 8 entries, deletes any already expired, and evicts whichever sampled entry has the soonest non-zero TTL (falls back to the first sampled entry if none have a deadline). It is an approximate cap, not an exact one."
+        "There is no Stop method: the sweep is a time.AfterFunc armed only while an entry with a ttl exists, holding the cache through a weak.Pointer.",
+        "Errors: ErrEmptyKey, ErrNegativeTTL (negative ttl writes nothing), ErrEntryTooLarge (len(key)+len(val) > MaxBytes/64), ErrNotCounter.",
+        "hashKey uses hash/maphash with a random per-process seed — shard placement is stable within a process but not reproducible across restarts.",
+        "Eviction is CLOCK per shard: expired entries first, then live entries whose reference mark (set by a Get hit or a rewrite) is clear; marked entries get the mark cleared and are skipped."
       ],
       "key_characteristics": [
-        "Sharded (256 shards) for concurrent R/W",
-        "No entry cap: only expired entries are removed (background sweep every 5 s, plus a bounded cleanup every 128 writes per shard)",
-        "Automatic background sweep every 5s/256 shards, stopped by Stop()",
-        "Thread-safe all operations except Stop() double-call (see notes)",
+        "Sharded (64 shards, padded to cache lines) for concurrent R/W",
+        "Bounded: each shard holds MaxEntries/64 entries and MaxBytes/64 bytes; a full cache evicts, never fails",
+        "Monotonic-clock expiry; an expired entry is absent for every method before any sweep",
+        "No goroutine or timer while empty or when no entry expires",
         "Context-based API (conforms to modules/cache.Cache)"
       ]
     }

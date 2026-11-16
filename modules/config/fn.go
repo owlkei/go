@@ -1,67 +1,33 @@
 package config
 
 import (
-	"fmt"
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
-	"reflect"
-	"regexp"
 	"strconv"
-	"strings"
+
+	"github.com/dangduoc08/ginject/internal/color"
 )
 
-var (
-	paramRegexp = regexp.MustCompile(`\${(.*?)\}`)
-	keyRegexp   = regexp.MustCompile("[a-zA-Z_]+[a-zA-Z0-9_]*")
-)
+const maxLoadsDepth = 32
 
-func matchParams(v string) []string {
-	return paramRegexp.FindAllString(v, -1)
+func failConfig(detail string) {
+	panic(color.FmtRed("invalid config: " + detail))
 }
 
 func isValidKey(k string) bool {
 	if len(k) == 0 {
 		return false
 	}
-	matched := keyRegexp.FindString(k)
-	return len(matched) == len(k)
-}
-
-func parseParamsToValue(k, v string, envMap map[string]any) string {
-	matchedParams := matchParams(v)
-
-	if len(matchedParams) > 0 {
-		for _, param := range matchedParams {
-			key := param[2 : len(param)-1]
-			if k == key {
-				panic(fmt.Errorf("%v is assigned to itself", key))
-			}
-			if envMap[key] == nil {
-				panic(fmt.Errorf("%v is not defined", key))
-			}
-
-			v = strings.ReplaceAll(v, param, envMap[key].(string))
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		isLetter := c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		if !isLetter && (i == 0 || c < '0' || c > '9') {
+			return false
 		}
 	}
-
-	matchedParams = matchParams(v)
-	if len(matchedParams) > 0 {
-		return parseParamsToValue(k, v, envMap)
-	}
-
-	return v
-}
-
-func _flatten(org, value any, key, prefix string) {
-	newPrefix := key
-	if prefix != "" {
-		newPrefix = prefix + "." + key
-	}
-	switch reflect.ValueOf(value).Kind() {
-	case reflect.Map, reflect.Slice:
-		flatten(org, value, newPrefix)
-	}
-	org.(map[string]any)[newPrefix] = value
+	return true
 }
 
 func flatten(org, children any, prefix string) any {
@@ -69,19 +35,47 @@ func flatten(org, children any, prefix string) any {
 	if prefix != "" {
 		nested = children
 	}
+	out := map[string]any{}
+	if !flattenInto(out, nested, prefix, 1) {
+		return nil
+	}
+	m, _ := org.(map[string]any)
+	maps.Copy(m, out)
+	return m
+}
 
+func flattenInto(out map[string]any, nested any, prefix string, depth int) bool {
+	if depth > maxLoadsDepth {
+		return false
+	}
 	switch nested := nested.(type) {
 	case []any:
 		for index, value := range nested {
-			_flatten(org, value, strconv.Itoa(index), prefix)
+			if !flattenValue(out, value, strconv.Itoa(index), prefix, depth) {
+				return false
+			}
 		}
 	case map[string]any:
 		for key, value := range nested {
-			_flatten(org, value, key, prefix)
+			if !flattenValue(out, value, key, prefix, depth) {
+				return false
+			}
 		}
 	}
+	return true
+}
 
-	return org
+func flattenValue(out map[string]any, value any, key, prefix string, depth int) bool {
+	name := key
+	if prefix != "" {
+		name = prefix + "." + key
+		out[name] = value
+	}
+	switch value.(type) {
+	case map[string]any, []any:
+		return flattenInto(out, value, name, depth+1)
+	}
+	return true
 }
 
 func findRootDir(anchor string) (string, error) {
@@ -97,7 +91,7 @@ func findRootDir(anchor string) (string, error) {
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("root not found: %s", anchor)
+			return "", errors.New("root not found: " + anchor)
 		}
 		dir = parent
 	}

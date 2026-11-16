@@ -195,7 +195,7 @@ throttler.Throttler{
 
 Type: `cache.Cache`
 
-Default: `memorycache.NewMemoryCache()`
+Default: `memorycache.NewMemoryCache(nil)`
 
 Required: `false`
 

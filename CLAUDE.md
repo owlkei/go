@@ -182,8 +182,8 @@ All types are re-exported from the root `ginject` package (`aliases.go`).
 
 Each has a README in its folder.
 
-- `modules/config`: `.env` + OS env loader with typed struct binding (`bind:"NAME"` tags); inject `ConfigService`.
-- `modules/cache`: thread-safe in-memory cache with TTL (backed by `memorycache/`, sharded); inject `CacheService`.
+- `modules/config`: strict `.env` + OS env loader with typed struct binding (`bind:"NAME"` tags); inject `ConfigService` (safe for concurrent `Get` / `Set`, never prints a value).
+- `modules/cache`: key-value cache with TTL and an atomic `Incr` (default backend `memorycache/`: bounded, 64 shards, CLOCK eviction, no goroutine while idle); inject `CacheService`.
 - `modules/httpclient`: outbound HTTP client with retries, downloads, SSE and middleware.
 - `modules/storage`: embedded document store (models, queries, indexes, transactions).
 
@@ -203,5 +203,6 @@ Message format is `"<category>: <detail>"`:
 - `"invalid module: ..."` (`core/module_builder.go`; `Create(nil)` in `core/app.go`)
 - `"invalid app: ..."` (`core/app.go`: `Create` called twice, a configuration method or `SetLogger` after `Create`, `SetLogger(nil)`)
 - `"dependency injection: ..."` (`core/fn.go`, `core/fn_plan.go`, `core/container.go`)
+- `"invalid config: ..."` (`modules/config`: a bad `.env` file or line with its path and line number, never a value; contradicting options; too deeply nested `Loads`; `Set` on a zero `ConfigService`)
 
 These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. An unresolvable handler argument is a `Create()` panic too; the only per-request panic of injection is a pipe whose `Transform` returns a wrong value, an uncolored `exception.InternalServerErrorException` that `core/http.go`'s `recover()` turns into a 500.
