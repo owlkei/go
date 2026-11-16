@@ -49,7 +49,7 @@ don't mass-rewrite the exceptions.
 - **Exported option booleans start with `Is`:** `IsGlobal`, `IsAllowCredentials`,
   `IsPreflightContinue`, `IsExpandVariables`, `IsOverride`. Exceptions (`DisableHSTS`,
   `HSTSPreload`, `AddSource`, `DisableGitignore`) predate the habit; new options use `Is`.
-- **Maps are named `<values>By<Key>`:** `entriesByKey`, `funcNameByEvent`, `catchFnsByRoute`,
+- **Maps are named `<values>By<Key>`:** `entriesByKey`, `funcNameByEvent`, `routeByPattern`,
   `docsByTable`.
 - **`Locked` suffix** marks a method that expects its caller to hold the lock
   (`evictLocked`).

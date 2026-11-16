@@ -127,8 +127,14 @@ Versioning adds a `_VERSION_X` suffix: `READ_VERSION_1` → version 1 of that ro
 ### Request Pipeline (per route)
 
 ```
-GlobalMiddlewares → ModuleMiddlewares → Guards → Interceptors → MainHandler → ExceptionFilters
+GlobalMiddlewares → ModuleMiddlewares → GlobalGuards → ModuleGuards → GlobalInterceptors → ModuleInterceptors
+  → MainHandler → module post-interceptors → global post-interceptors → response
+error in a middleware → the HTTP layer's fixed error response (no user filter)
+error from a guard on → module filters → global filters → built-in filter
 ```
+
+The spec, arrow by arrow: `.ginject/request-pipeline.md` § 1. Only exceptions reach the client with
+their code and message; anything else answers a fixed 500 and is logged.
 
 Each layer is bound with `BindMiddleware(fn, handlers...)`, `BindGuard(fn, handlers...)`, etc. on the `common.Middleware`, `common.Guard`, `common.Interceptor`, `common.ExceptionFilter` embedded fields of a controller.
 

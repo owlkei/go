@@ -5,31 +5,10 @@ import (
 	"github.com/dangduoc08/ginject/exception"
 )
 
-var defaultException = exception.InternalServerErrorException("Unhandled exception has occurred")
-
 type globalHTTPExceptionFilter struct{}
 
 func (g globalHTTPExceptionFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	code := ex.GetCode()
-	err := ex.Error()
-	message := ex.GetMessage()
-	if code != 0 && err != "" && message != "" {
-		c.Status(code).JSON(ex)
-		return
-	}
-
-	if code == 0 {
-		code = defaultException.GetCode()
-	}
-	if err == "" {
-		err = defaultException.Error()
-	}
-	if message == "" {
-		message = defaultException.GetMessage()
-	}
-
-	normalized := exception.NewException(message, code, err)
-	c.Status(code).JSON(&normalized)
+	c.Code = writeErrorResponse(c.ResponseWriter, ex)
 }
 
 type globalWSExceptionFilter struct{}

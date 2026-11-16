@@ -28,9 +28,9 @@
     - [Shape checks](#shape-checks)
     - [Item types](#item-types)
   - [Request-time functions](#request-time-functions)
-    - [BuildHTTPGuardMiddleware / BuildWSGuardMiddleware](#buildhttpguardmiddleware--buildwsguardmiddleware)
-    - [BuildHTTPInterceptMiddleware / BuildWSInterceptMiddleware](#buildhttpinterceptmiddleware--buildwsinterceptmiddleware)
-    - [RunHTTPCatchChain / RunWSCatchChain](#runhttpcatchchain--runwscatchchain)
+    - [BuildWSGuardMiddleware](#buildwsguardmiddleware)
+    - [BuildWSInterceptMiddleware](#buildwsinterceptmiddleware)
+    - [RunWSCatchChain](#runwscatchchain)
     - [NormalizeRecovered](#normalizerecovered)
   - [Pipes](#pipes)
     - [`ArgumentMetadata` Fields](#argumentmetadata-fields)
@@ -419,7 +419,7 @@ type MiddlewareFn interface {
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)
 ```
 
-`BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware` on the `Middleware` embed (field `MiddlewareHandlers`). Optional constructor: `NewMiddleware`. `InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb)` and `InjectProvidersIntoWSMiddlewares(ws *WS, cb)` build the `[]MiddlewareItem` that `core` registers.
+`BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware` on the `Middleware` embed (field `MiddlewareHandlers`). Optional constructor: `NewMiddleware`. `InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb)` builds the `[]MiddlewareItem` that `core` registers. Middleware is an HTTP concept: a WebSocket connection runs only the middlewares given to `core`'s `EnableWS`, once, at the handshake, and no middleware runs per message.
 
 ### Guard
 
@@ -518,30 +518,30 @@ canActivate, ok := common.AsHTTPGuard(RoleGuard{Role: "admin"})
 
 ### Item types
 
-`MiddlewareItem`, `GuardItem`, `InterceptorItem` and `ExceptionFilterItem` each hold an `HTTP` and a `WS` part. The HTTP part (`HTTPMiddlewareItem`, `HTTPGuardItem`, `HTTPInterceptorItem`, `HTTPExceptionFilterItem`) has `Method`, `Route`, `Version`, `Pattern` (`string`) and `Common`; the WS part (`WSMiddlewareItem`, `WSGuardItem`, `WSInterceptorItem`, `WSExceptionFilterItem`) has `EventName` (`string`) and `Common`. `CommonItem` is `Name string` (the layer's type), `Handler any` (its callable method) and `MainHandlerName string` (the route's method name, HTTP only).
+`GuardItem`, `InterceptorItem` and `ExceptionFilterItem` each hold an `HTTP` and a `WS` part; `MiddlewareItem` holds only the `HTTP` part. The HTTP part (`HTTPMiddlewareItem`, `HTTPGuardItem`, `HTTPInterceptorItem`, `HTTPExceptionFilterItem`) has `Method`, `Route`, `Version`, `Pattern` (`string`) and `Common`; the WS part (`WSGuardItem`, `WSInterceptorItem`, `WSExceptionFilterItem`) has `EventName` (`string`) and `Common`. `CommonItem` is `Name string` (the layer's type), `Handler any` (its callable method) and `MainHandlerName string` (the route's method name, HTTP only).
 
 ## Request-time functions
 
-`core` calls these on every request of a route with layers.
+`core` calls these on every WebSocket message of an event with layers. On HTTP, `core` calls the guards, the interceptors and the exception filters itself, in the order of the request lifecycle.
 
-### BuildHTTPGuardMiddleware / BuildWSGuardMiddleware
+### BuildWSGuardMiddleware
 
 Wraps a guard's method into a middleware.
 
 #### Parameters
-- 1st parameter: `HTTPCanActivate` / `WSCanActivate`
+- 1st parameter: `WSCanActivate`
 
 - Description: The guard's method
 
 #### Returns
-- 1st value: `ctx.HTTPHandler` / `ctx.WSHandler`
+- 1st value: `ctx.WSHandler`
 
 - Description: The middleware
 
 #### Usage
 
 ```go
-mw := common.BuildHTTPGuardMiddleware(canActivate)
+mw := common.BuildWSGuardMiddleware(canActivate)
 ```
 
 #### Rules
@@ -549,7 +549,7 @@ mw := common.BuildHTTPGuardMiddleware(canActivate)
 - `true` calls `c.Next()` once.
 - `false` does not call `c.Next()` and panics an `exception.Exception` value with code 403, message `"Access denied"` and `Error() == "Forbidden"`. Every rejection is an equal value, and each recovered copy is its own.
 
-### BuildHTTPInterceptMiddleware / BuildWSInterceptMiddleware
+### BuildWSInterceptMiddleware
 
 Wraps an interceptor's method into a middleware.
 
@@ -558,19 +558,19 @@ Wraps an interceptor's method into a middleware.
 
 - Description: The interceptor's name, stored in `Aggregation.Name`
 
-- 2nd parameter: `HTTPIntercept` / `WSIntercept`
+- 2nd parameter: `WSIntercept`
 
 - Description: The interceptor's method
 
 #### Returns
-- 1st value: `ctx.HTTPHandler` / `ctx.WSHandler`
+- 1st value: `ctx.WSHandler`
 
 - Description: The middleware
 
 #### Usage
 
 ```go
-mw := common.BuildHTTPInterceptMiddleware("EnvelopeInterceptor", intercept)
+mw := common.BuildWSInterceptMiddleware("EnvelopeInterceptor", intercept)
 ```
 
 #### Rules
@@ -580,16 +580,16 @@ mw := common.BuildHTTPInterceptMiddleware("EnvelopeInterceptor", intercept)
 - `c.Request` is never replaced.
 - A context reused after `Reset` starts with no aggregation.
 
-### RunHTTPCatchChain / RunWSCatchChain
+### RunWSCatchChain
 
 Runs exception filters on a recovered panic value.
 
 #### Parameters
-- 1st parameter: `*ctx.HTTPContext` / `*ctx.WSContext`
+- 1st parameter: `*ctx.WSContext`
 
-- Description: The request's context
+- Description: The message's context
 
-- 2nd parameter: `[]HTTPCatch` / `[]WSCatch`
+- 2nd parameter: `[]WSCatch`
 
 - Description: The filters, first to try first
 
@@ -602,7 +602,7 @@ Runs exception filters on a recovered panic value.
 ```go
 defer func() {
 	if rec := recover(); rec != nil {
-		common.RunHTTPCatchChain(c, catchFns, rec)
+		common.RunWSCatchChain(c, catchFns, rec)
 	}
 }()
 ```
@@ -696,14 +696,16 @@ The pipe's key, one of the key constants above (`"body"`, `"query"`, …).
 
 - A guard that returns `false` is a 403 `Forbidden` with message `"Access denied"`.
 - A filter that returns has handled the exception. A filter that panics passes to the next filter: `panic(ex)` with the pointer it received keeps the status code and the message.
-- An error that wraps an exception keeps the exception's code; any other panic is a 500 whose message is the panic's text (an `error` or a `string`).
+- An error that wraps an exception keeps the exception's code.
+- On HTTP, any other panic reaches the filters as a 500 with the fixed message `"Internal Server Error"`; the value is logged, never shown (see `core`'s README, "Errors in middleware" and the request lifecycle).
+- On WebSocket, `NormalizeRecovered` still turns any other panic into a 500 whose message is the panic's text (an `error` or a `string`).
 
 ## Performance notes
 
 - **Compiled method values.** The `As…` functions assert the layer to a small unexported interface and return its method value, so a guard, interceptor or filter call is a plain closure call: about 4 ns and 0 allocations, where the reflection stub it replaces took about 400 ns and 1 allocation.
 - **Interceptor state on the context.** The interceptor middleware adds its aggregation to the request's context list (`c.AddAggregation`) instead of copying the `http.Request` with a new `context.WithValue`: about 95 ns and 2 allocations (the aggregation and the list, which `Reset` drops), where the old path took about 340 to 640 ns. `core` also no longer looks the list up in the request's `context.Context`, which saved one boxed key per request on every route.
 - **Catch chain as a loop.** One small function with the `recover` wraps each filter call, and the chain iterates instead of recursing. A re-thrown pointer is returned as is (0 allocations, about 11 ns for the chain), and a plain error builds its 500 with 1 allocation: an error that has no `Unwrap` or `As` method can't hold an exception, so `errors.As` is skipped for it.
-- **Shared 403.** A rejected guard panics one package-level exception value; an allowed guard costs about 2 ns.
+- **Shared 403.** A rejected WS guard panics one package-level exception value; an allowed guard costs about 2 ns.
 - **Cold path.** `Construct` compares configurations with `reflect.DeepEqual` under one mutex (about 220 ns for a cache hit), at `Create()` only.
 
 End to end (`make bench`, 10 alternating runs), the `Chain` scenario (a middleware, a guard and an interceptor) went from about 5.3 µs and 33 allocations to about 4.0 µs and 25 allocations, and the `Exception` scenario from about 3.9 µs to 3.5 µs with one allocation less.
@@ -732,20 +734,13 @@ go test -run '^$' -bench . -benchmem -count 5 ./common/
 | BenchmarkInjectProvidersIntoHTTPExceptionFilters_ApplyAll | 14930 | 12200 | 67 |
 | BenchmarkAsHTTPExceptionFilter | 2.609 | 0 | 0 |
 | BenchmarkHTTPExceptionFilter_Call | 3.82 | 0 | 0 |
-| BenchmarkRunHTTPCatchChain_Exception | 69.61 | 128 | 2 |
-| BenchmarkRunHTTPCatchChain_Pointer | 10.77 | 0 | 0 |
-| BenchmarkRunHTTPCatchChain_Error | 63.17 | 64 | 1 |
 | BenchmarkInjectProvidersIntoHTTPGuards_ApplyAll | 14880 | 12200 | 67 |
 | BenchmarkAsHTTPGuard | 2.605 | 0 | 0 |
 | BenchmarkHTTPGuard_Call | 4.433 | 0 | 0 |
-| BenchmarkBuildHTTPGuardMiddleware_Allow | 2.081 | 0 | 0 |
-| BenchmarkBuildHTTPGuardMiddleware_Reject | 429.7 | 128 | 2 |
 | BenchmarkInjectProvidersIntoHTTPInterceptors_ApplyAll | 14560 | 12200 | 67 |
 | BenchmarkAsHTTPInterceptor | 2.519 | 0 | 0 |
 | BenchmarkHTTPInterceptor_Call | 3.943 | 0 | 0 |
-| BenchmarkBuildHTTPInterceptMiddleware | 94.79 | 200 | 2 |
 | BenchmarkInjectProvidersIntoHTTPMiddlewares_ApplyAll | 16020 | 13568 | 124 |
-| BenchmarkInjectProvidersIntoWSMiddlewares_ApplyAll | 6228 | 12608 | 64 |
 | BenchmarkAddHandlerToEventMap | 3905 | 3008 | 27 |
 | BenchmarkWSFnToSubject | 485.7 | 56 | 6 |
 | BenchmarkInjectProvidersIntoWSExceptionFilters_ApplyAll | 4971 | 11240 | 7 |

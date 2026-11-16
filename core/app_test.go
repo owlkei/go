@@ -39,9 +39,6 @@ func TestNew(t *testing.T) {
 	if app.http.route == nil {
 		t.Error(test.DiffMessage(nil, "router", "route not initialized"))
 	}
-	if app.http.catchFnsByRoute == nil {
-		t.Error(test.DiffMessage(nil, "map", "catchHTTPFnsMap not initialized"))
-	}
 	if app.Logger != nil {
 		t.Error(test.DiffMessage(app.Logger, nil, "Logger should be nil before Create"))
 	}
@@ -842,12 +839,12 @@ func (c shortCircuitController) NewController() Controller {
 }
 func (c shortCircuitController) READ_shortcircuit() string { return "ok" }
 
-func TestTrace_InterceptorPrePostEventsMatchWhenShortCircuited(t *testing.T) {
+func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
 	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
-	var preCount, postCount int
+	var pre, post []string
 
 	app.event.On(trace.EventName, func(args ...any) {
 		mu.Lock()
@@ -855,9 +852,9 @@ func TestTrace_InterceptorPrePostEventsMatchWhenShortCircuited(t *testing.T) {
 		te := args[0].(trace.Event)
 		switch te.Stage {
 		case trace.StagePreInterceptor:
-			preCount++
+			pre = append(pre, te.Name)
 		case trace.StagePostInterceptor:
-			postCount++
+			post = append(post, te.Name)
 		}
 	})
 
@@ -870,11 +867,19 @@ func TestTrace_InterceptorPrePostEventsMatchWhenShortCircuited(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if preCount != 3 {
-		t.Fatalf("expected 3 pre-interceptor events, got %d", preCount)
+	if len(pre) != 2 {
+		t.Fatal(test.DiffMessage(pre, []string{"core.multiInterceptorA", "core.shortCircuitInterceptor"}, "L12: only the interceptors that ran emit a pre-interceptor event"))
 	}
-	if postCount != preCount {
-		t.Error(test.DiffMessage(postCount, preCount, "post-interceptor event count must match pre-interceptor event count even when an interceptor short-circuits"))
+	for _, name := range append(append([]string{}, pre...), post...) {
+		if name == "core.multiInterceptorC" {
+			t.Error(test.DiffMessage(name, "<no event>", "L12: an interceptor after the short-circuit never runs, so it emits no event"))
+		}
+	}
+	if len(post) > len(pre) {
+		t.Error(test.DiffMessage(len(post), len(pre), "L12: there are never more post-interceptor events than pre-interceptor events"))
+	}
+	if w.Body.String() != "short-circuited" {
+		t.Error(test.DiffMessage(w.Body.String(), "short-circuited", "L12: the interceptor's return value is the response"))
 	}
 }
 
@@ -1166,35 +1171,6 @@ func TestGetLocalIP(t *testing.T) {
 		if net := reflect.TypeOf(ip).Kind(); net != reflect.String {
 			t.Error(test.DiffMessage(net, reflect.String, "getLocalIP should return string"))
 		}
-	}
-}
-
-func TestTraceHTTPHandler_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	var called bool
-	h := traceHTTPHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.HTTPContext) { called = true })
-	h(c)
-	if !called {
-		t.Error(test.DiffMessage(false, true, "wrapped handler should still run when no listener is attached"))
-	}
-}
-
-func TestTraceHTTPHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-	h := traceHTTPHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.HTTPContext) {})
-	h(c)
-	if got == nil {
-		t.Fatal("expected a trace event to be emitted when a listener is attached")
-	}
-	if got.Stage != trace.StageGuard || got.Name != "Test.Guard" {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Name}, []any{trace.StageGuard, "Test.Guard"}, "traceHTTPHandler emitted event fields"))
 	}
 }
 

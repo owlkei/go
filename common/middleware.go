@@ -23,14 +23,8 @@ type HTTPMiddlewareItem struct {
 	Common  CommonItem
 }
 
-type WSMiddlewareItem struct {
-	EventName string
-	Common    CommonItem
-}
-
 type MiddlewareItem struct {
 	HTTP HTTPMiddlewareItem
-	WS   WSMiddlewareItem
 }
 
 type middlewareHandler struct {
@@ -85,42 +79,6 @@ func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, re
 							Handler:         middlewareHandler.middlewareFn.Use,
 							Name:            middlewarerType.String(),
 							MainHandlerName: r.PatternToFuncNameMap[pattern],
-						},
-					},
-				})
-			}
-		}
-	}
-
-	return middlewareItemArr
-}
-
-func (m *Middleware) InjectProvidersIntoWSMiddlewares(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []MiddlewareItem {
-	middlewareItemArr := make([]MiddlewareItem, 0, len(ws.funcNameByEvent)*len(m.MiddlewareHandlers))
-
-	for _, middlewareHandler := range m.MiddlewareHandlers {
-		middlewarerType := reflect.TypeOf(middlewareHandler.middlewareFn)
-		middlewarerValue := reflect.ValueOf(middlewareHandler.middlewareFn)
-		newMiddleware := reflect.New(middlewarerType)
-
-		for i := 0; i < middlewarerType.NumField(); i++ {
-			cb(i, middlewarerType, middlewarerValue, newMiddleware)
-		}
-
-		newMiddlewarer := newMiddleware.Interface()
-		newMiddlewarer = Construct(newMiddlewarer, "NewMiddleware")
-		middlewareHandler.middlewareFn = newMiddlewarer.(MiddlewareFn)
-
-		targets := wsHandlerTargets(middlewareHandler.handlers, "middleware", middlewarerType)
-
-		for pattern := range ws.funcNameByEvent {
-			if targets.has(pattern) {
-				middlewareItemArr = append(middlewareItemArr, MiddlewareItem{
-					WS: WSMiddlewareItem{
-						EventName: pattern,
-						Common: CommonItem{
-							Handler: middlewareHandler.middlewareFn.Use,
-							Name:    middlewarerType.String(),
 						},
 					},
 				})

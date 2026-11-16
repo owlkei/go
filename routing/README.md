@@ -29,7 +29,7 @@
 - Precedence static > glob > parameter > wildcard, with backtracking: every registered route is reachable
 - Request paths are matched as sent (no rewriting of spaces or stars); `.` and `..` are resolved
 - Limits checked first: 4,096 bytes and 64 segments per path
-- No allocation for a static route or a miss; one for a route with parameters
+- No allocation for a static route or a miss; none for a route with parameters when the caller passes a buffer with enough capacity (one without)
 
 ## Usage
 
@@ -261,11 +261,11 @@ Returns the route that matches a request, and its parameter values.
 1. `method` `string`: the request method.
 2. `path` `string`: the request path, such as `URL.Path`.
 3. `version` `string`: the request version, `""` for none.
-4. `params` `[]string`: values to keep in front of the captured ones; nil is fine.
+4. `params` `[]string`: values to keep in front of the captured ones, and the buffer the values are appended to; nil is fine.
 
 #### Returns
 1. `*RouterItem`: the matched item, or nil.
-2. `[]string`: `params` plus one value per route parameter, in path order (a new slice when there is a value to add); `params` unchanged on a miss.
+2. `[]string`: `params` plus one value per route parameter, in path order (written into `params`' backing array when its capacity is enough, otherwise a new slice); `params` unchanged on a miss. The result shares the buffer: it is valid until the caller reuses it.
 
 #### Usage
 
@@ -362,7 +362,7 @@ route, keys := routing.ParseToParamKey("/users/{userId}/friends/{friendId}/")
 - Request paths are walked as they are: no copy, no normalization. `path.Clean` runs only when the path starts with `.` or contains `/.` (the only inputs it changes besides slashes, which the walk ignores). A test compares both over 10,000 random paths.
 - One route tree per (method, version), found by a linear scan of a short slice; the trie end holds the `*RouterItem`, so there is no pattern-keyed lookup and no struct copy.
 - Fully static routes also sit in a map per tree keyed by the canonical path; the request path minus one trailing slash is probed first. A static child is always the first candidate of the trie, so the map gives the same answer (tested against the trie alone over 10,000 random paths).
-- Parameter values are substrings of the request path, collected into one slice allocated at the end of the match.
+- Parameter values are substrings of the request path, appended to the caller's buffer at the end of the match (a new slice only when the buffer is too small). `core` passes `c.ParamValues[:0]`, so a parameter route allocates nothing for its values on a warm context.
 - `PatternToMethodRouteVersion` and `ParseToParamKey` parse by index, without regexps.
 
 ## Benchmarks
@@ -381,8 +381,8 @@ BenchmarkRouterAdd-12                          	  435902	      2758 ns/op	    18
 BenchmarkRouterUse-12                          	  228550	      5899 ns/op	    1608 B/op	     101 allocs/op
 BenchmarkRouterMatch_Static-12                 	30792842	        39.22 ns/op	       0 B/op	       0 allocs/op
 BenchmarkRouterMatch_StaticTrailingSlash-12    	30277532	        39.53 ns/op	       0 B/op	       0 allocs/op
-BenchmarkRouterMatch_Param-12                  	 5903955	       203.3 ns/op	      16 B/op	       1 allocs/op
-BenchmarkRouterMatch_ParamNoBuffer-12          	 5910086	       202.6 ns/op	      16 B/op	       1 allocs/op
+BenchmarkRouterMatch_Param-12                  	10369945	       115.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouterMatch_ParamNoBuffer-12          	 8469910	       142.1 ns/op	      16 B/op	       1 allocs/op
 BenchmarkRouterMatch_Wildcard-12               	10409584	       115.2 ns/op	       0 B/op	       0 allocs/op
 BenchmarkRouterMatch_Glob-12                   	 9083280	       131.9 ns/op	       0 B/op	       0 allocs/op
 BenchmarkRouterMatch_NoMatch-12                	18149378	        66.28 ns/op	       0 B/op	       0 allocs/op

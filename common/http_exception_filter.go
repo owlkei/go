@@ -88,22 +88,3 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 
 	return exceptionFilterItemArr
 }
-
-func RunHTTPCatchChain(c *ctx.HTTPContext, catchFns []HTTPCatch, rec any) {
-	for _, catchFn := range catchFns {
-		var isHandled bool
-		if rec, isHandled = runHTTPCatch(c, catchFn, rec); isHandled {
-			return
-		}
-	}
-}
-
-func runHTTPCatch(c *ctx.HTTPContext, catchFn HTTPCatch, rec any) (next any, isHandled bool) {
-	defer func() {
-		if !isHandled {
-			next = recover()
-		}
-	}()
-	catchFn(c, NormalizeRecovered(rec))
-	return nil, true
-}

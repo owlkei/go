@@ -3,8 +3,6 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -139,116 +137,5 @@ func TestAsHTTPGuard_WrongShape(t *testing.T) {
 	_, ok := AsHTTPGuard(wrongReturnGuarder{})
 	if ok {
 		t.Error(test.DiffMessage(true, false, "a CanActivate returning non-bool must not match"))
-	}
-}
-
-func TestBuildHTTPGuardMiddleware_AllowedCallsNext(t *testing.T) {
-	called := false
-	c := &ctx.HTTPContext{}
-	c.Next = func() { called = true }
-
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return true })
-	mw(c)
-
-	if !called {
-		t.Error(test.DiffMessage(called, true, "an allowing guard must call Next"))
-	}
-}
-
-func TestBuildHTTPGuardMiddleware_DeniedPanics(t *testing.T) {
-	c := &ctx.HTTPContext{}
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return false })
-
-	defer func() {
-		if rec := recover(); rec == nil {
-			t.Error(test.DiffMessage(nil, "panic", "a denying guard must panic"))
-		}
-	}()
-	mw(c)
-}
-
-func recoverGuardRejectionHTTP(mw func(*ctx.HTTPContext), c *ctx.HTTPContext) (rec any) {
-	defer func() { rec = recover() }()
-	mw(c)
-	return nil
-}
-
-func TestBuildHTTPGuardMiddleware_AllowCallsNextOnce(t *testing.T) {
-	calls := 0
-	c := &ctx.HTTPContext{}
-	c.Next = func() { calls++ }
-
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return true })
-	if rec := recoverGuardRejectionHTTP(mw, c); rec != nil {
-		t.Error(test.DiffMessage(rec, nil, "B12: an allowing guard does not panic"))
-	}
-
-	if calls != 1 {
-		t.Error(test.DiffMessage(calls, 1, "B12: an allowing guard calls Next once"))
-	}
-}
-
-func TestBuildHTTPGuardMiddleware_PassesTheContextToTheGuard(t *testing.T) {
-	c := &ctx.HTTPContext{}
-	c.Next = func() {}
-	var got *ctx.HTTPContext
-
-	BuildHTTPGuardMiddleware(func(arg *ctx.HTTPContext) bool {
-		got = arg
-		return true
-	})(c)
-
-	if got != c {
-		t.Error(test.DiffMessage(got, c, "B12: the guard receives the request context"))
-	}
-}
-
-func TestBuildHTTPGuardMiddleware_RejectPanicsForbidden(t *testing.T) {
-	c := &ctx.HTTPContext{}
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return false })
-
-	rec := recoverGuardRejectionHTTP(mw, c)
-	ex, ok := rec.(exception.Exception)
-	if !ok {
-		t.Fatal(test.DiffMessage(rec, "an exception.Exception value", "B12: a rejection panics with an exception value"))
-	}
-	if ex.GetCode() != 403 {
-		t.Error(test.DiffMessage(ex.GetCode(), 403, "B12: code"))
-	}
-	if ex.GetMessage() != "Access denied" {
-		t.Error(test.DiffMessage(ex.GetMessage(), "Access denied", "B12: message"))
-	}
-	if ex.Error() != "Forbidden" {
-		t.Error(test.DiffMessage(ex.Error(), "Forbidden", "B12: Error()"))
-	}
-}
-
-func TestBuildHTTPGuardMiddleware_RejectDoesNotCallNext(t *testing.T) {
-	calls := 0
-	c := &ctx.HTTPContext{}
-	c.Next = func() { calls++ }
-
-	recoverGuardRejectionHTTP(BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return false }), c)
-
-	if calls != 0 {
-		t.Error(test.DiffMessage(calls, 0, "B12: a rejection never calls Next"))
-	}
-}
-
-func TestBuildHTTPGuardMiddleware_RejectionsAreIndependentValues(t *testing.T) {
-	c := &ctx.HTTPContext{}
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return false })
-
-	first, ok1 := recoverGuardRejectionHTTP(mw, c).(exception.Exception)
-	second, ok2 := recoverGuardRejectionHTTP(mw, c).(exception.Exception)
-
-	if !ok1 || !ok2 {
-		t.Fatal(test.DiffMessage([]bool{ok1, ok2}, []bool{true, true}, "B12: every rejection panics with a value"))
-	}
-	if first != second {
-		t.Error(test.DiffMessage(second, first, "B12: two rejections are equal values"))
-	}
-	if copyOf := NormalizeRecovered(first); copyOf == NormalizeRecovered(second) {
-		t.Error(test.DiffMessage(copyOf, "distinct copies", "B12: each recovered value is its own copy"))
 	}
 }

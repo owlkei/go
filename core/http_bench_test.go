@@ -7,7 +7,7 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/exception"
 )
 
 type benchPlainController struct {
@@ -16,6 +16,19 @@ type benchPlainController struct {
 
 func (c benchPlainController) NewController() Controller { return c }
 func (c benchPlainController) READ_bench() string        { return "ok" }
+func (c benchPlainController) CREATE_bench() string      { return "ok" }
+func (c benchPlainController) READ_benchexception() string {
+	panic(exception.BadRequestException("bad input"))
+}
+func (c benchPlainController) READ_benchpanic() string { panic("boom") }
+
+type benchDiscardWriter struct {
+	header http.Header
+}
+
+func (w *benchDiscardWriter) Header() http.Header         { return w.header }
+func (w *benchDiscardWriter) WriteHeader(int)             {}
+func (w *benchDiscardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func benchHTTPContext(urlPath string) *ctx.HTTPContext {
 	c := ctx.NewHTTPContext()
@@ -24,68 +37,49 @@ func benchHTTPContext(urlPath string) *ctx.HTTPContext {
 	return c
 }
 
-func BenchmarkHandleRequest_MatchedRoute(b *testing.B) {
-	resetModuleGlobals()
-	app := New()
-	app.Create(ModuleBuilder().Controllers(benchPlainController{}).Build())
+func benchServe(b *testing.B, app *App, method, target string) {
+	b.Helper()
+	r := httptest.NewRequest(method, target, nil)
+	w := &benchDiscardWriter{header: http.Header{}}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		c := benchHTTPContext("/bench")
-		app.http.handleRequest(c)
+	for b.Loop() {
+		app.ServeHTTP(w, r)
 	}
 }
 
-func BenchmarkHandleRequest_NotFound(b *testing.B) {
+func benchApp(controllers ...Controller) *App {
 	resetModuleGlobals()
 	app := New()
-	app.Create(ModuleBuilder().Controllers(benchPlainController{}).Build())
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		c := benchHTTPContext("/does-not-exist")
-		app.http.handleRequest(c)
-	}
+	app.UseLogger(&mockLogger{})
+	app.Create(ModuleBuilder().Controllers(controllers...).Build())
+	return app
 }
 
-func BenchmarkHandleRequest_FullPipeline(b *testing.B) {
-	resetModuleGlobals()
-	app := New()
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		c := benchHTTPContext("/tracepipeline")
-		app.http.handleRequest(c)
-	}
+func BenchmarkServeHTTP_Static(b *testing.B) {
+	benchServe(b, benchApp(benchPlainController{}), http.MethodGet, "/bench")
 }
 
-func BenchmarkHandleRequest_MultiInterceptor_NoListener(b *testing.B) {
-	resetModuleGlobals()
-	app := New()
-	app.Create(ModuleBuilder().Controllers(multiInterceptorController{}).Build())
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		c := benchHTTPContext("/multiintercept")
-		app.http.handleRequest(c)
-	}
+func BenchmarkServeHTTP_Chain(b *testing.B) {
+	benchServe(b, benchApp(tracePipelineController{}), http.MethodGet, "/tracepipeline")
 }
 
-func BenchmarkHandleRequest_MultiInterceptor_WithListener(b *testing.B) {
-	resetModuleGlobals()
-	app := New()
-	app.event.On(trace.EventName, func(args ...any) {})
-	app.Create(ModuleBuilder().Controllers(multiInterceptorController{}).Build())
+func BenchmarkServeHTTP_NotFound(b *testing.B) {
+	benchServe(b, benchApp(benchPlainController{}), http.MethodGet, "/does-not-exist")
+}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		c := benchHTTPContext("/multiintercept")
-		app.http.handleRequest(c)
-	}
+func BenchmarkServeHTTP_MethodNotAllowed(b *testing.B) {
+	benchServe(b, benchApp(benchPlainController{}), http.MethodDelete, "/bench")
+}
+
+func BenchmarkServeHTTP_Exception(b *testing.B) {
+	benchServe(b, benchApp(benchPlainController{}), http.MethodGet, "/benchexception")
+}
+
+func BenchmarkServeHTTP_PanicString(b *testing.B) {
+	benchServe(b, benchApp(benchPlainController{}), http.MethodGet, "/benchpanic")
+}
+
+func BenchmarkServeHTTP_MultiInterceptor(b *testing.B) {
+	benchServe(b, benchApp(multiInterceptorController{}), http.MethodGet, "/multiintercept")
 }

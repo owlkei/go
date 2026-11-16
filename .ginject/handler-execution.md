@@ -7,7 +7,8 @@
 Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `core/fn_plan.go`
 (`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `core/module.go`
 (`bindHTTPController` / `bindWSController` build the plans into `Module.httpPlanByPattern` /
-`wsPlanByEvent`) and `core/app.go` (`resolveAndCallHandler` looks the plan up and calls `invoke`).
+`wsPlanByEvent`); `core/app.go` `initRoutes` stores each HTTP plan in its route (`httpRoute.plan`,
+called with `call(c, ev, traced)`), and the WS read loop looks the plan up through `resolveAndCallHandler`.
 
 ### 1.1 Building a plan (cold, `Create()`)
 
@@ -137,8 +138,9 @@ func (e EmailService) NewProvider() Provider {
 
 ### 4.1 Panic Recovery
 
-**Point of Recovery**: `HTTP.handleRequest()` in `core/http.go` defers a `recover()` that runs the
-route's exception filter chain (`common.RunHTTPCatchChain`). `invoke` never recovers; on WS,
+**Point of Recovery**: `HTTP.handleRequest()` in `core/http.go` defers `recoverRequest`, the
+request's only `recover()`: a middleware's panic gets the HTTP layer's error response, a later one
+runs the route's exception filters (`HTTP.catch`). `invoke` never recovers; on WS,
 `dispatchWSEvent` in `core/read_loop.go` recovers into `runCatchChain`.
 
 ### 4.2 No Per-Request Timeout Check

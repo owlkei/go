@@ -1,13 +1,10 @@
 package core
 
 import (
-	"net/http"
 	"reflect"
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
-	"github.com/dangduoc08/ginject/trace"
 )
 
 func BenchmarkReturnHTTP_String(b *testing.B) {
@@ -77,28 +74,5 @@ func BenchmarkGenFieldKey(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		genFieldKey(t)
-	}
-}
-
-func BenchmarkBuildUseMiddleware_NoListener(b *testing.B) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	c.Next = func() {}
-	mw := buildUseMiddleware(func(r *http.Request, w http.ResponseWriter, next ctx.Next) { next() }, ev, "bench.Middleware", trace.TransportHTTP)
-	b.ReportAllocs()
-	for b.Loop() {
-		mw(c)
-	}
-}
-
-func BenchmarkBuildUseMiddleware_WithListener(b *testing.B) {
-	ev := event.NewEvent()
-	ev.On(trace.EventName, func(args ...any) {})
-	c := newHTTPContext()
-	c.Next = func() {}
-	mw := buildUseMiddleware(func(r *http.Request, w http.ResponseWriter, next ctx.Next) { next() }, ev, "bench.Middleware", trace.TransportHTTP)
-	b.ReportAllocs()
-	for b.Loop() {
-		mw(c)
 	}
 }

@@ -88,7 +88,7 @@ func New() *App {
 		broker: memorybroker.NewMemoryBroker(),
 		ctxPool: sync.Pool{
 			New: func() any {
-				return ctx.NewHTTPContext()
+				return newHTTPExchange()
 			},
 		},
 		wsCtxPool: sync.Pool{
@@ -110,17 +110,19 @@ func New() *App {
 }
 
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Body != nil && app.maxRequestBodyBytes > 0 {
+	if r.Body != nil && r.Body != http.NoBody && app.maxRequestBodyBytes > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, app.maxRequestBodyBytes)
 	}
 
-	c := app.ctxPool.Get().(*ctx.HTTPContext)
-	c.Init(w, r)
+	ex := app.ctxPool.Get().(*httpExchange)
+	ex.writer.reset(w)
+	c := &ex.HTTPContext
+	c.Init(&ex.writer, r)
 
 	if app.isWSEnabled && app.ws.isWSPath(r.URL.Path) {
 		app.ws.upgrade(w, r, websocket.Server{
 			Handshake: func(wsCfg *websocket.Config, r *http.Request) error {
-				defer app.releaseCtx(c)
+				defer app.releaseCtx(ex)
 
 				c.Request = r
 				c.Status(http.StatusSwitchingProtocols)
@@ -144,20 +146,25 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer app.releaseCtx(c)
-	c.ResponseWriter.Header().Set(ctx.RequestID, c.GetID())
-	app.http.handleRequest(c)
-	if app.event.HasListeners(trace.EventName) {
+	w.Header()[ctx.RequestID] = []string{c.GetID()}
+	ex.traced = app.event.HasListeners(trace.EventName)
+	app.http.handleRequest(ex)
+	if ex.traced {
+		code := ex.writer.status()
+		if code == 0 {
+			code = http.StatusOK
+		}
 		app.event.Emit(trace.EventName, trace.Event{
 			ID:        c.GetID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportHTTP,
 			Operation: c.Method,
 			Target:    c.URL.Path,
-			Code:      c.Code,
+			Code:      code,
 			Duration:  time.Since(c.Timestamp),
 		})
 	}
+	app.releaseCtx(ex)
 }
 
 // Order matters here and is easy to break by accident:
@@ -180,11 +187,13 @@ func (app *App) Create(m *Module) {
 	app.initLogger()
 	injectedProviders := app.initProviders(m)
 	app.initWS(injectedProviders)
+	app.initRoutes()
 	app.initMiddlewares(injectedProviders)
 	app.initExceptionFilters(injectedProviders)
 	app.initGuards(injectedProviders)
 	app.initInterceptors(injectedProviders)
 	app.initMainHandlers()
+	app.http.finishRoutes()
 	app.initDevtool()
 	app.initAccessLog()
 	app.callOnReady()
@@ -254,25 +263,21 @@ func (app *App) initProviders(m *Module) map[string]Provider {
 	}
 	app.injectedProviders = injectedProviders
 
-	planByPattern := make(map[string]*httpHandlerPlan, len(app.module.HTTPMainHandlers))
-	for _, h := range app.module.HTTPMainHandlers {
-		httpMethod := routing.OperationsMapHTTPMethods[h.Method]
-		planByPattern[routing.MethodRouteVersionToPattern(httpMethod, h.Route, h.Version)] = app.module.httpPlanByPattern[h.Pattern]
-	}
-	app.http.resolveAndCallHandler = func(pattern string, _ any, c *ctx.HTTPContext) []reflect.Value {
-		return planByPattern[pattern].invoke(c, app.event)
-	}
-
 	return injectedProviders
+}
+
+func (app *App) initRoutes() {
+	app.http.event = app.event
+	app.http.logger = app.Logger
+	for _, h := range app.module.HTTPMainHandlers {
+		app.http.addRoute(h, app.module.httpPlanByPattern[h.Pattern])
+	}
 }
 
 func (app *App) initExceptionFilters(injectedProviders map[string]Provider) {
 	for i := len(app.module.HTTPExceptionFilters) - 1; i >= 0; i-- {
 		ef := app.module.HTTPExceptionFilters[i]
-		httpMethod := routing.OperationsMapHTTPMethods[ef.Method]
-		endpoint := routing.MethodRouteVersionToPattern(httpMethod, ef.Route, ef.Version)
-		catchFn := traceHTTPCatch(app.event, ef.Name, ef.Handler.(common.HTTPCatch))
-		app.http.catchFnsByRoute[endpoint] = append(app.http.catchFnsByRoute[endpoint], catchFn)
+		app.http.addFilter(ef, traceHTTPCatch(app.event, ef.Name, ef.Handler.(common.HTTPCatch)))
 	}
 
 	if app.ws != nil {
@@ -300,12 +305,7 @@ func (app *App) initExceptionFilters(injectedProviders map[string]Provider) {
 			}
 
 			if isHTTPFilter {
-				tracedHTTPCatch := traceHTTPCatch(app.event, name, httpCatch)
-				for _, h := range app.module.HTTPMainHandlers {
-					httpMethod := routing.OperationsMapHTTPMethods[h.Method]
-					endpoint := routing.MethodRouteVersionToPattern(httpMethod, h.Route, h.Version)
-					app.http.catchFnsByRoute[endpoint] = append(app.http.catchFnsByRoute[endpoint], tracedHTTPCatch)
-				}
+				app.http.addGlobalFilter(traceHTTPCatch(app.event, name, httpCatch))
 			}
 
 			if isWSFilter && app.ws != nil {
@@ -349,23 +349,12 @@ func traceWSCatch(ev *event.Event, name string, fn common.WSCatch) common.WSCatc
 }
 
 func (app *App) initMiddlewares(injectedProviders map[string]Provider) {
-	if len(app.globalMiddlewares) > 0 {
-		for _, gm := range app.globalMiddlewares {
-			name := reflect.TypeOf(gm).String()
-			newGM, err := injectDependencies(gm, "middleware", injectedProviders)
-			if err != nil {
-				panic(err)
-			}
-			gm = common.Construct(newGM.Interface(), "NewMiddleware").(common.MiddlewareFn)
-			mw := buildUseMiddleware(gm.Use, app.event, name, trace.TransportHTTP)
-			app.http.route.Use(mw)
-		}
+	for _, gm := range app.globalMiddlewares {
+		app.http.addGlobalMiddleware(newHTTPMiddleware(gm, injectedProviders))
 	}
 
 	for _, rm := range app.module.HTTPMiddlewares {
-		mw := buildUseMiddleware(rm.Handler.(common.Use), app.event, rm.Name, trace.TransportHTTP)
-		httpMethod := routing.OperationsMapHTTPMethods[rm.Method]
-		app.http.route.For([]string{httpMethod}, rm.Route, rm.Version)(mw)
+		app.http.addMiddleware(rm)
 	}
 }
 
@@ -386,11 +375,7 @@ func (app *App) initGuards(injectedProviders map[string]Provider) {
 			}
 
 			if isHTTPGuard {
-				mw := traceHTTPHandler(app.event, trace.StageGuard, name, common.BuildHTTPGuardMiddleware(httpCanActivate))
-				for _, h := range app.module.HTTPMainHandlers {
-					httpMethod := routing.OperationsMapHTTPMethods[h.Method]
-					app.http.route.For([]string{httpMethod}, h.Route, h.Version)(mw)
-				}
+				app.http.addGlobalGuard(name, httpCanActivate)
 			}
 
 			if isWSGuard && app.ws != nil {
@@ -403,9 +388,7 @@ func (app *App) initGuards(injectedProviders map[string]Provider) {
 	}
 
 	for _, mg := range app.module.HTTPGuards {
-		mw := traceHTTPHandler(app.event, trace.StageGuard, mg.Name, common.BuildHTTPGuardMiddleware(mg.Handler.(common.HTTPCanActivate)))
-		httpMethod := routing.OperationsMapHTTPMethods[mg.Method]
-		app.http.route.For([]string{httpMethod}, mg.Route, mg.Version)(mw)
+		app.http.addGuard(mg)
 	}
 
 	if app.ws != nil {
@@ -413,21 +396,6 @@ func (app *App) initGuards(injectedProviders map[string]Provider) {
 			mw := traceWSHandler(app.event, trace.StageGuard, mg.Name, common.BuildWSGuardMiddleware(mg.Handler.(common.WSCanActivate)))
 			app.ws.eventMatcher.AddMiddlewares(mg.EventName, mw)
 		}
-	}
-}
-
-func traceHTTPHandler(ev *event.Event, stage, name string, h ctx.HTTPHandler) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) {
-		if !ev.HasListeners(trace.EventName) {
-			h(c)
-			return
-		}
-
-		start := time.Now()
-		defer func() {
-			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: stage, Name: name, Duration: time.Since(start)})
-		}()
-		h(c)
 	}
 }
 
@@ -447,18 +415,6 @@ func traceWSHandler(ev *event.Event, stage, name string, h ctx.WSHandler) ctx.WS
 }
 
 func (app *App) initInterceptors(injectedProviders map[string]Provider) {
-	app.http.emitPostInterceptor = func(c *ctx.HTTPContext, name string, duration time.Duration) {
-		if !app.event.HasListeners(trace.EventName) {
-			return
-		}
-		app.event.Emit(trace.EventName, trace.Event{
-			ID:       c.GetID(),
-			Stage:    trace.StagePostInterceptor,
-			Name:     name,
-			Duration: duration,
-		})
-	}
-
 	if app.ws != nil {
 		app.ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {
 			if !app.event.HasListeners(trace.EventName) {
@@ -490,11 +446,7 @@ func (app *App) initInterceptors(injectedProviders map[string]Provider) {
 			}
 
 			if isHTTPInterceptor {
-				for _, h := range app.module.HTTPMainHandlers {
-					httpMethod := routing.OperationsMapHTTPMethods[h.Method]
-					mw := traceHTTPHandler(app.event, trace.StagePreInterceptor, name, common.BuildHTTPInterceptMiddleware(name, httpIntercept))
-					app.http.route.For([]string{httpMethod}, h.Route, h.Version)(mw)
-				}
+				app.http.addGlobalInterceptor(name, httpIntercept)
 			}
 
 			if isWSInterceptor && app.ws != nil {
@@ -507,9 +459,7 @@ func (app *App) initInterceptors(injectedProviders map[string]Provider) {
 	}
 
 	for _, mi := range app.module.HTTPInterceptors {
-		httpMethod := routing.OperationsMapHTTPMethods[mi.Method]
-		mw := traceHTTPHandler(app.event, trace.StagePreInterceptor, mi.Name, common.BuildHTTPInterceptMiddleware(mi.Name, mi.Handler.(common.HTTPIntercept)))
-		app.http.route.For([]string{httpMethod}, mi.Route, mi.Version)(mw)
+		app.http.addInterceptor(mi)
 	}
 
 	if app.ws != nil {
@@ -521,10 +471,6 @@ func (app *App) initInterceptors(injectedProviders map[string]Provider) {
 }
 
 func (app *App) initMainHandlers() {
-	for _, h := range app.module.HTTPMainHandlers {
-		app.http.addMainHandler(h)
-	}
-
 	if app.ws != nil {
 		for _, h := range app.module.WSMainHandlers {
 			app.ws.eventMatcher.AddInjectableHandler(h.EventName, h.Handler)
@@ -532,9 +478,9 @@ func (app *App) initMainHandlers() {
 	}
 }
 
-func (app *App) releaseCtx(c *ctx.HTTPContext) {
-	c.Reset()
-	app.ctxPool.Put(c)
+func (app *App) releaseCtx(ex *httpExchange) {
+	ex.reset()
+	app.ctxPool.Put(ex)
 }
 
 func (app *App) releaseWSCtx(c *ctx.WSContext) {

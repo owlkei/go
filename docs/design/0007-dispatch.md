@@ -227,7 +227,7 @@ Setup for L1-L9: one global and one module layer of each kind, each appending it
 - **N1** No route for the path under any method: status 404, body exactly
   `{"code":404,"error":"Not Found","message":"Not Found"}`, `Content-Type: application/json`,
   `X-Request-Id` set. The body does not depend on the request (a 100,000-character path gets the
-  same 53 bytes).
+  same 54 bytes).
 - **N2** The path has a route for another method (same version resolution as V1): status 405, body
   `{"code":405,"error":"Method Not Allowed","message":"Method Not Allowed"}`, and an `Allow` header
   listing the methods that have a route for the path, in the order `GET, HEAD, POST, PUT, PATCH,

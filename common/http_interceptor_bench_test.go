@@ -39,17 +39,3 @@ func BenchmarkHTTPInterceptor_Call(b *testing.B) {
 		fn(c, a)
 	}
 }
-
-func BenchmarkBuildHTTPInterceptMiddleware(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	next := func() {}
-	mw := BuildHTTPInterceptMiddleware("bench", func(*ctx.HTTPContext, *aggregation.Aggregation) any {
-		return nil
-	})
-	b.ReportAllocs()
-	for b.Loop() {
-		c.Reset()
-		c.Next = next
-		mw(c)
-	}
-}

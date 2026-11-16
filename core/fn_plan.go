@@ -294,9 +294,13 @@ func resolveHTTPArg(a *handlerArg[*ctx.HTTPContext], c *ctx.HTTPContext) reflect
 }
 
 func (p *httpHandlerPlan) invoke(c *ctx.HTTPContext, ev *event.Event) []reflect.Value {
+	return p.call(c, ev, ev.HasListeners(trace.EventName))
+}
+
+func (p *httpHandlerPlan) call(c *ctx.HTTPContext, ev *event.Event, traced bool) []reflect.Value {
 	var stack [handlerStackArgs + 1]reflect.Value
 	in := handlerCallArgs(stack[:], p.recv, len(p.args))
-	if ev.HasListeners(trace.EventName) {
+	if traced {
 		return p.invokeTraced(c, ev, in)
 	}
 	for i := range p.args {

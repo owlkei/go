@@ -8,6 +8,7 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/event"
+	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/trace"
@@ -200,5 +201,27 @@ func TestWSHandleRequest_SendsConnectedPayloadAndRegisters(t *testing.T) {
 
 	if _, ok := ws.connmgr.Get(got.ID); ok {
 		t.Error(test.DiffMessage(ok, false, "the connection should be unregistered once handleRequest returns"))
+	}
+}
+
+func TestIsWSPath_EqualsEnclosedComparison(t *testing.T) {
+	for _, configured := range []string{"", "/ws", "live", "/live/", "a/b"} {
+		ws := NewWS(&WSConfig{Path: configured, logger: log.NewLog(nil)})
+		for _, candidate := range []string{"", "/", "/ws", "/ws/", "ws", "ws/", "/wsx", "/w", "//ws", "/ws//", "/live", "/live/", "live", "/a/b", "/a/b/", "/a/bc", "/WS", "/ws?x", "/ws/x"} {
+			want := str.Enclose(candidate, '/') == ws.path
+			if got := ws.isWSPath(candidate); got != want {
+				t.Error(test.DiffMessage(got, want, "P10: isWSPath equals the enclosed comparison for path "+configured+" and request "+candidate))
+			}
+		}
+	}
+}
+
+func TestIsWSPath_DoesNotAllocate(t *testing.T) {
+	ws := NewWS(&WSConfig{Path: "/ws", logger: log.NewLog(nil)})
+
+	for _, candidate := range []string{"/ws", "/ws/", "/other", "/", ""} {
+		if got := testing.AllocsPerRun(100, func() { _ = ws.isWSPath(candidate) }); got != 0 {
+			t.Error(test.DiffMessage(got, 0.0, "bug 13, P10: isWSPath allocates nothing for "+candidate))
+		}
 	}
 }

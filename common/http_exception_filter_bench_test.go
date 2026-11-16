@@ -1,7 +1,6 @@
 package common
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
@@ -38,35 +37,5 @@ func BenchmarkHTTPExceptionFilter_Call(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		fn(c, &ex)
-	}
-}
-
-func BenchmarkRunHTTPCatchChain_Exception(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
-	ex := exception.NotFoundException("nope")
-	b.ReportAllocs()
-	for b.Loop() {
-		RunHTTPCatchChain(c, catchFns, ex)
-	}
-}
-
-func BenchmarkRunHTTPCatchChain_Pointer(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
-	ex := exception.NotFoundException("nope")
-	b.ReportAllocs()
-	for b.Loop() {
-		RunHTTPCatchChain(c, catchFns, &ex)
-	}
-}
-
-func BenchmarkRunHTTPCatchChain_Error(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
-	err := errors.New("boom")
-	b.ReportAllocs()
-	for b.Loop() {
-		RunHTTPCatchChain(c, catchFns, err)
 	}
 }

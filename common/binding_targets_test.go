@@ -350,17 +350,6 @@ func httpMiddlewaresTargets(handlers ...any) []string {
 	return sortedNames(names)
 }
 
-func wsMiddlewaresTargets(handlers ...any) []string {
-	l := &Middleware{}
-	l.BindMiddleware(mockMiddlewareFn{}, handlers...)
-	items := l.InjectProvidersIntoWSMiddlewares(bindEvents(), noopCB)
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		names = append(names, item.WS.EventName)
-	}
-	return sortedNames(names)
-}
-
 func TestInjectProvidersIntoHTTPMiddlewares_NoHandlersBindsAllRoutes(t *testing.T) {
 	expectTargets(t, "B7", httpMiddlewaresTargets(), []string{"READ_items", "READ_orders", "READ_users"})
 }
@@ -388,35 +377,5 @@ func TestInjectProvidersIntoHTTPMiddlewares_RouteAndOtherTransportHandlerBindsRo
 func TestInjectProvidersIntoHTTPMiddlewares_NonHandlerPanics(t *testing.T) {
 	c := bindController{}
 	expectBindPanic(t, "B10", func() { httpMiddlewaresTargets(c.Helper) },
-		"invalid middleware:", "mockMiddlewareFn", "is bound to 'Helper', which is not a handler of the controller")
-}
-
-func TestInjectProvidersIntoWSMiddlewares_NoHandlersBindsAllEvents(t *testing.T) {
-	expectTargets(t, "B7", wsMiddlewaresTargets(), []string{"message", "status", "typing"})
-}
-
-func TestInjectProvidersIntoWSMiddlewares_HandlersBindOnlyThoseEvents(t *testing.T) {
-	c := bindController{}
-	expectTargets(t, "B8: only the given events", wsMiddlewaresTargets(c.SUBSCRIBE_message, c.SUBSCRIBE_typing), []string{"message", "typing"})
-}
-
-func TestInjectProvidersIntoWSMiddlewares_DuplicateHandlerBindsOnce(t *testing.T) {
-	c := bindController{}
-	expectTargets(t, "B8: a handler given twice yields one item", wsMiddlewaresTargets(c.SUBSCRIBE_status, c.SUBSCRIBE_status), []string{"status"})
-}
-
-func TestInjectProvidersIntoWSMiddlewares_HTTPHandlerBindsNothing(t *testing.T) {
-	c := bindController{}
-	expectTargets(t, "B9: an HTTP handler binds nothing on the WS side", wsMiddlewaresTargets(c.READ_users, c.READ_orders), []string{})
-}
-
-func TestInjectProvidersIntoWSMiddlewares_EventAndHTTPHandlerBindsEvent(t *testing.T) {
-	c := bindController{}
-	expectTargets(t, "B8, B9: only the event is bound", wsMiddlewaresTargets(c.SUBSCRIBE_status, c.READ_users), []string{"status"})
-}
-
-func TestInjectProvidersIntoWSMiddlewares_NonHandlerPanics(t *testing.T) {
-	c := bindController{}
-	expectBindPanic(t, "B10", func() { wsMiddlewaresTargets(c.Helper) },
 		"invalid middleware:", "mockMiddlewareFn", "is bound to 'Helper', which is not a handler of the controller")
 }

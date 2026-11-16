@@ -124,12 +124,12 @@
         "from": "TRACED",
         "to": "RELEASED",
         "stage": "Cleanup",
-        "action": "app.releaseCtx(c)",
-        "effects": ["c.Reset() clears all fields", "Context returned to pool for reuse"]
+        "action": "app.releaseCtx(ex)",
+        "effects": ["ex.reset(): c.Reset() clears all fields but keeps the capacity of ParamValues and the aggregation list (dropped over 64), the response writer points at nothing", "Exchange returned to pool for reuse (not after an http.ErrAbortHandler re-panic)"]
       }
     ],
     "panics_handled": true,
-    "panic_handling_location": "HTTP.handleRequest() in core/http.go (handler, pipes, guards, interceptors); buildUseMiddleware() per middleware",
+    "panic_handling_location": "HTTP.handleRequest() in core/http.go: the request's only recover; middleware panics get the HTTP layer's error response, later ones the route's filters",
     "context_mutation_rules": {
       "safe_to_mutate_in": ["Middleware", "Interceptor (pre)", "Handler"],
       "dangerous_to_mutate_in": ["Guard (semantically wrong)", "Interceptor (post)", "Exception filter"],

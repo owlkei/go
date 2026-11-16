@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/color"
 )
 
@@ -33,16 +32,6 @@ type moduleBuilder struct {
 
 func ModuleBuilder() *moduleBuilder {
 	return &moduleBuilder{}
-}
-
-type WSMiddlewareLayer struct {
-	EventName string
-	Handlers  []func(*ctx.WSContext)
-}
-
-type WSCommonLayer struct {
-	EventName string
-	Handler   any
 }
 
 func (m *moduleBuilder) Imports(modules ...any) *moduleBuilder {

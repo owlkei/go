@@ -87,12 +87,3 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 
 	return guardItemArr
 }
-
-func BuildHTTPGuardMiddleware(canActivateFn HTTPCanActivate) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) {
-		if !canActivateFn(c) {
-			panic(accessDeniedException)
-		}
-		c.Next()
-	}
-}

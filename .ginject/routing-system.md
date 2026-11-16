@@ -179,7 +179,10 @@ func (c UserController) READ_BY_ID(param ctx.Param) string {
 ### 4.2 Wildcards and globs
 
 `*` and globs capture nothing: there is no `param["*"]`. A file route (`SERVE`, `READ_FILE…`) reads
-the rest of the URL itself (`core/http.go` `serveContent`, from `lastWildcardSlashIndexByRoute`).
+the rest of the URL itself (`core/http.go` `serveContent`, from the route's `serveIndex`). A
+directory answers its `index.html` or 404, never a listing. `core` registers routes with
+`AddInjectableHandler` and finds them with `Match`, passing `c.ParamValues[:0]` as the buffer that
+`Find` appends to (design 0002 H1); it no longer uses `Use`, `For` or `RouterItem.Handlers`.
 
 ---
 

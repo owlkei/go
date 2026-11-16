@@ -429,9 +429,8 @@ Methods:
 ### 5.2 Panic Recovery
 
 **Recovery Points**:
-1. **Request pipeline**: `HTTP.handleRequest()` (`core/http.go`) recovers panics of guards, interceptors, pipes and the handler (`httpHandlerPlan.invoke` itself never recovers)
-2. **Middleware execution**: `buildUseMiddleware()` wraps middleware call in recover()
-3. **Anywhere else**: Panic propagates to exception filter
+1. **HTTP request**: `HTTP.handleRequest()` (`core/http.go`) holds the request's only `recover()`. A middleware's panic gets the HTTP layer's fixed error response (no user filter); a panic of a guard, interceptor, pipe, the handler or an operator goes to the route's filters (`httpHandlerPlan.invoke` itself never recovers). Full rules: [request-pipeline.md](request-pipeline.md) section 1.
+2. **WS message**: `dispatchWSEvent` (`core/read_loop.go`) recovers into the WS catch chain with `common.NormalizeRecovered`.
 
 **Recovery Flow**:
 ```
@@ -439,7 +438,7 @@ Handler panics with exception.BadRequestException("invalid")
         ↓
 recover() catches panic value
         ↓
-common.NormalizeRecovered(value) converts to *exception.Exception
+HTTP: asException(value), else log UnhandledPanic + fixed 500 exception; WS: common.NormalizeRecovered(value)
         ↓
 Exception filter chain called with exception (a loop; a filter that panics passes to the next)
         ↓
@@ -448,7 +447,7 @@ Filter's Catch(context, exception) handles response
 HTTP response written (or WS message sent)
 ```
 
-**NormalizeRecovered() Behavior**:
+**NormalizeRecovered() Behavior** (WS only; HTTP never shows a non-exception's text):
 - Input: `any` (panic value)
 - A non-nil `*exception.Exception`: returned as is (a filter that re-throws `panic(ex)` keeps the code)
 - An `exception.Exception` value: a pointer to a copy

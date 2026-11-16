@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/exception"
 )
 
 func BenchmarkInjectProvidersIntoHTTPGuards_ApplyAll(b *testing.B) {
@@ -36,34 +35,5 @@ func BenchmarkHTTPGuard_Call(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		fn(c)
-	}
-}
-
-func BenchmarkBuildHTTPGuardMiddleware_Allow(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	c.Next = func() {}
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return true })
-	b.ReportAllocs()
-	for b.Loop() {
-		mw(c)
-	}
-}
-
-func BenchmarkBuildHTTPGuardMiddleware_Reject(b *testing.B) {
-	c := ctx.NewHTTPContext()
-	c.Next = func() {}
-	mw := BuildHTTPGuardMiddleware(func(*ctx.HTTPContext) bool { return false })
-	catchFns := []HTTPCatch{func(*ctx.HTTPContext, *exception.Exception) {}}
-	reject := func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				RunHTTPCatchChain(c, catchFns, rec)
-			}
-		}()
-		mw(c)
-	}
-	b.ReportAllocs()
-	for b.Loop() {
-		reject()
 	}
 }

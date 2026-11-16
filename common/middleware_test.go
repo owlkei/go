@@ -78,36 +78,3 @@ func TestInjectProvidersIntoHTTPMiddlewares_MainHandlerName(t *testing.T) {
 		t.Error(test.DiffMessage(items[0].HTTP.Common.MainHandlerName, "READ_items", "main handler name"))
 	}
 }
-
-func TestInjectProvidersIntoWSMiddlewares_Empty(t *testing.T) {
-	m := &Middleware{}
-	ws := buildWS(map[string]string{"message": "ON_message"})
-
-	items := m.InjectProvidersIntoWSMiddlewares(ws, noopCB)
-	if len(items) != 0 {
-		t.Error(test.DiffMessage(len(items), 0, "no bound middlewares → empty result"))
-	}
-}
-
-func TestInjectProvidersIntoWSMiddlewares_ApplyAll(t *testing.T) {
-	m := &Middleware{}
-	m.BindMiddleware(mockMiddlewareFn{})
-
-	ws := buildWS(map[string]string{
-		"message": "ON_message",
-		"status":  "ON_status",
-	})
-
-	items := m.InjectProvidersIntoWSMiddlewares(ws, noopCB)
-	if len(items) != 2 {
-		t.Error(test.DiffMessage(len(items), 2, "middleware with no handlers applies to all WS patterns"))
-	}
-	for _, item := range items {
-		if item.WS.EventName == "" {
-			t.Error(test.DiffMessage(item.WS.EventName, "non-empty", "event name"))
-		}
-		if item.WS.Common.Name == "" {
-			t.Error(test.DiffMessage(item.WS.Common.Name, "non-empty", "name"))
-		}
-	}
-}

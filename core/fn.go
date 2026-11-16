@@ -7,12 +7,14 @@ import (
 	"path"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"time"
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/event"
+	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/trace"
 )
@@ -147,27 +149,101 @@ func setStatusCode(c *ctx.HTTPContext, statusCode reflect.Value) {
 	}
 }
 
-func buildUseMiddleware(useFn common.Use, event *event.Event, name, transport string) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				globalHTTPExceptionFilter{}.Catch(c, common.NormalizeRecovered(rec))
-			}
-		}()
+type httpMiddleware struct {
+	use  common.Use
+	name string
+}
 
-		next := func() {
-			c.Next()
-		}
-
-		if !event.HasListeners(trace.EventName) {
-			useFn(c.Request, c.ResponseWriter, next)
-			return
-		}
-
-		start := time.Now()
-		useFn(c.Request, c.ResponseWriter, next)
-		event.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageMiddleware, Name: name, Transport: transport, Duration: time.Since(start)})
+func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provider) httpMiddleware {
+	name := reflect.TypeOf(m).String()
+	injected, err := injectDependencies(m, "middleware", injectedProviders)
+	if err != nil {
+		panic(err)
 	}
+	m = common.Construct(injected.Interface(), "NewMiddleware").(common.MiddlewareFn)
+	return httpMiddleware{use: m.Use, name: name}
+}
+
+func (m *httpMiddleware) emit(ev *event.Event, id string, duration time.Duration, code int) {
+	ev.Emit(trace.EventName, trace.Event{ID: id, Stage: trace.StageMiddleware, Name: m.name, Transport: trace.TransportHTTP, Duration: duration, Code: code})
+}
+
+const panicStackLimit = 4 << 10
+
+var (
+	defaultException             = exception.InternalServerErrorException("Unhandled exception has occurred")
+	internalServerErrorException = exception.InternalServerErrorException(http.StatusText(http.StatusInternalServerError))
+	internalErrorBody            = internalServerErrorException.AppendJSON(nil)
+)
+
+func asException(rec any) (*exception.Exception, bool) {
+	switch value := rec.(type) {
+	case *exception.Exception:
+		return value, value != nil
+	case exception.Exception:
+		return &value, true
+	case error:
+		var pointer *exception.Exception
+		if errors.As(value, &pointer) && pointer != nil {
+			return pointer, true
+		}
+		var found exception.Exception
+		if errors.As(value, &found) {
+			return &found, true
+		}
+	}
+	return nil, false
+}
+
+func writeErrorResponse(w http.ResponseWriter, e *exception.Exception) int {
+	code := e.GetCode()
+	if code < http.StatusBadRequest || code > 599 {
+		code = http.StatusInternalServerError
+	}
+	rawErrorText, rawMessage := e.Error(), e.GetMessage()
+	errorText, message := rawErrorText, rawMessage
+	if errorText == "" {
+		errorText = http.StatusText(code)
+	}
+	if errorText == "" {
+		errorText = defaultException.Error()
+	}
+	if message == "" {
+		message = defaultException.GetMessage()
+	}
+
+	switch {
+	case code == http.StatusInternalServerError && errorText == internalServerErrorException.Error() && message == internalServerErrorException.GetMessage():
+		writeJSONError(w, code, internalErrorBody)
+	case code == e.GetCode() && errorText == rawErrorText && message == rawMessage:
+		writeJSONError(w, code, e.AppendJSON(nil))
+	default:
+		normalized := exception.NewException(message, code, errorText)
+		writeJSONError(w, code, normalized.AppendJSON(nil))
+	}
+	return code
+}
+
+func writeJSONError(w http.ResponseWriter, code int, body []byte) {
+	h := w.Header()
+	delete(h, "Content-Length")
+	delete(h, "Content-Encoding")
+	delete(h, "Etag")
+	delete(h, "Last-Modified")
+	h["Content-Type"] = []string{applicationJSON}
+	w.WriteHeader(code)
+	_, _ = w.Write(body)
+}
+
+const applicationJSON = "application/json"
+
+func logPanic(logger common.Logger, msg string, c *ctx.HTTPContext, rec any) {
+	logger.Error(msg, "id", c.GetID(), "method", c.Method, "path", c.URL.Path, "panic", rec, "stack", panicStack())
+}
+
+func panicStack() string {
+	buf := make([]byte, panicStackLimit)
+	return string(buf[:runtime.Stack(buf, false)])
 }
 
 const publisherKey = "github.com/dangduoc08/ginject/common/common.Publisher"

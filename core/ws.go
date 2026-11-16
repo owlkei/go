@@ -74,37 +74,91 @@ func NewWS(cfg *WSConfig) *WS {
 func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProviders map[string]Provider, ev *event.Event) []ctx.HTTPHandler {
 	resolved := make([]ctx.HTTPHandler, len(middlewares))
 	for i, gm := range middlewares {
-		name := reflect.TypeOf(gm).String()
-		newGM, err := injectDependencies(gm, "middleware", injectedProviders)
-		if err != nil {
-			panic(err)
-		}
-		gm = common.Construct(newGM.Interface(), "NewMiddleware").(common.MiddlewareFn)
-		resolved[i] = buildUseMiddleware(gm.Use, ev, name, trace.TransportHTTP)
+		resolved[i] = handshakeMiddleware(newHTTPMiddleware(gm, injectedProviders), ev)
 	}
 
 	return resolved
 }
 
+func handshakeMiddleware(m httpMiddleware, ev *event.Event) ctx.HTTPHandler {
+	return func(c *ctx.HTTPContext) {
+		if !ev.HasListeners(trace.EventName) {
+			m.use(c.Request, c.ResponseWriter, c.Next)
+			return
+		}
+		start := time.Now()
+		m.use(c.Request, c.ResponseWriter, c.Next)
+		m.emit(ev, c.GetID(), time.Since(start), 0)
+	}
+}
+
 func (ws *WS) isWSPath(p string) bool {
-	return str.Enclose(p, '/') == ws.path
+	return isEnclosedEqual(p, ws.path)
+}
+
+func isEnclosedEqual(s, enclosed string) bool {
+	j := 0
+	if enclosed != "" && enclosed[0] == '/' {
+		j = 1
+	}
+	prev := byte('/')
+	hasContent := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isSpace(c) {
+			continue
+		}
+		hasContent = true
+		if c == prev && (c == '/' || c == '*') {
+			continue
+		}
+		if j == 0 || j >= len(enclosed) || enclosed[j] != c {
+			return false
+		}
+		j++
+		prev = c
+	}
+	if !hasContent {
+		return enclosed == ""
+	}
+	if prev != '/' {
+		if j == 0 || j >= len(enclosed) || enclosed[j] != '/' {
+			return false
+		}
+		j++
+	}
+	return j > 0 && j == len(enclosed)
+}
+
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'
 }
 
 func (ws *WS) upgrade(w stdHTTP.ResponseWriter, r *stdHTTP.Request, s websocket.Server) {
 	s.ServeHTTP(w, r)
 }
 
-func (ws *WS) handshake(c *ctx.HTTPContext) error {
+func (ws *WS) handshake(c *ctx.HTTPContext) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			if _, ok := asException(rec); !ok {
+				logPanic(ws.logger, "UnhandledPanic", c, rec)
+			}
+			err = errWSHandshakeRejected
+		}
+	}()
+
 	isNext := true
 	c.Next = func() {
 		isNext = true
 	}
 
 	for _, gm := range ws.globalMiddlewares {
-		if isNext {
-			isNext = false
-			gm(c)
+		if !isNext {
+			break
 		}
+		isNext = false
+		gm(c)
 	}
 
 	if isNext {

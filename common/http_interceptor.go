@@ -88,13 +88,3 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 
 	return interceptorItemArr
 }
-
-func BuildHTTPInterceptMiddleware(name string, interceptFn HTTPIntercept) ctx.HTTPHandler {
-	return func(c *ctx.HTTPContext) {
-		aggregationInstance := aggregation.NewAggregation()
-		aggregationInstance.Name = name
-		c.AddAggregation(aggregationInstance)
-		aggregationInstance.InterceptorData = interceptFn(c, aggregationInstance)
-		c.Next()
-	}
-}
