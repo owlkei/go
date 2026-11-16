@@ -27,6 +27,7 @@ const (
 	fullWait       = 100 * time.Millisecond
 	reportInterval = time.Second
 	keepCapacity   = 64 << 10
+	minCapacity    = 4 << 10
 
 	FlushTimeout = 2 * time.Second
 )
@@ -234,11 +235,7 @@ func grow(b []byte, n int) []byte {
 	if cap(b)-len(b) >= n {
 		return b
 	}
-	size := keepCapacity
-	if cap(b) > 0 {
-		size = min(max(2*cap(b), len(b)+n), max(queueLimit, len(b)+n))
-	}
-	size = max(size, len(b)+n)
+	size := min(max(2*cap(b), len(b)+n, minCapacity), max(queueLimit, len(b)+n))
 	grown := make([]byte, len(b), size)
 	copy(grown, b)
 	return grown
@@ -338,11 +335,10 @@ func (s *Sink) reportLocked() {
 }
 
 func (s *Sink) releaseLocked() {
-	if cap(s.spare) > cap(s.queue) {
-		s.queue, s.ends = s.spare[:0], s.spareEnds[:0]
-	}
-	s.spare, s.spareEnds = nil, nil
 	if cap(s.queue) > keepCapacity {
 		s.queue, s.ends = nil, nil
+	}
+	if cap(s.spare) > keepCapacity {
+		s.spare, s.spareEnds = nil, nil
 	}
 }

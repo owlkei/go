@@ -198,9 +198,9 @@ Switches the sink to asynchronous. Counted: two `StartAsync` need two `StopAsync
 | Part | Idle | Worst case |
 |---|---|---|
 | A sink never used | about 300 B, no goroutine, no timer | - |
-| A sink after use, queue empty | one buffer of at most 64 KiB, no goroutine, no timer | two buffers of about 1 MiB, one goroutine |
+| A sink after use, queue empty | two buffers of at most 64 KiB each, no goroutine, no timer | two buffers of about 1 MiB, one goroutine |
 
-Measured with a stuck output and 200,000 records of 200 B in all four levels: about 1.2 MB of heap, one goroutine, about 20 ns per call (the records past the limits are dropped). Once the output writes again and the queue empties, the spare buffer and any buffer over 64 KiB are released.
+Measured with a stuck output and 200,000 records of 200 B in all four levels: about 1.2 MB of heap, one goroutine, about 20 ns per call (the records past the limits are dropped). Once the output writes again and the queue empties, any buffer over 64 KiB is released.
 
 ## Concurrency
 
@@ -210,9 +210,9 @@ Measured with a stuck output and 200,000 records of 200 B in all four levels: ab
 
 ## Performance notes
 
-- **Two swapped buffers.** Callers append to one buffer while the writer writes the other; at the end of a batch they swap under the lock. A record is copied once, from the caller's encoder into the queue. An empty buffer starts at 64 KiB; growth is by doubling, capped at `queueLimit` (one record more for Fatal).
+- **Two swapped buffers.** Callers append to one buffer while the writer writes the other; at the end of a batch they swap under the lock. A record is copied once, from the caller's encoder into the queue. An empty buffer starts at 4 KiB; growth is by doubling, capped at `queueLimit` (one record more for Fatal).
 - **Batches cut on record ends.** The offsets of record ends are kept next to the buffer, so a batch is a sub-slice: no copy for the write.
-- **No goroutine while idle.** The writer is started by the `Write` that makes the queue non-empty (about 0.3 µs, once per burst) and ends when the queue is empty, after dropping the spare buffer and keeping the other one only up to 64 KiB. A long-lived goroutine would cost a wakeup source and a stack on a small machine.
+- **No goroutine while idle.** The writer is started by the `Write` that makes the queue non-empty (about 0.3 µs, once per burst) and ends when the queue is empty, keeping both buffers only up to 64 KiB each (a buffer that grew past that is released), so the next burst reuses them instead of allocating again. A long-lived goroutine would cost a wakeup source and a stack on a small machine.
 
 ## Benchmarks
 
@@ -230,4 +230,4 @@ BenchmarkSink_Write_Async_SlowOutput_1-12     	82658580	        14.43 ns/op	    
 BenchmarkSink_Write_Async_SlowOutput_12-12    	18604622	        63.15 ns/op	       0 B/op	       0 allocs/op
 ```
 
-The bytes per operation of the asynchronous benchmarks are the second buffer allocated again (64 KiB, then doubling within a burst) after the writer emptied the queue and dropped the spare (amortized), plus the drop counter of the benchmark itself (the one allocation per call, 16 B). `dropped/op` is the share of records dropped above `softLimit`. With a slow output almost every record is dropped above `softLimit`, which is why those calls are cheap.
+The bytes per operation of the asynchronous benchmarks are buffers grown past 64 KiB within a burst and released at its end (amortized), plus the drop counter of the benchmark itself (the one allocation per call, 16 B). `dropped/op` is the share of records dropped above `softLimit`. With a slow output almost every record is dropped above `softLimit`, which is why those calls are cheap.
