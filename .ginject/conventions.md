@@ -7,12 +7,31 @@ don't mass-rewrite the exceptions.
 ## Source files
 
 - **No comments in Go code**, tests and benchmarks included (commit `5babd36` stripped them with
-  an AST pass). One block survives at `core/app.go:208` (the init order of `App.Create`); leave it,
+  an AST pass). One block survives at `core/app.go:213` (the init order of `App.Create`); leave it,
   don't add others. Explain "why" in the commit message, the README or `.ginject/`.
 - **File names** are snake case, one concern per file, the transport in front when a concept has an
   HTTP and a WS side: `common/http_guard.go`, `common/ws_guard.go`, `core/ws_connmgr.go`,
   `core/read_loop.go`. The demo app uses dots (`sample/shared/log.http_guard.go`): that style stays
   in `sample/`.
+- **Where functions live in a package** (the maintainer's rule D-034, adopted on master 2026-11-16):
+  - Exported API goes in files named after their topic: `trie.go`, `router.go`, `binding.go`.
+  - An unexported helper (function, constant, variable or type) used by **two or more files** goes in
+    `fn.go`, its tests in `fn_test.go`.
+  - An unexported helper used by **one file** stays in that file. A helper called by one function goes
+    right after that function; constants, variables and types used by several functions of the file
+    stay at the top of the file, after the imports. Exported functions are never reordered to fit
+    this rule.
+  - A package with a single code file has no `fn.go`: everything stays in that file.
+  - A file whose whole content is one unexported topic (a subsystem such as `core/read_loop.go`,
+    `core/write_loop.go`, `core/publisher.go`, `core/default.go`, `ctx/binding_typed.go`, the
+    handler plans) keeps its own topic-named file even when other files call into it. `fn.go` is for
+    small helpers that belong to no such topic.
+  - When a second file starts using a helper, move the helper and its tests to `fn.go` / `fn_test.go`.
+  - Methods stay with their type, whatever calls them (`handleRequest` is a method of `*HTTP`, so it
+    stays in `http.go`); the rule is about free functions, constants, variables and types.
+  - A `fn.go` over about 400 lines splits by topic into `fn_<topic>.go` (and `fn_<topic>_test.go`),
+    for example `core/fn_plan.go`.
+  - Moves are pure: no logic change in the same commit as a move.
 - **Tests and benchmarks sit next to the file:** `<file>_test.go`, `<file>_bench_test.go`
   (`common/http_guard_test.go`, `common/http_guard_bench_test.go`). A test that spans files gets its
   own name (`core/ws_fanout_test.go`).
@@ -47,7 +66,7 @@ don't mass-rewrite the exceptions.
   `loadConfigOptions` (`modules/config/module.go:28`). Never normalize on the request path.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once
-  through `common.Construct` (`common/fn.go:197`, `core/app.go:393`) and which returns a private
+  through `common.Construct` (`common/fn.go:210`, `core/app.go:294`) and which returns a private
   compiled type that implements `Use` (`compiledCORS`). `cors`, `csrf` and `helmet` follow it.
 - **Dynamic modules** are `Register(opts *<X>ModuleOptions) *core.Module` that accept `nil` and
   apply defaults, then set `IsGlobal` / `OnInit` on the built module

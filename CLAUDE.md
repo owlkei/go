@@ -24,7 +24,9 @@ handler injection, WebSocket, modules, gotchas, package reference). When it disa
 code, the code wins: fix the doc in the same change.
 
 **Code conventions: `.ginject/conventions.md`.** Read it before writing or reviewing Go code. In short:
-no comments in Go code; snake-case files with the transport first (`http_guard.go`); short
+no comments in Go code; snake-case files with the transport first (`http_guard.go`); exported API in
+topic files, unexported helpers used by two or more files in `fn.go` (`fn_<topic>.go` past ~400 lines),
+helpers used by one file after their caller in that file, methods with their type; short
 receivers (`instance` for user-facing option types); `Is…` option booleans; `<values>By<Key>` maps;
 `load<X>Options` normalizes once; `Err<Reason>` sentinels with a `"<pkg>: "` prefix; internal test
 packages, `Test<Subject>_<Behavior>`, one function per behavior, `test.DiffMessage`.
@@ -131,7 +133,7 @@ Contracts:
 
 ### Handler Injection
 
-Handler method parameters are injected by type (type identity, not the printed name) — declare them in the handler signature and the framework resolves them from the request context. Each handler gets an argument plan once at `Create()` (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `core/fn.go`, design 0006); a request only runs it. The allowed sets (table in `core/README.md` › Handler injection):
+Handler method parameters are injected by type (type identity, not the printed name) — declare them in the handler signature and the framework resolves them from the request context. Each handler gets an argument plan once at `Create()` (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `core/fn_plan.go`, design 0006); a request only runs it. The allowed sets (table in `core/README.md` › Handler injection):
 
 - HTTP: `*ctx.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ctx.Body`, `ctx.Form`, `ctx.Query`, `ctx.Header`, `ctx.Param`, `ctx.File`, `ctx.Next`, `ctx.Redirect`, `common.Publisher`, and value types implementing the HTTP `*Pipeable` interfaces of `common/pipe.go` (a type with `Transform`; a pointer pipe parameter is refused).
 - WS: `*ctx.WSContext`, `*websocket.Conn`, `ctx.WSPayload`, `ctx.Next`, `common.Publisher`, value types implementing `common.WSPayloadPipeable`.
@@ -168,6 +170,6 @@ Message format is `"<category>: <detail>"`:
 - `"invalid handler: ..."` (`routing/router.go`)
 - `"invalid route: ..."` (`routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments)
 - `"invalid module: ..."` (`core/module_builder.go`)
-- `"dependency injection: ..."` (`core/fn.go`)
+- `"dependency injection: ..."` (`core/fn.go`, `core/fn_plan.go`, `core/module.go`)
 
 These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. An unresolvable handler argument is a `Create()` panic too; the only per-request panic of injection is a pipe whose `Transform` returns a wrong value, an uncolored `exception.InternalServerErrorException` that `core/http.go`'s `recover()` turns into a 500.
