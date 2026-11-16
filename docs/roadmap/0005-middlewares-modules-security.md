@@ -62,6 +62,10 @@ HTTP work before WebSocket.
   bounds taken from the machine, so users never have to pick N; a fixed N is an override. If the
   design can't show a few atomics per request, no idle goroutine or timer and no oscillation on
   1-2 vCPU, the default falls back to a limit derived from the machine.
+- **Runtime state is inspectable by the devtools** (decided 2026-11-17): every component keeps its
+  parameters and state (loadshed's limit and latency, the throttler's keys and rejections, cache
+  sizes and evictions, each middleware's effective config) readable through an internal snapshot,
+  built only when read and free when the devtools is not attached.
 - **No built-in health check endpoints** (decided 2026-11-17): `/healthz` and `/readyz` are not
   part of Ginject; apps write their own routes.
 - **Every middleware is opt-in** and costs nothing when not used; the README's production checklist
