@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 )
 
@@ -27,6 +28,11 @@ var (
 	coloredType   = reflect.TypeFor[color.Colored]()
 	attrsType     = reflect.TypeFor[[]slog.Attr]()
 )
+
+type slotEntry struct {
+	owner  any
+	logger common.Logger
+}
 
 type kv struct {
 	key string

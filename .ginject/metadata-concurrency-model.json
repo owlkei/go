@@ -44,10 +44,16 @@
       "synchronization": "immutable listener slice behind an atomic.Pointer; Enabled and Emit take no lock; Listen and stop copy the slice under one mutex"
     },
     "accesslog.AccessLog": {
-      "description": "Access log listener and its worker goroutine",
-      "access": "listener on request goroutines, one worker, Stop at shutdown",
+      "description": "Access log listener; no goroutine of its own",
+      "access": "listener on request goroutines; the complete event logs the line on the emitting goroutine; Stop at shutdown",
       "thread_safe": true,
-      "synchronization": "64 shards (sync.Mutex + map + eviction list each), a buffered channel to the worker (select with default, never blocks), atomic drop counter and stopped flag"
+      "synchronization": "64 shards (sync.Mutex + map + eviction list each), the line logged after the shard lock is released, atomic stopped flag"
+    },
+    "logpipe.Sink": {
+      "description": "Output pipeline of the built-in logger (one per output; stdout is process-wide)",
+      "access": "callers append records; at most one writer goroutine, alive only while the queue is not empty",
+      "thread_safe": true,
+      "synchronization": "one sync.Mutex over two swapped buffers, counters and flags; waiters on a channel closed after each batch; never held during the output's Write"
     },
     "memorybroker.Broker": {
       "description": "Pub/sub message broker (exact/suffix-wildcard/global/complex topic matching)",

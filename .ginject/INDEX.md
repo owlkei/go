@@ -115,12 +115,13 @@ error from a guard onwards → module exception filter → global exception filt
 
 ### 5. Exception Handling
 - A panic from a guard onwards reaches the route's exception filters; a middleware panic gets the fixed error response
-- Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack)
+- Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack, sampled: 1 stack per stack key per second, 10 per app per second)
 
 ### 6. Server and Lifecycle
 - `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*core.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `H2C`)
 - Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`, then `OnShutdown` hooks in reverse init order
-- One logger API: `app.SetLogger(l)` before `Create`, read with `app.Logger()`
+- One logger API: `app.SetLogger(l)` (any `common.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
+- Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
 - Request tracing: one internal `trace.Tracer` per app; `EnableAccessLog()` is its only listener
 - Details: `core/README.md`, [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md)
 

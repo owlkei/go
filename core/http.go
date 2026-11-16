@@ -65,6 +65,7 @@ type HTTP struct {
 
 	tracer *trace.Tracer
 	logger common.Logger
+	stacks *stackSampler
 
 	routes            []*httpRoute
 	routeByPattern    map[string]*httpRoute
@@ -543,7 +544,7 @@ func (http *HTTP) exceptionOf(ex *httpExchange, rec any) *exception.Exception {
 	if e, ok := asException(rec); ok {
 		return e
 	}
-	logPanic(http.logger, "UnhandledPanic", &ex.HTTPContext, rec)
+	logPanic(http.logger, http.stacks, "UnhandledPanic", &ex.HTTPContext, rec)
 	e := internalServerErrorException
 	return &e
 }
@@ -554,7 +555,12 @@ func (http *HTTP) logAfterResponse(ex *httpExchange, rec any) {
 		value = e.GetMessage()
 	}
 	c := &ex.HTTPContext
-	http.logger.Error("ErrorAfterResponse", "id", c.GetID(), "method", c.Method, "path", c.URL.Path, "code", ex.writer.status(), "panic", value, "stack", panicStack())
+	l := http.logger.From(c.Context())
+	if stack, ok := http.stacks.stack(); ok {
+		l.Error("ErrorAfterResponse", "method", c.Method, "path", c.URL.Path, "code", ex.writer.status(), "panic", value, "stack", stack)
+		return
+	}
+	l.Error("ErrorAfterResponse", "method", c.Method, "path", c.URL.Path, "code", ex.writer.status(), "panic", value)
 }
 
 func writeHTTPError(ex *httpExchange, e *exception.Exception) int {

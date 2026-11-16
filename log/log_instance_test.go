@@ -1,12 +1,11 @@
 package log
 
 import (
-	"io"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -29,25 +28,12 @@ func (r *instanceRecorder) Fatal(msg string, _ ...any) { r.add(msg) }
 
 func captureStdout(t *testing.T, build func() func()) string {
 	t.Helper()
-	original := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = writer
-	var emit func()
-	func() {
-		defer func() { os.Stdout = original }()
-		emit = build()
-	}()
+	buf := &syncBuf{}
+	restore := logpipe.SetStdout(buf)
+	defer restore()
+	emit := build()
 	emit()
-	_ = writer.Close()
-	out, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = reader.Close()
-	return string(out)
+	return buf.String()
 }
 
 func TestNewLog_NewLoggerPerCall(t *testing.T) {

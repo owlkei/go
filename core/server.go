@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/routing"
 )
 
@@ -363,6 +364,7 @@ func (app *App) logStartup(addr net.Addr, isTLS bool, protocols string) {
 	app.logger.Info("ServerListening", "address", addr.String(), "tls", isTLS, "protocols", protocols)
 
 	if tcpAddr, ok := addr.(*net.TCPAddr); ok && isTerminal(os.Stdout) {
+		logpipe.Stdout().Flush(logpipe.FlushTimeout)
 		logBoostrap(tcpAddr.Port)
 	}
 }
@@ -433,6 +435,15 @@ func (app *App) runShutdownHooks() {
 		}
 		if app.accesslog != nil {
 			app.accesslog.Stop()
+		}
+		app.stacks.shutdown()
+
+		app.serveMu.Lock()
+		isLogAsync := app.isLogAsync
+		app.isLogAsync = false
+		app.serveMu.Unlock()
+		if isLogAsync {
+			logpipe.Stdout().StopAsync(logpipe.FlushTimeout)
 		}
 
 		app.serveMu.Lock()

@@ -1,12 +1,13 @@
 # Color
 
-*Package `color` wraps text in ANSI escape codes for terminal output: bootstrap panics, the startup log, the pretty log format and the access log.*
+*Package `color` wraps text in ANSI escape codes for terminal output: bootstrap panics, the startup log and the pretty log format (access-line durations included).*
 
 - [Color](#color)
   - [Usage](#usage)
   - [Functions](#functions)
     - [Fmt functions](#fmt-functions)
   - [Colored](#colored)
+    - [ForDuration](#forduration)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
@@ -76,7 +77,7 @@ color.FmtRed("%s: %s", "core", "duplicate provider")
 
 ## Colored
 
-`Colored{Text string; Color Color}` is a text with its color. The access log uses it for the duration of each stage.
+`Colored{Text string; Color Color}` is a text with its color.
 
 | `Color` constant | Code |
 |---|---|
@@ -89,6 +90,17 @@ color.FmtRed("%s: %s", "core", "duplicate provider")
 
 - The pretty log format prints `Text` in `Color`, then resets.
 - `Colored` implements `slog.LogValuer` (its `Text`), so the JSON and Text log formats write only the text, never the ANSI code.
+
+### ForDuration
+
+`ForDuration(d time.Duration) Color` picks the color of a duration: `Gray` below 10 ms, `Green` below 50 ms, `Blue` below 100 ms, `Yellow` below 300 ms, `Orange` below 1 s, `Red` from 1 s. The pretty log format colors the durations of access lines with it.
+
+```go
+c := color.ForDuration(120 * time.Millisecond)
+```
+
+#### Rules
+- Each threshold belongs to the next color: 10 ms is `Green`, 1 s is `Red` (tested through the access log's `colorForDuration`).
 
 ## Performance notes
 

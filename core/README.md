@@ -39,6 +39,7 @@
   - [Errors in middleware](#errors-in-middleware)
   - [Error response](#error-response)
     - [Error response rules](#error-response-rules)
+    - [Panic stacks](#panic-stacks)
   - [No route, HEAD and versioning](#no-route-head-and-versioning)
   - [Static files](#static-files)
   - [Response writer](#response-writer)
@@ -174,13 +175,13 @@ service := app.Get(GreetingService{}).(GreetingService)
 ### SetLogger and Logger
 
 ```go
-func (app *App) SetLogger(logger common.Logger) *App
+func (app *App) SetLogger(logger common.LogAdapter) *App
 func (app *App) Logger() common.Logger
 ```
 
-`SetLogger` is the one way to give the app a logger; it returns the app. Everything logged through `app.Logger()`, the server and access logs, and every injected `common.Logger` field reaches it. A custom logger gets the `log` struct tags and masking machinery (`log.WrapLogger(logger, nil)`); a logger that already came from `log.NewLog` or `log.WrapLogger` is used as it is.
+`SetLogger` is the one way to give the app a logger; it returns the app. It takes any `common.LogAdapter` (the five methods `Debug`, `Info`, `Warn`, `Error`, `Fatal`: a zap `SugaredLogger` fits). Everything logged through `app.Logger()`, the server and access logs, and every injected `common.Logger` field reaches it. A custom logger gets the `log` struct tags and masking machinery and `From` (`log.WrapLogger(logger, nil)`); a logger that already came from `log.NewLog` or `log.WrapLogger` is used as it is. A custom logger is called directly on the caller: the bounds of the log's output pipeline do not apply to it.
 
-`Logger()` never returns `nil`: without `SetLogger` it is the built-in logger with default options, the same value on every call.
+`Logger()` never returns `nil`: without `SetLogger` it is the built-in logger with default options, the same value on every call. `app.Logger()` and every injected `common.Logger` have `From(ctx)`, whatever was given to `SetLogger`: inside a request, `logger.From(c.Context()).Info(…)` adds the trace ID and the request ID to the line. Only fields of type `common.Logger` are injected; a `common.LogAdapter` field is not.
 
 ```go
 app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
@@ -191,6 +192,8 @@ app.Logger().Info("Started")
 #### Rules
 - `SetLogger(nil)` panics `invalid app: SetLogger needs a logger`.
 - A logger wrapped with `log.WrapLogger(l, fields)` keeps its masking rules.
+- A type with the five methods and no `From` is accepted, and `From` on `app.Logger()` passes the scope's fields to it first, then the call's arguments.
+- The built-in logger's lines are synchronous during `Create` (its `OnReady` hooks included): a bootstrap panic loses no line. As the last step of `Create` the stdout pipeline becomes asynchronous; it becomes synchronous again when the last created app has shut down (see `log/README.md`, Output pipeline).
 
 ### Configuration methods
 
@@ -206,7 +209,7 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 | `EnableWS(*WSConfig, ...common.MiddlewareFn)` | The WebSocket server, with handshake middlewares |
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
-| `SetLogger(common.Logger)` | The app's logger (see [SetLogger and Logger](#setlogger-and-logger)) |
+| `SetLogger(common.LogAdapter)` | The app's logger (see [SetLogger and Logger](#setlogger-and-logger)) |
 
 ## Modules and lifecycle
 
@@ -483,7 +486,8 @@ A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `Shut
 2. The listener closes (new connections are refused) and idle keep-alive connections close at once.
 3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
 4. The modules' `OnShutdown` hooks run, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
-5. The serving call returns `nil`, `core: shutdown timed out after <timeout>` when step 3 timed out, or `core: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
+5. The access log stops, a pending count of suppressed panic stacks is logged, and the log's stdout pipeline is flushed for at most 2 seconds: the lines of the last requests and of the hooks are written when the serving call returns. Lines logged after that are synchronous.
+6. The serving call returns `nil`, `core: shutdown timed out after <timeout>` when step 3 timed out, or `core: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
 
 After that the app is stopped: a new serving call returns `core: app is stopped`, while `ServeHTTP` still answers.
 
@@ -532,7 +536,7 @@ Caveats:
 
 - No listener, timeouts or signal handling come from Ginject: set them on your server.
 - The body cap is 10 MiB.
-- No graceful shutdown: call `server.Shutdown`, then `app.Stop()` to run the `OnShutdown` hooks.
+- No graceful shutdown: call `server.Shutdown`, then `app.Stop()` to run the `OnShutdown` hooks and flush the log. Log lines are asynchronous from `Create` on, so call `app.Stop()` before the process exits.
 
 ## Request lifecycle
 
@@ -587,7 +591,7 @@ From the tests (`http_lifecycle_test.go`):
 
 ## Errors in middleware
 
-A middleware's error never reaches your exception filters: the HTTP layer answers it. If the middleware panics with an exception (`panic(exception.UnauthorizedException("token expired"))`), the client gets that exception's code and message. Anything else (a string, an `error`, a runtime error) answers a fixed `500` and the value goes to the logger, with the request ID and the stack.
+A middleware's error never reaches your exception filters: the HTTP layer answers it. If the middleware panics with an exception (`panic(exception.UnauthorizedException("token expired"))`), the client gets that exception's code and message. Anything else (a string, an `error`, a runtime error) answers a fixed `500` and the value goes to the logger, with the request's scope fields and the stack (see [Panic stacks](#panic-stacks)).
 
 You can't change the format of that response. To send your own response, write it and return without calling `next()`:
 
@@ -613,8 +617,8 @@ The HTTP layer and the built-in exception filter write the same response, with n
 - `Content-Type: application/json`; the headers `Content-Length`, `Content-Encoding`, `ETag` and `Last-Modified` set earlier are removed, the others (`X-Request-Id`, CORS headers) stay.
 - Body: exactly `{"code":<int>,"error":<string>,"message":<string>}` (`Exception.AppendJSON`).
 - An exception is an `exception.Exception`, a non-nil `*exception.Exception`, or an `error` that wraps one at any depth. An empty `Error()` becomes the status text of the code (`Internal Server Error` when it has none); an empty message becomes `Unhandled exception has occurred`.
-- Anything else answers `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}`. The framework logs `Logger.Error("UnhandledPanic", "id", <request ID>, "method", …, "path", …, "panic", <the value>, "stack", <at most 4 KiB>)`, and exception filters receive `exception.InternalServerErrorException("Internal Server Error")` instead of the value.
-- Once a status or body bytes were sent, no filter runs and nothing more is written: the framework logs `Logger.Error("ErrorAfterResponse", "id", …, "method", …, "path", …, "code", <status sent>, "panic", <value or the exception's message>, "stack", …)`.
+- Anything else answers `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}`. The framework logs `Logger.From(c.Context()).Error("UnhandledPanic", "method", …, "path", …, "panic", <the value>, "stack", <at most 4 KiB>)`: the line starts with the scope's fields (`trace_id`, `request`, and `upstream` when the request carried one) and `stack` may be left out (see [Panic stacks](#panic-stacks)), and exception filters receive `exception.InternalServerErrorException("Internal Server Error")` instead of the value.
+- Once a status or body bytes were sent, no filter runs and nothing more is written: the framework logs `Logger.From(c.Context()).Error("ErrorAfterResponse", "method", …, "path", …, "code", <status sent>, "panic", <value or the exception's message>, "stack", …)`, sampled like `UnhandledPanic`.
 - `panic(http.ErrAbortHandler)` is re-panicked so `net/http` aborts the connection; nothing is written or logged.
 
 `exception.X("message", err)` puts `err.Error()` in the `error` field: pass a cause only when its text is safe to show.
@@ -629,6 +633,18 @@ From the tests (`http_error_test.go`):
 - After `c.Text`, `c.JSON`, `c.Redirect`, `w.Write`, `w.WriteHeader` with a code of 200 or more, or `http.ServeFile`, a later panic changes neither status nor body, runs no filter and logs one `ErrorAfterResponse` line. An informational status (`103`) does not count as a response.
 - Codes `0`, `7`, `200`, `399`, `600`, `999`, `1008`, `4001` and `-1` answer `500`; `400` and `599` are kept. `WriteHeader` is never called with an invalid code.
 - With a trace listener, a middleware that panics still emits its `middleware` event, with `Code` = the status of the error response; one that returns emits `Code` 0.
+
+### Panic stacks
+
+A client that can make a route panic could flood the log with 4 KiB stacks. Each app samples them, with no option to set:
+
+- A stack key is a hash of the first 16 return addresses where the panic is logged: the same panic reached the same way has the same key.
+- The first panic of a key in a second (Unix seconds) is logged with its `stack`. Further panics of that key in the same second, and any panic once 10 stacks were logged in that second, are logged with every other pair and no `stack`; the stack is not even captured. A flood of one panic therefore uses one stack per second, and a rarer panic still gets its own.
+- At most 10 lines with `stack` per app per second; two apps do not share the budget. Keys live in a fixed table of 32 slots, so memory does not grow with the number of distinct panics.
+- For each second in which a stack was left out, one `Logger.Warn("PanicStacksSuppressed", "stacks_suppressed", n)` line is logged when the second ends (a timer armed by the first suppression; no timer otherwise). Shutdown logs a pending count at once and stops the timer.
+- Sampling applies to `UnhandledPanic` (HTTP and the WebSocket handshake) and `ErrorAfterResponse`. Every panic is still logged; only the stack is sampled.
+
+Rate limiting stays opt-in: turn on `guards/throttler` (or limit at the proxy) in production.
 
 ## No route, HEAD and versioning
 
@@ -750,7 +766,7 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 - **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ParamValues`, whose capacity `Reset` keeps.
 - **Tracking writer in the pooled exchange.** The writer lives next to the context in the pool, so it costs no allocation.
 - **The trace scope.** Each request builds one scope (the `traceparent` string and a context value of 240 B together) and copies the request with `r.WithContext` (320 B) so middleware sees the IDs: about +270 ns, +530 B and +1 allocation against the request ID it replaces. The response headers reuse one-element slices prebuilt in the scope, so they allocate nothing. The random bytes come from a 512-byte `crypto/rand` buffer (`internal/tracecontext`), one system call per about 28 requests.
-- **The cost of an unexpected panic.** A non-exception panic captures up to 4 KiB of stack for its log line: about 25 µs and 7.6 KB per request, against about 1.6 µs for an exception.
+- **The cost of an unexpected panic.** A non-exception panic hashes 16 return addresses for its stack key (about 1.6 µs) and captures up to 4 KiB of stack only when the line keeps it (about 25 µs and 7.6 KB). Under a flood almost every panic is logged without a stack: `BenchmarkServeHTTP_PanicFlood` is about 6.5 µs per request against about 37 µs before sampling.
 
 ## Benchmarks
 
@@ -767,7 +783,8 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz, Go 1.27.4), `g
 | BenchmarkServeHTTP_NotFound | 760 | 576 | 4 |
 | BenchmarkServeHTTP_MethodNotAllowed | 716 | 592 | 5 |
 | BenchmarkServeHTTP_Exception (a handler panics an exception) | 1645 | 784 | 7 |
-| BenchmarkServeHTTP_PanicString (a handler panics a string: stack capture for the log) | 27471 | 8036 | 12 |
+| BenchmarkServeHTTP_PanicString (a handler panics a string, one route: after the first, the stack is sampled out) | 6070 | 1168 | 14 |
+| BenchmarkServeHTTP_PanicFlood_Parallel (the same, 12 goroutines) | 2042 | 1169 | 14 |
 | BenchmarkHTTPHandlerPlan_Invoke_NoArgs (`func() string`) | 210 | 40 | 2 |
 | BenchmarkHTTPHandlerPlan_Invoke_Param (`func(ctx.Param) ctx.Map`) | 206 | 24 | 1 |
 | BenchmarkHTTPHandlerPlan_Invoke_QueryPipe (two-field DTO) | 265 | 48 | 2 |

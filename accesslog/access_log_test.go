@@ -1,8 +1,10 @@
 package accesslog
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"maps"
+	"io"
 	"runtime"
 	"slices"
 	"strconv"
@@ -12,8 +14,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/trace"
 )
 
@@ -64,23 +69,10 @@ func (f *fakeLogger) lines() []recordedLog {
 	return slices.Clone(f.infos)
 }
 
-func (f *fakeLogger) dropped(t *testing.T) int {
-	t.Helper()
+func (f *fakeLogger) warnings() []recordedLog {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	total := 0
-	for _, w := range f.warns {
-		if w.msg != "AccessLog" || len(w.args) != 2 || w.args[0] != "dropped" {
-			t.Errorf("A8: unexpected warning %+v", w)
-			continue
-		}
-		n, err := strconv.Atoi(fmt.Sprint(w.args[1]))
-		if err != nil {
-			t.Errorf("A8: dropped count is not a number: %v", w.args[1])
-		}
-		total += n
-	}
-	return total
+	return slices.Clone(f.warns)
 }
 
 func setup(t *testing.T) (*trace.Tracer, *fakeLogger, *AccessLog) {
@@ -120,39 +112,41 @@ func hasArg(args []any, key string) bool {
 	return false
 }
 
-func stageOf(t *testing.T, args []any, stage string) []map[string]color.Colored {
+func stageOf(t *testing.T, args []any, stage string) string {
 	t.Helper()
-	list, ok := argValue(t, args, stage).([]map[string]color.Colored)
+	text, ok := argValue(t, args, stage).(string)
 	if !ok {
-		t.Fatalf("stage %q is not a []map[string]color.Colored: %T", stage, argValue(t, args, stage))
+		t.Fatalf("stage %q is not a string: %T", stage, argValue(t, args, stage))
 	}
-	return list
+	return text
 }
 
-func entryTexts(list []map[string]color.Colored) []string {
-	out := make([]string, len(list))
-	for i, entry := range list {
-		for name, c := range entry {
-			out[i] = name + "=" + c.Text
-		}
+func entriesOf(t *testing.T, args []any, stage string) []string {
+	t.Helper()
+	return strings.Split(stageOf(t, args, stage), ", ")
+}
+
+func argKeys(args []any) []string {
+	var keys []string
+	for i := 0; i+1 < len(args); i += 2 {
+		keys = append(keys, args[i].(string))
 	}
-	return out
+	return keys
 }
 
 func percentsOf(t *testing.T, durations ...time.Duration) []int {
 	t.Helper()
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	for i, d := range durations {
 		tr.Emit(stageEvent("p", trace.StageMiddleware, "M"+strconv.Itoa(i), d))
 	}
 	tr.Emit(completeEvent("p", 200, "/", time.Second))
-	al.Stop()
 	lines := logger.lines()
 	if len(lines) != 1 {
 		t.Fatalf("expected one line, got %d", len(lines))
 	}
 	var out []int
-	for _, text := range entryTexts(stageOf(t, lines[0].args, trace.StageMiddleware)) {
+	for _, text := range entriesOf(t, lines[0].args, trace.StageMiddleware) {
 		open := strings.IndexByte(text, '(')
 		closeIdx := strings.IndexByte(text, '%')
 		p, err := strconv.Atoi(text[open+1 : closeIdx])
@@ -172,13 +166,136 @@ func sum(vals []int) int {
 	return total
 }
 
+func goroutineID() int {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	fields := strings.Fields(string(buf[:n]))
+	id, _ := strconv.Atoi(fields[1])
+	return id
+}
+
+func blockedLogger() (*fakeLogger, chan struct{}, chan struct{}) {
+	logger := newFakeLogger()
+	gate := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	logger.onInfo = func(int) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-gate
+	}
+	return logger, gate, entered
+}
+
+func within(t *testing.T, what string, fn func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal(test.DiffMessage("blocked for 30s", "returned", what))
+	}
+}
+
+func goroutinesAtMost(base int) bool {
+	for range 200000 {
+		if runtime.NumGoroutine() <= base {
+			return true
+		}
+		runtime.Gosched()
+	}
+	return runtime.NumGoroutine() <= base
+}
+
+type holdWriter struct {
+	mu   sync.Mutex
+	gate chan struct{}
+	buf  bytes.Buffer
+}
+
+func newHoldWriter() *holdWriter { return &holdWriter{gate: make(chan struct{})} }
+
+func (w *holdWriter) openAll() {
+	w.mu.Lock()
+	if w.gate != nil {
+		close(w.gate)
+		w.gate = nil
+	}
+	w.mu.Unlock()
+}
+
+func (w *holdWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	gate := w.gate
+	w.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *holdWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+type outBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *outBuf) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *outBuf) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func builtinAccessLog(t *testing.T, format int) (*trace.Tracer, *outBuf) {
+	t.Helper()
+	out := &outBuf{}
+	restore := logpipe.SetStdout(out)
+	t.Cleanup(restore)
+	opts := &log.LogOptions{Level: log.DebugLevel}
+	switch format {
+	case 0:
+		opts.LogFormat = log.JSONFormat
+	case 1:
+		opts.LogFormat = log.TextFormat
+	default:
+		opts.LogFormat = log.PrettyFormat
+	}
+	tr := &trace.Tracer{}
+	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(opts)})
+	t.Cleanup(al.Stop)
+	return tr, out
+}
+
+func TestAccessLog_AcceptsLogAdapter(t *testing.T) {
+	var adapter common.LogAdapter = newFakeLogger()
+	al := NewAccessLog(&AccessLogConfig{Tracer: &trace.Tracer{}, Logger: adapter})
+	al.Stop()
+}
+
 func TestAccessLog_LineArgumentsInOrder(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("req-1", trace.StageMiddleware, "M1", time.Millisecond))
 	tr.Emit(stageEvent("req-1", trace.StageGuard, "G1", 2*time.Millisecond))
 	tr.Emit(stageEvent("req-1", trace.StageHandler, "H1", 3*time.Millisecond))
 	tr.Emit(completeEvent("req-1", 200, "/users", 10*time.Millisecond))
-	al.Stop()
 
 	lines := logger.lines()
 	if len(lines) != 1 {
@@ -188,61 +305,145 @@ func TestAccessLog_LineArgumentsInOrder(t *testing.T) {
 	if got.msg != "/users" {
 		t.Error(test.DiffMessage(got.msg, "/users", "A1: the message is the Target"))
 	}
-	keys := []string{}
-	for i := 0; i < len(got.args); i += 2 {
-		keys = append(keys, got.args[i].(string))
+	wantArgs := []any{
+		"trace_id", "trace-req-1", "request", "req-1", "transport", "HTTP", "code", 200, "operation", "GET",
+		"middleware", "M1 1ms (17%)", "guard", "G1 2ms (33%)", "handler", "H1 3ms (50%)", "total", "10ms",
 	}
-	wantKeys := []string{"trace_id", "request", "transport", "code", "operation", "middleware", "guard", "handler", "total"}
-	if !slices.Equal(keys, wantKeys) {
-		t.Error(test.DiffMessage(keys, wantKeys, "A1: the argument keys in order"))
-	}
-	if wantPairs := []any{"trace_id", "trace-req-1", "request", "req-1", "transport", "HTTP", "code", 200, "operation", "GET"}; !slices.Equal(got.args[:10], wantPairs) {
-		t.Error(test.DiffMessage(got.args[:10], wantPairs, "A1, E7: the fixed pairs, code is an int"))
-	}
-	wantMiddleware := []map[string]color.Colored{{"M1": {Text: "1ms (17%)", Color: colorForDuration(time.Millisecond)}}}
-	if !slices.EqualFunc(stageOf(t, got.args, trace.StageMiddleware), wantMiddleware, maps.Equal) {
-		t.Error(test.DiffMessage(stageOf(t, got.args, trace.StageMiddleware), wantMiddleware, "A2: a stage is a list of one-entry maps"))
-	}
-	if got.args[len(got.args)-1] != "10ms" {
-		t.Error(test.DiffMessage(got.args[len(got.args)-1], "10ms", "A3: total is the duration of the complete event"))
+	if !slices.Equal(got.args, wantArgs) {
+		t.Error(test.DiffMessage(got.args, wantArgs, "A1, A2: the fixed pairs, one string per stage, total; an adapter gets no extra pair"))
 	}
 }
 
 func TestAccessLog_OneLinePerCompleteEvent(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("a", trace.StageMiddleware, "M", 0))
 	tr.Emit(completeEvent("a", 200, "/a", 0))
 	tr.Emit(completeEvent("b", 404, "/b", 0))
-	al.Stop()
 	if lines := logger.lines(); len(lines) != 2 || lines[0].msg != "/a" || lines[1].msg != "/b" {
-		t.Error(test.DiffMessage(logger.lines(), "two lines /a and /b", "A1: one call per complete event, in order"))
+		t.Error(test.DiffMessage(logger.lines(), "two lines /a and /b", "A1: one call per complete event, in order, already made when Emit returns"))
 	}
 }
 
-func TestAccessLog_LoggerCalledOffTheEmittingGoroutine(t *testing.T) {
+func TestAccessLog_LineOnEmittingGoroutine(t *testing.T) {
 	tr := &trace.Tracer{}
-	logger, gate, entered := blockedLogger()
+	logger := newFakeLogger()
+	var loggerGoroutine int
+	logger.onInfo = func(int) { loggerGoroutine = goroutineID() }
 	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
 	defer al.Stop()
-	defer close(gate)
-	emitWithin(t, "A1: the logger is called off the emitting goroutine", func() {
+	emitter := make(chan int, 1)
+	go func() {
 		tr.Emit(completeEvent("x", 200, "/", 0))
+		emitter <- goroutineID()
+	}()
+	within(t, "A1: the line is logged by the emitting goroutine", func() {
+		if got := <-emitter; got != loggerGoroutine || len(logger.lines()) != 1 {
+			t.Error(test.DiffMessage(loggerGoroutine, got, "A1: Logger.Info runs on the emitting goroutine, before Emit returns"))
+		}
 	})
-	select {
-	case <-entered:
-	case <-time.After(10 * time.Second):
-		t.Fatal(test.DiffMessage("the logger was never called", "called", "A1: the worker calls the logger"))
+}
+
+func TestAccessLog_StartsNoGoroutine(t *testing.T) {
+	runtime.GC()
+	base := runtime.NumGoroutine()
+	logs := make([]*AccessLog, 50)
+	trs := make([]*trace.Tracer, 50)
+	for i := range logs {
+		trs[i] = &trace.Tracer{}
+		logs[i] = NewAccessLog(&AccessLogConfig{Tracer: trs[i], Logger: newFakeLogger()})
+	}
+	for _, tr := range trs {
+		tr.Emit(stageEvent("r", trace.StageMiddleware, "M", 0))
+		tr.Emit(completeEvent("r", 200, "/", 0))
+	}
+	if !goroutinesAtMost(base) {
+		t.Error(test.DiffMessage(runtime.NumGoroutine(), base, "A5: no worker, no ticker: a running access log starts no goroutine"))
+	}
+	for _, al := range logs {
+		al.Stop()
+	}
+	if !goroutinesAtMost(base) {
+		t.Error(test.DiffMessage(runtime.NumGoroutine(), base, "A5: nothing to end at Stop"))
+	}
+}
+
+func TestAccessLog_StageValueIsOneString(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(stageEvent("r", trace.StageMiddleware, "cors.CORS", 40*time.Microsecond))
+	tr.Emit(stageEvent("r", trace.StageMiddleware, "csrf.CSRF", 60*time.Microsecond))
+	tr.Emit(completeEvent("r", 200, "/", time.Millisecond))
+	args := logger.lines()[0].args
+	if got, want := argValue(t, args, trace.StageMiddleware), any("CORS 40µs (40%), CSRF 60µs (60%)"); got != want {
+		t.Error(test.DiffMessage(got, want, "A2: the events of a stage are joined by a comma and a space, each short name, duration and percent"))
+	}
+}
+
+func TestAccessLog_StageValueRepeatedNamesKeptInOrder(t *testing.T) {
+	tr, logger, _ := setup(t)
+	for range 3 {
+		tr.Emit(stageEvent("r", trace.StageMiddleware, "cors.CORS", time.Millisecond))
+	}
+	tr.Emit(completeEvent("r", 200, "/", time.Second))
+	if got := entriesOf(t, logger.lines()[0].args, trace.StageMiddleware); len(got) != 3 || got[0] != "CORS 1ms (34%)" || got[1] != "CORS 1ms (33%)" || got[2] != "CORS 1ms (33%)" {
+		t.Error(test.DiffMessage(got, []string{"CORS 1ms (34%)", "CORS 1ms (33%)", "CORS 1ms (33%)"}, "A2: repeated names are kept, one entry per event"))
+	}
+}
+
+func TestAccessLog_StageValuesForEveryCount(t *testing.T) {
+	for _, n := range []int{0, 1, 6, 64} {
+		tr, logger, _ := setup(t)
+		for i := range n {
+			tr.Emit(stageEvent("r", trace.StageMiddleware, "M"+strconv.Itoa(i), time.Microsecond))
+		}
+		tr.Emit(completeEvent("r", 200, "/", time.Millisecond))
+		args := logger.lines()[0].args
+		if n == 0 {
+			if hasArg(args, trace.StageMiddleware) {
+				t.Error(test.DiffMessage(args, "no stage pair", "A2: no stage, no pair"))
+			}
+			continue
+		}
+		if got := len(entriesOf(t, args, trace.StageMiddleware)); got != n {
+			t.Error(test.DiffMessage(got, n, "A2: one entry per event, "+strconv.Itoa(n)+" stages"))
+		}
+	}
+}
+
+func TestAccessLog_AllValuesScalar(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(stageEvent("r", trace.StageMiddleware, "cors.CORS", time.Millisecond))
+	tr.Emit(stageEvent("r", trace.StageGuard, "auth.Guard", time.Millisecond))
+	for i := range 70 {
+		tr.Emit(stageEvent("r", trace.StageHandler, "H"+strconv.Itoa(i), 0))
+	}
+	tr.Emit(completeEvent("r", 200, "/", time.Millisecond))
+	args := logger.lines()[0].args
+	for i := 1; i < len(args); i += 2 {
+		switch args[i].(type) {
+		case string, int:
+		default:
+			t.Errorf("A2: the value of %v is %T, every value of the line is a scalar", args[i-1], args[i])
+		}
+	}
+	for _, key := range []string{trace.StageMiddleware, trace.StageGuard, trace.StageHandler, "total"} {
+		if _, ok := argValue(t, args, key).(string); !ok {
+			t.Errorf("A2: %s is not a string", key)
+		}
+	}
+	for _, a := range args {
+		if _, ok := a.(color.Colored); ok {
+			t.Error(test.DiffMessage("color.Colored", "scalar values", "A2: color.Colored is no longer used by the access log"))
+		}
 	}
 }
 
 func TestAccessLog_StagesInArrivalOrder(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("r", trace.StageHandler, "H", 0))
 	tr.Emit(stageEvent("r", trace.StageMiddleware, "A", 0))
 	tr.Emit(stageEvent("r", trace.StageGuard, "G", 0))
 	tr.Emit(stageEvent("r", trace.StageMiddleware, "B", 0))
 	tr.Emit(completeEvent("r", 200, "/", 0))
-	al.Stop()
 
 	args := logger.lines()[0].args
 	var keys []string
@@ -253,13 +454,13 @@ func TestAccessLog_StagesInArrivalOrder(t *testing.T) {
 	if !slices.Equal(keys, want) {
 		t.Error(test.DiffMessage(keys, want, "A2: stages appear in the order their first event arrived"))
 	}
-	if got := entryTexts(stageOf(t, args, trace.StageMiddleware)); len(got) != 2 || !strings.HasPrefix(got[0], "A=") || !strings.HasPrefix(got[1], "B=") {
-		t.Error(test.DiffMessage(got, []string{"A=…", "B=…"}, "A2: events of one stage are in arrival order"))
+	if got := entriesOf(t, args, trace.StageMiddleware); len(got) != 2 || !strings.HasPrefix(got[0], "A ") || !strings.HasPrefix(got[1], "B ") {
+		t.Error(test.DiffMessage(got, []string{"A …", "B …"}, "A2: events of one stage are in arrival order"))
 	}
 }
 
 func TestAccessLog_PreservesExecutionOrderNotAlphabetical(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	for _, n := range []string{"C", "B", "A"} {
 		tr.Emit(stageEvent("r", trace.StagePreInterceptor, n, 0))
 	}
@@ -267,15 +468,12 @@ func TestAccessLog_PreservesExecutionOrderNotAlphabetical(t *testing.T) {
 		tr.Emit(stageEvent("r", trace.StagePostInterceptor, n, 0))
 	}
 	tr.Emit(completeEvent("r", 200, "/", 0))
-	al.Stop()
 
 	args := logger.lines()[0].args
 	names := func(stage string) []string {
 		var out []string
-		for _, entry := range stageOf(t, args, stage) {
-			for name := range entry {
-				out = append(out, name)
-			}
+		for _, entry := range entriesOf(t, args, stage) {
+			out = append(out, strings.Fields(entry)[0])
 		}
 		return out
 	}
@@ -288,44 +486,40 @@ func TestAccessLog_PreservesExecutionOrderNotAlphabetical(t *testing.T) {
 }
 
 func TestAccessLog_ShortName(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("r", trace.StageMiddleware, "cors.CORS", 0))
 	tr.Emit(stageEvent("r", trace.StageMiddleware, "NoPackage", 0))
 	tr.Emit(completeEvent("r", 200, "/", 0))
-	al.Stop()
-	got := entryTexts(stageOf(t, logger.lines()[0].args, trace.StageMiddleware))
-	if len(got) != 2 || got[0] != "CORS=0s (0%)" || got[1] != "NoPackage=0s (0%)" {
-		t.Error(test.DiffMessage(got, []string{"CORS=0s (0%)", "NoPackage=0s (0%)"}, "A2: the map key is the Name after its last dot"))
+	got := entriesOf(t, logger.lines()[0].args, trace.StageMiddleware)
+	if len(got) != 2 || got[0] != "CORS 0s (0%)" || got[1] != "NoPackage 0s (0%)" {
+		t.Error(test.DiffMessage(got, []string{"CORS 0s (0%)", "NoPackage 0s (0%)"}, "A2: the name is the Name after its last dot"))
 	}
 }
 
 func TestAccessLog_TotalIsCompleteDuration(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("r", trace.StageMiddleware, "M1", time.Millisecond))
 	tr.Emit(completeEvent("r", 200, "/", 250*time.Millisecond))
-	al.Stop()
 	args := logger.lines()[0].args
 	if args[len(args)-1] != "250ms" {
-		t.Error(test.DiffMessage(args[len(args)-1], "250ms", "A3: total is the wall-clock duration of the complete event, not the sum of the stages"))
+		t.Error(test.DiffMessage(args[len(args)-1], "250ms", "A1: total is the wall-clock duration of the complete event, not the sum of the stages"))
 	}
 }
 
 func TestAccessLog_NoStagesLogsFixedPairsAndTotal(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(completeEvent("r", 404, "/nope", 1500*time.Microsecond))
-	al.Stop()
 	args := logger.lines()[0].args
 	want := []any{"trace_id", "trace-r", "request", "r", "transport", "HTTP", "code", 404, "operation", "GET", "total", "1.5ms"}
 	if !slices.Equal(args, want) {
-		t.Error(test.DiffMessage(args, want, "A3: a request without stages logs the four pairs and total"))
+		t.Error(test.DiffMessage(args, want, "A1: a request without stages logs the fixed pairs and total"))
 	}
 }
 
 func TestAccessLog_LongTargetIsCut(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	target := "/" + strings.Repeat("a", 2999)
 	tr.Emit(completeEvent("r", 200, target, 0))
-	al.Stop()
 	msg := logger.lines()[0].msg
 	if msg != target[:2048]+"..." {
 		t.Error(test.DiffMessage(len(msg), 2051, "A1: a long target is cut to 2,048 bytes followed by ..."))
@@ -333,20 +527,18 @@ func TestAccessLog_LongTargetIsCut(t *testing.T) {
 }
 
 func TestAccessLog_TargetOfExactLimitIsKept(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	target := "/" + strings.Repeat("a", 2047)
 	tr.Emit(completeEvent("r", 200, target, 0))
-	al.Stop()
 	if msg := logger.lines()[0].msg; msg != target {
 		t.Error(test.DiffMessage(len(msg), 2048, "A1: a target of 2,048 bytes is not cut"))
 	}
 }
 
 func TestAccessLog_TargetCutOnRuneBoundary(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	target := "a" + strings.Repeat("é", 1500)
 	tr.Emit(completeEvent("r", 200, target, 0))
-	al.Stop()
 	msg := logger.lines()[0].msg
 	if !utf8.ValidString(msg) || !strings.HasSuffix(msg, "...") {
 		t.Error(test.DiffMessage(msg[len(msg)-8:], "valid UTF-8 ending in ...", "A1: the cut falls on a rune boundary"))
@@ -385,26 +577,24 @@ func TestAccessLog_PercentagesZeroSum(t *testing.T) {
 }
 
 func TestAccessLog_PercentagesAreSharesOfTheStagesNotOfTotal(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("r", trace.StageMiddleware, "M1", 10*time.Millisecond))
 	tr.Emit(stageEvent("r", trace.StageHandler, "H1", 90*time.Millisecond))
 	tr.Emit(completeEvent("r", 200, "/", time.Second))
-	al.Stop()
 	args := logger.lines()[0].args
-	if got := entryTexts(stageOf(t, args, trace.StageMiddleware)); got[0] != "M1=10ms (10%)" {
-		t.Error(test.DiffMessage(got, "M1=10ms (10%)", "A2: a percent is the share of the sum of the stage durations"))
+	if got := entriesOf(t, args, trace.StageMiddleware); got[0] != "M1 10ms (10%)" {
+		t.Error(test.DiffMessage(got, "M1 10ms (10%)", "A2: a percent is the share of the sum of the stage durations"))
 	}
 }
 
 func TestAccessLog_SeparatesInterleavedIDs(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(stageEvent("a", trace.StageMiddleware, "A1", 0))
 	tr.Emit(stageEvent("b", trace.StageMiddleware, "B1", 0))
 	tr.Emit(stageEvent("a", trace.StageGuard, "A2", 0))
 	tr.Emit(stageEvent("b", trace.StageGuard, "B2", 0))
 	tr.Emit(completeEvent("b", 200, "/b", 0))
 	tr.Emit(completeEvent("a", 200, "/a", 0))
-	al.Stop()
 	lines := logger.lines()
 	if len(lines) != 2 {
 		t.Fatal(test.DiffMessage(len(lines), 2, "A5: one line per request"))
@@ -412,7 +602,7 @@ func TestAccessLog_SeparatesInterleavedIDs(t *testing.T) {
 	for _, line := range lines {
 		id := strings.TrimPrefix(line.msg, "/")
 		for _, stage := range []string{trace.StageMiddleware, trace.StageGuard} {
-			for _, text := range entryTexts(stageOf(t, line.args, stage)) {
+			for _, text := range entriesOf(t, line.args, stage) {
 				if !strings.HasPrefix(strings.ToLower(text), id) {
 					t.Error(test.DiffMessage(text, "an entry of "+id, "A5: events of different IDs never mix"))
 				}
@@ -422,7 +612,7 @@ func TestAccessLog_SeparatesInterleavedIDs(t *testing.T) {
 }
 
 func TestAccessLog_ConcurrentRequests_NoRace(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	const goroutines = 8
 	const perGoroutine = 500
 	var wg sync.WaitGroup
@@ -439,28 +629,22 @@ func TestAccessLog_ConcurrentRequests_NoRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	al.Stop()
 
 	lines := logger.lines()
+	if len(lines) != goroutines*perGoroutine {
+		t.Fatal(test.DiffMessage(len(lines), goroutines*perGoroutine, "A1: one line per complete event, none dropped by the access log itself"))
+	}
 	for _, line := range lines {
 		id := strings.TrimPrefix(line.msg, "/")
 		if argValue(t, line.args, "request") != id {
 			t.Fatal(test.DiffMessage(argValue(t, line.args, "request"), id, "A5: the line carries its own ID"))
 		}
 		for _, stage := range []string{trace.StageMiddleware, trace.StageHandler} {
-			list := stageOf(t, line.args, stage)
-			if len(list) != 1 {
-				t.Fatal(test.DiffMessage(len(list), 1, "A5: each line has its own stages only"))
-			}
-			for name := range list[0] {
-				if name != id {
-					t.Fatal(test.DiffMessage(name, "an entry of "+id, "A5: no stage of another request"))
-				}
+			list := entriesOf(t, line.args, stage)
+			if len(list) != 1 || !strings.HasSuffix(strings.Fields(list[0])[0], id) {
+				t.Fatal(test.DiffMessage(list, "one entry of "+id, "A5: each line has its own stages only"))
 			}
 		}
-	}
-	if total := len(lines) + logger.dropped(t); total != goroutines*perGoroutine {
-		t.Error(test.DiffMessage(total, goroutines*perGoroutine, "A8: lines logged plus lines reported as dropped equal the complete events"))
 	}
 }
 
@@ -468,41 +652,38 @@ func TestAccessLog_StagesCappedAt64(t *testing.T) {
 	if maxStagesPerRequest != 64 {
 		t.Fatal(test.DiffMessage(maxStagesPerRequest, 64, "A6: maxStagesPerRequest"))
 	}
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	for i := range 100 {
 		tr.Emit(stageEvent("r", trace.StageMiddleware, "M"+strconv.Itoa(i), 0))
 	}
 	tr.Emit(completeEvent("r", 200, "/", 0))
-	al.Stop()
 	args := logger.lines()[0].args
-	if n := len(stageOf(t, args, trace.StageMiddleware)); n != 64 {
+	if n := len(entriesOf(t, args, trace.StageMiddleware)); n != 64 {
 		t.Error(test.DiffMessage(n, 64, "A6: a request keeps at most 64 stage events"))
 	}
 	if args[len(args)-4] != "stages_dropped" || args[len(args)-3] != 36 || args[len(args)-2] != "total" {
-		t.Error(test.DiffMessage(args[len(args)-4:], []any{"stages_dropped", 36, "total", "…"}, "A6: stages_dropped, n goes before total"))
+		t.Error(test.DiffMessage(args[len(args)-4:], []any{"stages_dropped", 36, "total", "…"}, "A1, A6: stages_dropped, n goes before total"))
 	}
 }
 
 func TestAccessLog_StagesCapKeepsTheFirst(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	for i := range 70 {
 		tr.Emit(stageEvent("r", trace.StageMiddleware, "M"+strconv.Itoa(i), 0))
 	}
 	tr.Emit(completeEvent("r", 200, "/", 0))
-	al.Stop()
-	list := entryTexts(stageOf(t, logger.lines()[0].args, trace.StageMiddleware))
-	if !strings.HasPrefix(list[0], "M0=") || !strings.HasPrefix(list[63], "M63=") {
-		t.Error(test.DiffMessage([]string{list[0], list[63]}, []string{"M0=…", "M63=…"}, "A6: the first 64 events are the ones kept"))
+	list := entriesOf(t, logger.lines()[0].args, trace.StageMiddleware)
+	if !strings.HasPrefix(list[0], "M0 ") || !strings.HasPrefix(list[63], "M63 ") {
+		t.Error(test.DiffMessage([]string{list[0], list[63]}, []string{"M0 …", "M63 …"}, "A6: the first 64 events are the ones kept"))
 	}
 }
 
 func TestAccessLog_ExactlySixtyFourStagesHasNoDropCount(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	for i := range 64 {
 		tr.Emit(stageEvent("r", trace.StageMiddleware, "M"+strconv.Itoa(i), 0))
 	}
 	tr.Emit(completeEvent("r", 200, "/", 0))
-	al.Stop()
 	if hasArg(logger.lines()[0].args, "stages_dropped") {
 		t.Error(test.DiffMessage(logger.lines()[0].args, "no stages_dropped", "A6: nothing dropped, nothing reported"))
 	}
@@ -560,14 +741,13 @@ func TestAccessLog_CompleteWithoutStagesLeavesNothingPending(t *testing.T) {
 }
 
 func TestAccessLog_EvictedRequestLogsWithoutStages(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	first := spreadID(0)
 	tr.Emit(stageEvent(first, trace.StageMiddleware, "M", time.Millisecond))
 	for i := 1; i < 100000; i++ {
 		tr.Emit(stageEvent(spreadID(i), trace.StageMiddleware, "M", 0))
 	}
 	tr.Emit(completeEvent(first, 200, "/evicted", 5*time.Millisecond))
-	al.Stop()
 	var found bool
 	for _, line := range logger.lines() {
 		if line.msg != "/evicted" {
@@ -578,7 +758,7 @@ func TestAccessLog_EvictedRequestLogsWithoutStages(t *testing.T) {
 			t.Error(test.DiffMessage(line.args, "no stages", "A7: an evicted request is logged without stages"))
 		}
 		if line.args[len(line.args)-1] != "5ms" {
-			t.Error(test.DiffMessage(line.args[len(line.args)-1], "5ms", "A3: total of an evicted request"))
+			t.Error(test.DiffMessage(line.args[len(line.args)-1], "5ms", "A1: total of an evicted request"))
 		}
 	}
 	if !found {
@@ -587,18 +767,17 @@ func TestAccessLog_EvictedRequestLogsWithoutStages(t *testing.T) {
 }
 
 func TestAccessLog_NewRequestStillTracedWhenFull(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	for i := range 100000 {
 		tr.Emit(stageEvent(spreadID(i), trace.StageMiddleware, "M", 0))
 	}
 	late := spreadID(1 << 30)
 	tr.Emit(stageEvent(late, trace.StageGuard, "G-late", 0))
 	tr.Emit(completeEvent(late, 200, "/late", 0))
-	al.Stop()
 	for _, line := range logger.lines() {
 		if line.msg == "/late" {
-			if got := entryTexts(stageOf(t, line.args, trace.StageGuard)); len(got) != 1 || !strings.HasPrefix(got[0], "G-late=") {
-				t.Error(test.DiffMessage(got, []string{"G-late=…"}, "A7: a new request evicts an old one and keeps its own stages"))
+			if got := entriesOf(t, line.args, trace.StageGuard); len(got) != 1 || !strings.HasPrefix(got[0], "G-late ") {
+				t.Error(test.DiffMessage(got, []string{"G-late …"}, "A7: a new request evicts an old one and keeps its own stages"))
 			}
 			return
 		}
@@ -606,98 +785,7 @@ func TestAccessLog_NewRequestStillTracedWhenFull(t *testing.T) {
 	t.Error(test.DiffMessage(false, true, "A7: a new request is traced when the table is full"))
 }
 
-func blockedLogger() (*fakeLogger, chan struct{}, chan struct{}) {
-	logger := newFakeLogger()
-	gate := make(chan struct{})
-	entered := make(chan struct{}, 1)
-	logger.onInfo = func(int) {
-		select {
-		case entered <- struct{}{}:
-		default:
-		}
-		<-gate
-	}
-	return logger, gate, entered
-}
-
-func emitWithin(t *testing.T, what string, fn func()) {
-	t.Helper()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		fn()
-	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal(test.DiffMessage("blocked for 10s", "returned", what))
-	}
-}
-
-func TestAccessLog_FullQueueDropsAndCounts(t *testing.T) {
-	if flushQueueSize != 1024 {
-		t.Fatal(test.DiffMessage(flushQueueSize, 1024, "A8: flushQueueSize"))
-	}
-	tr := &trace.Tracer{}
-	logger, gate, entered := blockedLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
-	tr.Emit(completeEvent("first", 200, "/first", 0))
-	<-entered
-
-	emitWithin(t, "A8: requests never wait for the logger", func() {
-		for i := range 5000 {
-			tr.Emit(completeEvent("r"+strconv.Itoa(i), 200, "/", 0))
-		}
-	})
-	close(gate)
-	al.Stop()
-
-	logged := len(logger.lines())
-	dropped := logger.dropped(t)
-	if logged+dropped != 5001 {
-		t.Error(test.DiffMessage(logged+dropped, 5001, "A8: lines logged plus lines reported as dropped equal the complete events"))
-	}
-	if dropped < 5001-flushQueueSize-1 {
-		t.Error(test.DiffMessage(dropped, ">= 3976", "A8: a full queue drops the complete events"))
-	}
-	if logged > flushQueueSize+1 {
-		t.Error(test.DiffMessage(logged, "<= 1025", "A8: the queue holds 1,024 lines"))
-	}
-}
-
-func TestAccessLog_RequestNeverBlocksOnSlowLogger(t *testing.T) {
-	tr := &trace.Tracer{}
-	logger, gate, entered := blockedLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
-	defer al.Stop()
-	defer close(gate)
-	tr.Emit(completeEvent("first", 200, "/first", 0))
-	<-entered
-	emitWithin(t, "A8: the listener never blocks", func() {
-		for i := range 3000 {
-			id := "r" + strconv.Itoa(i)
-			tr.Emit(stageEvent(id, trace.StageMiddleware, "M", 0))
-			tr.Emit(completeEvent(id, 200, "/", 0))
-		}
-	})
-}
-
-func TestAccessLog_DroppedPlusLoggedEqualsCompleted(t *testing.T) {
-	tr := &trace.Tracer{}
-	logger := newFakeLogger()
-	logger.onInfo = func(int) { runtime.Gosched() }
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
-	const total = 20000
-	for i := range total {
-		tr.Emit(completeEvent("r"+strconv.Itoa(i), 200, "/", 0))
-	}
-	al.Stop()
-	if got := len(logger.lines()) + logger.dropped(t); got != total {
-		t.Error(test.DiffMessage(got, total, "A8: nothing is lost without being counted"))
-	}
-}
-
-func TestAccessLog_LoggerPanicIsRecovered(t *testing.T) {
+func TestAccessLog_LoggerPanicRecovered(t *testing.T) {
 	tr := &trace.Tracer{}
 	logger := newFakeLogger()
 	logger.onInfo = func(n int) {
@@ -706,38 +794,17 @@ func TestAccessLog_LoggerPanicIsRecovered(t *testing.T) {
 		}
 	}
 	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	defer al.Stop()
 	tr.Emit(completeEvent("a", 200, "/a", 0))
 	tr.Emit(completeEvent("b", 200, "/b", 0))
 	tr.Emit(completeEvent("c", 200, "/c", 0))
-	al.Stop()
 
-	if got := len(logger.lines()); got != 2 {
-		t.Error(test.DiffMessage(got, 2, "A9: the worker goes on after a panic of the logger"))
-	}
-	if got := logger.dropped(t); got != 1 {
-		t.Error(test.DiffMessage(got, 1, "A9: the line whose logging panicked counts as dropped"))
-	}
-}
-
-func TestAccessLog_StopFlushesQueue(t *testing.T) {
-	tr := &trace.Tracer{}
-	logger := newFakeLogger()
-	logger.onInfo = func(int) { runtime.Gosched() }
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
-	for i := range 500 {
-		tr.Emit(completeEvent("r"+strconv.Itoa(i), 200, "/"+strconv.Itoa(i), 0))
-	}
-	al.Stop()
-	if got := len(logger.lines()) + logger.dropped(t); got != 500 {
-		t.Error(test.DiffMessage(got, 500, "A10: Stop passes every queued line to the logger"))
-	}
 	lines := logger.lines()
-	for i := 1; i < len(lines); i++ {
-		a, _ := strconv.Atoi(lines[i-1].msg[1:])
-		b, _ := strconv.Atoi(lines[i].msg[1:])
-		if b <= a {
-			t.Fatal(test.DiffMessage([]string{lines[i-1].msg, lines[i].msg}, "ascending", "A10: lines keep their order"))
-		}
+	if len(lines) != 2 || lines[0].msg != "/b" || lines[1].msg != "/c" {
+		t.Error(test.DiffMessage(lines, "lines /b and /c", "A4: a panic of the logger is recovered in the listener, the line is lost, the next ones are logged"))
+	}
+	if len(logger.warnings()) != 0 {
+		t.Error(test.DiffMessage(logger.warnings(), "no warning", "A5: no dropped record of the access log"))
 	}
 }
 
@@ -745,11 +812,11 @@ func TestAccessLog_StopRemovesListener(t *testing.T) {
 	tr := &trace.Tracer{}
 	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: newFakeLogger()})
 	if !tr.Enabled() {
-		t.Error(test.DiffMessage(false, true, "A10: the access log listens while it runs"))
+		t.Error(test.DiffMessage(false, true, "A5: the access log listens while it runs"))
 	}
 	al.Stop()
 	if tr.Enabled() {
-		t.Error(test.DiffMessage(true, false, "A10: Stop removes the listener"))
+		t.Error(test.DiffMessage(true, false, "A5: Stop removes the listener"))
 	}
 }
 
@@ -758,7 +825,7 @@ func TestAccessLog_StopTwice(t *testing.T) {
 	al.Stop()
 	al.Stop()
 	if len(logger.lines()) != 0 {
-		t.Error(test.DiffMessage(len(logger.lines()), 0, "A10: a second Stop does nothing"))
+		t.Error(test.DiffMessage(len(logger.lines()), 0, "A5: a second Stop does nothing"))
 	}
 }
 
@@ -768,8 +835,8 @@ func TestAccessLog_EventsAfterStopIgnored(t *testing.T) {
 	tr.Emit(stageEvent("late", trace.StageMiddleware, "M", 0))
 	tr.Emit(completeEvent("late", 200, "/late", 0))
 	al.Stop()
-	if len(logger.lines()) != 0 || logger.dropped(t) != 0 {
-		t.Error(test.DiffMessage(logger.lines(), "nothing", "A10: events emitted after Stop are ignored"))
+	if len(logger.lines()) != 0 || len(logger.warnings()) != 0 {
+		t.Error(test.DiffMessage(logger.lines(), "nothing", "A5: events emitted after Stop are ignored"))
 	}
 }
 
@@ -778,57 +845,26 @@ func TestAccessLog_StopDiscardsPendingRequests(t *testing.T) {
 	tr.Emit(stageEvent("open", trace.StageMiddleware, "M", 0))
 	al.Stop()
 	if n := al.pendingLen(); n != 0 {
-		t.Error(test.DiffMessage(n, 0, "A10: pending requests are discarded"))
+		t.Error(test.DiffMessage(n, 0, "A5: pending requests are discarded"))
 	}
 	if len(logger.lines()) != 0 {
-		t.Error(test.DiffMessage(len(logger.lines()), 0, "A10: a request without complete is never logged"))
+		t.Error(test.DiffMessage(len(logger.lines()), 0, "A5: a request without complete is never logged"))
 	}
 }
 
-func TestAccessLog_StopReturnsWhenLoggerBlocks(t *testing.T) {
+func TestAccessLog_StopReturnsAtOnce(t *testing.T) {
 	tr := &trace.Tracer{}
 	logger, gate, entered := blockedLogger()
 	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
-	defer close(gate)
-	tr.Emit(completeEvent("a", 200, "/a", 0))
-	<-entered
-	tr.Emit(completeEvent("b", 200, "/b", 0))
-
-	done := make(chan struct{})
+	emitted := make(chan struct{})
 	go func() {
-		al.Stop()
-		close(done)
+		defer close(emitted)
+		tr.Emit(completeEvent("a", 200, "/a", 0))
 	}()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal(test.DiffMessage("Stop still waiting after 3s", "returned within 2s", "A10: Stop gives up after 2 seconds"))
-	}
-}
-
-func goroutinesAtMost(base int) bool {
-	for range 200000 {
-		if runtime.NumGoroutine() <= base {
-			return true
-		}
-		runtime.Gosched()
-	}
-	return runtime.NumGoroutine() <= base
-}
-
-func TestAccessLog_StopEndsWorker(t *testing.T) {
-	runtime.GC()
-	base := runtime.NumGoroutine()
-	logs := make([]*AccessLog, 50)
-	for i := range logs {
-		logs[i] = NewAccessLog(&AccessLogConfig{Tracer: &trace.Tracer{}, Logger: newFakeLogger()})
-	}
-	for _, al := range logs {
-		al.Stop()
-	}
-	if !goroutinesAtMost(base) {
-		t.Error(test.DiffMessage(runtime.NumGoroutine(), base, "A10: no worker goroutine survives Stop"))
-	}
+	<-entered
+	within(t, "A5: Stop returns at once, whatever the logger of an in-flight line does", al.Stop)
+	close(gate)
+	<-emitted
 }
 
 func TestAccessLog_StopDuringEmit_NoRace(t *testing.T) {
@@ -856,7 +892,7 @@ func TestAccessLog_StopDuringEmit_NoRace(t *testing.T) {
 	count := len(logger.lines())
 	tr.Emit(completeEvent("after", 200, "/after", 0))
 	if len(logger.lines()) != count {
-		t.Error(test.DiffMessage(len(logger.lines()), count, "A10: nothing is logged after Stop returned"))
+		t.Error(test.DiffMessage(len(logger.lines()), count, "A5: nothing is logged after Stop returned"))
 	}
 }
 
@@ -881,44 +917,167 @@ func TestNewAccessLog_NilPanics(t *testing.T) {
 }
 
 func TestAccessLog_WSLine(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	tr.Emit(trace.Event{ID: "ws-1", Stage: trace.StageGuard, Name: "auth.Guard", Transport: trace.TransportWS, Duration: time.Millisecond})
 	tr.Emit(trace.Event{ID: "ws-1", Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: "PUBLISH", Target: "chat.to.user2", Duration: 2 * time.Millisecond})
-	al.Stop()
 	line := logger.lines()[0]
 	if line.msg != "chat.to.user2" || argValue(t, line.args, "transport") != "WS" || argValue(t, line.args, "operation") != "PUBLISH" || argValue(t, line.args, "code") != 0 {
 		t.Error(test.DiffMessage(line, "msg chat.to.user2, transport WS, operation PUBLISH", "A12: a WebSocket complete event produces the same line"))
 	}
-	if got := entryTexts(stageOf(t, line.args, trace.StageGuard)); len(got) != 1 || got[0] != "Guard=1ms (100%)" {
-		t.Error(test.DiffMessage(got, []string{"Guard=1ms (100%)"}, "A12: WS stages are logged like HTTP ones"))
+	if got := entriesOf(t, line.args, trace.StageGuard); len(got) != 1 || got[0] != "Guard 1ms (100%)" {
+		t.Error(test.DiffMessage(got, []string{"Guard 1ms (100%)"}, "A12: WS stages are logged like HTTP ones"))
 	}
 }
 
-func TestAccessLog_RequestSideAllocations(t *testing.T) {
+func TestAccessLog_SixStageLineAllocations(t *testing.T) {
+	restore := logpipe.SetStdout(io.Discard)
+	defer restore()
 	tr := &trace.Tracer{}
-	logger, gate, entered := blockedLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat})})
 	defer al.Stop()
-	defer close(gate)
-	tr.Emit(completeEvent("first", 200, "/first", 0))
-	<-entered
-	for i := range flushQueueSize + 8 {
-		tr.Emit(completeEvent("fill"+strconv.Itoa(i), 200, "/", 0))
+	names := []struct{ stage, name string }{
+		{trace.StageMiddleware, "cors.CORS"},
+		{trace.StageMiddleware, "csrf.CSRF"},
+		{trace.StageMiddleware, "helmet.Helmet"},
+		{trace.StageGuard, "auth.AuthGuard"},
+		{trace.StagePreInterceptor, "log.LogInterceptor"},
+		{trace.StageHandler, "READ_users"},
 	}
-
 	events := make([]trace.Event, 0, 7)
-	for i := range 6 {
-		events = append(events, stageEvent("alloc-id", trace.StageMiddleware, "cors.CORS"+strconv.Itoa(i), time.Microsecond))
+	for i, n := range names {
+		e := stageEvent("0f1e2d3c4b5a6978", n.stage, n.name, time.Duration(40+i*20)*time.Microsecond)
+		e.TraceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+		events = append(events, e)
 	}
-	events = append(events, completeEvent("alloc-id", 200, "/users", time.Millisecond))
-
-	n := testing.AllocsPerRun(200, func() {
+	done := completeEvent("0f1e2d3c4b5a6978", 200, "/api/v1/users", 3*time.Millisecond)
+	done.TraceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+	events = append(events, done)
+	emit := func() {
 		for _, e := range events {
 			tr.Emit(e)
 		}
+	}
+	emit()
+	allocs := testing.AllocsPerRun(200, emit)
+	if allocs > 10 {
+		t.Error(test.DiffMessage(allocs, "<= 10", "A2: a 6-stage access line through the built-in JSON logger allocates at most 10 times (design measured 26)"))
+	}
+}
+
+func TestAccessLog_BuiltinJSONLineIsPlain(t *testing.T) {
+	tr, out := builtinAccessLog(t, 0)
+	tr.Emit(stageEvent("r1", trace.StageMiddleware, "cors.CORS", 40*time.Microsecond))
+	tr.Emit(stageEvent("r1", trace.StageMiddleware, "csrf.CSRF", 60*time.Microsecond))
+	tr.Emit(completeEvent("r1", 200, "/users", 2*time.Second))
+	line := out.String()
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(line), &parsed); err != nil {
+		t.Fatal(test.DiffMessage(line, "one JSON object", "A2: JSON gets the plain string"))
+	}
+	if parsed["middleware"] != "CORS 40µs (40%), CSRF 60µs (60%)" || parsed["total"] != "2s" || parsed["msg"] != "/users" {
+		t.Error(test.DiffMessage(parsed, "string values", "A2: stage and total are plain strings in JSON"))
+	}
+	if strings.Contains(line, "\x1b") {
+		t.Error(test.DiffMessage(line, "no ANSI escape", "A2: no color outside Pretty"))
+	}
+}
+
+func TestAccessLog_BuiltinTextLineIsPlain(t *testing.T) {
+	tr, out := builtinAccessLog(t, 1)
+	tr.Emit(stageEvent("r1", trace.StageGuard, "auth.Guard", 5*time.Millisecond))
+	tr.Emit(completeEvent("r1", 200, "/users", 2*time.Second))
+	line := out.String()
+	if !strings.Contains(line, `guard="Guard 5ms (100%)"`) || !strings.Contains(line, "total=2s") || strings.Contains(line, "\x1b") {
+		t.Error(test.DiffMessage(line, `guard="Guard 5ms (100%)" total=2s, no ANSI escape`, "A2: Text gets the plain string"))
+	}
+}
+
+func TestAccessLog_PrettyColorsDurations(t *testing.T) {
+	tr, out := builtinAccessLog(t, 2)
+	tr.Emit(stageEvent("r1", trace.StageMiddleware, "cors.CORS", 5*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageGuard, "auth.Guard", 20*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StagePreInterceptor, "a.Pre", 70*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageHandler, "h.Handler", 150*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StagePostInterceptor, "a.Post", 500*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageExceptionFilter, "f.Filter", 2*time.Second))
+	tr.Emit(completeEvent("r1", 200, "/users", 350*time.Millisecond))
+	got := out.String()
+	for _, c := range []struct {
+		color color.Color
+		text  string
+	}{
+		{color.Gray, "5ms"},
+		{color.Green, "20ms"},
+		{color.Blue, "70ms"},
+		{color.Yellow, "150ms"},
+		{color.Orange, "500ms"},
+		{color.Red, "2s"},
+		{color.Orange, "350ms"},
+	} {
+		if !strings.Contains(got, string(c.color)+c.text) {
+			t.Error(test.DiffMessage(got, fmt.Sprintf("%q colored", c.text), "A2: Pretty colors each duration by its threshold, total included"))
+		}
+	}
+	for _, name := range []string{"CORS", "Guard", "Pre", "Handler", "Post", "Filter"} {
+		if !strings.Contains(got, name) {
+			t.Error(test.DiffMessage(got, name, "A2: the stage text is still printed"))
+		}
+	}
+}
+
+func TestAccessLog_PrettyForgedMarkerInUserRecordNotColored(t *testing.T) {
+	out := &outBuf{}
+	restore := logpipe.SetStdout(out)
+	defer restore()
+	logger := log.NewLog(&log.LogOptions{LogFormat: log.PrettyFormat})
+	logger.Info("GET /forged 5ms (4%)", "middleware", "CORS 5ms (4%)", "total", "2s")
+	if strings.Contains(out.String(), string(color.Gray)) || strings.Contains(out.String(), string(color.Red)+"2s") {
+		t.Error(test.DiffMessage(out.String(), "no duration color", "A2: a user record is never colored"))
+	}
+}
+
+func TestAccessLog_BuiltinLineDroppedUnderOverloadIsCounted(t *testing.T) {
+	w := newHoldWriter()
+	restore := logpipe.SetStdout(w)
+	defer restore()
+	logpipe.Stdout().StartAsync()
+	defer logpipe.Stdout().StopAsync(time.Minute)
+	defer w.openAll()
+	tr := &trace.Tracer{}
+	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat})})
+	defer al.Stop()
+	const total = 5000
+	target := "/overload-" + strings.Repeat("x", 200)
+	within(t, "A3: the request goroutine never waits for stdout", func() {
+		for i := range total {
+			id := "r" + strconv.Itoa(i)
+			tr.Emit(stageEvent(id, trace.StageMiddleware, "cors.CORS", time.Microsecond))
+			tr.Emit(completeEvent(id, 200, target, time.Millisecond))
+		}
 	})
-	if n > 2 {
-		t.Error(test.DiffMessage(n, "<= 2", "P2: the request goroutine allocates at most 2 times for 6 stages and complete"))
+	w.openAll()
+	if !logpipe.Stdout().Flush(time.Minute) {
+		t.Fatal(test.DiffMessage(false, true, "P12: Flush returns true"))
+	}
+	written, dropped := 0, 0
+	for _, line := range strings.Split(strings.TrimSuffix(w.String(), "\n"), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatal(test.DiffMessage(line, "one JSON object", "P6: records are written whole"))
+		}
+		switch msg, _ := rec["msg"].(string); {
+		case strings.HasPrefix(msg, "/overload-"):
+			written++
+		case msg == "LogDropped":
+			if rec["level"] != "WARN" {
+				t.Error(test.DiffMessage(rec["level"], "WARN", "P10: LogDropped is a WARN record"))
+			}
+			n, _ := rec["info"].(float64)
+			dropped += int(n)
+		}
+	}
+	if dropped == 0 || written+dropped != total {
+		t.Error(test.DiffMessage([]int{written, dropped}, "written + dropped = 5000, dropped > 0", "A3: an access line is an Info record, dropped under overload and counted in LogDropped"))
 	}
 }
 
@@ -982,75 +1141,69 @@ func TestShortName(t *testing.T) {
 	}
 }
 
-func argKeys(args []any) []string {
-	var keys []string
-	for i := 0; i+1 < len(args); i += 2 {
-		keys = append(keys, args[i].(string))
-	}
-	return keys
-}
-
-func TestLineArgs_HTTPKeys(t *testing.T) {
-	e := trace.Event{
+func TestAccessLine_HTTPKeys(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(trace.Event{
 		ID: "0f1e2d3c4b5a6978", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "0f1e2d3c4b5a6978", ParentID: "00f067aa0ba902b7",
 		Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: "/users", Code: 200, Duration: 10 * time.Millisecond,
-	}
-	msg, args := lineArgs(flushJob{done: e})
-	if msg != "/users" {
-		t.Error(test.DiffMessage(msg, "/users", "E7: the message is still the target"))
+	})
+	line := logger.lines()[0]
+	if line.msg != "/users" {
+		t.Error(test.DiffMessage(line.msg, "/users", "E7: the message is still the target"))
 	}
 	want := []any{
 		"trace_id", "4bf92f3577b34da6a3ce929d0e0e4736", "request", "0f1e2d3c4b5a6978",
 		"transport", "HTTP", "code", 200, "operation", "GET", "total", "10ms",
 	}
-	if !slices.Equal(args, want) {
-		t.Error(test.DiffMessage(args, want, "E7: an HTTP line starts with trace_id and request, the incoming parent is not printed"))
+	if !slices.Equal(line.args, want) {
+		t.Error(test.DiffMessage(line.args, want, "E7: an HTTP line starts with trace_id and request, the incoming parent is not printed"))
 	}
-	if slices.Contains(argKeys(args), "id") {
-		t.Error(test.DiffMessage(argKeys(args), "<no id key>", "E7: the key id is gone"))
+	if slices.Contains(argKeys(line.args), "id") {
+		t.Error(test.DiffMessage(argKeys(line.args), "<no id key>", "E7: the key id is gone"))
 	}
 }
 
-func TestLineArgs_HTTPKeysKeepStagesAfterOperation(t *testing.T) {
-	e := completeEvent("r1", 200, "/", time.Millisecond)
-	e.ParentID = "00f067aa0ba902b7"
-	job := flushJob{done: e, rec: &record{id: "r1", stages: []stageEntry{{stage: trace.StageGuard, name: "auth.Guard", duration: time.Microsecond}}}}
-	_, args := lineArgs(job)
+func TestAccessLine_HTTPKeysKeepStagesAfterOperation(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(stageEvent("r1", trace.StageGuard, "auth.Guard", time.Microsecond))
+	done := completeEvent("r1", 200, "/", time.Millisecond)
+	done.ParentID = "00f067aa0ba902b7"
+	tr.Emit(done)
 	want := []string{"trace_id", "request", "transport", "code", "operation", "guard", "total"}
-	if got := argKeys(args); !slices.Equal(got, want) {
+	if got := argKeys(logger.lines()[0].args); !slices.Equal(got, want) {
 		t.Error(test.DiffMessage(got, want, "E7: the rest of the line is unchanged"))
 	}
 }
 
-func TestLineArgs_WSKeys(t *testing.T) {
-	e := trace.Event{
+func TestAccessLine_WSKeys(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(trace.Event{
 		ID: "aaaaaaaaaaaaaaaa", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "aaaaaaaaaaaaaaaa", ParentID: "bbbbbbbbbbbbbbbb",
 		Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: "PUBLISH", Target: "chat.to.user2", Duration: 2 * time.Millisecond,
-	}
-	_, args := lineArgs(flushJob{done: e})
+	})
 	want := []any{
 		"trace_id", "4bf92f3577b34da6a3ce929d0e0e4736", "connection", "bbbbbbbbbbbbbbbb", "message", "aaaaaaaaaaaaaaaa",
 		"transport", "WS", "code", 0, "operation", "PUBLISH", "total", "2ms",
 	}
-	if !slices.Equal(args, want) {
-		t.Error(test.DiffMessage(args, want, "E7: a WS line starts with trace_id, connection and message"))
+	if got := logger.lines()[0].args; !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "E7: a WS line starts with trace_id, connection and message"))
 	}
 }
 
-func TestLineArgs_WSWithoutConnection(t *testing.T) {
-	e := trace.Event{
+func TestAccessLine_WSWithoutConnection(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(trace.Event{
 		ID: "aaaaaaaaaaaaaaaa", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "aaaaaaaaaaaaaaaa",
 		Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: "SUBSCRIBE", Target: "t", Duration: time.Millisecond,
-	}
-	_, args := lineArgs(flushJob{done: e})
+	})
 	want := []string{"trace_id", "message", "transport", "code", "operation", "total"}
-	if got := argKeys(args); !slices.Equal(got, want) {
+	if got := argKeys(logger.lines()[0].args); !slices.Equal(got, want) {
 		t.Error(test.DiffMessage(got, want, "E7: connection is skipped when ParentID is empty"))
 	}
 }
 
 func TestAccessLog_CorrelatesByEventIDNotSpanID(t *testing.T) {
-	tr, logger, al := setup(t)
+	tr, logger, _ := setup(t)
 	stage := stageEvent("req-1", trace.StageGuard, "G1", time.Millisecond)
 	stage.SpanID = "1111111111111111"
 	stage.ParentID = "req-1"
@@ -1062,13 +1215,12 @@ func TestAccessLog_CorrelatesByEventIDNotSpanID(t *testing.T) {
 	tr.Emit(stage)
 	tr.Emit(other)
 	tr.Emit(done)
-	al.Stop()
 
 	lines := logger.lines()
 	if len(lines) != 1 {
 		t.Fatal(test.DiffMessage(len(lines), 1, "E7: one line per complete event"))
 	}
-	if got := entryTexts(stageOf(t, lines[0].args, trace.StageGuard)); len(got) != 1 || !strings.HasPrefix(got[0], "G1=") {
-		t.Error(test.DiffMessage(got, []string{"G1=…"}, "E7: stages are joined by Event.ID, so span IDs don't matter"))
+	if got := entriesOf(t, lines[0].args, trace.StageGuard); len(got) != 1 || !strings.HasPrefix(got[0], "G1 ") {
+		t.Error(test.DiffMessage(got, []string{"G1 …"}, "E7: stages are joined by Event.ID, so span IDs don't matter"))
 	}
 }

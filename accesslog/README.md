@@ -1,6 +1,6 @@
 # Access Log
 
-*Package `accesslog` writes one log line per HTTP request or WebSocket message, with the time each middleware, guard, interceptor, pipe, handler and filter took. Its cost on the request goroutine is small and bounded, and a slow logger never slows a request.*
+*Package `accesslog` writes one log line per HTTP request or WebSocket message, with the time each middleware, guard, interceptor, pipe, handler and filter took. The line is formatted and logged on the request goroutine (a few microseconds), with no worker, queue or timer of its own.*
 
 - [Access Log](#access-log)
   - [Key Features](#key-features)
@@ -20,8 +20,9 @@
 ## Key Features
 - One switch: `app.EnableAccessLog()`. The app creates and stops the access log.
 - `total` is the wall-clock time of the request; each stage shows its time and its share.
-- Bounded memory whatever arrives: 64 stages per request, 16,384 pending requests, 1,024 queued lines.
-- Under overload, lines are dropped and the count is reported; requests never wait for the logger.
+- Bounded memory whatever arrives: 64 stages per request, 16,384 pending requests.
+- No goroutine, no ticker, no queue: with the built-in logger the line goes through the log's output pipeline, so a slow stdout never slows a request and lines dropped under overload are counted in `LogDropped`.
+- Every value of the line is a string or an int, so any log library can read it.
 - The query string is never logged.
 
 ## Usage
@@ -45,7 +46,7 @@ func main() {
 
 ## The line
 
-One `Logger.Info` call per request, made on the access log's worker goroutine. The message is the request's path (or the WebSocket topic), cut to 2,048 bytes on a rune boundary and followed by `...` when longer. The arguments, in order:
+One `Logger.Info` call per request, made by the goroutine that emitted the `complete` event (the request's), before the event returns. The message is the request's path (or the WebSocket topic), cut to 2,048 bytes on a rune boundary and followed by `...` when longer. The arguments, in order:
 
 | Key | Value |
 |---|---|
@@ -56,17 +57,17 @@ One `Logger.Info` call per request, made on the access log's worker goroutine. T
 | `transport` | `HTTP` or `WS` |
 | `code` | the status written (an `int`; `0` for WebSocket messages) |
 | `operation` | the HTTP method, or the WebSocket message type |
-| one key per stage | `middleware`, `guard`, `pre_interceptor`, `pipe`, `handler`, `post_interceptor`, `exception_filter`, in the order their first event arrived; the value is a list with one `{name: "<duration> (<percent>%)"}` entry per event, in arrival order. The name is the part after the last `.` (`cors.CORS` → `CORS`) |
+| one key per stage | `middleware`, `guard`, `pre_interceptor`, `pipe`, `handler`, `post_interceptor`, `exception_filter`, in the order their first event arrived; the value is one string with one `<name> <duration> (<percent>%)` entry per event, in arrival order, joined by `, ` (`"CORS 40µs (4%), CSRF 60µs (6%)"`). The name is the part after the last `.` (`cors.CORS` → `CORS`) |
 | `stages_dropped` | only when a request had more than 64 stage events: how many were not kept |
 | `total` | the wall-clock time of the request |
 
 A JSON line:
 
 ```json
-{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","trace_id":"019a8b3c4d5e7f3a9c1e2b4d6f8a0c2e","request":"a0eef3e5b7154c2e","transport":"HTTP","code":200,"operation":"GET","middleware":[{"CORS":"120µs (4%)"}],"handler":[{"READ_users":"2ms (68%)"}],"total":"2.90ms"}
+{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","trace_id":"019a8b3c4d5e7f3a9c1e2b4d6f8a0c2e","request":"a0eef3e5b7154c2e","transport":"HTTP","code":200,"operation":"GET","middleware":"CORS 120µs (4%)","handler":"READ_users 2ms (68%)","total":"2.9ms"}
 ```
 
-In the pretty format each entry is printed in a color picked by its duration: gray below 10 ms, then green, blue (50 ms), yellow (100 ms), orange (300 ms) and red from 1 s. JSON and Text carry only the text.
+In the pretty format of the built-in logger each duration, `total` included, is printed in a color picked by its value: gray below 10 ms, then green (10 ms), blue (50 ms), yellow (100 ms), orange (300 ms) and red from 1 s. JSON, Text and a logger you bring get the plain string, and the logger you bring receives exactly the pairs above. Your own lines are never colored this way, even when a value looks like a duration.
 
 - Durations have two decimals of their unit (`1.23µs`, `1.23ms`, `1.23s`) and are written as they are below 1 µs (`500ns`).
 - A percentage is the share of the sum of the stage durations, not of `total`. The largest remainders receive the extra points (ties go to the earlier entry), so the shares sum to exactly 100; they are all 0 when the sum is 0.
@@ -86,19 +87,19 @@ Required: `true`
 The tracer whose events the access log listens to. `core` passes the app's tracer.
 
 ### Logger
-Type: `common.Logger`
+Type: `common.LogAdapter`
 
 Default: none
 
 Required: `true`
 
-The logger that receives the lines and the dropped-lines warning. `core` passes the app's logger.
+The logger that receives the lines. `core` passes the app's logger. A logger from `log.NewLog` writes the line through the log's output pipeline as an Info record; any other logger is called directly with the message and the pairs.
 
 ## Functions
 
 ### NewAccessLog
 
-Starts the worker goroutine and listens to the tracer. Users never call it: `app.EnableAccessLog()` does.
+Listens to the tracer; it starts no goroutine. Users never call it: `app.EnableAccessLog()` does.
 
 #### Parameters
 - 1st parameter: `*AccessLogConfig`
@@ -117,11 +118,13 @@ defer al.Stop()
 
 #### Rules
 - A nil config, tracer or logger panics with `invalid access log: a tracer and a logger are required`.
-- The logger is called off the emitting goroutine.
+- The logger is called on the emitting goroutine, before `Emit` returns, once per `complete` event, in order.
+- A `common.LogAdapter` that is not a `common.Logger` is accepted.
+- No goroutine is started, while running or after `Stop`.
 
 ### Stop
 
-Removes the listener, lets the worker pass every queued line to the logger, and returns when it has finished or after 2 seconds, whichever comes first. `core` calls it once at shutdown, after the server has drained and the `OnShutdown` hooks have run, so the lines of the last requests (those made by the hooks too) are written before the process exits.
+Removes the listener and discards pending requests; it returns at once, whatever the logger of a line in progress does. `core` calls it once at shutdown, after the server has drained and the `OnShutdown` hooks have run, and then flushes the log's output pipeline.
 
 #### Usage
 
@@ -130,43 +133,41 @@ al.Stop()
 ```
 
 #### Rules
-- Every queued line is passed to the logger, in order.
-- The worker goroutine ends; events emitted after `Stop` are ignored, and pending requests (stage events without `complete`) are discarded.
+- Events emitted after `Stop` are ignored, and pending requests (stage events without `complete`) are discarded; nothing is logged after `Stop` returned.
 - A second `Stop` does nothing.
 
 ## Limits and overload
 
 - **64 stage events per request.** Later ones are counted and the line carries `stages_dropped`.
 - **16,384 pending requests** (64 shards of 256). A new request that finds its shard full evicts that shard's oldest pending request; an evicted request that completes later is logged without stages. A new request is always traced.
-- **1,024 queued lines.** A request that finds the queue full is dropped and counted. The worker reports the count with `Logger.Warn("AccessLog", "dropped", n)` at most once per second, and `Stop` reports what is left. Lines logged plus lines reported as dropped equal the requests seen.
-- **One worker: about 65,000 lines per second.** Formatting and logging a line takes about 15 µs on the worker (`BenchmarkAccessLog_WorkerLine`). Beyond that rate the queue fills, and the extra lines are dropped and counted as above.
-- **A broken logger cannot stop the worker.** A panic of the logger is recovered; that line counts as dropped.
+- **The log's output pipeline bounds the rest.** With the built-in logger the line is an Info record: under overload it is dropped and counted in `WARN LogDropped` like any Info line (see `log/README.md`, Output pipeline). A logger you bring gets no bound from `Ginject`.
+- **A broken logger cannot break a request.** A panic of the logger is recovered in the listener; that line is lost and the next ones are logged.
 
-A team that needs a complete audit trail writes it in a middleware or an interceptor: the access log trades completeness for never slowing a request.
+A team that needs a complete audit trail writes it in a middleware or an interceptor: the access log trades completeness for never waiting on stdout.
 
 ## Cost per request
 
-Measured with `bench/` (a silent logger), access log off and on, one app per run, medians of 5 runs on darwin/amd64, Intel Core i7-9750H. The "on" figures include the worker's line formatting, which runs on another goroutine at the same time.
+Measured with `BenchmarkAccessLog_Line_6Stages` (6 stage events and `complete`, the built-in logger writing to a discarding output), darwin/amd64, Intel Core i7-9750H, a busy machine:
 
-| Scenario | Off | On | Extra |
-|---|---|---|---|
-| Static | 765 ns, 8 allocs | 1,907 ns, 22 allocs | +1.1 µs |
-| Chain | 2,857 ns, 24 allocs | 5,605 ns, 63 allocs | +2.7 µs |
-| Static, 12 goroutines | 337 ns | 790 ns | 2.3× |
-| Chain, 12 goroutines | 1,509 ns | 2,339 ns | 1.55× |
+| Logger | Time | Allocations |
+|---|---|---|
+| Built-in, JSON | about 4 µs | 4 (the request's record, the line's text, its attributes, slog's record) |
+| Built-in, Pretty | about 6 µs | 21 |
+| A logger you bring | about 1.5 µs plus its own cost | 16 (the arguments are boxed into `[]any`) |
 
-On the request goroutine alone, a request of 6 stages and `complete` allocates at most 2 times (one record for its stages).
+All of it runs on the request goroutine. The worker goroutine of earlier versions took about 16 µs and 102 allocations per line on another goroutine and capped the access log at about 65,000 lines per second.
 
 ## Internals
 
 - Pending requests live in 64 shards picked from two bytes of the ID, each a mutex, a map and an eviction list; a stage is kept as `stage, name, duration`, the first 8 inline in the request's record.
-- The `complete` event takes the record out of its shard and sends it to a buffered channel with a non-blocking `select`. No lock is held during the send, and the logger is never called under a lock.
-- One worker goroutine formats the lines (no map of stages, one buffer for the texts of a line) and calls the logger.
-- An atomic flag, read first by the listener, ignores events after `Stop`; an atomic counter holds the dropped lines.
+- The `complete` event takes the record out of its shard; the line is formatted and logged after the shard's lock is released.
+- The texts of every stage and of `total` are written into one buffer (durations appended without `time.Duration.String`'s allocation) and turned into one string; each value is a slice of it.
+- With the built-in logger the line is passed as `slog` attributes (no boxing) through an internal method that also marks it as an access line, which the Pretty format colors. Any other logger gets `Info(msg, args...)`.
+- An atomic flag, read first by the listener, ignores events after `Stop`.
 
 ## Benchmarks
 
-Machine-dependent, captured when this README was written. The `Request` benchmarks emit the events of one request; the worker runs at the same time, so its allocations are counted too.
+Machine-dependent, captured when this README was written. The `Request` benchmarks emit the events of one request to a logger that does nothing; the `Line` benchmarks use the built-in logger.
 
 ```sh
 go test -run '^$' -bench . -benchmem ./accesslog/
@@ -176,11 +177,12 @@ go test -run '^$' -bench . -benchmem ./accesslog/
 goos: darwin
 goarch: amd64
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkAccessLog_Request_1Stage-12              	 3834548	       315.9 ns/op	     629 B/op	       4 allocs/op
-BenchmarkAccessLog_Request_6Stages-12             	 1952538	       615.1 ns/op	    1178 B/op	       9 allocs/op
-BenchmarkAccessLog_Request_6Stages_Parallel-12    	 1681592	       740.6 ns/op	    1713 B/op	       4 allocs/op
-BenchmarkAccessLog_WorkerLine-12                  	   88210	     13186 ns/op	    4072 B/op	      40 allocs/op
-BenchmarkFormatDuration-12                        	33985016	        35.56 ns/op	       8 B/op	       1 allocs/op
-BenchmarkColorForDuration-12                      	498652584	         2.459 ns/op	       0 B/op	       0 allocs/op
-BenchmarkShortName-12                             	175961790	         6.805 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAccessLog_Request_1Stage-12              	 1506247	       777.7 ns/op	     776 B/op	      10 allocs/op
+BenchmarkAccessLog_Request_6Stages-12             	  653250	      1992 ns/op	    1072 B/op	      16 allocs/op
+BenchmarkAccessLog_Request_6Stages_Parallel-12    	 1000000	      1452 ns/op	    2240 B/op	      18 allocs/op
+BenchmarkAccessLog_Line_6Stages-12                	  319255	      4516 ns/op	    1426 B/op	       4 allocs/op
+BenchmarkAccessLog_Line_6Stages_Pretty-12         	  179842	      5903 ns/op	    2858 B/op	      21 allocs/op
+BenchmarkFormatDuration-12                        	26621779	        46.36 ns/op	       8 B/op	       1 allocs/op
+BenchmarkColorForDuration-12                      	401468427	         2.875 ns/op	       0 B/op	       0 allocs/op
+BenchmarkShortName-12                             	162431871	         7.422 ns/op	       0 B/op	       0 allocs/op
 ```

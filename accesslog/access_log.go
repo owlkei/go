@@ -1,6 +1,7 @@
 package accesslog
 
 import (
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -10,36 +11,37 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/trace"
 )
 
 const (
 	maxStagesPerRequest = 64
 	maxPending          = 16384
-	flushQueueSize      = 1024
 	shardCount          = 64
 	shardCapacity       = maxPending / shardCount
 	inlineStages        = 8
+	inlineText          = 512
+	inlineAttrs         = 16
 	maxTargetBytes      = 2048
-	stopTimeout         = 2 * time.Second
-	dropReportInterval  = time.Second
 )
 
 type AccessLogConfig struct {
 	Tracer *trace.Tracer
-	Logger common.Logger
+	Logger common.LogAdapter
 }
 
 type AccessLog struct {
-	logger     common.Logger
+	logger     common.LogAdapter
+	builtin    accessLogger
 	stopListen func()
 	shards     [shardCount]shard
-	queue      chan flushJob
-	quit       chan struct{}
-	done       chan struct{}
-	dropped    atomic.Int64
 	stopped    atomic.Bool
 	stopOnce   sync.Once
+}
+
+type accessLogger interface {
+	LogAccess(line logpipe.AccessLine)
 }
 
 type stageEntry struct {
@@ -64,25 +66,20 @@ type shard struct {
 	newest *record
 }
 
-type flushJob struct {
-	done trace.Event
-	rec  *record
+type stageText struct {
+	key        string
+	start, end int
 }
 
 func NewAccessLog(cfg *AccessLogConfig) *AccessLog {
 	if cfg == nil || cfg.Tracer == nil || cfg.Logger == nil {
 		panic(color.FmtRed("invalid access log: a tracer and a logger are required"))
 	}
-	al := &AccessLog{
-		logger: cfg.Logger,
-		queue:  make(chan flushJob, flushQueueSize),
-		quit:   make(chan struct{}),
-		done:   make(chan struct{}),
-	}
+	al := &AccessLog{logger: cfg.Logger}
+	al.builtin, _ = cfg.Logger.(accessLogger)
 	for i := range al.shards {
 		al.shards[i].byID = make(map[string]*record)
 	}
-	go al.worker()
 	al.stopListen = cfg.Tracer.Listen(al.listen)
 	return al
 }
@@ -91,13 +88,6 @@ func (al *AccessLog) Stop() {
 	al.stopOnce.Do(func() {
 		al.stopped.Store(true)
 		al.stopListen()
-		close(al.quit)
-		timer := time.NewTimer(stopTimeout)
-		select {
-		case <-al.done:
-		case <-timer.C:
-		}
-		timer.Stop()
 		for i := range al.shards {
 			s := &al.shards[i]
 			s.mu.Lock()
@@ -131,11 +121,7 @@ func (al *AccessLog) listen(e trace.Event) {
 			s.removeLocked(rec)
 		}
 		s.mu.Unlock()
-		select {
-		case al.queue <- flushJob{done: e, rec: rec}:
-		default:
-			al.dropped.Add(1)
-		}
+		al.write(e, rec)
 		return
 	}
 	s.mu.Lock()
@@ -194,115 +180,71 @@ func (s *shard) removeLocked(rec *record) {
 	rec.prev, rec.next = nil, nil
 }
 
-func (al *AccessLog) worker() {
-	defer close(al.done)
-	ticker := time.NewTicker(dropReportInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case job := <-al.queue:
-			al.write(job)
-		case <-ticker.C:
-			al.reportDropped()
-		case <-al.quit:
-			for {
-				select {
-				case job := <-al.queue:
-					al.write(job)
-				default:
-					al.reportDropped()
-					return
-				}
-			}
-		}
-	}
-}
-
-func (al *AccessLog) write(job flushJob) {
-	defer func() {
-		if recover() != nil {
-			al.dropped.Add(1)
-		}
-	}()
-	msg, args := lineArgs(job)
-	al.logger.Info(msg, args...)
-}
-
-func (al *AccessLog) reportDropped() {
-	n := al.dropped.Swap(0)
-	if n == 0 {
-		return
-	}
+func (al *AccessLog) write(e trace.Event, rec *record) {
 	defer func() { _ = recover() }()
-	al.logger.Warn("AccessLog", "dropped", n)
-}
-
-func lineArgs(job flushJob) (string, []any) {
-	e := job.done
 	var stages []stageEntry
 	var stagesDropped int
-	if job.rec != nil {
-		stages = job.rec.stages
-		stagesDropped = job.rec.dropped
+	if rec != nil {
+		stages = rec.stages
+		stagesDropped = rec.dropped
 	}
+	var textBuf [inlineText]byte
+	var partBuf [inlineStages]stageText
+	buf, parts := appendStageTexts(textBuf[:0], partBuf[:0], stages)
+	totalStart := len(buf)
+	buf = appendDuration(buf, e.Duration)
+	text := string(buf)
+	total := text[totalStart:]
+	msg := cutTarget(e.Target)
 
-	var names [inlineStages]string
-	order := names[:0]
-	for _, s := range stages {
-		if !containsString(order, s.stage) {
-			order = append(order, s.stage)
+	if al.builtin != nil {
+		var attrBuf [inlineAttrs]slog.Attr
+		attrs := appendIDAttr(attrBuf[:0], "trace_id", e.TraceID)
+		if e.Transport == trace.TransportWS {
+			attrs = appendIDAttr(attrs, "connection", e.ParentID)
+			attrs = appendIDAttr(attrs, "message", e.ID)
+		} else {
+			attrs = appendIDAttr(attrs, "request", e.ID)
 		}
+		attrs = append(attrs, slog.String("transport", e.Transport), slog.Int("code", e.Code), slog.String("operation", e.Operation))
+		for _, p := range parts {
+			attrs = append(attrs, slog.String(p.key, text[p.start:p.end]))
+		}
+		if stagesDropped > 0 {
+			attrs = append(attrs, slog.Int("stages_dropped", stagesDropped))
+		}
+		attrs = append(attrs, slog.String("total", total))
+		al.builtin.LogAccess(logpipe.AccessLine{Msg: msg, Attrs: attrs})
+		return
 	}
 
-	size := 14 + 2*len(order)
+	size := 14 + 2*len(parts)
 	if stagesDropped > 0 {
 		size += 2
 	}
-	args := make([]any, 0, size)
-	args = appendID(args, "trace_id", e.TraceID)
+	args := appendID(make([]any, 0, size), "trace_id", e.TraceID)
 	if e.Transport == trace.TransportWS {
 		args = appendID(args, "connection", e.ParentID)
 		args = appendID(args, "message", e.ID)
 	} else {
 		args = appendID(args, "request", e.ID)
 	}
-	args = append(args,
-		"transport", e.Transport,
-		"code", e.Code,
-		"operation", e.Operation,
-	)
-
-	if len(stages) > 0 {
-		var ends [maxStagesPerRequest]int
-		texts := stageTexts(stages, ends[:len(stages)])
-		for _, name := range order {
-			count := 0
-			for _, s := range stages {
-				if s.stage == name {
-					count++
-				}
-			}
-			list := make([]map[string]color.Colored, 0, count)
-			for i, s := range stages {
-				if s.stage != name {
-					continue
-				}
-				start := 0
-				if i > 0 {
-					start = ends[i-1]
-				}
-				list = append(list, map[string]color.Colored{
-					shortName(s.name): {Text: texts[start:ends[i]], Color: colorForDuration(s.duration)},
-				})
-			}
-			args = append(args, name, list)
-		}
+	args = append(args, "transport", e.Transport, "code", e.Code, "operation", e.Operation)
+	for _, p := range parts {
+		args = append(args, p.key, text[p.start:p.end])
 	}
 	if stagesDropped > 0 {
 		args = append(args, "stages_dropped", stagesDropped)
 	}
-	args = append(args, "total", formatDuration(e.Duration))
-	return cutTarget(e.Target), args
+	args = append(args, "total", total)
+	al.logger.Info(msg, args...)
+}
+
+func appendIDAttr(attrs []slog.Attr, key, value string) []slog.Attr {
+	if value == "" {
+		return attrs
+	}
+	return append(attrs, slog.String(key, value))
 }
 
 func appendID(args []any, key, value string) []any {
@@ -312,28 +254,38 @@ func appendID(args []any, key, value string) []any {
 	return append(args, key, value)
 }
 
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
+func appendStageTexts(buf []byte, parts []stageText, stages []stageEntry) ([]byte, []stageText) {
+	if len(stages) == 0 {
+		return buf, parts
 	}
-	return false
-}
-
-func stageTexts(stages []stageEntry, ends []int) string {
 	var percentBuf [maxStagesPerRequest]int
 	percents := percentBuf[:len(stages)]
 	distributePercentages(stages, percents)
-	buf := make([]byte, 0, 24*len(stages))
-	for i, s := range stages {
-		buf = append(buf, formatDuration(s.duration)...)
-		buf = append(buf, " ("...)
-		buf = strconv.AppendInt(buf, int64(percents[i]), 10)
-		buf = append(buf, "%)"...)
-		ends[i] = len(buf)
+	var written [maxStagesPerRequest]bool
+	for i, first := range stages {
+		if written[i] {
+			continue
+		}
+		start := len(buf)
+		for j := i; j < len(stages); j++ {
+			s := stages[j]
+			if written[j] || s.stage != first.stage {
+				continue
+			}
+			written[j] = true
+			if len(buf) > start {
+				buf = append(buf, ", "...)
+			}
+			buf = append(buf, shortName(s.name)...)
+			buf = append(buf, ' ')
+			buf = appendDuration(buf, s.duration)
+			buf = append(buf, " ("...)
+			buf = strconv.AppendInt(buf, int64(percents[j]), 10)
+			buf = append(buf, "%)"...)
+		}
+		parts = append(parts, stageText{key: first.stage, start: start, end: len(buf)})
 	}
-	return string(buf)
+	return buf, parts
 }
 
 func cutTarget(target string) string {
@@ -389,33 +341,112 @@ func distributePercentages(stages []stageEntry, percents []int) {
 }
 
 func formatDuration(d time.Duration) string {
+	return string(appendDuration(nil, d))
+}
+
+func appendDuration(buf []byte, d time.Duration) []byte {
 	switch {
 	case d < time.Microsecond:
-		return d.String()
 	case d < time.Millisecond:
-		return d.Round(time.Microsecond / 100).String()
+		d = d.Round(time.Microsecond / 100)
 	case d < time.Second:
-		return d.Round(time.Millisecond / 100).String()
+		d = d.Round(time.Millisecond / 100)
 	default:
-		return d.Round(time.Second / 100).String()
+		d = d.Round(time.Second / 100)
 	}
+	var text [32]byte
+	return append(buf, text[durationText(&text, d):]...)
+}
+
+func durationText(buf *[32]byte, d time.Duration) int {
+	w := len(buf)
+	u := uint64(d)
+	neg := d < 0
+	if neg {
+		u = -u
+	}
+	if u < uint64(time.Second) {
+		var prec int
+		w--
+		buf[w] = 's'
+		w--
+		switch {
+		case u == 0:
+			buf[w] = '0'
+			return w
+		case u < uint64(time.Microsecond):
+			buf[w] = 'n'
+		case u < uint64(time.Millisecond):
+			prec = 3
+			w--
+			copy(buf[w:], "µ")
+		default:
+			prec = 6
+			buf[w] = 'm'
+		}
+		w, u = durationFrac(buf[:w], u, prec)
+		w = durationInt(buf[:w], u)
+	} else {
+		w--
+		buf[w] = 's'
+		w, u = durationFrac(buf[:w], u, 9)
+		w = durationInt(buf[:w], u%60)
+		u /= 60
+		if u > 0 {
+			w--
+			buf[w] = 'm'
+			w = durationInt(buf[:w], u%60)
+			u /= 60
+			if u > 0 {
+				w--
+				buf[w] = 'h'
+				w = durationInt(buf[:w], u)
+			}
+		}
+	}
+	if neg {
+		w--
+		buf[w] = '-'
+	}
+	return w
+}
+
+func durationFrac(buf []byte, v uint64, prec int) (int, uint64) {
+	w := len(buf)
+	printed := false
+	for range prec {
+		digit := v % 10
+		printed = printed || digit != 0
+		if printed {
+			w--
+			buf[w] = byte(digit) + '0'
+		}
+		v /= 10
+	}
+	if printed {
+		w--
+		buf[w] = '.'
+	}
+	return w, v
+}
+
+func durationInt(buf []byte, v uint64) int {
+	w := len(buf)
+	if v == 0 {
+		w--
+		buf[w] = '0'
+		return w
+	}
+	for v > 0 {
+		w--
+		buf[w] = byte(v%10) + '0'
+		v /= 10
+	}
+	return w
 }
 
 func colorForDuration(d time.Duration) color.Color {
-	switch {
-	case d < 10*time.Millisecond:
-		return color.Gray
-	case d < 50*time.Millisecond:
-		return color.Green
-	case d < 100*time.Millisecond:
-		return color.Blue
-	case d < 300*time.Millisecond:
-		return color.Yellow
-	case d < 1000*time.Millisecond:
-		return color.Orange
-	default:
-		return color.Red
-	}
+	return color.ForDuration(d)
 }
 
 func shortName(name string) string {

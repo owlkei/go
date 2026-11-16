@@ -14,6 +14,7 @@ import (
 	"github.com/dangduoc08/ginject/devtool"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/memorybroker"
@@ -55,7 +56,9 @@ type App struct {
 
 	broker memorybroker.Broker
 
-	logger common.Logger
+	logger     common.Logger
+	stacks     *stackSampler
+	isLogAsync bool
 
 	maxRequestBodyBytes atomic.Int64
 	serverDefaults      serverDefaults
@@ -171,6 +174,7 @@ func (app *App) Create(m *Module) {
 	}
 	app.isCreateCalled = true
 
+	app.stacks = newStackSampler(app.logger)
 	app.container.addInterface(loggerKey, app.logger)
 	app.container.wire(m)
 	app.initWS()
@@ -187,7 +191,9 @@ func (app *App) Create(m *Module) {
 
 	app.serveMu.Lock()
 	app.isCreated = true
+	app.isLogAsync = true
 	app.serveMu.Unlock()
+	logpipe.Stdout().StartAsync()
 }
 
 func (app *App) initWS() {
@@ -198,6 +204,7 @@ func (app *App) initWS() {
 	app.wsConfig.injectedProviders = app.container.providerByKey
 	app.wsConfig.container = app.container
 	app.wsConfig.logger = app.logger
+	app.wsConfig.stacks = app.stacks
 	app.wsConfig.tracer = &app.tracer
 	app.wsConfig.broker = &app.broker
 	planByEvent := app.container.wsPlanByEvent
@@ -229,6 +236,7 @@ func (app *App) initAccessLog() {
 func (app *App) initRoutes() {
 	app.http.tracer = &app.tracer
 	app.http.logger = app.logger
+	app.http.stacks = app.stacks
 	for _, h := range app.container.httpMainHandlers {
 		app.http.addRoute(h, app.container.httpPlanByPattern[h.Pattern])
 	}
@@ -485,7 +493,7 @@ func (app *App) EnableWS(cfg *WSConfig, middlewares ...common.MiddlewareFn) *App
 	return app
 }
 
-func (app *App) SetLogger(logger common.Logger) *App {
+func (app *App) SetLogger(logger common.LogAdapter) *App {
 	app.mustBeBeforeCreate("SetLogger")
 	if logger == nil {
 		panic(color.FmtRed("invalid app: SetLogger needs a logger"))

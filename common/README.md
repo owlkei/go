@@ -32,7 +32,7 @@
     - [NormalizeRecovered](#normalizerecovered)
   - [Pipes](#pipes)
     - [`ArgumentMetadata` Fields](#argumentmetadata-fields)
-  - [`Logger` and `Publisher`](#logger-and-publisher)
+  - [`LogAdapter`, `Logger` and `Publisher`](#logadapter-logger-and-publisher)
   - [Exceptions in the pipeline](#exceptions-in-the-pipeline)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
@@ -635,9 +635,19 @@ Required: `false`
 
 The pipe's key, one of the key constants above (`"body"`, `"query"`, …).
 
-## `Logger` and `Publisher`
+## `LogAdapter`, `Logger` and `Publisher`
 
-`Logger` is the leveled logger a provider can ask for: `Debug`, `Info`, `Warn`, `Error`, `Fatal`, each `(msg string, args ...any)`. `Publisher` has `Publish(topic string, payload ...any) error` and sends a message to WebSocket subscribers of a topic.
+`LogAdapter` is the five methods a log library implements to be the app's logger: `Debug`, `Info`, `Warn`, `Error`, `Fatal`, each `(msg string, args ...any)`. `app.SetLogger` and `log.WrapLogger` take one.
+
+`Logger` is the leveled logger a provider can ask for: a `LogAdapter` plus `From(ctx context.Context) Logger`, which returns the same logger with the IDs of the request, WebSocket connection or message of `ctx` added to every line (`trace_id`, `request`, `connection`, `message`, `upstream`). Only `Ginject` implements it (`log.NewLog`, `log.WrapLogger`, `app.Logger()`): a type with the five methods and no `From` is a `LogAdapter`, not a `Logger`.
+
+```go
+func (instance UserService) SignIn(ctx context.Context, name string) {
+	instance.Logger.From(ctx).Info("SignedIn", "name", name)
+}
+```
+
+`Publisher` has `Publish(topic string, payload ...any) error` and sends a message to WebSocket subscribers of a topic.
 
 ## Exceptions in the pipeline
 

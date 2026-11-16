@@ -1,11 +1,14 @@
 package accesslog
 
 import (
+	"io"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dangduoc08/ginject/internal/logpipe"
+	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/trace"
 )
 
@@ -81,21 +84,28 @@ func BenchmarkAccessLog_Request_6Stages_Parallel(b *testing.B) {
 	})
 }
 
-func BenchmarkAccessLog_WorkerLine(b *testing.B) {
+func benchBuiltinLine(b *testing.B, opts *log.LogOptions) {
+	b.Helper()
+	restore := logpipe.SetStdout(io.Discard)
+	defer restore()
 	tr := &trace.Tracer{}
-	logger := &discardLogger{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(opts)})
 	defer al.Stop()
 	events := benchStages("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 6)
 	b.ReportAllocs()
 	for b.Loop() {
-		want := logger.lines.Load() + 1
 		for _, e := range events {
 			tr.Emit(e)
 		}
-		for logger.lines.Load() < want {
-		}
 	}
+}
+
+func BenchmarkAccessLog_Line_6Stages(b *testing.B) {
+	benchBuiltinLine(b, &log.LogOptions{LogFormat: log.JSONFormat})
+}
+
+func BenchmarkAccessLog_Line_6Stages_Pretty(b *testing.B) {
+	benchBuiltinLine(b, &log.LogOptions{LogFormat: log.PrettyFormat})
 }
 
 func BenchmarkFormatDuration(b *testing.B) {

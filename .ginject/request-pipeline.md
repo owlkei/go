@@ -72,11 +72,15 @@ wants its own response writes it and returns without `next()`.
   400-599 answers 500 (`WriteHeader` never gets an invalid code).
 - Anything else (string, error, runtime error, `panic(nil)`, any value) answers
   `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}` and logs
-  `Logger.Error("UnhandledPanic", "id", "method", "path", "panic", "stack" ≤ 4 KiB)`. Filters receive
+  `Logger.From(c.Context()).Error("UnhandledPanic", "method", "path", "panic", "stack" ≤ 4 KiB)`: the
+  scope's fields (`trace_id`, `request`, `upstream`) come first, and `stack` is sampled (one per stack
+  key per second, 10 per app per second, `PanicStacksSuppressed` per second; `core/README.md` ›
+  Panic stacks). Filters receive
   `exception.InternalServerErrorException("Internal Server Error")` for such values, also when a
   filter panics with one.
 - Once a status ≥ 200 or body bytes went through the writer, nothing more is written and no filter
-  runs: `Logger.Error("ErrorAfterResponse", …, "code", <status sent>, …)`.
+  runs: `Logger.From(c.Context()).Error("ErrorAfterResponse", "method", "path", "code", <status sent>,
+  "panic", "stack")`, sampled like `UnhandledPanic`.
 - `panic(http.ErrAbortHandler)` is re-panicked for `net/http`; nothing is written or logged.
 
 ### 1.3 No route, HEAD, versioning

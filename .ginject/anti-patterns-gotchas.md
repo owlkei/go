@@ -416,7 +416,7 @@ func (instance APIFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
 
 ### 7.2 GOTCHA: Panicking Non-Exceptions
 
-An exception costs about 1.6 µs per request; any other panic value (a string, an `error`) captures up to 4 KiB of stack for its `UnhandledPanic` log line: about 25 µs and 7.6 KB (`core/README.md` › Benchmarks).
+An exception costs about 1.6 µs per request; any other panic value (a string, an `error`) is logged as `UnhandledPanic` and, for the first panic of its stack key in a second, captures up to 4 KiB of stack: about 25 µs and 7.6 KB. Later panics of the key in that second are logged without the stack (about 6.5 µs per request under a flood; `core/README.md` › Panic stacks).
 
 **Rule**: Panic exceptions (`exception.BadRequestException(…)`) for expected errors
 
@@ -437,6 +437,20 @@ An exception costs about 1.6 µs per request; any other panic value (a string, a
 - `Transform` must return the parameter's type (or one assignable to it): `return &dto` or `return nil` answers a 500 exception (`pipe …: Transform returned …, want …`) and the handler is not called.
 - A type from another package that prints like a framework type (your own `ctx.HTTPContext`) is not injected: `Create()` panics.
 
+### 7.5 GOTCHA: Forgetting `From` Inside a Request
+
+```go
+func (instance UserController) READ_me(c *ctx.HTTPContext) any {
+	instance.Logger.Info("ReadMe")                  // no trace_id, no request: can't be tied to the request
+	instance.Logger.From(c.Context()).Info("ReadMe") // carries trace_id and request
+	return "ok"
+}
+```
+
+The compiler can't catch it. Pass `c.Context()` (or a context derived from it) to services and call
+`From` there. `From` costs about 300 ns and 2 allocations the first time per request and logger, then
+about 6 ns; a line through it costs what a plain line does (`log/README.md` › From).
+
 ## 8. Testing Gotchas
 
 ### 8.1 GOTCHA: State Shared Between Tests Outside the Framework
@@ -447,7 +461,13 @@ Every `core.New()` is independent: routes, providers, layers, logger and publish
 
 ---
 
-### 8.2 GOTCHA: Testing WebSocket Without Actual Connection
+### 8.2 GOTCHA: Reading Stdout While an App Serves
+
+Between the end of `Create` and shutdown, built-in log lines reach stdout a moment after the call
+(asynchronous pipeline). A test that reads stdout stops the app first (`app.Stop()` flushes), or gives
+the app a logger of its own with `SetLogger`.
+
+### 8.3 GOTCHA: Testing WebSocket Without Actual Connection
 
 **WRONG**:
 ```go

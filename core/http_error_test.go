@@ -257,8 +257,14 @@ func TestHTTPError_LogsValueStackAndID(t *testing.T) {
 	if e.level != "error" {
 		t.Error(test.DiffMessage(e.level, "error", "E3: the line is logged with Error"))
 	}
-	if got := e.field("id"); got != w.Header().Get("X-Request-Id") || got == "" {
-		t.Error(test.DiffMessage(got, w.Header().Get("X-Request-Id"), "E3: the line carries the request ID of the X-Request-Id header"))
+	if got := e.field("request"); got != w.Header().Get("X-Request-Id") || got == "" {
+		t.Error(test.DiffMessage(got, w.Header().Get("X-Request-Id"), "E3, S7: the line carries the request ID of the X-Request-Id header through the scope's fields"))
+	}
+	if got := e.field("trace_id"); got == nil || got == "" {
+		t.Error(test.DiffMessage(got, "a trace ID", "S7: the line carries the trace ID of the scope"))
+	}
+	if got := e.field("id"); got != nil {
+		t.Error(test.DiffMessage(got, nil, "S7: the line no longer passes id"))
 	}
 	if got := e.field("method"); got != http.MethodGet {
 		t.Error(test.DiffMessage(got, http.MethodGet, "E3: the line carries the method"))
@@ -327,8 +333,11 @@ func TestHTTPError_AfterHandlerWrote(t *testing.T) {
 	if got := e.field("code"); got != http.StatusOK {
 		t.Error(test.DiffMessage(got, http.StatusOK, "E4: the line carries the status sent"))
 	}
-	if got := e.field("id"); got != w.Header().Get("X-Request-Id") {
-		t.Error(test.DiffMessage(got, w.Header().Get("X-Request-Id"), "E4: the line carries the request ID"))
+	if got := e.field("request"); got != w.Header().Get("X-Request-Id") || got == "" {
+		t.Error(test.DiffMessage(got, w.Header().Get("X-Request-Id"), "E4, S7: the line carries the request ID through the scope's fields"))
+	}
+	if got := e.field("id"); got != nil {
+		t.Error(test.DiffMessage(got, nil, "S7: the line no longer passes id"))
 	}
 	if got := e.field("method"); got != http.MethodGet {
 		t.Error(test.DiffMessage(got, http.MethodGet, "E4: the line carries the method"))

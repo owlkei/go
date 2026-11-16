@@ -24,6 +24,7 @@ type WSConfig struct {
 	injectedProviders map[string]Provider
 	container         *container
 	logger            common.Logger
+	stacks            *stackSampler
 	tracer            *trace.Tracer
 	broker            *memorybroker.Broker
 
@@ -40,6 +41,7 @@ type WS struct {
 	globalMiddlewares     []ctx.HTTPHandler
 	injectedProviders     map[string]Provider
 	logger                common.Logger
+	stacks                *stackSampler
 	eventMatcher          *wsevent.WSEvent
 	newCtx                func() *ctx.WSContext
 	releaseCtx            func(c *ctx.WSContext)
@@ -62,6 +64,7 @@ func NewWS(cfg *WSConfig) *WS {
 		globalMiddlewares:     resolveGlobalMiddlewares(cfg.globalMiddlewares, cfg.injectedProviders, cfg.container, cfg.tracer),
 		injectedProviders:     cfg.injectedProviders,
 		logger:                cfg.logger,
+		stacks:                cfg.stacks,
 		newCtx:                cfg.newCtx,
 		releaseCtx:            cfg.releaseCtx,
 	}
@@ -142,7 +145,7 @@ func (ws *WS) handshake(c *ctx.HTTPContext) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			if _, ok := asException(rec); !ok {
-				logPanic(ws.logger, "UnhandledPanic", c, rec)
+				logPanic(ws.logger, ws.stacks, "UnhandledPanic", c, rec)
 			}
 			err = errWSHandshakeRejected
 		}

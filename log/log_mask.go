@@ -1,6 +1,7 @@
 package log
 
 import (
+	"context"
 	"log/slog"
 	"reflect"
 	"strconv"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/logpipe"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/pattern"
 )
 
@@ -33,11 +36,14 @@ type converter struct {
 }
 
 type maskingLogger struct {
-	next common.Logger
-	conv converter
+	next   common.LogAdapter
+	conv   converter
+	base   *maskingLogger
+	fields []any
+	slot   slotEntry
 }
 
-func WrapLogger(next common.Logger, maskFields []string) common.Logger {
+func WrapLogger(next common.LogAdapter, maskFields []string) common.Logger {
 	if next == nil {
 		panic(color.FmtRed("invalid logger: WrapLogger needs a logger"))
 	}
@@ -46,14 +52,27 @@ func WrapLogger(next common.Logger, maskFields []string) common.Logger {
 		if len(maskFields) == 0 {
 			return l
 		}
-		merged := *l
-		merged.conv.rules = mergeRules(l.conv.rules, maskFields)
-		return &merged
+		root := l
+		if l.base != nil {
+			root = l.base
+		}
+		merged := new(logger)
+		*merged = *root
+		merged.conv.rules = mergeRules(root.conv.rules, maskFields)
+		merged.report = merged.dropReport
+		if l.scope != nil {
+			return merged.scoped(l.scope.src)
+		}
+		return merged
 	case *maskingLogger:
 		if len(maskFields) == 0 {
 			return l
 		}
-		return &maskingLogger{next: l.next, conv: converter{rules: mergeRules(l.conv.rules, maskFields)}}
+		merged := &maskingLogger{next: l.next, conv: converter{rules: mergeRules(l.conv.rules, maskFields)}}
+		if l.fields != nil {
+			merged.fields = merged.conv.args(l.fields)
+		}
+		return merged
 	}
 	return &maskingLogger{next: next, conv: converter{rules: mergeRules(nil, maskFields)}}
 }
@@ -72,11 +91,48 @@ func mergeRules(existing []maskRule, fields []string) []maskRule {
 	return out
 }
 
-func (m *maskingLogger) Debug(msg string, args ...any) { m.next.Debug(msg, m.conv.args(args)...) }
-func (m *maskingLogger) Info(msg string, args ...any)  { m.next.Info(msg, m.conv.args(args)...) }
-func (m *maskingLogger) Warn(msg string, args ...any)  { m.next.Warn(msg, m.conv.args(args)...) }
-func (m *maskingLogger) Error(msg string, args ...any) { m.next.Error(msg, m.conv.args(args)...) }
-func (m *maskingLogger) Fatal(msg string, args ...any) { m.next.Fatal(msg, m.conv.args(args)...) }
+func (m *maskingLogger) Debug(msg string, args ...any) { m.next.Debug(msg, m.args(args)...) }
+func (m *maskingLogger) Info(msg string, args ...any)  { m.next.Info(msg, m.args(args)...) }
+func (m *maskingLogger) Warn(msg string, args ...any)  { m.next.Warn(msg, m.args(args)...) }
+func (m *maskingLogger) Error(msg string, args ...any) { m.next.Error(msg, m.args(args)...) }
+
+func (m *maskingLogger) Fatal(msg string, args ...any) {
+	converted := m.args(args)
+	logpipe.Stdout().Flush(logpipe.FlushTimeout)
+	m.next.Fatal(msg, converted...)
+}
+
+func (m *maskingLogger) args(args []any) []any {
+	converted := m.conv.args(args)
+	if m.fields == nil {
+		return converted
+	}
+	out := make([]any, 0, len(m.fields)+len(converted))
+	out = append(out, m.fields...)
+	return append(out, converted...)
+}
+
+func (m *maskingLogger) From(ctx context.Context) common.Logger {
+	s := tracecontext.ScopeOf(ctx)
+	if s == nil {
+		return m
+	}
+	base := m
+	if m.base != nil {
+		base = m.base
+	}
+	if entry, ok := s.LogSlot.Load().(*slotEntry); ok && entry.owner == any(base) {
+		return entry.logger
+	}
+	fields := s.AppendArgs(nil)
+	if len(fields) == 0 {
+		return m
+	}
+	scoped := &maskingLogger{next: base.next, conv: base.conv, base: base, fields: base.conv.args(fields)}
+	scoped.slot = slotEntry{owner: base, logger: scoped}
+	s.LogSlot.Store(&scoped.slot)
+	return scoped
+}
 
 func (c *converter) args(args []any) []any {
 	var out []any

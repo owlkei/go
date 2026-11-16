@@ -5,8 +5,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-
-	"github.com/dangduoc08/ginject/internal/color"
 )
 
 type benchUser struct {
@@ -79,21 +77,16 @@ func BenchmarkLog_ErrorWithStack_JSON(b *testing.B) {
 
 func BenchmarkLog_AccessLine_Pretty(b *testing.B) {
 	logger := newLog(io.Discard, false, &LogOptions{LogFormat: PrettyFormat})
-	middleware := []map[string]color.Colored{
-		{"CORS": {Text: "120µs (4%)", Color: color.Gray}},
-		{"CSRF": {Text: "80µs (3%)", Color: color.Gray}},
-		{"Helmet": {Text: "40µs (1%)", Color: color.Gray}},
-	}
-	handler := []map[string]color.Colored{{"READ_users": {Text: "2ms (68%)", Color: color.Blue}}}
 	b.ReportAllocs()
 	for b.Loop() {
 		logger.Info("/api/v1/users",
-			"id", "a0eef3e5-b715-4c2e-9c7c-d239e24d305f",
+			"trace_id", "4bf92f3577b34da6a3ce929d0e0e4736",
+			"request", "0f1e2d3c4b5a6978",
 			"transport", "HTTP",
 			"code", 200,
 			"operation", "GET",
-			"middleware", middleware,
-			"handler", handler,
+			"middleware", "CORS 120µs (4%), CSRF 80µs (3%), Helmet 40µs (1%)",
+			"handler", "READ_users 2ms (68%)",
 			"total", "2.9ms",
 		)
 	}

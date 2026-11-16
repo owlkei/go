@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"path"
 	"reflect"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -182,8 +181,6 @@ func completeEvent(scope *tracecontext.Scope, id, transport, operation, target s
 	return e
 }
 
-const panicStackLimit = 4 << 10
-
 var (
 	defaultException             = exception.InternalServerErrorException("Unhandled exception has occurred")
 	internalServerErrorException = exception.InternalServerErrorException(http.StatusText(http.StatusInternalServerError))
@@ -251,13 +248,13 @@ func writeJSONError(w http.ResponseWriter, code int, body []byte) {
 
 const applicationJSON = "application/json"
 
-func logPanic(logger common.Logger, msg string, c *ctx.HTTPContext, rec any) {
-	logger.Error(msg, "id", c.GetID(), "method", c.Method, "path", c.URL.Path, "panic", rec, "stack", panicStack())
-}
-
-func panicStack() string {
-	buf := make([]byte, panicStackLimit)
-	return string(buf[:runtime.Stack(buf, false)])
+func logPanic(logger common.Logger, stacks *stackSampler, msg string, c *ctx.HTTPContext, rec any) {
+	l := logger.From(c.Context())
+	if stack, ok := stacks.stack(); ok {
+		l.Error(msg, "method", c.Method, "path", c.URL.Path, "panic", rec, "stack", stack)
+		return
+	}
+	l.Error(msg, "method", c.Method, "path", c.URL.Path, "panic", rec)
 }
 
 const publisherKey = "github.com/dangduoc08/ginject/common/common.Publisher"

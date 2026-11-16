@@ -113,7 +113,8 @@ SIGINT / SIGTERM / app.Stop()
   ├─ runShutdownHooks()   once per app (app.shutdownOnce):
   │     OnShutdown of every module in the exact reverse of the init order (root first);
   │     a panicking hook is logged as OnShutdownPanic (module, panic) and the others still run;
-  │     then the access log is stopped, so its last lines are written
+  │     then the access log is stopped, a pending PanicStacksSuppressed count is logged,
+  │     and the stdout log pipeline is flushed (at most 2 s) and made synchronous again
   └─ the serving call returns nil, "core: shutdown timed out after <timeout>" or "core: serve: <err>"
 ```
 

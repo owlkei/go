@@ -1,15 +1,13 @@
 package log
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -44,8 +42,6 @@ type levelLabel struct {
 }
 
 type prettyHandler struct {
-	mu     sync.Mutex
-	w      io.Writer
 	labels [5]levelLabel
 }
 
@@ -55,11 +51,12 @@ type node struct {
 }
 
 type prettyBuffer struct {
-	buf   []byte
-	width int
+	buf    []byte
+	width  int
+	access bool
 }
 
-func newPrettyHandler(out io.Writer) *prettyHandler {
+func newPrettyHandler() *prettyHandler {
 	build := func(label string, bg func(string, ...any) string) levelLabel {
 		space := " "
 		if label == labelInfo || label == labelWarn {
@@ -68,7 +65,6 @@ func newPrettyHandler(out io.Writer) *prettyHandler {
 		return levelLabel{color.FmtBold("%s", bg(" "+label+space)), bg(" ")}
 	}
 	return &prettyHandler{
-		w: out,
 		labels: [5]levelLabel{
 			build(labelDebug, color.FmtBGBlue),
 			build(labelInfo, color.FmtBGGreen),
@@ -94,8 +90,8 @@ func (h *prettyHandler) label(l slog.Level) levelLabel {
 	}
 }
 
-func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
-	p := prettyBuffer{buf: make([]byte, 0, 512)}
+func (h *prettyHandler) appendRecord(buf []byte, r slog.Record, access bool) []byte {
+	p := prettyBuffer{buf: buf, access: access}
 	p.buf = append(p.buf, '\n')
 
 	label := h.label(r.Level)
@@ -129,12 +125,7 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 		p.buf = append(p.buf, '\n')
 		p.writeNode(rowPrefix, n, i == len(nodes)-1)
 	}
-	p.buf = append(p.buf, '\n')
-
-	h.mu.Lock()
-	_, err := h.w.Write(p.buf)
-	h.mu.Unlock()
-	return err
+	return append(p.buf, '\n')
 }
 
 func attrReflectValue(v slog.Value) reflect.Value {
@@ -364,8 +355,43 @@ func (p *prettyBuffer) writeScalar(rv reflect.Value, cont string) {
 
 func (p *prettyBuffer) writeString(s, cont string) {
 	p.buf = append(p.buf, ansiGreen...)
-	p.buf = appendEscaped(p.buf, s, cont)
+	if p.access {
+		p.buf = appendDurationsColored(p.buf, s, cont)
+	} else {
+		p.buf = appendEscaped(p.buf, s, cont)
+	}
 	p.buf = append(p.buf, ansiReset...)
+}
+
+func appendDurationsColored(buf []byte, s, cont string) []byte {
+	for len(s) > 0 {
+		end := strings.IndexByte(s, ' ')
+		if end < 0 {
+			end = len(s)
+		}
+		token := s[:end]
+		if d, ok := parseDuration(token); ok {
+			buf = append(buf, color.ForDuration(d)...)
+			buf = append(buf, token...)
+			buf = append(buf, ansiGreen...)
+		} else {
+			buf = appendEscaped(buf, token, cont)
+		}
+		if end < len(s) {
+			buf = append(buf, ' ')
+			end++
+		}
+		s = s[end:]
+	}
+	return buf
+}
+
+func parseDuration(token string) (time.Duration, bool) {
+	if token == "" || token[0] < '0' || token[0] > '9' {
+		return 0, false
+	}
+	d, err := time.ParseDuration(token)
+	return d, err == nil
 }
 
 func textOf(x any) string {

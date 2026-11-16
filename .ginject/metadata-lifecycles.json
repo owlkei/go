@@ -80,7 +80,7 @@
           "listener and idle connections closed",
           "running requests drained for ServerOptions.ShutdownTimeout (default 30 s), then their connections closed",
           "runShutdownHooks once per app (app.shutdownOnce): OnShutdown in the exact reverse of the init order; a panicking hook is logged as OnShutdownPanic and the others run",
-          "access log stopped after the hooks",
+          "access log stopped after the hooks, suppressed panic stacks reported, stdout log pipeline flushed (at most 2 s) and synchronous again",
           "returns nil, 'core: shutdown timed out after <timeout>' or 'core: serve: <err>'",
           "WebSocket connections are not drained"
         ]

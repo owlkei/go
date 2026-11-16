@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -196,20 +195,6 @@ func TestPretty_NestedValuesAlignAcrossDepths(t *testing.T) {
 	}
 	if deepCol != shallowCol {
 		t.Error(test.DiffMessage(shallowCol, deepCol, "F1: values align across depths"))
-	}
-}
-
-func TestPretty_ColoredUsesItsColor(t *testing.T) {
-	out := prettyOnce("msg", "dur", color.Colored{Text: "10ms (2%)", Color: color.Red})
-	if !strings.Contains(out, string(color.Red)+"10ms (2%)"+testReset) {
-		t.Error(test.DiffMessage(out, "red-colored \"10ms (2%)\"", "F4: a Colored value is printed in its own Color"))
-	}
-}
-
-func TestPretty_ColoredInsideAStageList(t *testing.T) {
-	out := prettyOnce("msg", "middleware", []map[string]color.Colored{{"CORS": {Text: "120µs (4%)", Color: color.Gray}}})
-	if !strings.Contains(out, string(color.Gray)+"120µs (4%)"+testReset) || !strings.Contains(plain(out), "CORS") {
-		t.Error(test.DiffMessage(out, "gray text under CORS", "F4: Colored values nested in the access log shape"))
 	}
 }
 

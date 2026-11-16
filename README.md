@@ -295,10 +295,12 @@ type LogMiddleware struct {
 }
 
 func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-    m.Info("request", "path", r.URL.Path)
+    m.From(r.Context()).Info("request", "path", r.URL.Path)
     next()
 }
 ```
+
+`From(ctx)` adds the request's `trace_id` and `request` ID to the line, with the built-in logger and with any logger given to `SetLogger`.
 
 **Global** (all routes):
 

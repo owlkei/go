@@ -1,6 +1,9 @@
 package color
 
-import "log/slog"
+import (
+	"log/slog"
+	"time"
+)
 
 type Color string
 
@@ -20,4 +23,21 @@ type Colored struct {
 
 func (c Colored) LogValue() slog.Value {
 	return slog.StringValue(c.Text)
+}
+
+func ForDuration(d time.Duration) Color {
+	switch {
+	case d < 10*time.Millisecond:
+		return Gray
+	case d < 50*time.Millisecond:
+		return Green
+	case d < 100*time.Millisecond:
+		return Blue
+	case d < 300*time.Millisecond:
+		return Yellow
+	case d < 1000*time.Millisecond:
+		return Orange
+	default:
+		return Red
+	}
 }

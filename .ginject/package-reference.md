@@ -2,7 +2,7 @@
 
 **Optimization**: Structured reference, minimal prose, organized by package.
 
-**Verification policy**: the `core`, `log`, `trace` and `accesslog` signatures below were checked against source on 2026-11-16 (roadmap 0003), the rest on 2026-09-25. If you (an AI agent) are about to generate code against an API in this file, and this file is more than a few weeks old relative to the repo, spot-check the signature with a grep before trusting it — this file has previously contained fabricated APIs that looked exactly as confident as everything else in it.
+**Verification policy**: the `core`, `log`, `trace` and `accesslog` signatures below were checked against source on 2026-11-16 (roadmap 0003; logger and access log signatures again for design 0012), the rest on 2026-09-25. If you (an AI agent) are about to generate code against an API in this file, and this file is more than a few weeks old relative to the repo, spot-check the signature with a grep before trusting it — this file has previously contained fabricated APIs that looked exactly as confident as everything else in it.
 
 ---
 
@@ -41,7 +41,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
 | `EnableVersioning(v versioning.Versioning) *App` | Enable API versioning |
-| `SetLogger(logger common.Logger) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
+| `SetLogger(logger common.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
 | `Logger() common.Logger` | The app's logger; never `nil` (the built-in logger by default) |
 
 **There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `ServerOptions.MaxRequestBodyBytes` of the serving call (0 = 10 MiB, negative = no cap), stored in the unexported `atomic.Int64` `maxRequestBodyBytes` (10 MiB from `New()`) — see "HTTP Server Defaults" below.
@@ -383,8 +383,14 @@ All constructors share the shape `func XException(message string, opts ...any) E
 
 ```go
 func NewLog(opts *LogOptions) common.Logger        // returns common.Logger, NOT a package-local `log.Logger` — no such type exists
-func WrapLogger(next common.Logger, maskFields []string) common.Logger
+func WrapLogger(next common.LogAdapter, maskFields []string) common.Logger
 ```
+
+`common.LogAdapter` is the five methods (`Debug`, `Info`, `Warn`, `Error`, `Fatal`); `common.Logger` is
+`LogAdapter` plus `From(ctx context.Context) Logger` (the scope's `trace_id`, `request`, `connection`,
+`message`, `upstream` added to every line; built-in: after the arguments, adapter: before them). A type
+with the five methods only is a `LogAdapter`: pass it to `SetLogger` / `WrapLogger`, never store it in a
+`common.Logger` variable.
 
 ```go
 type LogOptions struct {
@@ -396,7 +402,8 @@ type LogOptions struct {
 ```
 
 - `LogOptions` has exactly the four fields above; output is stdout; anything else is a custom logger behind `WrapLogger`.
-- The Pretty handler is unexported; `internal/color.Colored{Text, Color}` is printed in its color by Pretty and as its `Text` in JSON and Text.
+- The Pretty handler is unexported; `internal/color.Colored{Text, Color}` is printed in its color by Pretty and as its `Text` in JSON and Text. Access lines carry an internal marker: Pretty colors their durations (`color.ForDuration`); user lines are never colored that way.
+- Every `NewLog` logger writes to one stdout pipeline (`internal/logpipe`): synchronous without an app, during `Create` and after shutdown; asynchronous while an app serves (1 MiB queue, 64 KiB records, `WARN LogDropped` counts). `Fatal` flushes for at most 2 s, then exits.
 - A logger call never panics because of a value: depth 16, 1,000 values per argument, `[MAX_DEPTH]` / `[TRUNCATED]`, a panicking `String` / `Error` / `LogValue` gives a `log_error` pair.
 - `WrapLogger(nil, …)` panics; `WrapLogger` of a built-in or wrapped logger merges the rules (one layer).
 
@@ -777,10 +784,11 @@ type Helmet struct {
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.Logger}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. Bounded: 64 stages per request, 16,384 pending requests, 1,024 queued lines (drops are reported as `Warn("AccessLog", "dropped", n)`). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS); there is no `id` key.
+- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS); there is no `id` key.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`). All random bytes from one 512-byte `crypto/rand` buffer behind a mutex.
+- `internal/logpipe` — the output pipeline of the built-in logger (design 0012): `Level` (`Debug`…`Fatal`), `Sink` (`Write`, `StartAsync`, `StopAsync`, `Flush`), `New`, `Stdout`, `SetStdout` (tests), `FlushTimeout` (2 s), `AccessLine` (the access log's line handed to the built-in logger).
 - `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.
-- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext). Not importable from outside the module.
+- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe). Not importable from outside the module.
 
 **There is no `data/` package or directory anywhere in this repository** — an earlier doc listed one; it never existed.

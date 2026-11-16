@@ -244,7 +244,7 @@ func (ctl lcMethodController) CREATE_postonly(c *ctx.HTTPContext) any {
 
 type lcConfig struct {
 	noGlobalFilters bool
-	logger          common.Logger
+	logger          common.LogAdapter
 	setup           func(*App)
 }
 

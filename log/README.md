@@ -1,6 +1,6 @@
 # Log
 
-*Package `log` is the built-in logger of `Ginject`: a `common.Logger` on top of `log/slog` with a JSON, text or pretty format, `log` struct tags and field masking that also apply to a logger you bring.*
+*Package `log` is the built-in logger of `Ginject`: a `common.Logger` on top of `log/slog` with a JSON, text or pretty format, `log` struct tags and field masking that also apply to a logger you bring, `From(ctx)` for the IDs of the request a line belongs to, and an output that never makes a request wait for stdout while an app serves.*
 
 - [Log](#log)
   - [Key Features](#key-features)
@@ -14,10 +14,12 @@
   - [Functions](#functions)
     - [NewLog](#newlog)
     - [WrapLogger](#wraplogger)
+    - [From](#from)
   - [How values are written](#how-values-are-written)
   - [Struct tags](#struct-tags)
   - [Masking](#masking)
   - [Limits and guarantees](#limits-and-guarantees)
+  - [Output pipeline](#output-pipeline)
   - [Other exported names](#other-exported-names)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
@@ -29,6 +31,8 @@
 - Masking by path, case-insensitive, at any depth: `password` masks `Password`, `user.password` and a `password` inside a slice of structs.
 - A call never panics because of a value and never forges a line: control characters are escaped.
 - The tags and masking also apply to your own logger through `WrapLogger`.
+- `logger.From(ctx)` adds the trace ID and the request, connection or message ID of `ctx` to every line, with the built-in logger and with your own.
+- While an app serves, a call encodes its line and hands it to a bounded queue: a slow or stuck stdout never blocks a request; under overload Debug and Info are dropped first and counted.
 
 ## Usage
 
@@ -110,7 +114,7 @@ The level is written `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL` in all three fo
 | `TextFormat` | `time=2026-11-16T10:00:00.000+07:00 level=INFO msg=SignedIn user=map[name:duoc]` |
 | `PrettyFormat` | an empty line, the colored level label, the time (`2006-01-02 15:04:05`, local), the message in brackets, then one row per argument as a tree (map keys sorted, `null` for nil) |
 
-Output is stdout. To write elsewhere, bring a logger with `app.SetLogger(log.WrapLogger(myLogger, fields))`.
+Output is stdout, through the [output pipeline](#output-pipeline). To write elsewhere, bring a logger with `app.SetLogger(myLogger)` (or `log.WrapLogger(myLogger, fields)` to add mask rules).
 
 ## Functions
 
@@ -136,8 +140,10 @@ logger := log.NewLog(&log.LogOptions{LogFormat: log.TextFormat})
 - Every call returns a new logger; the options of each call apply to the logger it returns, and the `MaskFields` of one call mask on that logger only.
 - JSON is one object per line with slog's keys (`time`, `level`, `msg`, then the arguments); Text is slog's `key=value` line.
 - A call below the level writes nothing, calls no method of an argument and allocates nothing.
-- Every record is one `Write` to the output; JSON and Text records of concurrent calls never interleave.
-- `Fatal` writes the record at the `FATAL` level, then exits the process with status 1, whatever the level.
+- Every record is written whole; records of concurrent calls never interleave, and records of one goroutine keep their call order, across loggers too.
+- Every logger from `NewLog` writes to the one stdout pipeline. Without an app (a tool, a test) it is synchronous: the line is written before the call returns and no goroutine is started.
+- Values are read during the call only: changing an argument afterwards never changes the line.
+- `Fatal` writes the record at the `FATAL` level, flushes the pipeline for at most 2 seconds, then exits the process with status 1, whatever the level. A stuck stdout cannot hold it.
 - Arguments are `key, value` pairs; a `slog.Attr` argument is one pair; a trailing key without a value is written under `!BADKEY`, and so is a pair whose key is not a string (`"!BADKEY":42`).
 
 ### WrapLogger
@@ -145,9 +151,9 @@ logger := log.NewLog(&log.LogOptions{LogFormat: log.TextFormat})
 Returns a logger that converts and masks the arguments (see [How values are written](#how-values-are-written) and [Masking](#masking)), then calls the same method of `next` once.
 
 #### Parameters
-- 1st parameter: `common.Logger`
+- 1st parameter: `common.LogAdapter`
 
-- Description: The logger to wrap
+- Description: The logger to wrap: any type with `Debug`, `Info`, `Warn`, `Error` and `Fatal` (zap's `SugaredLogger` shape)
 
 - 2nd parameter: `[]string`
 
@@ -170,7 +176,59 @@ logger := log.WrapLogger(myLogger, []string{"password", "token.*"})
 - A value that needs no conversion and no masking is passed on as the same value, and when no argument needs any, the argument slice itself is passed on.
 - An error, a `fmt.Stringer` or a `slog.LogValuer` reaches a wrapped logger unchanged, and none of its methods is called.
 - `WrapLogger(nil, fields)` panics with `invalid logger: WrapLogger needs a logger`.
+- A wrapped logger is called directly, on the caller, in every mode: its order and blocking are its own.
+- `Fatal` on a wrapped logger flushes the stdout pipeline for at most 2 seconds, then calls the wrapped `Fatal` once.
 - Safe for concurrent calls.
+
+### From
+
+`From(ctx context.Context) common.Logger` is a method of every `common.Logger` (`NewLog`, `WrapLogger`, the logger `Ginject` injects). It returns the same logger with the fields of the request, WebSocket connection or message that `ctx` belongs to: `trace_id`, `request`, `connection`, `message`, `upstream`, in that order, empty ones skipped. Inside a handler, a guard or a service called with it, pass `c.Context()`.
+
+#### Parameters
+- 1st parameter: `context.Context`
+
+- Description: A context from `Ginject` (`c.Context()`, or a context derived from it); `nil` is allowed
+
+#### Returns
+- 1st value: `common.Logger`
+
+#### Usage
+
+```go
+package users
+
+import (
+	"context"
+
+	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/core"
+)
+
+type UserService struct {
+	Logger common.Logger
+}
+
+func (instance UserService) NewProvider() core.Provider {
+	return instance
+}
+
+func (instance UserService) SignIn(ctx context.Context, name string) {
+	instance.Logger.From(ctx).Info("SignedIn", "name", name)
+}
+```
+
+The built-in JSON logger writes `{"time":"…","level":"INFO","msg":"SignedIn","name":"duoc","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","request":"00f067aa0ba902b7"}`.
+
+#### Rules
+- A `nil` context, a context without a scope, or a scope with no field returns the receiver itself; `From` never panics.
+- Built-in logger: the fields come after the call's own arguments, encoded and masked like any other pair (a mask rule on `request` writes `[REDACTED]`). The line equals `Info(msg, append(args, fields...)...)` byte for byte, the time aside; a malformed argument (`!BADKEY`) never pairs with a field. Pretty prints them as rows after the arguments.
+- Wrapped logger: the wrapped method is called once with the message, the fields first, then the converted and masked arguments; the fields are masked by the rules of every wrapper.
+- Keys you also pass are kept twice, as slog does.
+- Scopes replace, they do not stack: `l.From(a).From(b)` is `l.From(b)`, and `l.From(a).From(context.Background())` is `l.From(a)`.
+- Below the level nothing is done: no method of an argument is called.
+- With `AddSource`, the source is the caller of `Info`, as without `From`.
+- The receiver is not modified. The scoped logger is kept with the request's scope: a later `From` on the same scope and logger returns it without allocating, from any goroutine, during and after the request. Two loggers on one scope never mix their formats or mask rules.
+- `From(ctx).Fatal(…)` writes the record with the fields, then exits as `Fatal` does.
 
 ## How values are written
 
@@ -212,7 +270,22 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 - A panic raised by a value's own `String`, `Error` or `LogValue` is recovered: the call writes one line with the original level and message and a `log_error` pair with the recovered value, and the logger keeps working.
 - In Pretty, every control character of the message and of the keys is written escaped (`\n`, `\r`, `\t`, `\x1b`, the C1 controls U+0080 to U+009F; the separators U+2028 and U+2029 and the bidirectional controls U+202A to U+202E and U+2066 to U+2069 as `\u2028`), so a value cannot forge a line, reorder the text on screen or send terminal escape codes. In string values a line feed starts a new, indented line (a stack trace stays readable); everything else is escaped.
 - JSON and Text rely on slog's escaping; JSON also escapes the C1 controls.
-- A logger is immutable and safe for concurrent use; it starts no goroutine and opens no file.
+- A logger is immutable and safe for concurrent use; it opens no file. A record longer than 64 KiB is cut (see [Output pipeline](#output-pipeline)).
+
+## Output pipeline
+
+Every logger from `NewLog` writes to one process-wide stdout pipeline, so lines of all loggers share one order and one memory bound.
+
+- **Synchronous** without an app, during `app.Create` (its `OnReady` hooks included) and after shutdown: a call returns after its line was written, nothing is dropped and no goroutine exists. A bootstrap panic loses no line.
+- **Asynchronous** from the end of `Create` until the shutdown hooks ran: the caller encodes and masks its line, appends it to a queue and returns. One writer goroutine, alive only while the queue is not empty, writes whole records in batches of at most 64 KiB, in queue order.
+- **Overload:** the queue holds at most 1 MiB. Debug and Info lines are dropped once the queue would pass 80 % of it; Warn and Error are kept while they fit, otherwise the caller waits at most 100 ms for room, then the line is dropped. After one wait timed out, Warn and Error are dropped at once until stdout accepts a write again. Fatal is always kept.
+- **Drops are reported:** a `WARN LogDropped` line with one count per level that dropped something (`debug`, `info`, `warn`, `error`), written at most once per second while busy and when the queue runs empty, where the writer is (not where the lines were dropped). Lines written plus counts reported equal lines logged.
+- **Long records:** a record over 64 KiB is cut on a UTF-8 boundary and ends with `...[TRUNCATED]` and a line feed (Pretty resets the color first). A cut JSON record is not valid JSON; the head with the time, level and message is kept.
+- **Errors:** a failed or panicking `Write` of stdout discards that batch, never retried; the next one is written.
+- **Shutdown:** the app flushes the pipeline (at most 2 seconds) after its `OnShutdown` hooks; `Fatal` flushes before it exits.
+- **What can be lost:** lines still queued when the process dies without shutdown or `Fatal` (an unrecovered panic in a goroutine, `os.Exit` in your code, `SIGKILL`): at most 1 MiB, in practice the last batch. Bytes you write to `os.Stdout` yourself are not ordered with log lines while the app serves.
+- **Memory:** about 300 B while unused; one buffer of at most 64 KiB once the queue is empty again; at most two 1 MiB buffers and one goroutine with stdout stuck.
+- Loggers given to `app.SetLogger` are not part of the pipeline: they are called directly.
 
 ## Other exported names
 
@@ -222,6 +295,8 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 ## Performance notes
 
 - **Level first.** A call below the level returns before touching its arguments (about 5 ns, no allocation).
+- **Encode on the caller, hand over in one append.** Each logger keeps a `sync.Pool` of encoders (a byte buffer plus the slog handlers that write into it); the record is encoded there, then copied once into the pipeline's queue. An encoder whose buffer grew past 4 KiB is not put back. The pipeline swaps two buffers between callers and the writer under one mutex and never holds it during a `Write` of stdout.
+- **`From` once per request.** The first `From` on a scope builds the scoped logger (about 300 ns, 2 allocations) and keeps it in the scope; later calls are a lookup (about 6 ns, no allocation). When every field is a plain ID (`[A-Za-z0-9._:-]`, at most 128 bytes) and no mask rule matches a key, JSON and Text keep the fields encoded and splice them before the end of the line, so a scoped line costs what a plain one does; otherwise, and always in Pretty, the fields are added as attributes.
 - **No copy when nothing changes.** Scalars and errors take a path without reflection; through `WrapLogger` the argument slice is passed on as it is when no value needs work.
 - **The record is built once.** The built-in logger builds the `slog.Record` itself and looks up the caller only with `AddSource`.
 - **No `ReplaceAttr` per attribute.** The four slog levels need none; only `Fatal` uses a handler that renames its level.
@@ -230,7 +305,7 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 
 ## Benchmarks
 
-Machine-dependent, captured when this README was written:
+Machine-dependent, captured when this README was written. `Async` and `SlowOutput` run on an asynchronous pipeline (a discarding output, or one that sleeps 2 ms per write: most of those lines are dropped above the soft limit); the others write synchronously to a discarding output. `BenchmarkFrom_First` includes the benchmark's own scope and context (2 of the 4 allocations).
 
 ```sh
 go test -run '^$' -bench . -benchmem ./log/
@@ -240,14 +315,24 @@ go test -run '^$' -bench . -benchmem ./log/
 goos: darwin
 goarch: amd64
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkLog_Info_Scalars_JSON-12                        	  981242	      1223 ns/op	     144 B/op	       3 allocs/op
-BenchmarkLog_Info_Struct_JSON-12                         	  422803	      2836 ns/op	     601 B/op	      16 allocs/op
-BenchmarkLog_Info_Struct_JSON_WithMaskRule-12            	  397663	      3616 ns/op	     657 B/op	      20 allocs/op
-BenchmarkLog_BelowLevel-12                               	284131327	         4.836 ns/op	       0 B/op	       0 allocs/op
-BenchmarkLog_ErrorWithStack_JSON-12                      	  336297	      3657 ns/op	     176 B/op	       2 allocs/op
-BenchmarkLog_AccessLine_Pretty-12                        	  153910	      8847 ns/op	    4192 B/op	      51 allocs/op
-BenchmarkLog_Info_LargeMap_Pretty-12                     	  115861	     10201 ns/op	    5896 B/op	      51 allocs/op
-BenchmarkWrapLogger_Info_TaggedStruct-12                 	 2077896	       579.0 ns/op	     568 B/op	       9 allocs/op
-BenchmarkWrapLogger_Info_TaggedStruct_WithMaskRule-12    	 1544994	       795.6 ns/op	     600 B/op	      11 allocs/op
-BenchmarkWrapLogger_Info_NoStructArgs-12                 	57461472	        22.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLog_Info_Scalars_JSON-12                        	  797635	      1283 ns/op	     144 B/op	       3 allocs/op
+BenchmarkLog_Info_Struct_JSON-12                         	  420738	      2959 ns/op	     601 B/op	      16 allocs/op
+BenchmarkLog_Info_Struct_JSON_WithMaskRule-12            	  379197	      3378 ns/op	     658 B/op	      20 allocs/op
+BenchmarkLog_BelowLevel-12                               	292739292	         4.031 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLog_ErrorWithStack_JSON-12                      	  311721	      4006 ns/op	     176 B/op	       2 allocs/op
+BenchmarkLog_AccessLine_Pretty-12                        	  306849	      3942 ns/op	    1552 B/op	      13 allocs/op
+BenchmarkLog_Info_LargeMap_Pretty-12                     	  120024	      9467 ns/op	    3082 B/op	      48 allocs/op
+BenchmarkWrapLogger_Info_TaggedStruct-12                 	 1695045	       712.0 ns/op	     568 B/op	       9 allocs/op
+BenchmarkWrapLogger_Info_TaggedStruct_WithMaskRule-12    	 1377609	       867.6 ns/op	     600 B/op	      11 allocs/op
+BenchmarkWrapLogger_Info_NoStructArgs-12                 	44116102	        28.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLog_Info_Scalars_JSON_Async_1-12                	  844498	      1404 ns/op	     146 B/op	       3 allocs/op
+BenchmarkLog_Info_Scalars_JSON_Async_12-12               	 2296998	       522.8 ns/op	     193 B/op	       3 allocs/op
+BenchmarkLog_Info_Scalars_JSON_Sync_1-12                 	  780621	      1289 ns/op	     144 B/op	       3 allocs/op
+BenchmarkLog_Info_SlowOutput_1-12                        	  873627	      1221 ns/op	     149 B/op	       3 allocs/op
+BenchmarkLog_Info_SlowOutput_12-12                       	 3131480	       412.5 ns/op	     146 B/op	       3 allocs/op
+BenchmarkFrom_NoScope-12                                 	320341690	         3.692 ns/op	       0 B/op	       0 allocs/op
+BenchmarkFrom_First-12                                   	 4286910	       280.7 ns/op	     536 B/op	       4 allocs/op
+BenchmarkFrom_Cached-12                                  	207618955	         5.747 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLog_From_Info_JSON-12                           	 1672680	       716.5 ns/op	      64 B/op	       1 allocs/op
+BenchmarkLog_From_Info_JSON_Adapter-12                   	11163579	       107.3 ns/op	     192 B/op	       2 allocs/op
 ```
