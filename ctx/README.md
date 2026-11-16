@@ -291,6 +291,7 @@ c.Status(http.StatusFound).Redirect("/login")
 - `Form` never returns `nil` and is computed once, also without a form content type.
 - A malformed form panics with an `exception.Exception` of code `400` and message `Invalid form body`; a form over the body limit with code `413`; `errors.As` reaches the cause.
 - A multipart body is parsed once for `Form` and `File`, in either order.
+- Parts over 32 MiB are written to temporary files in the OS temporary directory; the framework removes them once the request ends, also when the handler panics. Don't keep a `multipart.File` or a `FileHeader` after the handler returns.
 
 ### File
 

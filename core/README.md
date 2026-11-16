@@ -662,6 +662,7 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
 - A directory answers its `index.html` when it exists (with the redirect to the slash-terminated URL), otherwise the 404 body. No response ever contains a directory listing.
 - A resolved path outside the served directory answers `400` `{"code":400,"error":"Bad Request","message":"Invalid URL path"}`; a missing file, or a result that is not a string, answers the 404 body.
 - Under a wildcard route, a path with a segment that starts with `.` (`.env`, `.git/config`, `css/.secret`) answers the 404 body, except `.well-known` (RFC 8615). A symbolic link is followed only when its target stays inside the served directory; otherwise the 404 body. Still serve a directory that holds only public files.
+- A handler may return `"."`: files are served from the working directory, with the same rules (dot segments answer 404, a path that leaves the directory answers 400).
 - The path a handler returns is trusted as is: dot directories in it and symbolic links above the served directory are the application's choice.
 - **Caching.** A served file (`200`, `206`, `304`, and the `index.html` of a directory) is sent with `Cache-Control: no-cache` when no layer set `Cache-Control` before: the browser keeps the file but revalidates it with `If-Modified-Since` on every use, and never guesses a lifetime (RFC 9111 § 4.2.2). A `Cache-Control` set by a middleware, guard, interceptor or the handler is kept. Mark hashed assets (`app.3f9a1c.js`) immutable in their handler:
 

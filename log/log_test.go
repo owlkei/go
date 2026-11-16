@@ -483,8 +483,8 @@ func TestLog_NonStringKey(t *testing.T) {
 	logger, buf := newTestLog(JSONFormat, LogOptions{MaskFields: []string{"password"}})
 	logger.Info("x", 42, "value", "k", "v")
 	out := buf.String()
-	if !strings.Contains(out, `"!BADKEY":42`) || !strings.Contains(out, `"k":"v"`) {
-		t.Error(test.DiffMessage(out, `"!BADKEY":42 and k=v`, "V1: a non-string key is passed on as slog prints it"))
+	if !strings.Contains(out, `"!BADKEY":42,"value":"k","!BADKEY":"v"`) {
+		t.Error(test.DiffMessage(out, `"!BADKEY":42,"value":"k","!BADKEY":"v"`, "V1, M3: a non-string key takes one argument, as slog pairs it"))
 	}
 }
 

@@ -144,7 +144,7 @@ logger := log.NewLog(&log.LogOptions{LogFormat: log.TextFormat})
 - Every logger from `NewLog` writes to the one stdout pipeline. Without an app (a tool, a test) it is synchronous: the line is written before the call returns and no goroutine is started.
 - Values are read during the call only: changing an argument afterwards never changes the line.
 - `Fatal` writes the record at the `FATAL` level, flushes the pipeline for at most 2 seconds, then exits the process with status 1, whatever the level. A stuck stdout cannot hold it.
-- Arguments are `key, value` pairs; a `slog.Attr` argument is one pair; a trailing key without a value is written under `!BADKEY`, and so is a pair whose key is not a string (`"!BADKEY":42`).
+- Arguments are paired exactly like `log/slog`: a `string` key takes the next argument as its value, a `slog.Attr` is one pair, a trailing key without a value is written under `!BADKEY`, and a non-string, non-`Attr` argument is written alone under `!BADKEY` (`"!BADKEY":42`), so the argument after it starts the next pair. Masking follows the same pairing: in `Error("login failed", err, "password", pw)` the password is masked.
 
 ### WrapLogger
 
@@ -174,7 +174,7 @@ logger := log.WrapLogger(myLogger, []string{"password", "token.*"})
 - Any other logger is wrapped; each method calls the same method of that logger once, with structs as `map[string]any` and changed slices as `[]any`.
 - `maskFields` is copied.
 - A value that needs no conversion and no masking is passed on as the same value, and when no argument needs any, the argument slice itself is passed on.
-- An error, a `fmt.Stringer` or a `slog.LogValuer` reaches a wrapped logger unchanged, and none of its methods is called.
+- An error, a `fmt.Stringer` or a `slog.LogValuer` reaches a wrapped logger unchanged, and none of its methods is called, except that with mask rules a `slog.LogValuer` is resolved once to mask a group it returns (a panic in `LogValue` is recovered and the value passed on unchanged).
 - `WrapLogger(nil, fields)` panics with `invalid logger: WrapLogger needs a logger`.
 - A wrapped logger is called directly, on the caller, in every mode: its order and blocking are its own.
 - `Fatal` on a wrapped logger flushes the stdout pipeline for at most 2 seconds, then calls the wrapped `Fatal` once.
@@ -262,6 +262,7 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 - Masking reaches struct fields, map values, slice and array elements, `slog.Attr` arguments and the attributes of a `slog.Group`, at any depth up to the limits below.
 - A tagged field is matched by its tag name.
 - An error, a `Stringer` or a `LogValuer` is masked only when its own path matches; its text is never searched.
+- A `LogValuer` that resolves to a group (`slog.GroupValue`) is masked by path like any group: a rule `password` or `user.password` masks `password` inside `"user", valuer`. A wrapped logger then receives the masked group as a `slog.Value`; an unmasked one still reaches it unchanged.
 - Never masked: the message, the keys, the text of an error or a `Stringer`, and the values of a map whose keys are neither strings nor integers.
 
 ## Limits and guarantees

@@ -364,10 +364,7 @@ func (l *logger) encode(e *encoder, level slog.Level, msg string, pc uintptr, ar
 			i++
 		default:
 			r.AddAttrs(slog.Any(badKey, key))
-			if i+1 < len(args) {
-				r.AddAttrs(slog.Any(badKey, args[i+1]))
-			}
-			i += 2
+			i++
 		}
 	}
 	l.handle(context.Background(), e, r)

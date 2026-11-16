@@ -160,7 +160,7 @@ func (c *converter) args(args []any) []any {
 			}
 			i++
 		default:
-			i += 2
+			i++
 		}
 	}
 	return orArgs(out, args)
@@ -262,7 +262,7 @@ func (c *converter) reflectValue(path string, rv reflect.Value, depth int, nodes
 			return c.leaf(path)
 		}
 		if info.text {
-			return c.text(path, rv)
+			return c.text(path, rv, depth, nodes)
 		}
 		if c.exactMasked(path) {
 			return maskPlaceholder, true
@@ -296,14 +296,19 @@ func (c *converter) leaf(path string) (any, bool) {
 	return nil, false
 }
 
-func (c *converter) text(path string, rv reflect.Value) (any, bool) {
+func (c *converter) text(path string, rv reflect.Value, depth int, nodes *int) (any, bool) {
 	if c.leafMasked(path) {
 		return maskPlaceholder, true
 	}
+	k := rv.Kind()
+	isNil := (k == reflect.Pointer || k == reflect.Interface) && rv.IsNil()
 	if c.mode == modeKeep {
-		return nil, false
+		if isNil || len(c.rules) == 0 {
+			return nil, false
+		}
+		return c.keptGroup(path, rv, depth, nodes)
 	}
-	if k := rv.Kind(); (k == reflect.Pointer || k == reflect.Interface) && rv.IsNil() {
+	if isNil {
 		return nil, true
 	}
 	if c.mode == modePretty && rv.Type() == coloredType {
@@ -312,8 +317,13 @@ func (c *converter) text(path string, rv reflect.Value) (any, bool) {
 	switch x := methodReceiver(rv).(type) {
 	case slog.LogValuer:
 		v := resolveLogValuer(x)
-		if v.Kind() == slog.KindString {
+		switch v.Kind() {
+		case slog.KindString:
 			return v.String(), true
+		case slog.KindGroup:
+			if masked, changed := c.slogValue(path, v, depth, nodes); changed {
+				return masked.Any(), true
+			}
 		}
 		return v.Any(), true
 	case error:
@@ -322,6 +332,34 @@ func (c *converter) text(path string, rv reflect.Value) (any, bool) {
 		return x.String(), true
 	}
 	return nil, false
+}
+
+func (c *converter) keptGroup(path string, rv reflect.Value, depth int, nodes *int) (any, bool) {
+	lv, ok := methodReceiver(rv).(slog.LogValuer)
+	if !ok {
+		return nil, false
+	}
+	v, ok := recoveredLogValue(lv)
+	if !ok || v.Kind() != slog.KindGroup {
+		return nil, false
+	}
+	masked, changed := c.slogValue(path, v, depth, nodes)
+	if !changed {
+		return nil, false
+	}
+	if depth > 0 {
+		return masked.Any(), true
+	}
+	return masked, true
+}
+
+func recoveredLogValue(lv slog.LogValuer) (v slog.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return resolveLogValuer(lv), true
 }
 
 func (c *converter) structValue(path string, rv reflect.Value, info *typeInfo, depth int, nodes *int) (any, bool) {

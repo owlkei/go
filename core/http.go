@@ -117,6 +117,9 @@ func newHTTPExchange() *httpExchange {
 }
 
 func (ex *httpExchange) reset() {
+	if form := ex.Request.MultipartForm; form != nil {
+		_ = form.RemoveAll()
+	}
 	ex.HTTPContext.Reset()
 	ex.writer.reset(nil)
 	ex.scope = nil
@@ -454,11 +457,12 @@ func serveContent(ex *httpExchange, serveIndex int, result any) {
 		if serveIndex < len(segments) {
 			dir = path.Join(root, strings.Join(segments[serveIndex:], "/"))
 		}
-		if dir != root && !strings.HasPrefix(dir, root+"/") {
+		rel, ok := relativeToRoot(root, dir)
+		if !ok {
 			serveError(ex, stdHTTP.StatusBadRequest, invalidURLBody)
 			return
 		}
-		serveFromRoot(ex, root, strings.TrimPrefix(strings.TrimPrefix(dir, root), "/"))
+		serveFromRoot(ex, root, rel)
 		return
 	}
 
@@ -479,6 +483,25 @@ func serveContent(ex *httpExchange, serveIndex int, result any) {
 	}
 	setDefaultCacheControl(ex.writer.Header())
 	stdHTTP.ServeFile(&ex.writer, r, dir)
+}
+
+func relativeToRoot(root, dir string) (string, bool) {
+	if root == "." {
+		if dir == ".." || strings.HasPrefix(dir, "../") {
+			return "", false
+		}
+		if dir == "." {
+			return "", true
+		}
+		return dir, true
+	}
+	if dir == root {
+		return "", true
+	}
+	if !strings.HasPrefix(dir, root+"/") {
+		return "", false
+	}
+	return dir[len(root)+1:], true
 }
 
 func serveFromRoot(ex *httpExchange, rootDir, rel string) {
