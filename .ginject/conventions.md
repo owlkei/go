@@ -43,12 +43,12 @@ don't mass-rewrite the exceptions.
 - **Receivers are one to three letters** from the type (`c`, `p`, `m`, `e`, `app`, `rb`): 683 of 737
   methods outside `sample/`. `func (s *shard) evictOneLocked` (`memorycache/memory_cache.go`).
 - **`instance` is the receiver of user-facing configuration types** whose value the user writes:
-  `func (instance CORS) NewMiddleware()` (`middlewares/cors/cors.go:58`), the `csrf` and `helmet`
+  `func (instance CORS) NewMiddleware()` (`middlewares/cors/cors.go:100`), the `csrf` and `helmet`
   middlewares, `log/log.go`, and every controller, provider, guard and filter in `sample/`. Use it
   for types a user declares in their own app, and in examples.
 - **Exported option booleans start with `Is`:** `IsGlobal`, `IsAllowCredentials`,
-  `IsPreflightContinue`, `IsExpandVariables`, `IsOverride`. Exceptions (`DisableHSTS`,
-  `HSTSPreload`, `AddSource`, `DisableGitignore`) predate the habit; new options use `Is`.
+  `IsAllowPrivateNetwork`, `IsExpandVariables`, `IsOverride`. Exceptions (`AddSource`,
+  `DisableGitignore`) predate the habit; new options use `Is`.
 - **Maps are named `<values>By<Key>`:** `entriesByKey`, `funcNameByEvent`, `routeByPattern`,
   `docsByTable`.
 - **`Locked` suffix** marks a method that expects its caller to hold the lock
@@ -62,12 +62,15 @@ don't mass-rewrite the exceptions.
 
 - **Options struct + loader:** a public `<X>Options` (or the middleware type itself) holds what the
   user sets; a private `load<X>Options` fills defaults once and returns the normalized form:
-  `loadCORSOptions` (`middlewares/cors/cors.go:175`),
+  `loadCORSOptions` (`middlewares/cors/cors.go:108`),
   `loadConfigOptions` (`modules/config/module.go:28`). Never normalize on the request path.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once
   through the app's container (`(*container).construct`, `core/container.go`) and which returns a private
-  compiled type that implements `Use` (`compiledCORS`). `cors`, `csrf` and `helmet` follow it.
+  compiled type that implements `Use` (`compiledCORS`). Every package under `middlewares/` follows
+  it; the option type's own `Use` calls `instance.NewMiddleware().Use(...)` and is for tests only.
+  Invalid options panic in `NewMiddleware` as `invalid <package>: <detail>` (`color.FmtRed`), and a
+  refusal on the request path is `panic(&prebuiltException)`, answered by the HTTP layer.
 - **Dynamic modules** are `Register(opts *<X>ModuleOptions) *core.Module` that accept `nil` and
   apply defaults, then set `IsGlobal` / `OnInit` on the built module
   (`modules/cache/module.go:16`). `OnInit` types are named `<X>OnInitFn`.

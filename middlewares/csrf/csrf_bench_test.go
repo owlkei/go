@@ -5,54 +5,28 @@ import (
 	"testing"
 )
 
-func BenchmarkGenerateCSRFToken(b *testing.B) {
+func benchCSRF(b *testing.B, r *http.Request) {
+	b.Helper()
+	mw := CSRF{TrustedOrigins: []string{"https://app.example.com"}}.NewMiddleware()
+	w := &discardWriter{header: http.Header{}}
+	b.ReportAllocs()
 	for b.Loop() {
-		_, _ = GenerateCSRFToken(32)
+		mw.Use(r, w, noop)
 	}
 }
 
-func BenchmarkCompareTokensSecurely_Equal(b *testing.B) {
-	tok, _ := GenerateCSRFToken(32)
-	for b.Loop() {
-		CompareTokensSecurely(tok, tok)
-	}
+func BenchmarkCSRF_SafeMethod(b *testing.B) {
+	benchCSRF(b, csrfRequest(http.MethodGet, "", ""))
 }
 
-func BenchmarkCompareTokensSecurely_Unequal(b *testing.B) {
-	a, _ := GenerateCSRFToken(32)
-	c, _ := GenerateCSRFToken(32)
-	for b.Loop() {
-		CompareTokensSecurely(a, c)
-	}
+func BenchmarkCSRF_SecFetchSiteSameOrigin(b *testing.B) {
+	benchCSRF(b, csrfRequest(http.MethodPost, "same-origin", ""))
 }
 
-func BenchmarkCSRF_SafeMethod_NoCookie(b *testing.B) {
-	mw := CSRF{}.NewMiddleware()
-	for b.Loop() {
-		c, _ := newCSRFContext(http.MethodGet, "", "")
-		mw.Use(c.Request, c.ResponseWriter, noop)
-	}
+func BenchmarkCSRF_OriginAgainstHost(b *testing.B) {
+	benchCSRF(b, csrfRequest(http.MethodPost, "", "https://example.com"))
 }
 
-func BenchmarkCSRF_SafeMethod_WithCookie(b *testing.B) {
-	mw := CSRF{}.NewMiddleware()
-	for b.Loop() {
-		c, _ := newCSRFContext(http.MethodGet, "", "existingtoken123456")
-		mw.Use(c.Request, c.ResponseWriter, noop)
-	}
-}
-
-func BenchmarkCSRF_POST_ValidHeader(b *testing.B) {
-	mw := CSRF{}.NewMiddleware()
-	for b.Loop() {
-		c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "tok", "tok")
-		mw.Use(c.Request, c.ResponseWriter, noop)
-	}
-}
-
-func BenchmarkLoadCSRFOptions(b *testing.B) {
-	cfg := &CSRF{TokenLength: 32, CookieName: "_csrf", HeaderName: "X-CSRF-Token"}
-	for b.Loop() {
-		loadCSRFOptions(cfg)
-	}
+func BenchmarkCSRF_TrustedOrigin(b *testing.B) {
+	benchCSRF(b, csrfRequest(http.MethodPost, "cross-site", "https://app.example.com"))
 }

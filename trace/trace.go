@@ -1,6 +1,9 @@
 package trace
 
-import "time"
+import (
+	"net/netip"
+	"time"
+)
 
 const (
 	StageMiddleware      = "middleware"
@@ -30,4 +33,5 @@ type Event struct {
 	Operation string
 	Target    string
 	Code      int
+	ClientIP  netip.Addr
 }

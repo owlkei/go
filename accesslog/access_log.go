@@ -191,9 +191,14 @@ func (al *AccessLog) write(e trace.Event, rec *record) {
 	var textBuf [inlineText]byte
 	var partBuf [inlineStages]stageText
 	buf, parts := appendStageTexts(textBuf[:0], partBuf[:0], stages)
+	ipStart := len(buf)
+	if e.ClientIP.IsValid() {
+		buf = e.ClientIP.AppendTo(buf)
+	}
 	totalStart := len(buf)
 	buf = appendDuration(buf, e.Duration)
 	text := string(buf)
+	ip := text[ipStart:totalStart]
 	total := text[totalStart:]
 	msg := cutTarget(e.Target)
 
@@ -206,6 +211,7 @@ func (al *AccessLog) write(e trace.Event, rec *record) {
 		} else {
 			attrs = appendIDAttr(attrs, "request", e.ID)
 		}
+		attrs = appendIDAttr(attrs, "ip", ip)
 		attrs = append(attrs, slog.String("transport", e.Transport), slog.Int("code", e.Code), slog.String("operation", e.Operation))
 		for _, p := range parts {
 			attrs = append(attrs, slog.String(p.key, text[p.start:p.end]))
@@ -218,7 +224,7 @@ func (al *AccessLog) write(e trace.Event, rec *record) {
 		return
 	}
 
-	size := 14 + 2*len(parts)
+	size := 16 + 2*len(parts)
 	if stagesDropped > 0 {
 		size += 2
 	}
@@ -229,6 +235,7 @@ func (al *AccessLog) write(e trace.Event, rec *record) {
 	} else {
 		args = appendID(args, "request", e.ID)
 	}
+	args = appendID(args, "ip", ip)
 	args = append(args, "transport", e.Transport, "code", e.Code, "operation", e.Operation)
 	for _, p := range parts {
 		args = append(args, p.key, text[p.start:p.end])

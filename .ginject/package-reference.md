@@ -264,8 +264,8 @@ type UserController struct {
 - Different configurations get their own instance:
 ```go
 // Controller A and B each get their own cors.CORS instance.
-c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://a.example.com"}})
-c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://b.example.com"}})
+c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://a.example.com"}})
+c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
 ```
 - Two types whose `Type().String()` is equal (`a/auth.Guard`, `b/auth.Guard`) never share; the same value built with two constructor names gets each constructor's own result.
 - Without the constructor method, the result is the value given in the first call of that configuration.
@@ -754,61 +754,93 @@ func (g Throttler) NewGuard() Throttler
 func (g Throttler) CanActivate(c *ctx.HTTPContext) bool
 ```
 
-### `middlewares/cors`
+### `middlewares/proxy` (design 0014)
+
+```go
+type Header int
+const ( XForwarded Header = iota; Forwarded )
+type Proxy struct {
+    TrustedProxies []string // IPs or CIDRs of the proxies in front
+    TrustedHops    int      // or: how many proxies are in front (1-16)
+    Header         Header   // XForwarded (default) or Forwarded (RFC 7239); the other family is never read
+}
+func (instance Proxy) NewMiddleware() common.MiddlewareFn
+func ClientIP(r *http.Request) netip.Addr // zero Addr when unknown
+func Scheme(r *http.Request) string       // "https" or "http"
+func Host(r *http.Request) string
+```
+
+Exactly one of `TrustedProxies` / `TrustedHops` (else panic `invalid proxy: set TrustedProxies or TrustedHops[, not both]`). Without `proxy` bound, nothing in Ginject reads `X-Forwarded-*`, `Forwarded` or `X-Real-IP`: the client is `r.RemoteAddr`, the scheme `r.TLS != nil`, the host `r.Host`. Trusted-proxies mode: entries right to left, client = first untrusted, at most 16 entries of 512 bytes, invalid entry ends the walk. The result is written into the request's `tracecontext.Scope` (`ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet`); the request is never changed. Bind it first.
+
+### `middlewares/hostcheck`, `middlewares/httpsredirect`
+
+```go
+type HostCheck struct { Hosts []string }             // "example.com", "api.example.com:8443", "*.example.com", "127.0.0.1", "[::1]"
+type HTTPSRedirect struct { Host string; Port int }  // fixed target host (no port); HTTPS port when not 443
+```
+
+`hostcheck` checks `proxy.Host(r)`: no match → `421 Unknown host`, empty or > 255 bytes → `400 Invalid host`; no implicit `localhost`. `httpsredirect`: `proxy.Scheme(r) == "https"` → next; else `308` to `https://<Host or request host without port><:Port><path>?<query>`, no body; an invalid request host (with no `Host` set) → `400 Invalid host`.
+
+### `middlewares/csrf` (rebuilt, design 0014)
+
+```go
+type CSRF struct { TrustedOrigins []string } // scheme://host[:port], at most 64
+```
+
+Wraps `http.CrossOriginProtection` (Go 1.25+): safe methods pass; `Sec-Fetch-Site` `same-origin`/`none` pass; any other value → `TrustedOrigins` or `403 Cross-origin request refused`; no `Sec-Fetch-Site` and no `Origin` → pass (not a browser); `Origin` host equal to the host → pass. `Origin` > 256 bytes refused. No token, no cookie, no context value, no body read. **`TokenLength`, `CookieName`, `HeaderName`, `ContextKey`, `GenerateCSRFToken`, `CompareTokensSecurely` are gone — do not generate them.**
+
+### `middlewares/cors` (changed, design 0014)
 
 ```go
 type CORS struct {
-    AllowOrigin          any   // string | []string | *regexp.Regexp; nil/"*" = wildcard
-    AllowHeaders         any
-    ExposeHeaders        any
-    AllowMethods         []string
-    MaxAge               time.Duration
-    IsAllowCredentials   bool
-    IsPreflightContinue  bool
-    OptionsSuccessStatus int
+    AllowOrigins          []string      // required: "https://app.example.com", "https://*.example.com", or "*" alone
+    AllowMethods          []string      // default GET, HEAD, PUT, PATCH, POST, DELETE
+    AllowHeaders          []string      // default Content-Type, Authorization (never the request's list)
+    ExposeHeaders         []string
+    MaxAge                time.Duration // default 10 minutes
+    IsAllowCredentials    bool
+    IsAllowPrivateNetwork bool
 }
 func (instance CORS) NewMiddleware() common.MiddlewareFn
 ```
 
-**Panics at config time (during `NewMiddleware()`/`loadCORSOptions`) in two cases** — both are deliberate security hardening, not bugs to work around:
-1. Wildcard `AllowOrigin` (explicit `"*"` **or left unset, which defaults to wildcard**) combined with `IsAllowCredentials: true`. Fix: enumerate trusted origins explicitly.
-2. `AllowOrigin` set to a `*regexp.Regexp` that is not anchored with `^` and `$`. `MatchString` does a substring search — an unanchored pattern like `` `https://.*\.trusted\.com` `` also matches `"https://evil.trusted.com.attacker.com"`.
+**Panics at `Create()`**: empty `AllowOrigins` (`invalid cors: AllowOrigins is empty` — the zero value allows nothing), `"*"` with other entries or with `IsAllowCredentials`, an origin that is not lower-case `scheme://host[:port]` or `scheme://*.host[:port]`, `null`, more than 256 origins or 64 list entries, a name that is not an RFC 9110 token. `Vary: Origin` on every response with a list. Preflight is exactly `OPTIONS` + `Origin` + `Access-Control-Request-Method` (`204`); any other `OPTIONS` reaches its `PREFLIGHT_…` route. A non-matching origin gets no CORS header but is still served. A WebSocket upgrade from a non-matching `Origin` → `403 Origin not allowed`. **`AllowOrigin` (any), regexp origins, `IsPreflightContinue`, `OptionsSuccessStatus` are gone.**
 
-### `middlewares/csrf`
+### `middlewares/helmet` (changed, design 0014)
 
 ```go
-type CSRF struct {
-    TokenLength int      // default 32
-    CookieName  string   // default "_csrf"
-    HeaderName  string   // default "X-CSRF-Token"
-    ContextKey  string   // default "csrf_token"
-}
-```
-
-### `middlewares/helmet`
-
-```go
+const Disabled = "-"
 type Helmet struct {
     ContentSecurityPolicy, CrossOriginEmbedderPolicy, CrossOriginOpenerPolicy,
-    CrossOriginResourcePolicy, DNSPrefetchControl, FrameOptions,
-    PermittedCrossDomainPolicies, ReferrerPolicy string
-    HSTSMaxAge            int
-    HSTSExcludeSubDomains bool
-    HSTSPreload           bool
-    DisableHSTS           bool
+    CrossOriginResourcePolicy, FrameOptions, PermissionsPolicy,
+    ReferrerPolicy, StrictTransportSecurity string
 }
 ```
+
+Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **`DNSPrefetchControl`, `PermittedCrossDomainPolicies`, `HSTSMaxAge`, `HSTSExcludeSubDomains`, `HSTSPreload`, `DisableHSTS` are gone.**
+
+### `middlewares/compress`
+
+```go
+type Compress struct { MinSize int } // default 1024
+```
+
+gzip at `BestSpeed` for candidates (not `HEAD`, no `Range`, no `Upgrade`, `Accept-Encoding` names gzip with q ≠ 0 in its first 256 bytes) whose response is compressible text, at least `MinSize`, not encoded, not `204`/`206`/`304`, no `no-transform`. `Vary: Accept-Encoding` on every response. At most 8 writers per instance (pooled, design-approved `sync.Pool`); none free → sent uncompressed. Uses `internal/httphook` to wrap the writer and finish at the end of the exchange.
+
+Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `httpsredirect`, `helmet`, `cors`, `csrf`, `compress`.
 
 ---
 
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS); there is no `id` key.
+- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
-- `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`). All random bytes from `crypto/rand`, through a `sync.Pool` of 512-byte sources (504-byte refills, no mutex, design 0013); one 18-byte read per new trace (tail + request ID), 8 bytes for a continued trace or a message under a connection.
+- `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
+- `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`: the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.
+- `internal/inspect` — besides `CacheStateOf` / `ConfigStateOf`: `Field`, `Snapshot`, `Snapshotter`; every compiled middleware of design 0014 implements `Snapshotter` (effective options + counters, snake_case keys, built only when called). All random bytes from `crypto/rand`, through a `sync.Pool` of 512-byte sources (504-byte refills, no mutex, design 0013); one 18-byte read per new trace (tail + request ID), 8 bytes for a continued trace or a message under a connection.
 - `internal/logpipe` — the output pipeline of the built-in logger (design 0012): `Level` (`Debug`…`Fatal`), `Sink` (`Write`, `StartAsync`, `StopAsync`, `Flush`), `New`, `Stdout`, `SetStdout` (tests), `FlushTimeout` (2 s), `AccessLine` (the access log's line handed to the built-in logger).
 - `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.
-- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe). Not importable from outside the module.
+- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe, httphook, inspect). Not importable from outside the module.
 
 **There is no `data/` package or directory anywhere in this repository** — an earlier doc listed one; it never existed.

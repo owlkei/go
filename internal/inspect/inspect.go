@@ -19,3 +19,17 @@ var CacheStateOf = func(any) (CacheState, bool) {
 var ConfigStateOf = func(any) (ConfigState, bool) {
 	return ConfigState{}, false
 }
+
+type Field struct {
+	Key   string
+	Value any
+}
+
+type Snapshot struct {
+	Name   string
+	Fields []Field
+}
+
+type Snapshotter interface {
+	Snapshot() Snapshot
+}

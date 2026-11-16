@@ -1,376 +1,300 @@
 package csrf
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
 
-func noop() {}
+const refusedBody = `{"code":403,"error":"Forbidden","message":"Cross-origin request refused"}`
 
-func newCSRFContext(method, token, cookieToken string) (*ctx.HTTPContext, *httptest.ResponseRecorder) {
-	body := ""
-	contentType := ""
-	if token != "" && method != http.MethodGet {
-		form := url.Values{"_csrf": {token}}
-		body = form.Encode()
-		contentType = "application/x-www-form-urlencoded"
-	}
+var unsafeMethods = []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
 
-	var req *http.Request
-	if body != "" {
-		req = httptest.NewRequest(method, "/", strings.NewReader(body))
-	} else {
-		req = httptest.NewRequest(method, "/", nil)
+func csrfRequest(method string, fetchSite, origin string) *http.Request {
+	r := request(method, "/ok")
+	if fetchSite != "" {
+		r.Header.Set("Sec-Fetch-Site", fetchSite)
 	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
+	if origin != "" {
+		r.Header.Set("Origin", origin)
 	}
-	if cookieToken != "" {
-		req.AddCookie(&http.Cookie{Name: "_csrf", Value: cookieToken})
-	}
-
-	rec := httptest.NewRecorder()
-	c := ctx.NewHTTPContext()
-	c.Request = req
-	c.ResponseWriter = rec
-	return c, rec
+	return r
 }
 
-func newCSRFContextWithHeader(method, headerName, headerToken, cookieToken string) (*ctx.HTTPContext, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest(method, "/", nil)
-	if headerToken != "" {
-		req.Header.Set(headerName, headerToken)
-	}
-	if cookieToken != "" {
-		req.AddCookie(&http.Cookie{Name: "_csrf", Value: cookieToken})
-	}
-	rec := httptest.NewRecorder()
-	c := ctx.NewHTTPContext()
-	c.Request = req
-	c.ResponseWriter = rec
-	return c, rec
-}
-
-func TestLoadCSRFOptions_Defaults(t *testing.T) {
-	opts := loadCSRFOptions(&CSRF{})
-	if opts.tokenLength != csrfDefaultTokenLength {
-		t.Error(test.DiffMessage(opts.tokenLength, csrfDefaultTokenLength, "default token length"))
-	}
-	if opts.cookieName != csrfDefaultCookieName {
-		t.Error(test.DiffMessage(opts.cookieName, csrfDefaultCookieName, "default cookie name"))
-	}
-	if opts.headerName != csrfDefaultHeaderName {
-		t.Error(test.DiffMessage(opts.headerName, csrfDefaultHeaderName, "default header name"))
-	}
-	if opts.contextKey != csrfDefaultContextKey {
-		t.Error(test.DiffMessage(opts.contextKey, csrfDefaultContextKey, "default context key"))
+func expectPass(t *testing.T, w *httptest.ResponseRecorder, desc string) {
+	t.Helper()
+	if w.Code >= http.StatusBadRequest || w.Body.String() == refusedBody {
+		t.Error(test.DiffMessage(w.Code, "<2xx>", desc+": the request passes"))
 	}
 }
 
-func TestLoadCSRFOptions_ZeroTokenLengthUsesDefault(t *testing.T) {
-	opts := loadCSRFOptions(&CSRF{TokenLength: 0})
-	if opts.tokenLength != csrfDefaultTokenLength {
-		t.Error(test.DiffMessage(opts.tokenLength, csrfDefaultTokenLength, "zero length must default"))
+func expectRefused(t *testing.T, w *httptest.ResponseRecorder, desc string) {
+	t.Helper()
+	if w.Code != http.StatusForbidden || w.Body.String() != refusedBody {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{403, refusedBody}, desc+": the request is refused"))
 	}
 }
 
-func TestLoadCSRFOptions_NegativeTokenLengthUsesDefault(t *testing.T) {
-	opts := loadCSRFOptions(&CSRF{TokenLength: -1})
-	if opts.tokenLength != csrfDefaultTokenLength {
-		t.Error(test.DiffMessage(opts.tokenLength, csrfDefaultTokenLength, "negative length must default"))
+func TestCSRF_Table(t *testing.T) {
+	app := newApp(t, CSRF{})
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
+		for _, site := range []string{"", "cross-site", "same-site", "same-origin", "none", "junk"} {
+			for _, origin := range []string{"", "https://evil.example", "null", "https://example.com"} {
+				expectPass(t, serve(app, csrfRequest(method, site, origin)), fmt.Sprintf("S1: %s site=%q origin=%q", method, site, origin))
+			}
+		}
 	}
-}
-
-func TestLoadCSRFOptions_CustomValues(t *testing.T) {
-	opts := loadCSRFOptions(&CSRF{
-		TokenLength: 64,
-		CookieName:  "my_csrf",
-		HeaderName:  "X-My-CSRF",
-		ContextKey:  "my_key",
-	})
-	if opts.tokenLength != 64 {
-		t.Error(test.DiffMessage(opts.tokenLength, 64, "custom token length"))
-	}
-	if opts.cookieName != "my_csrf" {
-		t.Error(test.DiffMessage(opts.cookieName, "my_csrf", "custom cookie name"))
-	}
-	if opts.headerName != "X-My-CSRF" {
-		t.Error(test.DiffMessage(opts.headerName, "X-My-CSRF", "custom header name"))
-	}
-}
-
-func TestGenerateCSRFToken_Length(t *testing.T) {
-	tok, err := GenerateCSRFToken(32)
-	if err != nil {
-		t.Error(test.DiffMessage(err, nil, "must not error"))
-	}
-	if len(tok) != 64 {
-		t.Error(test.DiffMessage(len(tok), 64, "32 bytes → 64 hex chars"))
-	}
-}
-
-func TestGenerateCSRFToken_Uniqueness(t *testing.T) {
-	a, _ := GenerateCSRFToken(32)
-	b, _ := GenerateCSRFToken(32)
-	if a == b {
-		t.Error(test.DiffMessage(a, "<different>", "tokens must be unique"))
-	}
-}
-
-func TestGenerateCSRFToken_ZeroLengthUsesDefault(t *testing.T) {
-	tok, err := GenerateCSRFToken(0)
-	if err != nil {
-		t.Error(test.DiffMessage(err, nil, "zero length must not error"))
-	}
-	if len(tok) != csrfDefaultTokenLength*2 {
-		t.Error(test.DiffMessage(len(tok), csrfDefaultTokenLength*2, "zero length must use default"))
-	}
-}
-
-func TestGenerateCSRFToken_OnlyHexChars(t *testing.T) {
-	tok, _ := GenerateCSRFToken(32)
-	for _, ch := range tok {
-		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
-			t.Error(test.DiffMessage(string(ch), "hex char", "token must be lowercase hex"))
-			return
+	for _, method := range unsafeMethods {
+		for _, site := range []string{"same-origin", "none"} {
+			for _, origin := range []string{"", "https://evil.example", "null", "https://example.com"} {
+				expectPass(t, serve(app, csrfRequest(method, site, origin)), fmt.Sprintf("S2: %s site=%q origin=%q", method, site, origin))
+			}
+		}
+		for _, site := range []string{"cross-site", "same-site", "junk", "Cross-Site"} {
+			for _, origin := range []string{"", "https://evil.example", "null", "https://example.com", "http://example.com"} {
+				expectRefused(t, serve(app, csrfRequest(method, site, origin)), fmt.Sprintf("S3: %s site=%q origin=%q", method, site, origin))
+			}
+		}
+		expectPass(t, serve(app, csrfRequest(method, "", "")), "S4: "+method+" without Sec-Fetch-Site and Origin")
+		for _, origin := range []string{"https://example.com", "http://example.com", "HTTPS://example.com"} {
+			expectPass(t, serve(app, csrfRequest(method, "", origin)), "S5: "+method+" origin "+origin+" on host example.com")
+		}
+		for _, origin := range []string{"https://evil.example", "null", "://bad", "https://example.com.evil.example", "not a url", "https://example.org", "https://sub.example.com", "https://example.com:8443", "\x00"} {
+			expectRefused(t, serve(app, csrfRequest(method, "", origin)), "S6: "+method+" origin "+origin)
 		}
 	}
 }
 
-func TestCompareTokensSecurely_Equal(t *testing.T) {
-	if !CompareTokensSecurely("abc", "abc") {
-		t.Error(test.DiffMessage(false, true, "equal tokens must match"))
+func TestCSRF_S5_HostWithPort(t *testing.T) {
+	app := newApp(t, CSRF{})
+	r := csrfRequest(http.MethodPost, "", "http://example.com:8080")
+	r.Host = "example.com:8080"
+	expectPass(t, serve(app, r), "S5: the origin's host and port equal the request's")
+	r = csrfRequest(http.MethodPost, "", "http://example.com:9090")
+	r.Host = "example.com:8080"
+	expectRefused(t, serve(app, r), "S6: another port is another origin")
+}
+
+func TestCSRF_TrustedOrigin(t *testing.T) {
+	app := newApp(t, CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.example.org:8443"}})
+	for _, method := range unsafeMethods {
+		expectPass(t, serve(app, csrfRequest(method, "cross-site", "https://app.example.com")), "S3: "+method+" a trusted origin, cross-site")
+		expectPass(t, serve(app, csrfRequest(method, "same-site", "https://app.example.com")), "S3: "+method+" a trusted origin, same-site")
+		expectPass(t, serve(app, csrfRequest(method, "", "https://app.example.com")), "S6: "+method+" a trusted origin, no Sec-Fetch-Site")
+		expectPass(t, serve(app, csrfRequest(method, "cross-site", "https://idp.example.org:8443")), "S3: "+method+" a trusted origin with a port")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "https://other.example.com")), "S3: "+method+" an origin that is not trusted")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "https://app.example.com:8443")), "S3: "+method+" another port of a trusted host")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "http://app.example.com")), "S3: "+method+" another scheme of a trusted host")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "https://app.example.com.evil.example")), "S3: "+method+" a look-alike of a trusted origin")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "")), "S3: "+method+" a trusted list does not admit a request without an Origin")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "null")), "S6: "+method+" null is never trusted")
 	}
 }
 
-func TestCompareTokensSecurely_Unequal(t *testing.T) {
-	if CompareTokensSecurely("abc", "xyz") {
-		t.Error(test.DiffMessage(true, false, "unequal tokens must not match"))
+func TestCSRF_SameSiteRefused(t *testing.T) {
+	app := newApp(t, CSRF{TrustedOrigins: []string{"https://app.example.com"}})
+	for _, method := range unsafeMethods {
+		expectRefused(t, serve(app, csrfRequest(method, "same-site", "https://sub.example.com")), "S3: "+method+" a sibling subdomain is cross-origin")
+		expectRefused(t, serve(app, csrfRequest(method, "same-site", "")), "S3: "+method+" same-site without an Origin")
 	}
 }
 
-func TestCompareTokensSecurely_EmptyBothEqual(t *testing.T) {
-	if !CompareTokensSecurely("", "") {
-		t.Error(test.DiffMessage(false, true, "two empty strings must match"))
+func TestCSRF_NullOrigin(t *testing.T) {
+	app := newApp(t, CSRF{TrustedOrigins: []string{"https://app.example.com"}})
+	for _, method := range unsafeMethods {
+		expectRefused(t, serve(app, csrfRequest(method, "", "null")), "S6: "+method+" Origin null without Sec-Fetch-Site")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", "null")), "S3: "+method+" Origin null cross-site")
 	}
 }
 
-func TestCompareTokensSecurely_OneEmpty(t *testing.T) {
-	if CompareTokensSecurely("abc", "") {
-		t.Error(test.DiffMessage(true, false, "non-empty vs empty must not match"))
+func TestCSRF_ForwardedHost(t *testing.T) {
+	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, CSRF{})
+
+	forwarded := func(origin, host, remote string) *http.Request {
+		r := csrfRequest(http.MethodPost, "", origin)
+		r.Host = "internal.local:8080"
+		r.RemoteAddr = remote
+		r.Header.Set("X-Forwarded-For", "198.51.100.1")
+		if host != "" {
+			r.Header.Set("X-Forwarded-Host", host)
+		}
+		return r
 	}
+	expectPass(t, serve(app, forwarded("https://app.example.com", "app.example.com", "10.0.0.1:80")), "S8: the origin's host equals the forwarded host")
+	expectRefused(t, serve(app, forwarded("https://other.example.com", "app.example.com", "10.0.0.1:80")), "S8: another origin than the forwarded host")
+	expectRefused(t, serve(app, forwarded("https://app.example.com", "app.example.com", "203.0.113.50:80")), "S8: an untrusted peer's forwarded host is ignored")
+	expectRefused(t, serve(app, forwarded("https://app.example.com", "", "10.0.0.1:80")), "S8: with no forwarded host the request's host is compared")
+	expectPass(t, serve(app, forwarded("http://internal.local:8080", "", "10.0.0.1:80")), "S5: with no forwarded host an origin equal to r.Host passes")
+
+	r := forwarded("https://app.example.com", "app.example.com", "10.0.0.1:80")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	expectRefused(t, serve(app, r), "S8: with Sec-Fetch-Site present the forwarded host is not used")
 }
 
-func TestCSRF_SafeMethod_GET(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContext(http.MethodGet, "", "")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "GET must pass through"))
-	}
+func TestCSRF_IgnoresForwardedHostWithoutProxy(t *testing.T) {
+	app := newApp(t, CSRF{})
+	r := csrfRequest(http.MethodPost, "", "https://app.example.com")
+	r.Host = "internal.local"
+	r.Header.Set("X-Forwarded-Host", "app.example.com")
+	r.Header.Set("Forwarded", "host=app.example.com")
+	expectRefused(t, serve(app, r), "P2: with no proxy bound no forwarding header is read")
 }
 
-func TestCSRF_SafeMethod_HEAD(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContext(http.MethodHead, "", "")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "HEAD must pass through"))
+func TestCSRF_LongOrigin(t *testing.T) {
+	app := newApp(t, CSRF{TrustedOrigins: []string{"https://app.example.com"}})
+	long := "https://" + strings.Repeat("a", 250) + ".example.com"
+	if len(long) <= 256 {
+		t.Fatal("fixture: the origin is not longer than 256 bytes")
 	}
+	for _, method := range unsafeMethods {
+		expectRefused(t, serve(app, csrfRequest(method, "", long)), "S9: "+method+" an origin longer than 256 bytes")
+		expectRefused(t, serve(app, csrfRequest(method, "cross-site", long)), "S9: "+method+" an origin longer than 256 bytes, cross-site")
+	}
+	expectPass(t, serve(app, csrfRequest(http.MethodGet, "", long)), "S1: a safe method ignores the Origin length")
+	same := csrfRequest(http.MethodPost, "", long)
+	same.Host = strings.TrimPrefix(long, "https://")
+	expectRefused(t, serve(app, same), "S9: even an origin equal to the host is refused when longer than 256 bytes")
 }
 
-func TestCSRF_SafeMethod_OPTIONS(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContext(http.MethodOptions, "", "")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "OPTIONS must pass through"))
-	}
-}
-
-func TestCSRF_SetsCookieWhenMissing(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, rec := newCSRFContext(http.MethodGet, "", "")
-	mw.Use(c.Request, c.ResponseWriter, noop)
-	cookies := rec.Result().Cookies()
-	found := false
-	for _, ck := range cookies {
-		if ck.Name == csrfDefaultCookieName && ck.Value != "" {
-			found = true
+func TestCSRF_SetsNoCookie(t *testing.T) {
+	app := newApp(t, CSRF{})
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodHead} {
+		for _, site := range []string{"same-origin", "cross-site", ""} {
+			w := serve(app, csrfRequest(method, site, ""))
+			if len(w.Header().Values("Set-Cookie")) != 0 {
+				t.Error(test.DiffMessage(w.Header().Values("Set-Cookie"), []string{}, "S11: no cookie is set: "+method+" "+site))
+			}
+			for key := range w.Header() {
+				if strings.Contains(strings.ToLower(key), "csrf") || strings.Contains(strings.ToLower(key), "xsrf") {
+					t.Error(test.DiffMessage(key, "<no token header>", "S11: no token is issued"))
+				}
+			}
 		}
 	}
-	if !found {
-		t.Error(test.DiffMessage(found, true, "must set CSRF cookie when missing"))
+}
+
+func TestCSRF_RefusalIsHTTPLayerResponse(t *testing.T) {
+	app := newApp(t, CSRF{})
+	r := csrfRequest(http.MethodPost, "cross-site", "https://evil.example")
+	w := serve(app, r)
+	expectRefusal(t, w, http.StatusForbidden, refusedBody, "a cross-site request")
+	if strings.Contains(w.Body.String(), "evil") {
+		t.Error(test.DiffMessage(w.Body.String(), "<no origin>", "G1: nothing from the request is in the body"))
+	}
+	if len(w.Header().Values("Set-Cookie")) != 0 {
+		t.Error(test.DiffMessage(w.Header(), "<no cookie>", "S11: a refusal sets no cookie"))
 	}
 }
 
-func TestCSRF_ReusesExistingCookie(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, rec := newCSRFContext(http.MethodGet, "", "existingtoken")
-	mw.Use(c.Request, c.ResponseWriter, noop)
-	for _, ck := range rec.Result().Cookies() {
-		if ck.Name == csrfDefaultCookieName {
-			t.Error(test.DiffMessage("cookie set", "no new cookie", "must not overwrite existing cookie"))
+func TestCSRF_KeepsRequestAndContext(t *testing.T) {
+	app := newApp(t, probeMiddleware{Name: "before"}, CSRF{}, probeMiddleware{Name: "after"})
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		if w := serve(app, csrfRequest(method, "same-origin", "")); w.Code >= 400 {
+			t.Fatal(test.DiffMessage(w.Code, "<2xx>", "fixture: the request passes"))
+		}
+		before, after := probeOf("before"), probeOf("after")
+		if before.request == nil || before.request != after.request {
+			t.Error(test.DiffMessage(after.request, before.request, "G2: the next layer receives the same *http.Request: "+method))
+		}
+		if before.context != after.context {
+			t.Error(test.DiffMessage(after.context, before.context, "G2: the next layer sees the same Context(): "+method))
 		}
 	}
 }
 
-func TestCSRF_StoresTokenInContext(t *testing.T) {
-	mw := CSRF{ContextKey: "csrf_token"}.NewMiddleware()
-	c, _ := newCSRFContext(http.MethodGet, "", "mytoken")
-	mw.Use(c.Request, c.ResponseWriter, func() {
-		val := c.Request.Context().Value("csrf_token")
-		if val != "mytoken" {
-			t.Error(test.DiffMessage(val, "mytoken", "token must be stored in request context"))
+func TestCSRF_DoesNotReadBody(t *testing.T) {
+	app := newApp(t, CSRF{})
+	for _, site := range []string{"same-origin", "cross-site", ""} {
+		for _, method := range []string{http.MethodPost, http.MethodPut} {
+			r := csrfRequest(method, site, "")
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Body = failBody{t}
+			serve(app, r)
 		}
-	})
-}
-
-func TestCSRF_POST_ValidHeader(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "tok", "tok")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "POST with valid header token must pass"))
 	}
 }
 
-func TestCSRF_POST_ValidAltHeader(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPost, csrfAltHeader, "tok", "tok")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "POST with X-XSRF-TOKEN must pass"))
-	}
-}
-
-func TestCSRF_POST_ValidFormField(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContext(http.MethodPost, "tok", "tok")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "POST with valid form field must pass"))
-	}
-}
-
-func TestCSRF_PUT_ValidHeader(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPut, csrfDefaultHeaderName, "tok", "tok")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "PUT with valid token must pass"))
-	}
-}
-
-func TestCSRF_PATCH_ValidHeader(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPatch, csrfDefaultHeaderName, "tok", "tok")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "PATCH with valid token must pass"))
-	}
-}
-
-func TestCSRF_DELETE_ValidHeader(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodDelete, csrfDefaultHeaderName, "tok", "tok")
-	called := false
-	mw.Use(c.Request, c.ResponseWriter, func() { called = true })
-	if !called {
-		t.Error(test.DiffMessage(called, true, "DELETE with valid token must pass"))
-	}
-}
-
-func TestCSRF_POST_MissingToken_Panics(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "", "tok")
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "missing token must panic"))
+func TestNewCSRF_Panics_InvalidOrigin(t *testing.T) {
+	for _, origin := range []string{"example.com", "https://example.com/path", "*", "", "https://", "https://example.com?x=1", "//example.com", "https://example.com#frag"} {
+		text, ok := panicText(func() { CSRF{TrustedOrigins: []string{origin}}.NewMiddleware() })
+		if !ok || !strings.Contains(text, "invalid csrf:") {
+			t.Error(test.DiffMessage(text, "invalid csrf: ...", fmt.Sprintf("S10, G4: %q is not scheme://host[:port]", origin)))
 		}
-	}()
-	mw.Use(c.Request, c.ResponseWriter, noop)
-}
-
-func TestCSRF_POST_WrongToken_Panics(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "wrong", "correct")
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "wrong token must panic"))
-		}
-	}()
-	mw.Use(c.Request, c.ResponseWriter, noop)
-}
-
-func TestCSRF_POST_SpecialCharsToken_Panics(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "../../../etc/passwd", "correct")
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "path traversal token must panic"))
-		}
-	}()
-	mw.Use(c.Request, c.ResponseWriter, noop)
-}
-
-func TestCSRF_POST_EmptyToken_Panics(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "", "tok")
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "empty submitted token must panic"))
-		}
-	}()
-	mw.Use(c.Request, c.ResponseWriter, noop)
-}
-
-func TestCSRF_NewMiddleware_ReturnsCompiledCSRF(t *testing.T) {
-	mw := CSRF{TokenLength: 16}.NewMiddleware()
-	if _, ok := mw.(compiledCSRF); !ok {
-		t.Error(test.DiffMessage(mw, "compiledCSRF", "NewMiddleware must return compiledCSRF"))
 	}
 }
 
-func TestCSRF_ConcurrentSafeRequests(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			c, _ := newCSRFContext(http.MethodGet, "", "")
-			mw.Use(c.Request, c.ResponseWriter, noop)
-		}()
+func TestNewCSRF_Panics_TooManyOrigins(t *testing.T) {
+	origins := make([]string, 65)
+	for i := range origins {
+		origins[i] = fmt.Sprintf("https://app%d.example.com", i)
 	}
-	wg.Wait()
+	text, ok := panicText(func() { CSRF{TrustedOrigins: origins}.NewMiddleware() })
+	if !ok || !strings.Contains(text, "invalid csrf:") {
+		t.Error(test.DiffMessage(text, "invalid csrf: ...", "S10, G4: more than 64 origins"))
+	}
+	if text, ok := panicText(func() { CSRF{TrustedOrigins: origins[:64]}.NewMiddleware() }); ok {
+		t.Error(test.DiffMessage(text, "<no panic>", "S10: 64 origins are allowed"))
+	}
 }
 
-func TestCSRF_ConcurrentStateChanging(t *testing.T) {
-	mw := CSRF{}.NewMiddleware()
-	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			c, _ := newCSRFContextWithHeader(http.MethodPost, csrfDefaultHeaderName, "tok", "tok")
-			mw.Use(c.Request, c.ResponseWriter, noop)
-		}()
+func TestNewCSRF_ValidOrigins(t *testing.T) {
+	for _, origins := range [][]string{nil, {"https://app.example.com"}, {"https://app.example.com:8443", "http://localhost:3000", "https://[::1]:8080"}} {
+		if text, ok := panicText(func() { CSRF{TrustedOrigins: origins}.NewMiddleware() }); ok {
+			t.Error(test.DiffMessage(text, "<no panic>", fmt.Sprintf("S10: %v is valid", origins)))
+		}
 	}
-	wg.Wait()
+}
+
+func TestCSRF_Snapshot(t *testing.T) {
+	mw := CSRF{TrustedOrigins: []string{"https://app.example.com"}}.NewMiddleware()
+	s, ok := mw.(inspect.Snapshotter)
+	if !ok {
+		t.Fatal(test.DiffMessage(mw, "an inspect.Snapshotter", "I1: the compiled csrf implements Snapshotter"))
+	}
+	snap := s.Snapshot()
+	if got, _ := field(snap, "trusted_origins").([]string); snap.Name != "csrf" || strings.Join(got, ",") != "https://app.example.com" {
+		t.Error(test.DiffMessage(snap, "csrf with trusted_origins", "I4: effective configuration"))
+	}
+	if got := field(snap, "refused"); got != int64(0) {
+		t.Error(test.DiffMessage(got, int64(0), "I4: nothing refused yet"))
+	}
+	use := func(r *http.Request) {
+		defer func() { _ = recover() }()
+		mw.Use(r, httptest.NewRecorder(), noop)
+	}
+	use(csrfRequest(http.MethodPost, "cross-site", "https://evil.example"))
+	use(csrfRequest(http.MethodPost, "", "null"))
+	use(csrfRequest(http.MethodPost, "same-origin", ""))
+	use(csrfRequest(http.MethodGet, "cross-site", ""))
+	if got := field(s.Snapshot(), "refused"); got != int64(2) {
+		t.Error(test.DiffMessage(got, int64(2), "I4: refusals are counted, passes are not"))
+	}
+}
+
+func TestCSRF_Allocations(t *testing.T) {
+	mw := CSRF{}.NewMiddleware()
+	w := &discardWriter{header: http.Header{}}
+
+	safe := csrfRequest(http.MethodGet, "cross-site", "https://evil.example")
+	if got := testing.AllocsPerRun(200, func() { mw.Use(safe, w, noop) }); got != 0 {
+		t.Error(test.DiffMessage(got, 0.0, "S1: a safe method costs no allocation"))
+	}
+	fetch := csrfRequest(http.MethodPost, "same-origin", "https://evil.example")
+	if got := testing.AllocsPerRun(200, func() { mw.Use(fetch, w, noop) }); got != 0 {
+		t.Error(test.DiffMessage(got, 0.0, "S2: a Sec-Fetch-Site decision costs no allocation"))
+	}
+	origin := csrfRequest(http.MethodPost, "", "https://example.com")
+	if got := testing.AllocsPerRun(200, func() { mw.Use(origin, w, noop) }); got > 2 {
+		t.Error(test.DiffMessage(got, "<= 2", "S5: an Origin against the host costs at most two allocations"))
+	}
+	bare := csrfRequest(http.MethodPost, "", "")
+	if got := testing.AllocsPerRun(200, func() { mw.Use(bare, w, noop) }); got != 0 {
+		t.Error(test.DiffMessage(got, 0.0, "S4: a non-browser request costs no allocation"))
+	}
 }

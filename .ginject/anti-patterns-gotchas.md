@@ -554,8 +554,8 @@ brokerB.Unsubscribe(subA)  // returns ErrForeignSubscription, no-op on both brok
 Binding one Middleware/Guard/Interceptor/ExceptionFilter type with **different** configuration gives one instance per configuration:
 ```go
 // Controller A and controller B each get their own cors.CORS instance.
-c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://a.example.com"}})
-c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://b.example.com"}})
+c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://a.example.com"}})
+c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
 ```
 
 **The gotcha**: the app's layer cache (`(*container).construct` in `core/container.go`, behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance, inside one app, between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
@@ -583,37 +583,45 @@ func (c UploadController) CREATE(body ctx.Body) any {
 
 **Rule**: Any handler that accepts uploads must account for the app-wide cap and the 413 it produces; don't assume an unlimited body size.
 
-## 12. CORS Configuration Gotchas
+## 12. CORS, CSRF and Client IP Gotchas
 
-### 12.1 GOTCHA: Wildcard Origin With Credentials
-
-**WRONG**:
-```go
-cors.CORS{IsAllowCredentials: true}   // AllowOrigin unset defaults to wildcard "*"
-```
-
-**Why It's Wrong**: `middlewares/cors.CORS.NewMiddleware()` panics at config time (during `app.Create()`, not on first request) when `AllowOrigin` is wildcard (explicit `"*"` or left unset) combined with `IsAllowCredentials: true`. This is deliberate — browsers reject `*` on credentialed requests, and echoing the caller's origin back to satisfy that would grant every site on the internet credentialed access.
-
-**RIGHT**:
-```go
-cors.CORS{AllowOrigin: []string{"https://app.example.com"}, IsAllowCredentials: true}
-```
-
-**Rule**: Never generate `cors.CORS{IsAllowCredentials: true}` without an explicit `AllowOrigin` list or anchored regexp.
-
-### 12.2 GOTCHA: Unanchored Regexp `AllowOrigin`
+### 12.1 GOTCHA: `cors.CORS{}` With No Origin List
 
 **WRONG**:
 ```go
-cors.CORS{AllowOrigin: regexp.MustCompile(`https://.*\.trusted\.com`)}   // missing ^ and $
+cors.CORS{}                           // panics at Create(): invalid cors: AllowOrigins is empty
+cors.CORS{AllowOrigins: []string{"*"}, IsAllowCredentials: true} // panics: * never with credentials
+cors.CORS{AllowOrigin: "https://app.example.com"}               // does not compile: the field is AllowOrigins
 ```
 
-**Why It's Wrong**: `NewMiddleware()` also panics if a `*regexp.Regexp` `AllowOrigin` isn't anchored with `^` and `$`. Without both anchors, matching is a substring search: `https://.*\.trusted\.com` also matches `"https://evil.trusted.com.attacker.com"` — a real domain-suffix bypass, not a hypothetical one.
+**Why It's Wrong**: the zero value allows nothing (design 0014), `*` with credentials would give every site credentialed access, and the old `AllowOrigin any` / regexp origins, `IsPreflightContinue` and `OptionsSuccessStatus` are gone.
 
 **RIGHT**:
 ```go
-cors.CORS{AllowOrigin: regexp.MustCompile(`^https://.*\.trusted\.com$`)}
+cors.CORS{AllowOrigins: []string{"https://app.example.com", "https://*.example.com"}, IsAllowCredentials: true}
 ```
 
-**Rule**: Any regexp `AllowOrigin` must start with `^` and end with `$`.
+**Rule**: list lower-case `scheme://host[:port]` origins or `scheme://*.host[:port]` patterns; `*` only alone and only without credentials.
+
+### 12.2 GOTCHA: CSRF Tokens
+
+**WRONG**: generating `csrf.CSRF{CookieName: ..., HeaderName: ...}`, `csrf.GenerateCSRFToken`, or front-end code that reads a CSRF cookie and sends `X-CSRF-Token`.
+
+**Why It's Wrong**: `csrf` now wraps `http.CrossOriginProtection` (Fetch Metadata + `Origin`): there is no token, no cookie and no context value. The only option is `TrustedOrigins`.
+
+**RIGHT**: `csrf.CSRF{}` or `csrf.CSRF{TrustedOrigins: []string{"https://app.example.com"}}`; keep `GET` free of state changes.
+
+### 12.3 GOTCHA: Reading the Client IP From Headers
+
+**WRONG**:
+```go
+ip := c.Request.Header.Get("X-Forwarded-For") // any client can send it
+ip := c.Request.Header.Get("X-Real-IP")
+```
+
+**Why It's Wrong**: a client writes these headers itself: one new value per request bypasses a rate limit and fakes the log. Behind a proxy, `r.RemoteAddr` is the proxy.
+
+**RIGHT**: bind `proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}` first, then read `proxy.ClientIP(c.Request)`, `proxy.Scheme(c.Request)` and `proxy.Host(c.Request)` everywhere (handlers, guards, a throttler `KeyFunc`).
+
+**Rule**: never parse a forwarding header yourself; without `proxy` bound the client is the connection's peer, by design.
 

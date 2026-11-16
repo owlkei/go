@@ -1,140 +1,116 @@
 package csrf
 
 import (
-	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/inspect"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
 
 const (
-	csrfDefaultTokenLength = 32
-	csrfDefaultCookieName  = "_csrf"
-	csrfDefaultHeaderName  = "X-CSRF-Token"
-	csrfDefaultContextKey  = "csrf_token"
-	csrfAltHeader          = "X-XSRF-TOKEN"
-	csrfFormField          = "_csrf"
+	maxTrustedOrigins = 64
+	maxOriginLength   = 256
+	originHeader      = "Origin"
+	fetchSiteHeader   = "Sec-Fetch-Site"
 )
 
-var csrfSafeMethods = map[string]bool{
-	http.MethodGet:     true,
-	http.MethodHead:    true,
-	http.MethodOptions: true,
-}
+var refusal = exception.ForbiddenException("Cross-origin request refused")
 
 type CSRF struct {
-	TokenLength int
-	CookieName  string
-	HeaderName  string
-	ContextKey  string
-}
-
-type csrfOptions struct {
-	tokenLength int
-	cookieName  string
-	headerName  string
-	contextKey  any
+	TrustedOrigins []string
 }
 
 type compiledCSRF struct {
-	opts *csrfOptions
+	protection     *http.CrossOriginProtection
+	trustedOrigins []string
+	refused        atomic.Int64
 }
 
 func (instance CSRF) NewMiddleware() common.MiddlewareFn {
-	return compiledCSRF{opts: loadCSRFOptions(&instance)}
-}
-
-func loadCSRFOptions(c *CSRF) *csrfOptions {
-	opts := new(csrfOptions)
-
-	opts.tokenLength = c.TokenLength
-	if opts.tokenLength <= 0 {
-		opts.tokenLength = csrfDefaultTokenLength
-	}
-
-	opts.cookieName = c.CookieName
-	if opts.cookieName == "" {
-		opts.cookieName = csrfDefaultCookieName
-	}
-
-	opts.headerName = c.HeaderName
-	if opts.headerName == "" {
-		opts.headerName = csrfDefaultHeaderName
-	}
-
-	opts.contextKey = c.ContextKey
-	if opts.contextKey == "" {
-		opts.contextKey = csrfDefaultContextKey
-	}
-
-	return opts
-}
-
-func GenerateCSRFToken(length int) (string, error) {
-	if length <= 0 {
-		length = csrfDefaultTokenLength
-	}
-	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-func CompareTokensSecurely(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
-
-func (m compiledCSRF) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-	opts := m.opts
-
-	var cookieToken string
-	if cookie, err := r.Cookie(opts.cookieName); err == nil && cookie.Value != "" {
-		cookieToken = cookie.Value
-	} else {
-		token, err := GenerateCSRFToken(opts.tokenLength)
-		if err != nil {
-			panic(exception.InternalServerErrorException("CSRF token generation failed"))
-		}
-
-		http.SetCookie(w, &http.Cookie{
-			Name:     opts.cookieName,
-			Value:    token,
-			Path:     "/",
-			HttpOnly: false,
-		})
-		cookieToken = token
-	}
-
-	*r = *r.WithContext(
-		context.WithValue(r.Context(), opts.contextKey, cookieToken),
-	)
-
-	if csrfSafeMethods[r.Method] {
-		next()
-		return
-	}
-
-	requestToken := r.Header.Get(opts.headerName)
-	if requestToken == "" {
-		requestToken = r.Header.Get(csrfAltHeader)
-	}
-	if requestToken == "" {
-		requestToken = r.FormValue(csrfFormField)
-	}
-
-	if !CompareTokensSecurely(requestToken, cookieToken) {
-		panic(exception.ForbiddenException("CSRF token invalid"))
-	}
-
-	next()
+	return loadCSRFOptions(&instance)
 }
 
 func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-	compiledCSRF{opts: loadCSRFOptions(&instance)}.Use(r, w, next)
+	instance.NewMiddleware().Use(r, w, next)
+}
+
+func loadCSRFOptions(c *CSRF) *compiledCSRF {
+	if len(c.TrustedOrigins) > maxTrustedOrigins {
+		panic(color.FmtRed("invalid csrf: TrustedOrigins has %d entries, at most %d are allowed", len(c.TrustedOrigins), maxTrustedOrigins))
+	}
+	compiled := &compiledCSRF{
+		protection:     http.NewCrossOriginProtection(),
+		trustedOrigins: append([]string(nil), c.TrustedOrigins...),
+	}
+	for _, origin := range c.TrustedOrigins {
+		if err := compiled.protection.AddTrustedOrigin(origin); err != nil {
+			panic(color.FmtRed("invalid csrf: TrustedOrigins entry %q must be scheme://host[:port]", origin))
+		}
+	}
+	return compiled
+}
+
+func (c *compiledCSRF) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		next()
+		return
+	}
+	origin := headerValue(r.Header, originHeader)
+	if len(origin) > maxOriginLength {
+		c.refuse()
+	}
+	if origin != "" && len(r.Header[fetchSiteHeader]) == 0 && isForwardedHost(r) && originHost(origin) == tracecontext.Host(r) {
+		next()
+		return
+	}
+	if c.protection.Check(r) != nil {
+		c.refuse()
+	}
+	next()
+}
+
+func (c *compiledCSRF) refuse() {
+	c.refused.Add(1)
+	panic(&refusal)
+}
+
+func headerValue(h http.Header, key string) string {
+	if values := h[key]; len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
+func isForwardedHost(r *http.Request) bool {
+	s := tracecontext.ScopeOf(r.Context())
+	return s != nil && s.IsClientSet && s.ClientHost != ""
+}
+
+func originHost(origin string) string {
+	for i := 0; i+2 < len(origin); i++ {
+		if origin[i] == ':' && origin[i+1] == '/' && origin[i+2] == '/' {
+			host := origin[i+3:]
+			for j := 0; j < len(host); j++ {
+				switch host[j] {
+				case '/', '?', '#', '@', '\\':
+					return ""
+				}
+			}
+			return host
+		}
+	}
+	return ""
+}
+
+func (c *compiledCSRF) Snapshot() inspect.Snapshot {
+	return inspect.Snapshot{Name: "csrf", Fields: []inspect.Field{
+		{Key: "trusted_origins", Value: append([]string(nil), c.trustedOrigins...)},
+		{Key: "refused", Value: c.refused.Load()},
+	}}
 }

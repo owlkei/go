@@ -57,6 +57,7 @@ func main() {
 | `Operation` | `string` | `complete`: the HTTP method, or the WS message type |
 | `Target` | `string` | `complete`: the URL path without the query string, or the WS topic |
 | `Code` | `int` | `complete`: the status written; a `middleware` event that ended in a panic: the status of the error response |
+| `ClientIP` | `netip.Addr` | `complete` of an HTTP request or handshake: the client's address as `proxy.ClientIP` resolves it (the peer of `RemoteAddr` without `proxy`); the zero `Addr` on every other event and when the address is unknown |
 
 ## Spans
 
@@ -223,7 +224,7 @@ keeps working after the request ended, for example in a goroutine you started fr
 
 ## Performance notes
 
-- The listeners are an immutable slice behind an `atomic.Pointer`: `Enabled` is one atomic load, `Emit` one load and direct typed calls, with no lock and no boxing of the event. An `Event` is 160 bytes, passed by value. `Listen` and `stop` copy the slice under a mutex (bootstrap and shutdown only).
+- The listeners are an immutable slice behind an `atomic.Pointer`: `Enabled` is one atomic load, `Emit` one load and direct typed calls, with no lock and no boxing of the event. An `Event` is 184 bytes, passed by value. `Listen` and `stop` copy the slice under a mutex (bootstrap and shutdown only).
 - `Transport` without a trace scope, or with your own `Traceparent` key, is one context lookup and allocates nothing. With a scope it copies the request and its header map once per call, as the `http.RoundTripper` contract requires (5 allocations with three headers): small next to a network round trip. It holds only `base` and keeps nothing between calls.
 
 ## Benchmarks

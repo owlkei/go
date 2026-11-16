@@ -14,6 +14,7 @@
     - [Upstream](#upstream)
     - [Parent](#parent)
     - [LogSlot](#logslot)
+    - [Client fields](#client-fields)
   - [Functions](#functions)
     - [NewSpanID](#newspanid)
     - [NewTraceID](#newtraceid)
@@ -22,6 +23,8 @@
     - [NewMessage](#newmessage)
     - [With](#with)
     - [ScopeOf](#scopeof)
+    - [ClientIP, IsHTTPS, Host](#clientip-ishttps-host)
+    - [Host syntax helpers](#host-syntax-helpers)
   - [`Scope` Methods](#scope-methods)
     - [AppendArgs](#appendargs)
     - [Traceparent](#traceparent)
@@ -144,6 +147,16 @@ scope).
 
 Reserved for the log package (design 0012): the scoped logger cached once per scope. This package
 never reads or writes it.
+
+### Client fields
+- `ClientIP` `netip.Addr`, `ClientHost` `string`, `IsClientHTTPS` `bool`, `IsClientSet` `bool`
+- Default: zero (a new request scope has no resolved client)
+- Required: no
+
+Written by the `proxy` middleware on the request's goroutine, before any later layer runs, and
+never after. `IsClientSet` says that `proxy` resolved this request; the other three are ignored
+while it is `false`. `ClientHost` `""` means `r.Host`. They live inside the scope's own allocation
+(about 48 B more), so resolving a client allocates nothing.
 
 ## Functions
 
@@ -311,6 +324,39 @@ if s := tracecontext.ScopeOf(ctx); s != nil {
 #### Rules
 - It finds the scope through any number of `WithValue`, `WithCancel` and `WithTimeout` wrappers, with no allocation.
 - `nil`, `context.Background()` and a context with other values return `nil`.
+
+### ClientIP, IsHTTPS, Host
+
+```go
+func ClientIP(r *http.Request) netip.Addr
+func IsHTTPS(r *http.Request) bool
+func Host(r *http.Request) string
+```
+
+The client of a request, as `proxy.ClientIP`, `proxy.Scheme` and `proxy.Host` show it to users.
+
+#### Rules
+- A scope with `IsClientSet` decides: its `ClientIP`, `IsClientHTTPS` and `ClientHost` (or `r.Host`
+  when `ClientHost` is empty), whatever the connection says.
+- Otherwise, or without a scope: the IP of `r.RemoteAddr` (IPv4-mapped IPv6 unmapped, zone
+  removed; the zero `Addr` when it is not `ip:port`, for example `192.0.2.7`, `example.com:80` or
+  empty), `r.TLS != nil`, and `r.Host`.
+- None of them allocates. No request header is read.
+
+### Host syntax helpers
+
+```go
+func RemoteIP(remoteAddr string) netip.Addr
+func IsValidHost(host string) bool
+func HostName(host string) string
+func SplitHostPort(host string) (name, port string, hasPort, ok bool)
+func IsPort(port string) bool
+```
+
+Shared by `proxy`, `hostcheck`, `httpsredirect` and `cors`, so every middleware accepts the same
+hosts. `IsValidHost` accepts at most 255 bytes of letters, digits, `.` and `-` with an optional
+`:port`, or a bracketed IPv6 literal (no zone) with an optional port. `HostName` drops the port.
+`SplitHostPort` refuses a second colon outside brackets. `IsPort` accepts 1 to 5 digits up to 65535.
 
 ## `Scope` Methods
 

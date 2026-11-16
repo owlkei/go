@@ -20,6 +20,8 @@ import (
 	"github.com/dangduoc08/ginject/versioning"
 )
 
+const cacheControlHeader = "Cache-Control"
+
 var (
 	notFoundBody         = exception.NotFoundException(stdHTTP.StatusText(stdHTTP.StatusNotFound)).AppendJSON(nil)
 	methodNotAllowedBody = exception.MethodNotAllowedException(stdHTTP.StatusText(stdHTTP.StatusMethodNotAllowed)).AppendJSON(nil)
@@ -27,6 +29,8 @@ var (
 	invalidURLBody       = exception.BadRequestException("Invalid URL path").AppendJSON(nil)
 
 	accessDeniedException = exception.ForbiddenException("Access denied")
+
+	noCacheValue = []string{"no-cache"}
 
 	allowMethods = []string{
 		stdHTTP.MethodGet,
@@ -438,7 +442,7 @@ func (http *HTTP) writeResult(ex *httpExchange, route *httpRoute, result reflect
 func serveContent(ex *httpExchange, serveIndex int, result any) {
 	dir, ok := result.(string)
 	if !ok {
-		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 
@@ -451,7 +455,7 @@ func serveContent(ex *httpExchange, serveIndex int, result any) {
 			dir = path.Join(root, strings.Join(segments[serveIndex:], "/"))
 		}
 		if dir != root && !strings.HasPrefix(dir, root+"/") {
-			writeJSONError(&ex.writer, stdHTTP.StatusBadRequest, invalidURLBody)
+			serveError(ex, stdHTTP.StatusBadRequest, invalidURLBody)
 			return
 		}
 		serveFromRoot(ex, root, strings.TrimPrefix(strings.TrimPrefix(dir, root), "/"))
@@ -460,30 +464,31 @@ func serveContent(ex *httpExchange, serveIndex int, result any) {
 
 	info, err := os.Stat(dir)
 	if err != nil {
-		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 	if info.IsDir() {
 		index := filepath.Join(dir, "index.html")
 		if indexInfo, err := os.Stat(index); err != nil || indexInfo.IsDir() {
-			writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+			serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/") {
 			dir = index
 		}
 	}
+	setDefaultCacheControl(ex.writer.Header())
 	stdHTTP.ServeFile(&ex.writer, r, dir)
 }
 
 func serveFromRoot(ex *httpExchange, rootDir, rel string) {
 	if hasHiddenSegment(rel) {
-		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 	root, err := os.OpenRoot(rootDir)
 	if err != nil {
-		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 	defer func() { _ = root.Close() }()
@@ -493,20 +498,32 @@ func serveFromRoot(ex *httpExchange, rootDir, rel string) {
 	}
 	info, err := root.Stat(name)
 	if err != nil {
-		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 	if info.IsDir() {
 		index := path.Join(name, "index.html")
 		if indexInfo, err := root.Stat(index); err != nil || indexInfo.IsDir() {
-			writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+			serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 			return
 		}
 		if strings.HasSuffix(ex.Request.URL.Path, "/") {
 			name = index
 		}
 	}
+	setDefaultCacheControl(ex.writer.Header())
 	stdHTTP.ServeFileFS(&ex.writer, ex.Request, root.FS(), name)
+}
+
+func serveError(ex *httpExchange, code int, body []byte) {
+	delete(ex.writer.Header(), cacheControlHeader)
+	writeJSONError(&ex.writer, code, body)
+}
+
+func setDefaultCacheControl(h stdHTTP.Header) {
+	if _, ok := h[cacheControlHeader]; !ok {
+		h[cacheControlHeader] = noCacheValue
+	}
 }
 
 func hasHiddenSegment(rel string) bool {
@@ -524,6 +541,7 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 		return
 	}
 	if rec == stdHTTP.ErrAbortHandler {
+		ex.writer.runHooks(&ex.Timestamp)
 		panic(rec)
 	}
 	if ex.filters != nil {
@@ -554,6 +572,7 @@ func (http *HTTP) catch(ex *httpExchange, rec any) {
 			return
 		}
 		if next == stdHTTP.ErrAbortHandler {
+			ex.writer.runHooks(&ex.Timestamp)
 			panic(next)
 		}
 		rec = next

@@ -6,18 +6,55 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
+
+	"github.com/dangduoc08/ginject/internal/httphook"
 )
 
 var errResponseEnded = errors.New("core: response writer used after the request ended")
 
 type responseWriter struct {
-	w    http.ResponseWriter
-	code int
+	w     http.ResponseWriter
+	code  int
+	hooks []httphook.Hook
 }
 
 func (w *responseWriter) reset(rw http.ResponseWriter) {
 	w.w = rw
 	w.code = 0
+	if len(w.hooks) != 0 {
+		clear(w.hooks)
+		w.hooks = w.hooks[:0]
+	}
+}
+
+func (w *responseWriter) Inner() http.ResponseWriter {
+	return w.w
+}
+
+func (w *responseWriter) SetInner(inner http.ResponseWriter) {
+	w.w = inner
+}
+
+func (w *responseWriter) OnDone(h httphook.Hook) {
+	w.hooks = append(w.hooks, h)
+}
+
+func (w *responseWriter) runHooks(start *time.Time) {
+	if len(w.hooks) != 0 {
+		w.callHooks(start)
+	}
+}
+
+func (w *responseWriter) callHooks(start *time.Time) {
+	elapsed := time.Since(*start)
+	hooks := w.hooks
+	for i := len(hooks) - 1; i >= 0; i-- {
+		h := hooks[i]
+		hooks[i] = nil
+		h.Done(elapsed)
+	}
+	w.hooks = hooks[:0]
 }
 
 func (w *responseWriter) Header() http.Header {

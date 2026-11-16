@@ -181,7 +181,7 @@ func (c UserController) NewController() Controller {
 }
 ```
 
-**Optional `NewMiddleware()` constructor** — if the bound type defines `NewMiddleware() MiddlewareFn`, the app calls it once (its container's `construct`, `core/container.go`) instead of using the literal directly — the standard place to precompute/validate config once instead of per-request (e.g. `middlewares/cors.CORS.NewMiddleware()` compiles its options once). The container keeps one instance per configuration and app (same type, same constructor name, `reflect.DeepEqual` value): equal bindings share an instance, different ones get their own. Same applies to Guard/Interceptor/ExceptionFilter below. A layer bound to a method that is neither a route nor an event of the controller panics at `Create()` (`invalid middleware: … is bound to '<name>', which is not a handler of the controller`); a handler of the other transport binds nothing on this side. Full detail: [package-reference.md](package-reference.md), package `common`.
+**Optional `NewMiddleware()` constructor** — if the bound type defines `NewMiddleware() MiddlewareFn`, the app calls it once (its container's `construct`, `core/container.go`) instead of using the literal directly — the standard place to precompute/validate config once instead of per-request (e.g. `middlewares/cors.CORS.NewMiddleware()` validates and compiles its options once, and panics on a bad origin list). The container keeps one instance per configuration and app (same type, same constructor name, `reflect.DeepEqual` value): equal bindings share an instance, different ones get their own. Same applies to Guard/Interceptor/ExceptionFilter below. A layer bound to a method that is neither a route nor an event of the controller panics at `Create()` (`invalid middleware: … is bound to '<name>', which is not a handler of the controller`); a handler of the other transport binds nothing on this side. Full detail: [package-reference.md](package-reference.md), package `common`.
 
 ### 2.3 Middleware Execution Order
 
@@ -192,6 +192,29 @@ func (c UserController) NewController() Controller {
 A middleware that does not call `next()`: nothing after it runs, no filter runs, and what it wrote is
 the response (an empty 200 if it wrote nothing). A middleware's panic is answered by the HTTP layer
 (1.2) and still emits its `middleware` trace event, with `Code` = the error response's status.
+
+### 2.4 Exchange hooks (internal, design 0014)
+
+The framework's response writer (`core.responseWriter`, the `w` every middleware receives)
+implements `internal/httphook.Writer`: `SetInner(x)` routes every later `Header` / `WriteHeader` /
+`Write` / `Flush` / `ReadFrom` / `Hijack` / `Unwrap` to `x` (the recorded status stays the one the
+layer passed), and `OnDone(h)` runs `h.Done(elapsed)` once when the exchange ends, last registered
+first: after `handleRequest` returned (response or error response written, 404 included) and
+before the `complete` trace event; at the end of a WS handshake (accepted or refused); before
+`http.ErrAbortHandler` is re-panicked. `reset` clears hooks and the inner writer for the next pooled
+request. Unused, it costs one length check. The lifecycle order does not change; `compress` and
+`loadshed` use it. Not public API.
+
+### 2.5 Built-in HTTP middlewares and the client
+
+`proxy` writes the resolved client (IP, scheme, host) into the request's `tracecontext.Scope`;
+`proxy.ClientIP` / `Scheme` / `Host` (backed by `tracecontext.ClientIP` / `IsHTTPS` / `Host`) are the
+only readers, used by `hostcheck`, `httpsredirect`, `helmet` (HSTS), `csrf` (forwarded host), the
+throttler and the `complete` event (`trace.Event.ClientIP`, printed as `ip` by the access log).
+No middleware of design 0014 copies the request, replaces its context or reads its body; refusals
+are `panic(&prebuiltException)` (1.2). Production order: `loadshed`, `proxy`, `hostcheck`,
+`httpsredirect`, `helmet`, `cors`, `csrf`, `compress`. `SERVE_…` routes send
+`Cache-Control: no-cache` unless a layer set one, and drop `Cache-Control` on their own 404 / 400.
 
 ---
 

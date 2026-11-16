@@ -1,30 +1,27 @@
 # CSRF Middleware
 
-*`csrf` implements the double-submit-cookie pattern as a Ginject middleware, issuing a token cookie and verifying it against a header or form field on state-changing requests.*
+*`csrf` refuses cross-origin state-changing requests from browsers, using the Fetch Metadata `Sec-Fetch-Site` header and the `Origin` header, with no token, no cookie and no body read.*
 
 - [CSRF Middleware](#csrf-middleware)
   - [Key Features](#key-features)
   - [Usage](#usage)
-  - [How It Works](#how-it-works)
+  - [How it decides](#how-it-decides)
   - [`CSRF` Struct](#csrf-struct)
-    - [TokenLength](#tokenlength)
-    - [CookieName](#cookiename)
-    - [HeaderName](#headername)
-    - [ContextKey](#contextkey)
-  - [Functions](#functions)
-    - [GenerateCSRFToken](#generatecsrftoken)
-    - [CompareTokensSecurely](#comparetokenssecurely)
+    - [TrustedOrigins](#trustedorigins)
   - [`CSRF` Methods](#csrf-methods)
     - [NewMiddleware](#newmiddleware)
     - [Use](#use)
+  - [Rules](#rules)
+  - [Limits](#limits)
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- Double-submit-cookie pattern: no server-side session storage required
-- `GET`/`HEAD`/`OPTIONS` requests always pass through untouched; only state-changing methods are verified
-- Accepts the submitted token from a custom header, the `X-XSRF-TOKEN` header, or a `_csrf` form field, in that priority order
-- Constant-time token comparison to prevent timing attacks
-- The active token is exposed to downstream handlers via the request context
+- The decision is the standard library's `http.CrossOriginProtection` (Go 1.25+), maintained by the Go team
+- Works for forms and `fetch` alike: nothing to add to your pages or your front end
+- No token to leak, no cookie to fixate, nothing stored in the request context
+- Requests from non-browser clients (curl, mobile apps, servers) pass untouched
+- Behind a trusted `proxy`, the `Origin` is compared with the forwarded host
+- No allocation on the common paths
 
 ## Usage
 
@@ -40,8 +37,7 @@ func main() {
 	app := core.New()
 
 	app.BindGlobalMiddlewares(csrf.CSRF{
-		CookieName: "_csrf",
-		HeaderName: "X-CSRF-Token",
+		TrustedOrigins: []string{"https://app.example.com"},
 	})
 
 	app.Create(
@@ -50,223 +46,94 @@ func main() {
 }
 ```
 
-`CSRF` also works scoped to a single controller, since it satisfies `common.MiddlewareFn` directly:
+A `POST` that a page on `https://evil.example` makes the browser send gets:
 
-```go
-func (c FormController) NewController() core.Controller {
-	c.BindMiddleware(csrf.CSRF{})
-	return c
-}
+```json
+{"code":403,"error":"Forbidden","message":"Cross-origin request refused"}
 ```
 
-## How It Works
+## How it decides
 
-1. On every request, `Use` reads the token from the configured cookie. If the cookie is missing or empty, it generates a new token with `GenerateCSRFToken` and sets it on a non-`HttpOnly` cookie so client-side JavaScript can read it back for the next request.
-2. The resolved token is stored in the request context under `ContextKey`, reachable from handlers via `c.Request.Context().Value(...)`.
-3. For safe methods (`GET`, `HEAD`, `OPTIONS`), `next` is called immediately — no verification happens.
-4. For any other method, the submitted token is read from `HeaderName`, then `X-XSRF-TOKEN`, then the `_csrf` form field, and compared against the cookie token with `CompareTokensSecurely`. A mismatch panics with `exception.ForbiddenException`.
+Modern browsers send `Sec-Fetch-Site` on every request; older ones send `Origin` on unsafe
+requests. Non-browser clients send neither.
+
+| Method | `Sec-Fetch-Site` | `Origin` | Result |
+|---|---|---|---|
+| `GET`, `HEAD`, `OPTIONS` | any | any | pass |
+| other | `same-origin` or `none` | any | pass |
+| other | any other value (`cross-site`, `same-site`, anything else) | any | `Origin` in `TrustedOrigins`: pass; else `403` |
+| other | absent | absent | pass (not a browser) |
+| other | absent | its host equals the request's host | pass (a browser from before 2023, or plain HTTP) |
+| other | absent | another host, `null` or unparsable | `Origin` in `TrustedOrigins`: pass; else `403` |
 
 ## `CSRF` Struct
 
-### TokenLength
-Type: `int`
+### TrustedOrigins
+Type: `[]string`
 
-Default: `32` (bytes of entropy, encoded as 64 hex characters)
-
-Required: `false`
-
-A zero or negative value falls back to the default.
-
-```go
-csrf.CSRF{TokenLength: 64}
-```
-
-### CookieName
-Type: `string`
-
-Default: `"_csrf"`
+Default: none
 
 Required: `false`
 
-```go
-csrf.CSRF{CookieName: "my_csrf"}
-```
-
-### HeaderName
-Type: `string`
-
-Default: `"X-CSRF-Token"`
-
-Required: `false`
-
-The header checked first for the submitted token on state-changing requests. `X-XSRF-TOKEN` is always checked as a fallback regardless of this setting.
+Origins allowed to send cross-origin unsafe requests: a front end on another domain, or an
+identity provider that posts back to your app. Each entry is `scheme://host[:port]`, at most 64. A
+trusted origin matches exactly: another scheme, port or subdomain is not trusted, and `null` never
+is.
 
 ```go
-csrf.CSRF{HeaderName: "X-My-CSRF"}
-```
-
-### ContextKey
-Type: `string`
-
-Default: `"csrf_token"`
-
-Required: `false`
-
-The request-context key under which the active token is stored for downstream handlers to read.
-
-```go
-csrf.CSRF{ContextKey: "my_key"}
-```
-
-## Functions
-
-### GenerateCSRFToken
-
-Returns a hex-encoded, cryptographically random token.
-
-#### Rules
-- A `length` of 32 produces a 64-character hex string, i.e. the output is always `2 × length` hex characters (`TestGenerateCSRFToken_Length`).
-- A `length` of `0` (or any non-positive value) falls back to the 32-byte default, producing a 64-character token (`TestGenerateCSRFToken_ZeroLengthUsesDefault`).
-- Successive calls produce different tokens (`TestGenerateCSRFToken_Uniqueness`).
-- The output contains only lowercase hex characters (`0`-`9`, `a`-`f`) (`TestGenerateCSRFToken_OnlyHexChars`).
-
-#### Parameters
-- 1st parameter: `int` (`length`)
-
-- Description: Number of random bytes to generate; non-positive values fall back to the package default of 32.
-
-#### Returns
-- 1st value: `string`
-
-- Description: The hex-encoded random token, `2 × length` characters long.
-
-- 2nd value: `error`
-
-- Description: Non-nil if the underlying random source fails to produce enough bytes.
-
-#### Usage
-
-```go
-token, err := csrf.GenerateCSRFToken(32)
-if err != nil {
-	panic(err)
-}
-fmt.Println(token)
-```
-
-### CompareTokensSecurely
-
-Compares two tokens in constant time to prevent timing attacks.
-
-#### Rules
-- Two equal, non-empty strings compare equal (`TestCompareTokensSecurely_Equal`).
-- Two unequal strings compare unequal (`TestCompareTokensSecurely_Unequal`).
-- Two empty strings compare equal (`TestCompareTokensSecurely_EmptyBothEqual`).
-- A non-empty string compared against an empty string compares unequal (`TestCompareTokensSecurely_OneEmpty`).
-
-#### Parameters
-- 1st parameter: `string` (`a`)
-
-- Description: The first token to compare.
-
-- 2nd parameter: `string` (`b`)
-
-- Description: The second token to compare.
-
-#### Returns
-- 1st value: `bool`
-
-- Description: `true` if `a` and `b` are equal.
-
-#### Usage
-
-```go
-if !csrf.CompareTokensSecurely(submitted, expected) {
-	panic("token mismatch")
-}
+csrf.CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.example.org:8443"}}
 ```
 
 ## `CSRF` Methods
 
 ### NewMiddleware
-
-Compiles the `CSRF` struct's fields into an internal options value once, and returns a `common.MiddlewareFn` that reuses those compiled options on every request.
-
-#### Rules
-- Returns a value of the package's internal compiled middleware type, distinct from the `CSRF` struct itself (`TestCSRF_NewMiddleware_ReturnsCompiledCSRF`).
-
-#### Parameters
-None.
-
-#### Returns
-- 1st value: `common.MiddlewareFn`
-
-- Description: A middleware ready to bind via `BindGlobalMiddlewares` or `BindMiddleware`, with its CSRF options compiled once.
-
-#### Usage
-
 ```go
-mw := csrf.CSRF{TokenLength: 16}.NewMiddleware()
-app.BindGlobalMiddlewares(mw)
+func (instance CSRF) NewMiddleware() common.MiddlewareFn
 ```
+
+Validates and compiles the options once; the framework calls it at `Create()`. It panics with
+`invalid csrf: ...` for an origin that is not `scheme://host[:port]` (`example.com`,
+`https://example.com/path`, `*`, `//example.com`, a query or a fragment) and for more than 64
+origins.
 
 ### Use
-
-Issues or reuses the CSRF cookie, exposes the token via the request context, and verifies the submitted token on state-changing requests.
-
-#### Rules
-- `GET`, `HEAD`, and `OPTIONS` requests always call `next` without verifying a token (`TestCSRF_SafeMethod_GET`, `TestCSRF_SafeMethod_HEAD`, `TestCSRF_SafeMethod_OPTIONS`).
-- If the configured cookie is missing, a new token is generated and set on a cookie of that name (`TestCSRF_SetsCookieWhenMissing`).
-- If the configured cookie already has a value, no new cookie is set — the existing token is reused (`TestCSRF_ReusesExistingCookie`).
-- The resolved token is stored in the request context under `ContextKey`, readable via `r.Context().Value(ContextKey)` (`TestCSRF_StoresTokenInContext`).
-- For `POST`, `PUT`, `PATCH`, and `DELETE` requests, a token submitted via `HeaderName` that matches the cookie token allows the request through (`TestCSRF_POST_ValidHeader`, `TestCSRF_PUT_ValidHeader`, `TestCSRF_PATCH_ValidHeader`, `TestCSRF_DELETE_ValidHeader`).
-- A token submitted via the `X-XSRF-TOKEN` header is also accepted, even when `HeaderName` is unset to its default (`TestCSRF_POST_ValidAltHeader`).
-- A token submitted via the `_csrf` form field is accepted when no header token is present (`TestCSRF_POST_ValidFormField`).
-- A missing, empty, mismatched, or otherwise invalid submitted token panics with a CSRF exception instead of calling `next` (`TestCSRF_POST_MissingToken_Panics`, `TestCSRF_POST_EmptyToken_Panics`, `TestCSRF_POST_WrongToken_Panics`, `TestCSRF_POST_SpecialCharsToken_Panics`).
-- Safe to call concurrently from multiple goroutines, for both safe and state-changing requests (`TestCSRF_ConcurrentSafeRequests`, `TestCSRF_ConcurrentStateChanging`).
-
-#### Parameters
-- 1st parameter: `*http.Request` (`r`)
-
-- Description: The current request; its cookies and method are read, and its context is replaced in place (via `*r = *r.WithContext(...)`, so the caller's `*ctx.HTTPContext` sees the update too) to carry the resolved token downstream.
-
-- 2nd parameter: `http.ResponseWriter` (`w`)
-
-- Description: The CSRF cookie is set on this when a new token is generated.
-
-- 3rd parameter: `ctx.Next` (`next`)
-
-- Description: Called to pass control to the next handler in the chain.
-
-#### Returns
-None.
-
-#### Usage
-
 ```go
-csrf.CSRF{}.Use(r, w, next)
+func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
 ```
+
+Makes `CSRF` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+only; the framework always calls `NewMiddleware`.
+
+## Rules
+- Every row of the table above holds for `POST`, `PUT`, `PATCH` and `DELETE`.
+- `same-site` is refused: a sibling subdomain (`https://sub.example.com`) is another origin.
+- The `Sec-Fetch-Site` value is compared exactly (`Cross-Site` is refused like `cross-site`).
+- For an unsafe method, an `Origin` longer than 256 bytes is refused before any parsing, even when
+  it equals the host.
+- The origin's host and port must both equal the request's: `http://example.com:9090` is refused
+  on `example.com:8080`.
+- Behind a trusted `proxy` with a forwarded host, and without `Sec-Fetch-Site`, the origin's host
+  is compared with `proxy.Host(r)`. With no `proxy` bound, `X-Forwarded-Host` and `Forwarded` are
+  never read.
+- No cookie and no token header is ever set, on a pass or a refusal. The body is never read; the
+  request and its context are passed on unchanged.
+- The refusal is the HTTP layer's error response; it never repeats the origin.
+
+## Limits
+- A state change behind `GET` is not protected: keep `GET` safe.
+- Non-browser clients always pass: `csrf` is not authentication.
+- The one browser case Fetch Metadata and `Origin` cannot tell apart, a plain HTTP page posting to
+  the HTTPS site of the same host in a browser from before 2023, is closed by HSTS, which `helmet`
+  sends.
 
 ## Benchmarks
 
-Benchmarks were run on an Intel Core i7-9750H CPU @ 2.60 GHz with `go test -bench=. -benchmem`.
+Machine-dependent; captured on an Intel i7-9750H, Go 1.27.4, when this README was written
+(`go test -run='^$' -bench . -benchmem -count 5 -cpu 1,2 ./middlewares/csrf`, median shown).
 
-Results are machine-dependent and were captured at documentation generation time (July 30, 2026).
-
-| Benchmark | Operations | Time per op | Allocs | Bytes |
+| Benchmark | GOMAXPROCS 1 | GOMAXPROCS 2 | B/op | allocs/op |
 |---|---|---|---|---|
-| `BenchmarkGenerateCSRFToken` (token generation) | 2,083,831 | 603.7 ns/op | 2 | 128 B/op |
-| `BenchmarkCompareTokensSecurely_Equal` (constant-time equal) | 52,997,137 | 23.67 ns/op | 0 | 0 B/op |
-| `BenchmarkCompareTokensSecurely_Unequal` (constant-time unequal) | 47,164,563 | 27.35 ns/op | 0 | 0 B/op |
-| `BenchmarkCSRF_SafeMethod_NoCookie` (GET, no existing cookie) | 324,175 | 5,239 ns/op | 20 | 6,187 B/op |
-| `BenchmarkCSRF_SafeMethod_WithCookie` (GET, with cookie) | 325,197 | 4,002 ns/op | 22 | 6,135 B/op |
-| `BenchmarkCSRF_POST_ValidHeader` (POST, valid token) | 330,140 | 3,573 ns/op | 25 | 6,167 B/op |
-| `BenchmarkLoadCSRFOptions` (compile CSRF config) | 100,000,000 | 10.84 ns/op | 0 | 0 B/op |
-
-**Key observations:**
-
-- Token generation (~600ns) is the slowest operation
-- Constant-time token comparison is extremely fast (~20-25ns)
-- Safe methods (GET) cost ~4-5µs (mostly request context overhead)
-- State-changing methods (POST) cost ~3.6µs (validation is fast)
-- LoadCSRFOptions is negligible (~10ns), a true one-time startup cost
+| `CSRF_SafeMethod` | 2.7 ns | 2.7 ns | 0 | 0 |
+| `CSRF_SecFetchSiteSameOrigin` | 52.7 ns | 52.1 ns | 0 | 0 |
+| `CSRF_OriginAgainstHost` | 295 ns | 270 ns | 144 | 1 |
+| `CSRF_TrustedOrigin` | 103 ns | 102 ns | 0 | 0 |

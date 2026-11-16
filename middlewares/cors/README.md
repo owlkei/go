@@ -1,33 +1,33 @@
 # CORS Middleware
 
-*`cors` implements the [Fetch Standard CORS protocol](https://fetch.spec.whatwg.org/#http-cors-protocol) as a Ginject middleware, handling both simple requests and `OPTIONS` preflight requests.*
+*`cors` lets the browser pages you list read your API from another origin, following the [Fetch Standard CORS protocol](https://fetch.spec.whatwg.org/#http-cors-protocol): actual requests, `OPTIONS` preflights, credentials and private network access.*
 
 - [CORS Middleware](#cors-middleware)
   - [Key Features](#key-features)
   - [Usage](#usage)
   - [`CORS` Struct](#cors-struct)
-    - [AllowOrigin](#alloworigin)
+    - [AllowOrigins](#alloworigins)
+    - [AllowMethods](#allowmethods)
     - [AllowHeaders](#allowheaders)
     - [ExposeHeaders](#exposeheaders)
-    - [AllowMethods](#allowmethods)
     - [MaxAge](#maxage)
     - [IsAllowCredentials](#isallowcredentials)
-    - [IsPreflightContinue](#ispreflightcontinue)
-    - [OptionsSuccessStatus](#optionssuccessstatus)
+    - [IsAllowPrivateNetwork](#isallowprivatenetwork)
   - [`CORS` Methods](#cors-methods)
     - [NewMiddleware](#newmiddleware)
     - [Use](#use)
+  - [Rules](#rules)
+  - [Limits](#limits)
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- Wildcard `*`, single origin, exact origin list, or `*regexp.Regexp` pattern matching for `AllowOrigin` — all share the same matching logic for both HTTP and WebSocket requests
-- Automatic `Vary: Origin` header whenever the response depends on the request's origin, even when this particular origin was rejected (so caches never serve a CORS response to the wrong origin)
-- `Vary` is merged into, never overwrites, whatever other middleware already set, with case-insensitive de-duplication
-- Trailing `/` is trimmed consistently from every `AllowOrigin` shape (`string`, `[]string`) before comparison
-- Credentials are only offered to origins you enumerate: pairing `IsAllowCredentials` with a wildcard `AllowOrigin` is rejected at config time rather than silently echoing the caller's origin back
-- Blocks the `null` origin when credentials are enabled
-- Preflight short-circuit: responds with the configured success status without calling `next`, unless `IsPreflightContinue` is set
-- All parsing/joining/normalization happens once, in `NewMiddleware`; per-request handling never allocates configuration state
+- Nothing is allowed until you list origins; `*` never with credentials; `null` is refused
+- Exact origins and `scheme://*.host[:port]` patterns, no regular expression
+- `Vary: Origin` on every response, so a cache never serves one origin's answer to another
+- Only `OPTIONS` with `Origin` and `Access-Control-Request-Method` is a preflight: your own `OPTIONS` routes keep working
+- The request's `Access-Control-Request-Headers` is never echoed back
+- Refuses a WebSocket handshake from an origin you did not list (cross-site WebSocket hijacking)
+- Every header value is built once at startup; at most one allocation per request
 
 ## Usage
 
@@ -45,10 +45,9 @@ func main() {
 	app := core.New()
 
 	app.BindGlobalMiddlewares(cors.CORS{
-		AllowOrigin:        []string{"https://app.example.com"},
-		AllowHeaders:       []string{"Content-Type", "Authorization"},
-		AllowMethods:       []string{"GET", "POST", "PUT", "DELETE"},
-		MaxAge:             24 * time.Hour,
+		AllowOrigins:       []string{"https://app.example.com", "https://*.example.com"},
+		ExposeHeaders:      []string{"X-Total-Count"},
+		MaxAge:             time.Hour,
 		IsAllowCredentials: true,
 	})
 
@@ -58,79 +57,78 @@ func main() {
 }
 ```
 
-`CORS` also works scoped to a single controller, since it satisfies `common.MiddlewareFn` directly:
+A preflight from `https://app.example.com` answers `204` with:
 
-```go
-func (c UserController) NewController() core.Controller {
-	c.BindMiddleware(cors.CORS{AllowOrigin: "https://admin.example.com"})
-	return c
-}
+```console
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Methods: GET, HEAD, PUT, PATCH, POST, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Expose-Headers: X-Total-Count
+Access-Control-Max-Age: 3600
+Vary: Origin
 ```
 
 ## `CORS` Struct
 
-### AllowOrigin
-Type: `any` (`string` | `[]string` | `*regexp.Regexp`)
+### AllowOrigins
+Type: `[]string`
 
-Default: `"*"` (set by `NewMiddleware`/`Use` when left `nil`)
+Default: none
 
-Required: `false`
+Required: `true`
 
-Controls which origins are permitted. The literal string `"*"` allows every origin. Any other `string`, or a `[]string`, is matched exactly against the request's `Origin` header (trailing `/` is trimmed from configured origins before comparison, so `"https://app.example.com/"` and `"https://app.example.com"` are equivalent); a non-matching origin gets no CORS headers at all. A `*regexp.Regexp` is matched with `MatchString`. HTTP and WebSocket requests are checked with the exact same matching function.
+The origins whose pages may read your responses, at most 256:
 
-**A `*regexp.Regexp` must be anchored with `^` and `$`, or `NewMiddleware` panics at config time.** `MatchString` does a substring search, not a full match: an unanchored pattern like `` `https://.*\.trusted\.com` `` also matches `"https://evil.trusted.com.attacker.com"`, since that string contains the pattern as a prefix. Anchor it as `` `^https://.*\.trusted\.com$` `` (inline flags such as `(?i)` go after the `^`).
-
-```go
-cors.CORS{AllowOrigin: []string{"https://app.example.com", "https://admin.example.com"}}
-```
-
-### AllowHeaders
-Type: `any` (`string` | `[]string`)
-
-Default: unset — the preflight response echoes back the request's `Access-Control-Request-Headers` value
-
-Required: `false`
+- `https://app.example.com`, `http://localhost:3000`, `https://[::1]:8080`: one exact origin,
+  in lower case, with no path and no trailing `/`.
+- `https://*.example.com`, `https://*.example.com:8443`: any subdomain of `example.com` at any
+  depth, with that scheme and port. Not `example.com` itself.
+- `*` alone: every origin, answered with `Access-Control-Allow-Origin: *`. Not with
+  `IsAllowCredentials`.
 
 ```go
-cors.CORS{AllowHeaders: []string{"Content-Type", "Authorization"}}
-```
-
-### ExposeHeaders
-Type: `any` (`string` | `[]string`)
-
-Default: unset — `Access-Control-Expose-Headers` is not sent
-
-Required: `false`
-
-```go
-cors.CORS{ExposeHeaders: []string{"X-Request-ID"}}
+cors.CORS{AllowOrigins: []string{"https://app.example.com"}}
 ```
 
 ### AllowMethods
 Type: `[]string`
 
-Default: `[]string{"GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"}`
+Default: `GET, HEAD, PUT, PATCH, POST, DELETE`
 
 Required: `false`
 
-Sent as `Access-Control-Allow-Methods` on preflight responses.
+The methods a preflight allows, at most 64 RFC 9110 tokens.
 
-```go
-cors.CORS{AllowMethods: []string{"GET", "POST"}}
-```
+### AllowHeaders
+Type: `[]string`
+
+Default: `Content-Type, Authorization` (what a JSON API with a bearer token needs beyond the Fetch
+safelist)
+
+Required: `false`
+
+The request headers a preflight allows, at most 64 RFC 9110 tokens. The list is always yours: the
+headers the browser asks for are never copied.
+
+### ExposeHeaders
+Type: `[]string`
+
+Default: none
+
+Required: `false`
+
+Response headers the page's script may read beyond the safelisted ones, at most 64 tokens.
 
 ### MaxAge
 Type: `time.Duration`
 
-Default: `5 * time.Second`
+Default: `10 * time.Minute`
 
 Required: `false`
 
-How long the browser may cache a preflight response; truncated to whole seconds for the `Access-Control-Max-Age` header. A zero or negative value falls back to the default.
-
-```go
-cors.CORS{MaxAge: 24 * time.Hour} // sets the header to "86400"
-```
+How long the browser may cache a preflight, sent in whole seconds. 600 seconds is accepted by every
+browser (Chromium caps at 7,200, Firefox at 86,400). `0` or a negative value means the default.
 
 ### IsAllowCredentials
 Type: `bool`
@@ -139,133 +137,78 @@ Default: `false`
 
 Required: `false`
 
-Sets `Access-Control-Allow-Credentials: true`, and echoes the matching request origin in `Access-Control-Allow-Origin`.
+Lets pages send cookies and HTTP authentication with their requests and read the answer
+(`Access-Control-Allow-Credentials: true`). Only for listed origins.
 
-**Must be paired with an explicit origin list.** A wildcard `AllowOrigin` — whether written as `"*"` or left unset, which defaults to `"*"` — **panics at config time** when `IsAllowCredentials` is set. Browsers reject `*` on credentialed requests, and echoing the request origin back to satisfy them would hand every site on the internet credentialed access to authenticated responses.
-
-```go
-// panics: wildcard origin + credentials
-cors.CORS{IsAllowCredentials: true}
-
-// correct
-cors.CORS{
-	AllowOrigin:        []string{"https://app.example.com"},
-	IsAllowCredentials: true,
-}
-```
-
-### IsPreflightContinue
+### IsAllowPrivateNetwork
 Type: `bool`
 
 Default: `false`
 
 Required: `false`
 
-When `true`, `next` is called after preflight headers are set, passing control to the next handler. When `false`, the preflight request is short-circuited and a response is written immediately.
-
-```go
-cors.CORS{IsPreflightContinue: true}
-```
-
-### OptionsSuccessStatus
-Type: `int`
-
-Default: `204`
-
-Required: `false`
-
-HTTP status written for a short-circuited preflight response (only applies when `IsPreflightContinue` is `false`). Some legacy browsers require `200`.
-
-```go
-cors.CORS{OptionsSuccessStatus: 200}
-```
+Answers `Access-Control-Allow-Private-Network: true` to a preflight that asks for it with
+`Access-Control-Request-Private-Network: true` (WICG Private Network Access), so a public page may
+call your app on a private network (a device, an intranet service).
 
 ## `CORS` Methods
 
 ### NewMiddleware
-
-Compiles the `CORS` struct's fields into an internal options value once, and returns a `common.MiddlewareFn` that reuses those compiled options on every request. Prefer this over calling `Use` directly when registering the middleware once at startup.
-
-#### Parameters
-None.
-
-#### Returns
-- 1st value: `common.MiddlewareFn`
-
-- Description: A middleware ready to bind via `BindGlobalMiddlewares` or `BindMiddleware`, with its CORS options compiled once.
-
-#### Usage
-
 ```go
-mw := cors.CORS{AllowOrigin: "https://example.com"}.NewMiddleware()
-app.BindGlobalMiddlewares(mw)
+func (instance CORS) NewMiddleware() common.MiddlewareFn
 ```
+
+Validates and compiles the options once; the framework calls it at `Create()`. It panics with
+`invalid cors: AllowOrigins is empty` for the zero value, and with `invalid cors: ...` for `*`
+together with other entries or with `IsAllowCredentials`, an origin that is not
+`scheme://host[:port]` in lower case or `scheme://*.host[:port]`, the entry `null`, more than 256
+origins, more than 64 methods or headers, and a method or header name that is not an RFC 9110
+token.
 
 ### Use
-
-Applies CORS headers to the current request and either calls `next` or short-circuits a preflight response. Recompiles the struct's options on every call (unlike the middleware returned by `NewMiddleware`, which compiles them once), but lets a `CORS` value be passed directly anywhere a `common.MiddlewareFn` is expected.
-
-#### Rules
-- With no `Origin` request header, no CORS headers are set and `next` is called immediately (`TestCORS_Use_NoOriginHeaderSkipsCORS`).
-- A nil `AllowOrigin` defaults to `"*"`, setting `Access-Control-Allow-Origin: *` (`TestCORS_Use_SetsOriginStarByDefault`).
-- A single-`string` `AllowOrigin` (other than `"*"`) is matched exactly: it echoes the request origin only when they match, and sets no header — including no fallback to the configured value — when they don't (`TestCORS_Use_SpecificStringOriginBlocked`).
-- An `AllowOrigin` `[]string` echoes the request origin when it matches (trailing `/` in the configured origin is ignored), and sets no header when it doesn't match; an empty list blocks every origin (`TestCORS_Use_SpecificOriginMap`, `TestCORS_Use_OriginTrailingSlashMatchesRequest`, `TestCORS_Use_SpecificOriginMapBlocked`, `TestCORS_Use_EmptySliceBlocksAllOrigins`).
-- An `AllowOrigin` `*regexp.Regexp` echoes the request origin only when it matches (`TestCORS_Use_RegexpOrigin`, `TestCORS_Use_RegexpOriginNoMatch`).
-- `Vary: Origin` is set whenever `AllowOrigin` is anything other than the bare wildcard `"*"` without credentials — including when this particular request's origin was rejected, since the response still varies by origin for other callers (`TestCORS_Use_VaryForSpecificStringOrigin`, `TestCORS_Use_VaryOriginSetEvenWhenOriginIsBlocked`, `TestCORS_Use_NoVaryForWildcard`).
-- `Vary` tokens are merged into any value already set by earlier middleware (never overwritten) and de-duplicated case-insensitively (`TestCORS_Use_VaryMergesWithExistingHeader`, `TestCORS_Use_VaryNoDuplicateWhenAlreadyPresent`).
-- `IsAllowCredentials` sets `Access-Control-Allow-Credentials: true` (`TestCORS_Use_Credentials`).
-- Wildcard `AllowOrigin` combined with `IsAllowCredentials` panics at config time, including when `AllowOrigin` is left unset (`TestCORS_WildcardWithCredentials_PanicsAtConfigTime`, `TestLoadCORSOptions_WildcardWithCredentials_Panics`).
-- With an enumerated `AllowOrigin` plus `IsAllowCredentials`, a `"null"` or empty request origin never matches (`TestCORS_Use_NullOriginWithCredentialsBlocked`, `TestMatchOrigin_EnumeratedWithCredentials_RejectsNullAndEmpty`).
-- Wildcard `AllowOrigin` without `IsAllowCredentials` still sets `Access-Control-Allow-Origin: *` even for a `"null"` request origin (`TestCORS_Use_NullOriginWildcardNoCredentials`).
-- `Access-Control-Allow-Methods`, `Access-Control-Max-Age`, and `Access-Control-Allow-Headers` are only set on `OPTIONS` (preflight) requests, never on other methods (`TestCORS_Use_PreflightOnlyHeaders`).
-- A custom `AllowMethods` list is reflected in `Access-Control-Allow-Methods` on preflight (`TestCORS_Use_CustomAllowMethodsOnPreflight`).
-- A string `AllowHeaders`/`ExposeHeaders` is passed through verbatim instead of being joined (`TestCORS_Use_AllowHeadersString`, `TestCORS_Use_ExposeHeadersString`).
-- `next` is always called for non-`OPTIONS` requests (`TestCORS_Use_NextCalledForNonOptions`).
-- For `OPTIONS` requests, `next` is called only when `IsPreflightContinue` is `true`; otherwise the response is written immediately with `OptionsSuccessStatus` (default `204`, or a configured value) and `next` is not called (`TestCORS_Use_OptionsPreflightContinue`, `TestCORS_Use_OptionsPreflightStatus`, `TestCORS_Use_CustomOptionsSuccessStatus`).
-- A WebSocket handshake request (detected via an `Upgrade: websocket` request header) uses the exact same origin-matching rules as HTTP, but never writes response headers — a rejected origin simply skips `next`.
-
-#### Parameters
-- 1st parameter: `*http.Request` (`r`)
-
-- Description: The current request; its headers (`Origin`, `Upgrade`) are read to decide CORS behavior.
-
-- 2nd parameter: `http.ResponseWriter` (`w`)
-
-- Description: The response writer CORS headers are set on, and — for a short-circuited preflight — the status is written to directly.
-
-- 3rd parameter: `ctx.Next` (`next`)
-
-- Description: Called to pass control to the next handler in the chain.
-
-#### Returns
-None.
-
-#### Usage
-
 ```go
-cors.CORS{AllowOrigin: "https://example.com"}.Use(r, w, next)
+func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
 ```
+
+Makes `CORS` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+only; the framework always calls `NewMiddleware`.
+
+## Rules
+- With a list (not `*`), every response carries `Vary: Origin`, added to an existing `Vary`: also
+  without an `Origin` header and for an origin that does not match.
+- A request without `Origin` reaches its route with no CORS header.
+- **Actual request, matching origin:** `Access-Control-Allow-Origin` is the request's origin (`*`
+  with `*`), plus `Access-Control-Allow-Credentials: true` with `IsAllowCredentials` and
+  `Access-Control-Expose-Headers` when set; then the route runs.
+- **Actual request, other origin:** no CORS header, and the route still runs. The browser blocks
+  the page from reading the answer; CORS is not access control.
+- **Preflight** (`OPTIONS` with `Origin` and `Access-Control-Request-Method`), matching origin:
+  the headers above plus `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers` and
+  `Access-Control-Max-Age`, status `204`, `Content-Length: 0`; the route does not run.
+- **Preflight, other origin:** `204` with `Vary` only.
+- Any other `OPTIONS` request is an actual request and reaches your `PREFLIGHT_…` route.
+- An origin matches by exact string, or by a `*.` pattern whose wildcard part is only `a-z`, `0-9`,
+  `-` and `.`: `https://evil.example/.example.com`, `https://a_b.example.com`,
+  `https://A.example.com` and `https://a.example.com.` do not match `https://*.example.com`. An
+  `Origin` longer than 256 bytes matches nothing.
+- **WebSocket** (`Upgrade: websocket`, any case): an `Origin` that does not match is refused with
+  `403`, message `Origin not allowed`; a matching or absent `Origin` continues. No CORS header is
+  written. Pass `cors` to `EnableWS` to check the handshake.
+- The request and its context are passed on unchanged, and the body is never read.
+
+## Limits
+- CORS only controls what a browser page may read. It does not stop a request, and clients other
+  than browsers ignore it. Protect state changes with `csrf` and your guards.
 
 ## Benchmarks
 
-Benchmarks were run on an Intel Core i7-9750H CPU @ 2.60 GHz with `go test -bench=. -benchmem`.
+Machine-dependent; captured on an Intel i7-9750H, Go 1.27.4, when this README was written
+(`go test -run='^$' -bench . -benchmem -count 5 -cpu 1,2 ./middlewares/cors`, median shown).
 
-Results are machine-dependent and were captured at documentation generation time (July 30, 2026).
-
-| Benchmark | Operations | Time per op | Allocs | Bytes |
+| Benchmark | GOMAXPROCS 1 | GOMAXPROCS 2 | B/op | allocs/op |
 |---|---|---|---|---|
-| `BenchmarkCORS_Use_StarOrigin` (wildcard origin) | 3,111,745 | 387.9 ns/op | 5 | 528 B/op |
-| `BenchmarkCORS_Use_NilOriginDefault` (default origin) | 2,899,342 | 388.0 ns/op | 5 | 528 B/op |
-| `BenchmarkCORS_Use_OriginMap` (origin map match) | 2,421,396 | 504.5 ns/op | 6 | 544 B/op |
-| `BenchmarkCORS_Use_Preflight` (OPTIONS request) | 721,314 | 1,768 ns/op | 13 | 1,104 B/op |
-| `BenchmarkMatchOrigin_Wildcard` (origin match, wildcard) | 368,751,504 | 3.175 ns/op | 0 | 0 B/op |
-| `BenchmarkMatchOrigin_Map` (origin match, map lookup) | 93,226,539 | 15.71 ns/op | 0 | 0 B/op |
-| `BenchmarkMatchOrigin_Regexp` (origin match, regexp) | 2,708,229 | 494.6 ns/op | 0 | 0 B/op |
-| `BenchmarkLoadCORSOptions` (compile CORS config) | 2,829,883 | 417.7 ns/op | 4 | 400 B/op |
-
-**Key observations:**
-
-- CORS header injection is sub-microsecond (~400ns) for most cases
-- Preflight (OPTIONS) requests are slower (~1.8µs) due to additional header generation
-- Origin matching costs: wildcard < map < regexp (10× slower for regexp patterns)
-- LoadCORSOptions is a one-time startup cost, not per-request
+| `CORS_NoOrigin` | 38.6 ns | 38.3 ns | 0 | 0 |
+| `CORS_ActualListedOrigin` | 133 ns | 113 ns | 16 | 1 |
+| `CORS_ActualWildcardOrigin` | 147 ns | 129 ns | 16 | 1 |
+| `CORS_OriginNotAllowed` | 78.7 ns | 78.0 ns | 0 | 0 |
+| `CORS_Preflight` | 214 ns | 177 ns | 16 | 1 |

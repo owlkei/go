@@ -3,6 +3,7 @@ package tracecontext
 import (
 	"context"
 	"net/http"
+	"net/netip"
 	"sync/atomic"
 	"time"
 )
@@ -32,6 +33,11 @@ type Scope struct {
 	Upstream   string
 	Parent     string
 	LogSlot    atomic.Value
+
+	ClientIP      netip.Addr
+	ClientHost    string
+	IsClientHTTPS bool
+	IsClientSet   bool
 
 	headers [2]string
 }

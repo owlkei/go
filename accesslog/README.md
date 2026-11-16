@@ -52,6 +52,7 @@ One `Logger.Info` call per request, made by the goroutine that emitted the `comp
 |---|---|
 | `trace_id` | the trace ID (32 hex characters, the `Traceparent` header's trace) |
 | `request` | HTTP only: the request ID (the `X-Request-Id` header) |
+| `ip` | HTTP only: the client's address (`trace.Event.ClientIP`, which `proxy` resolves behind trusted proxies; the connection's peer otherwise), as a string in its short form (`203.0.113.7`, `2001:db8::1`); left out when unknown |
 | `connection` | WebSocket only: the connection ID (the handshake's request ID); left out when the message has none |
 | `message` | WebSocket only: the message ID |
 | `transport` | `HTTP` or `WS` |
@@ -73,6 +74,7 @@ In the pretty format of the built-in logger each stage is a branch of the tree w
 - A percentage is the share of the sum of the stage durations, not of `total`. The largest remainders receive the extra points (ties go to the earlier entry), so the shares sum to exactly 100; they are all 0 when the sum is 0.
 - The ID keys are the same as the scoped logger's (`trace_id`, `request`, `connection`, `message`), so access lines join user logs on them. An empty ID is left out. Stage events are joined to their line by the event's `ID`; span IDs play no part.
 - A request without stage events (a 404) logs the fixed pairs and `total`.
+- The client IP is personal data in many jurisdictions (GDPR). Keep the access log under the same retention rules as your other personal data, or mask it in your log pipeline. Behind a load balancer, bind `proxy` with your proxies' addresses, or every line shows the load balancer's address.
 - Events of different requests never mix, whatever the interleaving.
 
 ## `AccessLogConfig` Parameters

@@ -566,7 +566,7 @@ error from a guard onwards       ► module exception filter ► global exceptio
 
 - **Global** layers are bound on the `App` (`BindGlobal…`); **module** layers are bound in a controller with `BindMiddleware`, `BindGuard`, `BindInterceptor` and `BindExceptionFilter`.
 - Inside one box, layers run in the order you bound them. Exception filters are the exception: inside one scope the filter bound last runs first.
-- The chain is linear. `next()` only says "continue": the next layer starts after `Use` returns. Work that must happen after the handler belongs in an interceptor's `Pipe` operators.
+- The chain is linear. `next()` only says "continue": the next layer starts after `Use` returns. Work that must happen after the handler belongs in an interceptor's `Pipe` operators. (Built-in middlewares such as `compress` use an internal hook to wrap the response and to run code when the exchange ends; it is not part of the public API.)
 - A layer stops the request by not continuing: a middleware that returns without `next()`, a guard that returns `false`, an interceptor that returns without calling `Pipe`.
 - A filter that returns has handled the error. A filter that panics passes what it panicked with to the next filter; `panic(ex)` with the exception it received passes it on unchanged.
 - Middleware is an HTTP concept: a WebSocket connection runs the middlewares given to `EnableWS` once, at the handshake, and no middleware per message.
@@ -663,6 +663,17 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
 - A resolved path outside the served directory answers `400` `{"code":400,"error":"Bad Request","message":"Invalid URL path"}`; a missing file, or a result that is not a string, answers the 404 body.
 - Under a wildcard route, a path with a segment that starts with `.` (`.env`, `.git/config`, `css/.secret`) answers the 404 body, except `.well-known` (RFC 8615). A symbolic link is followed only when its target stays inside the served directory; otherwise the 404 body. Still serve a directory that holds only public files.
 - The path a handler returns is trusted as is: dot directories in it and symbolic links above the served directory are the application's choice.
+- **Caching.** A served file (`200`, `206`, `304`, and the `index.html` of a directory) is sent with `Cache-Control: no-cache` when no layer set `Cache-Control` before: the browser keeps the file but revalidates it with `If-Modified-Since` on every use, and never guesses a lifetime (RFC 9111 § 4.2.2). A `Cache-Control` set by a middleware, guard, interceptor or the handler is kept. Mark hashed assets (`app.3f9a1c.js`) immutable in their handler:
+
+  ```go
+  func (c AssetsController) SERVE_ANY_OF_assets(hc *ctx.HTTPContext) string {
+  	hc.ResponseWriter.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+  	return "public/assets"
+  }
+  ```
+
+  No file name is treated as hashed automatically: a wrong guess would cache a file for a year with no way back.
+- An error a `SERVE_…` route answers itself (`404`, `400`) removes `Cache-Control` first, so an `immutable` set for assets never lands on an error. Responses of other routes are not touched.
 
 ## Response writer
 
@@ -729,7 +740,7 @@ WS handlers reply with their last result as the message.
 
 Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
 
-Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic) and `Code`. `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
+Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic), `Code` and, for an HTTP request or handshake, `ClientIP` (as `proxy.ClientIP` resolves it). `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
 
 The events of one request or WebSocket message form a span tree: `complete` is emitted last and is the root (`SpanID == ID`, `ParentID` the incoming `traceparent` parent, `""`, or the connection ID for a WS message); every other stage is a child with a fresh `SpanID` and `ParentID == ID`, in lifecycle order. Span IDs are generated only while a listener exists: without one, a request generates its own ID and nothing else. With `EnableAccessLog()`, the access log is stopped once at shutdown, after the `OnShutdown` hooks, so the lines of the last requests are written before the process exits.
 
@@ -765,7 +776,8 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 - **Fixed bodies.** The 404, 405, 410 and fixed 500 bodies are byte slices built once; a miss tries only the methods that have routes for the `Allow` header, which comes from a table built once.
 - **One atomic load for the body cap.** The cap is an `atomic.Int64` written when a serving call starts and loaded only for a request with a body (about 1 ns, no allocation). The rest of the server code runs once per start or stop.
 - **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ParamValues`, whose capacity `Reset` keeps.
-- **Tracking writer in the pooled exchange.** The writer lives next to the context in the pool, so it costs no allocation.
+- **Tracking writer in the pooled exchange.** The writer lives next to the context in the pool, so it costs no allocation. Its internal exchange hooks (used by `compress`) cost one length check per request when none is registered; the hook list keeps its capacity across pooled exchanges, and the clock is read once, only when a hook exists.
+- **Static caching.** The `no-cache` value of a served file is a one-element slice built once and assigned to the header map: no allocation.
 - **The trace scope.** Each request builds one scope (the `traceparent` string and a context value of 240 B together) and copies the request with `r.WithContext` (320 B) so middleware sees the IDs: about +270 ns, +530 B and +1 allocation against the request ID it replaces. The response headers reuse one-element slices prebuilt in the scope, so they allocate nothing. The random bytes come from a 512-byte `crypto/rand` buffer (`internal/tracecontext`), one system call per about 28 requests.
 - **The cost of an unexpected panic.** A non-exception panic hashes 16 return addresses for its stack key (about 1.6 µs) and captures up to 4 KiB of stack only when the line keeps it (about 25 µs and 7.6 KB). Under a flood almost every panic is logged without a stack: `BenchmarkServeHTTP_PanicFlood` is about 6.5 µs per request against about 37 µs before sampling.
 

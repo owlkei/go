@@ -1,12 +1,16 @@
 # Inspect
 
-*Package `inspect` lets developer tools read the run-time state of built-in components (a memory cache, the config module) without giving those components any exported method for it.*
+*Package `inspect` lets developer tools read the run-time state of built-in components (a memory cache, the config module, the HTTP middlewares) without giving those components any exported method for it.*
 
 - [Inspect](#inspect)
   - [Usage](#usage)
   - [Types](#types)
     - [CacheState](#cachestate)
     - [ConfigState](#configstate)
+    - [Field](#field)
+    - [Snapshot](#snapshot)
+    - [Snapshotter](#snapshotter)
+  - [Middleware snapshots](#middleware-snapshots)
   - [Variables](#variables)
     - [CacheStateOf](#cachestateof)
     - [ConfigStateOf](#configstateof)
@@ -16,7 +20,8 @@ The package is internal: only code in the Ginject module can import it. It holds
 and one function variable per component. The component's own package sets its variable in `init`
 (`memorycache` sets `CacheStateOf`, `modules/config` sets `ConfigStateOf`). There is no registry of
 instances: a tool passes the value it found (for example a provider from the container), and nothing
-is kept alive or computed until the function is called.
+is kept alive or computed until the function is called. The HTTP middlewares take the other road:
+their compiled value implements `Snapshotter` directly, since it is already unexported.
 
 ## Usage
 
@@ -71,6 +76,54 @@ The state of one `config.ConfigService`. It never holds a value.
 | `Files` | `[]string` | The `.env` files read, in order. Empty when none was read. |
 | `Keys` | `[]string` | Every key name of the configuration, sorted. |
 
+### Field
+
+One named value of a snapshot.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Key` | `string` | The name, in snake case (`trusted_origins`), or the header name for `helmet` |
+| `Value` | `any` | A `string`, `bool`, `int64`, `float64`, `time.Duration` or `[]string` |
+
+### Snapshot
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Name` | `string` | The component: `proxy`, `hostcheck`, `httpsredirect`, `csrf`, `cors`, `helmet`, `compress` |
+| `Fields` | `[]Field` | Its effective configuration, then its counters |
+
+### Snapshotter
+
+```go
+type Snapshotter interface{ Snapshot() Snapshot }
+```
+
+Implemented by the compiled value `NewMiddleware` returns. `Snapshot` is safe from any goroutine at
+any time: it builds a new value from atomic loads when called, and nothing calls it on the request
+path. Returned slices are copies.
+
+```go
+mw := proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}.NewMiddleware()
+if s, ok := mw.(inspect.Snapshotter); ok {
+	fmt.Println(s.Snapshot().Name)
+}
+```
+
+## Middleware snapshots
+
+| `Name` | Configuration fields | Counters (`int64`) |
+|---|---|---|
+| `proxy` | `mode` (`proxies` or `hops`), `trusted` (prefixes), `hops`, `header` (`x-forwarded` or `forwarded`) | `resolved` (requests resolved from headers), `untrusted` (requests from untrusted peers) |
+| `hostcheck` | `hosts` | `refused` |
+| `httpsredirect` | `host`, `port` | `redirected` |
+| `csrf` | `trusted_origins` | `refused` |
+| `cors` | `allow_origins`, `allow_methods`, `allow_headers`, `expose_headers`, `max_age` (`time.Duration`), `allow_credentials`, `allow_private_network` | `preflights` (answered for a matching origin), `refused` (origins that did not match) |
+| `helmet` | one field per configurable header, keyed by header name, with the value sent or `-` when off | none |
+| `compress` | `min_size`, `level`, `writer_cap` | `writers_in_use`, `compressed`, `uncompressed_no_writer`, `bytes_in`, `bytes_out` |
+
+Only `proxy`'s two counters and `cors`'s preflight counter are updated on a request that passes
+(one atomic add each); the others count refusals or compressed responses only.
+
 ## Variables
 
 ### CacheStateOf
@@ -95,5 +148,5 @@ Both variables return `(zero, false)` until the component's package is linked in
 
 ## Cost
 
-Nothing runs until a function is called. Reading a cache takes each of its 64 shard read locks in
+Nothing runs until a function or `Snapshot` is called. Reading a cache takes each of its 64 shard read locks in
 turn and sums the counters; reading the config sorts its key names.

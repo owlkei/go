@@ -101,7 +101,7 @@ app := core.New()
 
 app.
     SetLogger(logger).
-    BindGlobalMiddlewares(middlewares.CORS{}, middlewares.RequestLogger{}).
+    BindGlobalMiddlewares(cors.CORS{AllowOrigins: []string{"https://app.example.com"}}).
     BindGlobalGuards(RateLimiterGuard{}).
     BindGlobalInterceptors(ResponseInterceptor{}).
     BindGlobalExceptionFilters(CustomExceptionFilter{})
@@ -636,24 +636,27 @@ See the [Middlewares documentation](middlewares/README.md) for full details on a
 ### CORS
 
 ```go
-import "github.com/dangduoc08/ginject/middlewares"
+import "github.com/dangduoc08/ginject/middlewares/cors"
 
-app.BindGlobalMiddlewares(middlewares.CORS{
-    AllowOrigin:        []string{"https://example.com"},
-    AllowHeaders:       []string{"Content-Type", "Authorization"},
-    AllowMethods:       []string{"GET", "POST", "PUT", "DELETE"},
-    MaxAge:             86400_000,
+app.BindGlobalMiddlewares(cors.CORS{
+    AllowOrigins:       []string{"https://example.com"},
+    MaxAge:             24 * time.Hour,
     IsAllowCredentials: true,
 })
 ```
 
 ### Helmet
 
-Sets 13 security headers (CSP, HSTS, X-Frame-Options, etc.) with secure defaults.
+Sets the OWASP security headers (CSP, HSTS over HTTPS only, X-Frame-Options, etc.) with secure defaults.
 
 ```go
-app.BindGlobalMiddlewares(middlewares.Helmet{})
+import "github.com/dangduoc08/ginject/middlewares/helmet"
+
+app.BindGlobalMiddlewares(helmet.Helmet{})
 ```
+
+Also in `middlewares/`: `proxy` (client IP, scheme and host behind trusted proxies), `hostcheck`,
+`httpsredirect`, `csrf` (Fetch Metadata, no token) and `compress` (gzip). Each package has a README.
 
 ### RequestLogger
 

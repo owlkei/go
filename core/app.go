@@ -128,12 +128,15 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h[traceparentHeader] = traceparent
 	ex.traced = app.tracer.Enabled()
 	app.http.handleRequest(ex)
+	ex.writer.runHooks(&c.Timestamp)
 	if ex.traced {
 		code := ex.writer.status()
 		if code == 0 {
 			code = http.StatusOK
 		}
-		app.tracer.Emit(completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, code, time.Since(c.Timestamp)))
+		e := completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, code, time.Since(c.Timestamp))
+		e.ClientIP = tracecontext.ClientIP(c.Request)
+		app.tracer.Emit(e)
 	}
 	app.releaseCtx(ex)
 }
@@ -153,8 +156,11 @@ func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, trac
 			wsCfg.Header[traceparentHeader] = traceparent
 			c.Status(http.StatusSwitchingProtocols)
 			err := app.ws.handshake(c)
+			ex.writer.runHooks(&c.Timestamp)
 			if app.tracer.Enabled() {
-				app.tracer.Emit(completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, c.Code, time.Since(c.Timestamp)))
+				e := completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, c.Code, time.Since(c.Timestamp))
+				e.ClientIP = tracecontext.ClientIP(c.Request)
+				app.tracer.Emit(e)
 			}
 			return err
 		},

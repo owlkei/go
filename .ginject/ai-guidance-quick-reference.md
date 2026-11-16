@@ -324,13 +324,15 @@ Pattern Question
   │   └─ YES - the app keeps one instance per configuration (type + constructor + reflect.DeepEqual value)
   │       Equal configurations share one instance; different ones get their own
   │
-  ├─ "Should I write cors.CORS{IsAllowCredentials: true} without an origin list?"
-  │   └─ NO - AllowOrigin defaults to wildcard, and wildcard+credentials panics at app.Create()
-  │       Fix: cors.CORS{AllowOrigin: []string{...}, IsAllowCredentials: true}
+  ├─ "Should I write cors.CORS{} or cors.CORS{IsAllowCredentials: true} without an origin list?"
+  │   └─ NO - an empty AllowOrigins panics at app.Create(); "*" never with credentials
+  │       Fix: cors.CORS{AllowOrigins: []string{"https://app.example.com"}, IsAllowCredentials: true}
   │
-  ├─ "Should I use an unanchored regexp for cors.CORS{AllowOrigin: ...}?"
-  │   └─ NO - MatchString does substring search; panics at app.Create() if not anchored
-  │       Fix: always wrap as ^...$ , e.g. regexp.MustCompile(`^https://.*\.trusted\.com$`)
+  ├─ "Should I read X-Forwarded-For / X-Real-IP for the client IP?"
+  │   └─ NO - bind proxy.Proxy{TrustedProxies: ...} first and call proxy.ClientIP(c.Request)
+  │
+  ├─ "Should I add a CSRF token or cookie?"
+  │   └─ NO - csrf.CSRF uses Sec-Fetch-Site and Origin; its only option is TrustedOrigins
   │
   └─ "Should I assume request bodies are unlimited or add app.SetMaxBodySize(...)?"
       └─ NO - 10 MiB cap by default; change it with app.Listen(port, &core.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)

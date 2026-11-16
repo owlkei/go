@@ -20,7 +20,7 @@ func main() {
 	})
 
 	mw := []common.MiddlewareFn{
-		cors.CORS{}, helmet.Helmet{}, shared.LogMiddleware{},
+		cors.CORS{AllowOrigins: []string{"http://localhost:3000"}}, helmet.Helmet{}, shared.LogMiddleware{},
 	}
 
 	app.

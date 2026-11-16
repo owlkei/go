@@ -1,31 +1,33 @@
 # Helmet Middleware
 
-*`helmet` sets a battery of security-related HTTP response headers (CSP, HSTS, frame/cross-origin/referrer policies) as a Ginject middleware, modeled after the Node.js `helmet` package.*
+*`helmet` sets the HTTP security response headers that OWASP recommends, with safe defaults that suit both JSON APIs and server-rendered HTML pages.*
 
 - [Helmet Middleware](#helmet-middleware)
   - [Key Features](#key-features)
   - [Usage](#usage)
-  - [Headers Set by Helmet](#headers-set-by-helmet)
+  - [Headers and defaults](#headers-and-defaults)
+  - [Constants](#constants)
   - [`Helmet` Struct](#helmet-struct)
     - [ContentSecurityPolicy](#contentsecuritypolicy)
     - [CrossOriginEmbedderPolicy](#crossoriginembedderpolicy)
     - [CrossOriginOpenerPolicy](#crossoriginopenerpolicy)
     - [CrossOriginResourcePolicy](#crossoriginresourcepolicy)
-    - [DNSPrefetchControl](#dnsprefetchcontrol)
     - [FrameOptions](#frameoptions)
-    - [HSTSMaxAge, HSTSExcludeSubDomains, HSTSPreload, DisableHSTS](#hstsmaxage-hstsexcludesubdomains-hstspreload-disablehsts)
-    - [PermittedCrossDomainPolicies](#permittedcrossdomainpolicies)
+    - [PermissionsPolicy](#permissionspolicy)
     - [ReferrerPolicy](#referrerpolicy)
+    - [StrictTransportSecurity](#stricttransportsecurity)
   - [`Helmet` Methods](#helmet-methods)
     - [NewMiddleware](#newmiddleware)
     - [Use](#use)
+  - [Rules](#rules)
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- Sensible secure-by-default values for every header — register `Helmet{}` with no fields set and still get a hardened response
-- Strict default Content-Security-Policy covering `default-src`, `script-src`, `style-src`, `object-src`, and more
-- `Strict-Transport-Security` (HSTS) on by default, with toggles for max-age, subdomains, and preload
-- Every policy field can be overridden individually without affecting the others
+- A strict Content Security Policy by default (`'self'` only, no inline script attributes, no framing)
+- `Strict-Transport-Security` only over HTTPS (RFC 6797 § 7.2), read through `proxy.Scheme`
+- One rule for every field: `""` is the default, `helmet.Disabled` turns the header off, any other value is sent as written
+- `Permissions-Policy` denies powerful browser features by default
+- Every header value is built once at startup; no allocation per request
 
 ## Usage
 
@@ -40,7 +42,10 @@ import (
 func main() {
 	app := core.New()
 
-	app.BindGlobalMiddlewares(helmet.Helmet{})
+	app.BindGlobalMiddlewares(helmet.Helmet{
+		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:",
+		FrameOptions:          helmet.Disabled,
+	})
 
 	app.Create(
 		core.ModuleBuilder().Build(),
@@ -48,227 +53,164 @@ func main() {
 }
 ```
 
-`Helmet` also works scoped to a single controller, since it satisfies `common.MiddlewareFn` directly:
+## Headers and defaults
 
-```go
-func (c PageController) NewController() core.Controller {
-	c.BindMiddleware(helmet.Helmet{FrameOptions: "DENY"})
-	return c
-}
-```
+| Header | Default | Source |
+|---|---|---|
+| `Content-Security-Policy` | `default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests` | OWASP Secure Headers, CSP Cheat Sheet |
+| `Cross-Origin-Embedder-Policy` | not sent | MDN: `require-corp` blocks every cross-origin image and script without CORP |
+| `Cross-Origin-Opener-Policy` | `same-origin` | OWASP Secure Headers |
+| `Cross-Origin-Resource-Policy` | `same-origin` | OWASP Secure Headers |
+| `X-Frame-Options` | `DENY` | OWASP Secure Headers; matches `frame-ancestors 'none'` |
+| `Permissions-Policy` | `accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), browsing-topics=()` | OWASP Secure Headers |
+| `Referrer-Policy` | `no-referrer` | OWASP Secure Headers |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains`, over HTTPS only, never `preload` by default | OWASP HSTS Cheat Sheet; RFC 6797 |
+| `X-Content-Type-Options` | `nosniff` (always) | OWASP Secure Headers |
+| `X-XSS-Protection` | `0` (always) | OWASP: the old auditor is removed or harmful |
+| `X-DNS-Prefetch-Control` | `off` (always) | |
+| `X-Permitted-Cross-Domain-Policies` | `none` (always) | OWASP Secure Headers |
+| `Origin-Agent-Cluster` | `?1` (always) | |
 
-## Headers Set by Helmet
+`X-Download-Options` is no longer sent: only Internet Explorer read it.
 
-These headers are always set by `Use`/`NewMiddleware` and are not configurable:
+The default CSP allows scripts, styles, images and fonts from your own origin only. A page with
+inline `<style>` or `<script>`, or assets on a CDN, must set its own policy. Serve your assets
+(Owlky's CSS and JavaScript included) from your own origin and the default works as is.
+`upgrade-insecure-requests` makes the browser load `http:` subresources over HTTPS; when you test
+plain HTTP from another device (not `localhost`), set your own policy without it.
 
-| Header | Value |
-|---|---|
-| `X-Content-Type-Options` | `nosniff` |
-| `X-Download-Options` | `noopen` |
-| `X-XSS-Protection` | `0` |
-| `Origin-Agent-Cluster` | `?1` |
+## Constants
 
-The headers below this point are configurable through the `Helmet` struct's fields, documented one by one further down.
+| Name | Value | Meaning |
+|---|---|---|
+| `Disabled` | `"-"` | Field value that turns one header off |
 
 ## `Helmet` Struct
+
+Every field is a `string`, defaults to `""` (the default of the table above), is not required, and
+follows the same rule: `""` sends the default, `helmet.Disabled` sends nothing, any other value is
+sent as written.
 
 ### ContentSecurityPolicy
 Type: `string`
 
-Default: `"default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests"`
+Default: see [Headers and defaults](#headers-and-defaults)
 
 Required: `false`
 
-Sets the `Content-Security-Policy` header.
+The `Content-Security-Policy` header: which sources the page may load scripts, styles, images,
+frames and forms from.
 
 ```go
-helmet.Helmet{ContentSecurityPolicy: "default-src 'none'"}
+helmet.Helmet{ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:"}
 ```
 
 ### CrossOriginEmbedderPolicy
 Type: `string`
 
-Default: `"require-corp"`
+Default: not sent
 
 Required: `false`
 
-Sets the `Cross-Origin-Embedder-Policy` header.
-
-```go
-helmet.Helmet{CrossOriginEmbedderPolicy: "unsafe-none"}
-```
+The `Cross-Origin-Embedder-Policy` header. Set `require-corp` or `credentialless` when the page
+needs cross-origin isolation (`SharedArrayBuffer`).
 
 ### CrossOriginOpenerPolicy
 Type: `string`
 
-Default: `"same-origin"`
+Default: `same-origin`
 
 Required: `false`
 
-Sets the `Cross-Origin-Opener-Policy` header.
-
-```go
-helmet.Helmet{CrossOriginOpenerPolicy: "same-origin-allow-popups"}
-```
+The `Cross-Origin-Opener-Policy` header. `same-origin-allow-popups` keeps OAuth popups working.
 
 ### CrossOriginResourcePolicy
 Type: `string`
 
-Default: `"same-origin"`
+Default: `same-origin`
 
 Required: `false`
 
-Sets the `Cross-Origin-Resource-Policy` header.
-
-```go
-helmet.Helmet{CrossOriginResourcePolicy: "cross-origin"}
-```
-
-### DNSPrefetchControl
-Type: `string`
-
-Default: `"off"`
-
-Required: `false`
-
-Sets the `X-DNS-Prefetch-Control` header.
-
-```go
-helmet.Helmet{DNSPrefetchControl: "on"}
-```
+The `Cross-Origin-Resource-Policy` header. Set `cross-origin` for a public asset or API server
+that other sites embed.
 
 ### FrameOptions
 Type: `string`
 
-Default: `"SAMEORIGIN"`
+Default: `DENY`
 
 Required: `false`
 
-Sets the `X-Frame-Options` header.
+The `X-Frame-Options` header, for browsers that do not read `frame-ancestors`.
 
-```go
-helmet.Helmet{FrameOptions: "DENY"}
-```
-
-### HSTSMaxAge, HSTSExcludeSubDomains, HSTSPreload, DisableHSTS
-Type: `int`, `bool`, `bool`, `bool` respectively
-
-Default: `HSTSMaxAge: 0` (→ `15552000`, 180 days), `HSTSExcludeSubDomains: false` (subdomains included), `HSTSPreload: false`, `DisableHSTS: false`
-
-Required: `false`
-
-Together these four fields build the `Strict-Transport-Security` header as `max-age=<HSTSMaxAge>[; includeSubDomains][; preload]`. A zero `HSTSMaxAge` falls back to `15552000`. Setting `DisableHSTS` to `true` omits the header entirely, overriding the other three fields.
-
-```go
-helmet.Helmet{
-	HSTSMaxAge:            86400,
-	HSTSExcludeSubDomains: true,
-	HSTSPreload:           true,
-} // -> Strict-Transport-Security: max-age=86400; preload
-
-helmet.Helmet{DisableHSTS: true} // -> header omitted
-```
-
-### PermittedCrossDomainPolicies
+### PermissionsPolicy
 Type: `string`
 
-Default: `"none"`
+Default: see [Headers and defaults](#headers-and-defaults)
 
 Required: `false`
 
-Sets the `X-Permitted-Cross-Domain-Policies` header.
-
-```go
-helmet.Helmet{PermittedCrossDomainPolicies: "master-only"}
-```
+The `Permissions-Policy` header: which browser features (camera, geolocation, payment) the page may
+use.
 
 ### ReferrerPolicy
 Type: `string`
 
-Default: `"no-referrer"`
+Default: `no-referrer`
 
 Required: `false`
 
-Sets the `Referrer-Policy` header.
+The `Referrer-Policy` header. `strict-origin-when-cross-origin` keeps the origin for analytics.
+
+### StrictTransportSecurity
+Type: `string`
+
+Default: `max-age=63072000; includeSubDomains`
+
+Required: `false`
+
+The `Strict-Transport-Security` header, sent over HTTPS only. Add `preload` only after you have
+read hstspreload.org: leaving the preload list takes months.
 
 ```go
-helmet.Helmet{ReferrerPolicy: "strict-origin"}
+helmet.Helmet{StrictTransportSecurity: "max-age=63072000; includeSubDomains; preload"}
 ```
 
 ## `Helmet` Methods
 
 ### NewMiddleware
-
-Compiles the `Helmet` struct's fields into an internal options value once, and returns a `common.MiddlewareFn` that reuses those compiled options on every request.
-
-#### Parameters
-None.
-
-#### Returns
-- 1st value: `common.MiddlewareFn`
-
-- Description: A middleware ready to bind via `BindGlobalMiddlewares` or `BindMiddleware`, with its headers compiled once.
-
-#### Usage
-
 ```go
-mw := helmet.Helmet{FrameOptions: "DENY"}.NewMiddleware()
-app.BindGlobalMiddlewares(mw)
+func (instance Helmet) NewMiddleware() common.MiddlewareFn
 ```
+
+Builds every header value once; the framework calls it at `Create()`. It panics with
+`invalid helmet: ...` for a value with a control character (a line break, `NUL`, `DEL`, an escape).
 
 ### Use
-
-Sets every Helmet response header on the current request and always calls `next` — Helmet never short-circuits a request.
-
-#### Rules
-- `next` is always called (`TestHelmet_Use_CallsNext`).
-- The four non-configurable headers are always set to their fixed values: `X-Content-Type-Options: nosniff`, `X-Download-Options: noopen`, `X-XSS-Protection: 0`, `Origin-Agent-Cluster: ?1` (`TestHelmet_Use_SetsXContentTypeOptions`, `TestHelmet_Use_SetsXDownloadOptions`, `TestHelmet_Use_SetsXXSSProtectionToZero`, `TestHelmet_Use_SetsOriginAgentCluster`).
-- With no fields set, `Content-Security-Policy` is the package default string; setting `ContentSecurityPolicy` overrides it verbatim (`TestHelmet_Use_SetsDefaultCSP`, `TestHelmet_Use_SetsCustomCSP`).
-- With no fields set, `Strict-Transport-Security` is `"max-age=15552000; includeSubDomains"`; setting `DisableHSTS: true` omits the header entirely (`TestHelmet_Use_SetsDefaultHSTS`, `TestHelmet_Use_SkipsHSTSWhenDisabled`).
-- With no fields set, `X-Frame-Options` is `"SAMEORIGIN"`; `FrameOptions` overrides it (`TestHelmet_Use_SetsDefaultFrameOptions`, `TestHelmet_Use_SetsCustomFrameOptions`).
-- With no fields set, `Referrer-Policy` is `"no-referrer"`; `ReferrerPolicy` overrides it (`TestHelmet_Use_SetsDefaultReferrerPolicy`, `TestHelmet_Use_SetsCustomReferrerPolicy`).
-- With no fields set, `Cross-Origin-Embedder-Policy`, `Cross-Origin-Opener-Policy`, and `Cross-Origin-Resource-Policy` default to `"require-corp"`, `"same-origin"`, and `"same-origin"` respectively (`TestHelmet_Use_SetsCrossOriginHeaders`).
-- With no fields set, `X-DNS-Prefetch-Control` is `"off"` (`TestHelmet_Use_SetsDefaultDNSPrefetchControl`).
-- With no fields set, `X-Permitted-Cross-Domain-Policies` is `"none"` (`TestHelmet_Use_SetsDefaultPermittedCrossDomainPolicies`).
-
-#### Parameters
-- 1st parameter: `*http.Request` (`r`)
-
-- Description: The current request; unused by `Helmet`, but part of the `common.MiddlewareFn` signature.
-
-- 2nd parameter: `http.ResponseWriter` (`w`)
-
-- Description: Its response headers are mutated in place.
-
-- 3rd parameter: `ctx.Next` (`next`)
-
-- Description: Called to pass control to the next handler in the chain.
-
-#### Returns
-None.
-
-#### Usage
-
 ```go
-helmet.Helmet{}.Use(r, w, next)
+func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
 ```
+
+Makes `Helmet` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+only; the framework always calls `NewMiddleware`.
+
+## Rules
+- `Strict-Transport-Security` is sent only when `proxy.Scheme(r)` is `https`: a direct TLS
+  connection, or `https` forwarded by a trusted `proxy`. An untrusted client cannot claim HTTPS,
+  and with no `proxy` bound no forwarding header is read. A custom value follows the same rule.
+- The always-sent headers are on every response that passes `helmet`, a `404` or `405` included,
+  even when every configurable header is `Disabled`.
+- Headers are set before the next layer runs, so a later middleware or the handler may overwrite
+  one.
+- `Header().Add` on a header `helmet` set never changes what other responses send.
+- The request and its context are passed on unchanged, and the body is never read.
 
 ## Benchmarks
 
-Benchmarks were run on an Intel Core i7-9750H CPU @ 2.60 GHz with `go test -bench=. -benchmem`.
+Machine-dependent; captured on an Intel i7-9750H, Go 1.27.4, when this README was written
+(`go test -run='^$' -bench . -benchmem -count 5 -cpu 1,2 ./middlewares/helmet`, median shown).
 
-Results are machine-dependent and were captured at documentation generation time (July 30, 2026).
-
-| Benchmark | Operations | Time per op | Allocs | Bytes |
+| Benchmark | GOMAXPROCS 1 | GOMAXPROCS 2 | B/op | allocs/op |
 |---|---|---|---|---|
-| `BenchmarkHelmet_Use_Defaults` (default security headers) | 589,419 | 2,091 ns/op | 15 | 248 B/op |
-| `BenchmarkHelmet_Use_CustomCSP` (custom CSP) | 653,035 | 1,814 ns/op | 15 | 248 B/op |
-| `BenchmarkHelmet_Use_DisableHSTS` (HSTS disabled) | 755,235 | 1,647 ns/op | 14 | 232 B/op |
-| `BenchmarkLoadHelmetOptions` (compile Helmet config) | 4,306,753 | 320.1 ns/op | 5 | 245 B/op |
-
-**Key observations:**
-
-- Setting security headers costs ~1.6-2.1µs per request
-- Disabling HSTS is slightly faster (~1.6µs) as it sets fewer headers
-- LoadHelmetOptions is a one-time startup cost (~320ns), negligible compared to per-request overhead
-- All allocations are small and predictable (~250 bytes, 14-15 allocations)
+| `Helmet_HTTP` | 196 ns | 193 ns | 0 | 0 |
+| `Helmet_HTTPS` | 213 ns | 210 ns | 0 | 0 |
