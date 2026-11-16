@@ -117,6 +117,9 @@ on the response, compressed or not.
   stream and the connection, so streaming responses keep working.
 - An uncompressed response forwards `ReadFrom`, so `http.ServeFile` keeps `sendfile`.
 - A request with an `Upgrade` header (WebSocket) is passed through untouched.
+- Header values are shared between responses (built once at startup). Change one only with
+  `Header().Set`, `Add` or `Del`, never by writing into the slice in place
+  (`w.Header()["Content-Encoding"][0] = "…"`): that changes every other response and is a data race.
 - The request and its context are passed on unchanged, and the body is never read.
 
 ## Memory and CPU

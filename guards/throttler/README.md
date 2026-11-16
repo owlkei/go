@@ -19,6 +19,7 @@
   - [Response headers](#response-headers)
   - [How the client is identified](#how-the-client-is-identified)
   - [Limits and memory](#limits-and-memory)
+    - [Known limits](#known-limits)
   - [Throttler or loadshed](#throttler-or-loadshed)
   - [Benchmarks](#benchmarks)
 
@@ -274,6 +275,21 @@ When the default store is full, a new client evicts an older counter (CLOCK orde
 approximation of least recently used). The evicted client starts again with a full budget: under
 more than 32,768 active clients the throttler fails open for the least active ones, rather than
 refusing new clients, which a flood of new keys would otherwise lock out.
+
+### Known limits
+
+- **Eviction under a large IPv6 range.** IPv6 clients are counted per /64, and the default store
+  keeps 32,768 counters. A client that holds a /48 has 65,536 /64 networks: by rotating among them
+  it creates more keys than the store holds, pushes counters out (its own included), and each
+  evicted key starts again with a full budget. For routes where that matters (logins, password
+  resets), pass a `KeyFunc` that charges something the client can't multiply, such as the account
+  name, or a larger `Backend`.
+- **Several instances with one shared `Backend`.** `FixedWindow` counts with the backend's `Incr`,
+  so it is exact across instances when the backend's `Incr` is atomic. `SlidingWindow` and
+  `TokenBucket` read the stored value, compute and write it back; the lock that makes this exact
+  exists in one process only. Two instances that update one key at the same moment can each
+  allow a request that together exceed `Limit`. Use `FixedWindow` with a shared backend, or accept
+  a small overshoot under contention.
 
 ## Throttler or loadshed
 

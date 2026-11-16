@@ -203,6 +203,9 @@ only; the framework always calls `NewMiddleware`.
 - Headers are set before the next layer runs, so a later middleware or the handler may overwrite
   one.
 - `Header().Add` on a header `helmet` set never changes what other responses send.
+- Header values are shared between responses (built once at startup). Change one only with
+  `Header().Set`, `Add` or `Del`, never by writing into the slice in place
+  (`w.Header()["Content-Security-Policy"][0] = "…"`): that changes every other response and is a data race.
 - The request and its context are passed on unchanged, and the body is never read.
 
 ## Benchmarks

@@ -151,7 +151,8 @@ defer stop()
 
 A service that calls another service over HTTP continues the incoming request's trace by wrapping its
 `http.RoundTripper` with `Transport`. Any service that reads W3C Trace Context then joins your trace.
-A Ginject service you call logs the same `trace_id`, and its `upstream` is your request ID.
+A Ginject service you call logs the same `trace_id`, and its `upstream` is your request ID. To
+search the logs of a whole chain, see [Find the logs of a request](../log/README.md#find-the-logs-of-a-request).
 
 `Transport` is not related to the `TransportHTTP` and `TransportWS` values of `Event.Transport`:
 those name the protocol of a traced unit, while `Transport` is an `http.RoundTripper` for outbound
@@ -216,9 +217,15 @@ keeps working after the request ended, for example in a goroutine you started fr
   base) when it has one, so `http.Client.CloseIdleConnections` keeps working.
 
 #### Security
-- The trace ID and your request ID go to every host you call with the request's context, third
-  parties and redirect targets included. Set the key yourself, or opt out with an empty key, for
-  hosts that must not see them.
+- `Transport` has no host allowlist: the trace ID and your request ID go to every host you call
+  with the request's context, third parties and redirect targets included. Set the key yourself,
+  or opt out with an empty key, for hosts that must not see them. Use a separate `http.Client`
+  without `Transport` for third-party APIs if you never want to share the IDs with them.
+- Incoming trace IDs are adopted: a client that sends a valid `traceparent` chooses the trace ID
+  and the flags (the sampled bit) that your service logs and forwards to the services it calls.
+  Treat the trace ID as a correlation hint, never as proof of where a request came from, and
+  don't let it decide authorization, billing or sampling quotas. Your request ID is always your
+  own.
 - The value is built only from IDs that Ginject generated or validated (lower-case hex), so it can't
   inject a header.
 

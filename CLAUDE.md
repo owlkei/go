@@ -185,7 +185,7 @@ Each has a README in its folder.
 - `modules/config`: strict `.env` + OS env loader with typed struct binding (`bind:"NAME"` tags); inject `ConfigService` (safe for concurrent `Get` / `Set`, never prints a value).
 - `modules/cache`: key-value cache with TTL and an atomic `Incr` (default backend `memorycache/`: bounded, 64 shards, CLOCK eviction, no goroutine while idle); inject `CacheService`.
 
-There is no HTTP client or storage module: outbound calls use `net/http` with `trace.Transport`
+There is no HTTP client or persistence module: outbound calls use `net/http` with `trace.Transport`
 (`trace/README.md` › Outbound calls).
 
 ### WebSocket

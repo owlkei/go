@@ -194,6 +194,9 @@ only; the framework always calls `NewMiddleware`.
 - **WebSocket** (`Upgrade: websocket`, any case): an `Origin` that does not match is refused with
   `403`, message `Origin not allowed`; a matching or absent `Origin` continues. No CORS header is
   written. Pass `cors` to `EnableWS` to check the handshake.
+- Header values are shared between responses (built once at startup). Change one only with
+  `Header().Set`, `Add` or `Del`, never by writing into the slice in place
+  (`w.Header()["Access-Control-Allow-Methods"][0] = "…"`): that changes every other response and is a data race.
 - The request and its context are passed on unchanged, and the body is never read.
 
 ## Limits

@@ -217,6 +217,7 @@ c.Text("hello %s", "joe")
 
 #### Rules
 - Without `args` the body is `data` as is (`100% sure %s` stays unchanged); with `args` it is `fmt.Sprintf(data, args...)`.
+- Never use text from the request as the format string `data`: pass it as an argument (`c.Text("hello %s", name)`), never `c.Text(name, ...)`.
 - `Content-Type` holds exactly one value, replacing one set earlier.
 
 ### JSON
@@ -239,6 +240,7 @@ c.JSON(`{"greeting":"%s"}`, "hi")
 #### Rules
 - The body equals `json.Marshal(data)` byte for byte, with no trailing newline, for maps, structs, slices, pointers and `nil`.
 - A `string` is raw JSON: used as is without `args` (so `%` is safe), formatted with `args`, then validated and compacted.
+- Format arguments are inserted as they are, not escaped as JSON strings: ``c.JSON(`{"name":"%s"}`, name)`` with a `name` of `x","admin":true,"y":"` writes `{"name":"x","admin":true,"y":""}`. Pass values from the request in a map or struct (`c.JSON(ctx.Map{"name": name})`), which `encoding/json` escapes.
 - A `JSONAppender` writes what `AppendJSON` appends, even when the value also implements `json.Marshaler`.
 - When encoding fails (an unsupported type, an invalid raw string, a failing `MarshalJSON`), `JSON` panics with an `exception.Exception` of code `500` whose chain holds the encoding error, and nothing is written: no header, no status, no byte.
 - A context keeps working after a failed `JSON`.
@@ -265,6 +267,18 @@ c.JSON(`{"greeting":"%s"}`, "hi")
 
 ```go
 c.Status(http.StatusFound).Redirect("/login")
+```
+
+`Redirect` sends the client to any URL you give it, another site included. Never pass a URL from
+the request unchecked (for example the `next` query parameter of a login page): `?next=//evil.example`
+would send your users to an attacker's page (an open redirect). Accept only local paths:
+
+```go
+next := c.Query().Get("next")
+if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+	next = "/"
+}
+c.Status(http.StatusSeeOther).Redirect(next)
 ```
 
 ### Body

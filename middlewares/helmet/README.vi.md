@@ -105,6 +105,9 @@ Giúp `Helmet` là một `common.MiddlewareFn`. Chỉ dùng trong test; framewor
   header cấu hình được đều `Disabled`.
 - Header được đặt trước khi tầng kế tiếp chạy, nên middleware sau hoặc handler có thể ghi đè.
 - `Header().Add` trên một header `helmet` đã đặt không bao giờ làm thay đổi response khác.
+- Giá trị header được dùng chung giữa các response (dựng một lần lúc khởi động). Chỉ đổi bằng
+  `Header().Set`, `Add` hoặc `Del`, không bao giờ ghi thẳng vào slice
+  (`w.Header()["Content-Security-Policy"][0] = "…"`): làm vậy đổi mọi response khác và là data race.
 - Request và context được chuyển tiếp nguyên vẹn, body không bao giờ bị đọc.
 
 ## Benchmark

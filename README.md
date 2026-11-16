@@ -26,9 +26,7 @@ A NestJS-inspired dependency injection web framework for Go. Build structured, m
     - [Cache](#cache)
     - [Outbound HTTP calls](#outbound-http-calls)
   - [Built-in Middlewares](#built-in-middlewares)
-    - [CORS](#cors)
-    - [Helmet](#helmet)
-    - [RequestLogger](#requestlogger)
+  - [Production checklist](#production-checklist)
   - [Exception Types](#exception-types)
 
 ---
@@ -42,6 +40,8 @@ A NestJS-inspired dependency injection web framework for Go. Build structured, m
 - API versioning (query, header, media type, custom)
 - Type-safe handler parameter injection
 - Built-in Config and Cache modules
+- Opt-in production middlewares: load shedding, trusted proxies, host check, HTTPS redirect, security headers, CORS, CSRF, compression, and a rate limit guard
+- JSON logs with request and trace IDs, and an access log
 
 ---
 
@@ -64,7 +64,7 @@ import (
 )
 
 type UserController struct {
-    common.REST
+    common.HTTP
 }
 
 func (c UserController) NewController() core.Controller { return c }
@@ -178,18 +178,18 @@ func (s UserService) FindAll() []string {
 
 // Inject into another provider or controller
 type UserController struct {
-    common.REST
+    common.HTTP
     UserService UserService // resolved automatically
 }
 ```
 
 ### Controller
 
-Implements `NewController() Controller`. Embed `common.REST` for HTTP or `common.WS` for WebSocket. Bind per-controller layers in `NewController`:
+Implements `NewController() Controller`. Embed `common.HTTP` for HTTP or `common.WS` for WebSocket. Bind per-controller layers in `NewController`:
 
 ```go
 type ManufacturerController struct {
-    common.REST
+    common.HTTP
     common.Guard
     common.Middleware
     common.Interceptor
@@ -445,7 +445,7 @@ Supported pipe interfaces: `BodyPipeable`, `QueryPipeable`, `ParamPipeable`, `He
 
 ## WebSocket
 
-Embed `common.WS` instead of `common.REST`. Method names map to subscribe event names:
+Embed `common.WS` instead of `common.HTTP`. Method names map to subscribe event names:
 
 ```go
 type ChatController struct {
@@ -541,7 +541,7 @@ func (p DBProvider) NewProvider() core.Provider {
 
 ### Cache
 
-High-performance in-memory cache with TTL support and a backend-portable interface. See the [Cache module documentation](modules/cache/README.md) for full details.
+Key-value cache with expiry and an atomic counter, on a bounded in-memory store by default or any backend you write. See the [Cache module documentation](modules/cache/README.md) for full details.
 
 ```go
 import (
@@ -561,30 +561,34 @@ core.ModuleBuilder().
 
 // Inject CacheService into any provider or controller
 type UserController struct {
-    common.REST
-    cache.CacheService
+    common.HTTP
+    Cache cache.CacheService
 }
 
-func (c *UserController) READ_BY_ID(param ginject.Param) any {
+func (instance UserController) READ_BY_ID(param ginject.Param) string {
     ctx := context.Background()
-    key := "user:" + param.Get("id")
+    key := "user:" + param.Get("ID")
 
-    if data, ok := c.CacheService.Get(ctx, key); ok {
-        return data
+    if data, ok := instance.Cache.Get(ctx, key); ok {
+        return string(data)
     }
 
-    data := fetchFromDB(param.Get("id"))
-    _ = c.CacheService.Set(ctx, key, data, 5*time.Minute)
+    data := fetchFromDB(param.Get("ID"))
+    _ = instance.Cache.Set(ctx, key, []byte(data), 5*time.Minute)
     return data
 }
 ```
 
+Values are bytes. `Incr` counts atomically, and the default store is bounded (65,536 entries,
+16 MiB) with no goroutine while it is empty.
+
 **`CacheModuleOptions`:**
 
-| Field      | Type     | Description                                 |
-|------------|----------|---------------------------------------------|
-| `IsGlobal` | `bool`   | Make `CacheService` available everywhere    |
-| `OnInit`   | `func()` | Lifecycle hook before module injection      |
+| Field      | Type          | Description                                          |
+|------------|---------------|------------------------------------------------------|
+| `IsGlobal` | `bool`        | Make `CacheService` available everywhere             |
+| `OnInit`   | `func()`      | Runs once when the app that imports the module is created |
+| `Backend`  | `cache.Cache` | The store; default `memorycache.NewMemoryCache(nil)` |
 
 ### Outbound HTTP calls
 
@@ -620,40 +624,159 @@ func (instance UserController) READ_profile(c *ctx.HTTPContext) any {
 
 ## Built-in Middlewares
 
-See the [Middlewares documentation](middlewares/README.md) for full details on all options and recipes.
+Every middleware is opt-in: an app that doesn't bind one pays nothing for it. Each package has its
+own README with every option, its defaults and their sources.
 
-### CORS
+| Package | What it does |
+|---|---|
+| [`middlewares/loadshed`](middlewares/loadshed/README.md) | Keeps the server fast under overload: a limit on requests in flight that adapts to measured latency, then `503` with `Retry-After` |
+| [`middlewares/proxy`](middlewares/proxy/README.md) | The real client IP, scheme and host behind proxies you trust (`X-Forwarded-*` or `Forwarded`) |
+| [`middlewares/hostcheck`](middlewares/hostcheck/README.md) | Answers only for the host names you list (DNS rebinding, host header injection) |
+| [`middlewares/httpsredirect`](middlewares/httpsredirect/README.md) | Redirects plain HTTP to HTTPS with `308`, never to another host |
+| [`middlewares/helmet`](middlewares/helmet/README.md) | The OWASP security response headers (CSP, HSTS over HTTPS only, COOP, CORP and more) |
+| [`middlewares/cors`](middlewares/cors/README.md) | Lets the browser pages you list call your API from another origin |
+| [`middlewares/csrf`](middlewares/csrf/README.md) | Refuses cross-origin state-changing requests from browsers (Fetch Metadata and `Origin`, no token) |
+| [`middlewares/compress`](middlewares/compress/README.md) | gzip for text responses, with bounded memory |
+
+Rate limiting per client is a guard, not a middleware: [`guards/throttler`](guards/throttler/README.md).
+The access log is a switch on the app: `app.EnableAccessLog()` ([`accesslog`](accesslog/README.md)).
+
+---
+
+## Production checklist
+
+A new app is safe to run as it is: the server has timeouts, a 10 MiB body limit and graceful
+shutdown ([core › Server](core/README.md#server)). Before you put it on the internet, turn on the
+pieces below. Each one costs nothing until you bind it.
+
+### Logs
+1. **JSON logs.** The built-in logger writes JSON when stdout is not a terminal, which is the case
+   in a container. Set it explicitly and add the fields to mask:
+   `app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat, MaskFields: []string{"password"}}))`
+   ([log](log/README.md)).
+2. **Access log.** `app.EnableAccessLog()` writes one line per request with its status, its total
+   time and the time of each middleware, guard and handler ([accesslog](accesslog/README.md)).
+3. **Log with the request's context.** Log through `Logger.From(c.Context())` in handlers and
+   services, so every line carries the request's `trace_id` and `request` ID. See
+   [Find the logs of a request](log/README.md#find-the-logs-of-a-request).
+
+### Middlewares, in this order
+Bind them with one `BindGlobalMiddlewares` call. Middlewares run in the order you bind them, and
+the order matters:
+
+1. **`loadshed`** first, so a request refused under overload costs as little as possible.
+2. **`proxy`**, when the app runs behind a load balancer or reverse proxy. It must come before
+   every middleware that reads the client: `hostcheck`, `httpsredirect`, `helmet`, `csrf`, the
+   throttler and the access log. Without it they all see the proxy's address and the connection's
+   scheme. List your proxies' addresses in `TrustedProxies`: no forwarding header is trusted
+   otherwise.
+3. **`hostcheck`**, with the host names your app serves.
+4. **`httpsredirect`**, unless your proxy already redirects HTTP to HTTPS. Set `Host` so the target
+   never comes from the client's `Host` header.
+5. **`helmet`** for the security headers. Its default Content Security Policy allows only your own
+   origin: set your own policy if your pages load scripts or styles from a CDN.
+6. **`cors`**, only when browser pages on another origin call your API.
+7. **`csrf`**, when browsers send cookies or HTTP authentication to your app (sessions, HTML
+   forms). List the origins that `cors` allows with credentials in `TrustedOrigins` too.
+8. **`compress`**, unless your proxy already compresses responses. Don't bind it to routes that
+   put a secret next to text from the request in one response (BREACH).
+
+### Guards
+- **`throttler`** limits each client: bind it globally with a budget your real users never reach,
+  and with a tighter one on routes such as logins and password resets. It reads the client IP from
+  `proxy`.
+
+### Example
 
 ```go
-import "github.com/dangduoc08/ginject/middlewares/cors"
+package main
 
-app.BindGlobalMiddlewares(cors.CORS{
-    AllowOrigins:       []string{"https://example.com"},
-    MaxAge:             24 * time.Hour,
-    IsAllowCredentials: true,
-})
+import (
+	"time"
+
+	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/guards/throttler"
+	"github.com/dangduoc08/ginject/log"
+	"github.com/dangduoc08/ginject/middlewares/compress"
+	"github.com/dangduoc08/ginject/middlewares/cors"
+	"github.com/dangduoc08/ginject/middlewares/csrf"
+	"github.com/dangduoc08/ginject/middlewares/helmet"
+	"github.com/dangduoc08/ginject/middlewares/hostcheck"
+	"github.com/dangduoc08/ginject/middlewares/httpsredirect"
+	"github.com/dangduoc08/ginject/middlewares/loadshed"
+	"github.com/dangduoc08/ginject/middlewares/proxy"
+)
+
+type HelloController struct {
+	common.HTTP
+}
+
+func (instance HelloController) NewController() core.Controller {
+	return instance
+}
+
+func (instance HelloController) READ_hello() string {
+	return "hello"
+}
+
+func main() {
+	app := core.New()
+
+	app.SetLogger(log.NewLog(&log.LogOptions{
+		LogFormat:  log.JSONFormat,
+		MaskFields: []string{"password", "token"},
+	}))
+	app.EnableAccessLog()
+
+	app.BindGlobalMiddlewares(
+		loadshed.LoadShed{},
+		proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}},
+		hostcheck.HostCheck{Hosts: []string{"example.com"}},
+		httpsredirect.HTTPSRedirect{Host: "example.com"},
+		helmet.Helmet{},
+		cors.CORS{
+			AllowOrigins:       []string{"https://app.example.com"},
+			IsAllowCredentials: true,
+		},
+		csrf.CSRF{TrustedOrigins: []string{"https://app.example.com"}},
+		compress.Compress{},
+	)
+
+	app.BindGlobalGuards(throttler.Throttler{Limit: 300, TTL: time.Minute})
+
+	app.Create(
+		core.ModuleBuilder().
+			Controllers(HelloController{}).
+			Build(),
+	)
+
+	if err := app.Listen(8080, nil); err != nil {
+		app.Logger().Fatal("AppError", "error", err)
+	}
+}
 ```
 
-### Helmet
+Behind a load balancer at `10.0.0.7`, a request for `https://example.com/hello` from
+`198.51.100.20` answers `hello` with the security and rate limit headers, and logs one access line
+with `"ip":"198.51.100.20"`. The same request over plain HTTP answers
+`308 Location: https://example.com/hello`.
 
-Sets the OWASP security headers (CSP, HSTS over HTTPS only, X-Frame-Options, etc.) with secure defaults.
+### WebSocket
+Middlewares bound with `BindGlobalMiddlewares` don't run on the WebSocket handshake. Pass the ones
+the handshake needs to `EnableWS`, in the same order, for example
+`app.EnableWS(&core.WSConfig{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+`cors` then refuses a handshake from an origin you didn't list.
 
-```go
-import "github.com/dangduoc08/ginject/middlewares/helmet"
-
-app.BindGlobalMiddlewares(helmet.Helmet{})
-```
-
-Also in `middlewares/`: `proxy` (client IP, scheme and host behind trusted proxies), `hostcheck`,
-`httpsredirect`, `csrf` (Fetch Metadata, no token) and `compress` (gzip). Each package has a README.
-
-### RequestLogger
-
-```go
-app.BindGlobalMiddlewares(middlewares.RequestLogger{})
-```
-
-Logs method, path, status code, response time, and request ID for every request.
+### Security notes
+- `c.Redirect` sends the client to any URL: never pass a URL from the request unchecked
+  ([ctx › Redirect](ctx/README.md#redirect)).
+- `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
+  instead ([ctx › JSON](ctx/README.md#json)).
+- `trace.Transport` sends your trace ID and request ID to every host you call
+  ([trace › Outbound calls](trace/README.md#outbound-calls)).
+- Change response headers with `Header().Set`, `Add` or `Del`, never by writing into a value slice
+  in place ([core › Response writer](core/README.md#response-writer)).
 
 ---
 

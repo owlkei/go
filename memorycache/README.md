@@ -119,8 +119,8 @@ func NewMemoryCache(opts *MemoryCacheOptions) *MemoryCache
 ```
 
 Creates an empty cache. `NewMemoryCache(nil)` equals `NewMemoryCache(&MemoryCacheOptions{})`. The
-cache needs no cleanup: there is no `Stop`, and a cache nobody references is garbage collected,
-even while its sweep timer is pending.
+cache needs no cleanup call: a cache nobody references is garbage collected, even while its
+sweep timer is pending.
 
 #### Rules
 - Allocates no shard storage and starts no goroutine or timer; storage is allocated by a shard's first write.

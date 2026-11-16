@@ -319,6 +319,11 @@ need it only when you change the upstream host, for example with
   configuration can.
 - Bind `proxy` before every reader. A reader bound before it sees the connection's values, which
   fails safe (for example `httpsredirect` keeps redirecting).
+- `TrustedHops` doesn't check who the peer is: it trusts the last `n` entries of any request. Use
+  it only when clients can't reach the app except through your proxies (the app listens on a
+  private network or on `127.0.0.1`, or a firewall allows only the proxies). A client that
+  connects directly sends its own `X-Forwarded-For` and chooses the address the access log and the
+  throttler see. When you know the proxies' addresses, use `TrustedProxies` instead.
 - `X-Real-IP`, `True-Client-IP` and similar headers are never read.
 
 ## Benchmarks

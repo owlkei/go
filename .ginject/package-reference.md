@@ -633,7 +633,7 @@ type ConfigModuleOptions struct {
 }
 ```
 
-Provides `ConfigService{State *configState}` (`Get(k string) any`, `Set(k string, v any)`, `Transform(s any) (any, []ctx.FieldLevel)`). `State` is opaque (unexported type, no exported field or method): there is **no `ConfigService.Config` map and no `DotENV` type** any more. `Get` is an atomic load + map lookup; `Set` copies the map under a mutex (copy on write), so both are race-free at any time; `Set` on a zero `ConfigService{}` panics. `Transform` binds strings, and bools / integers / floats through their `strconv` text, skipping maps, slices and nil. **There is no package-level `NewConfigModule(envPath string)` function** — use `config.Register(opts)`.
+Provides `ConfigService{State *configState}` (`Get(k string) any`, `Set(k string, v any)`, `Transform(s any) (any, []ctx.FieldLevel)`). `State` is opaque (unexported type, no exported field or method): there is **no exported config map or `.env` type**; read values only through `Get`. `Get` is an atomic load + map lookup; `Set` copies the map under a mutex (copy on write), so both are race-free at any time; `Set` on a zero `ConfigService{}` panics. `Transform` binds strings, and bools / integers / floats through their `strconv` text, skipping maps, slices and nil. **There is no package-level `NewConfigModule(envPath string)` function** — use `config.Register(opts)`.
 
 - Precedence: process env, then `ENVFilePaths` in order, then `Loads` in order; first source wins, last with `IsOverride`. Files never reach `os.Setenv`.
 - Default file: `.env` in the nearest directory upward with a `go.mod`, else the working directory; missing default is fine, listed paths must exist. `IsIgnoreEnvFile` reads no file; with `ENVFilePaths` it panics.
@@ -670,7 +670,7 @@ type Cache interface {
 
 **There is no package-level `NewCacheModule()` function** — use `cache.Register(opts)`. No LFU eviction anywhere (see `memorycache` package below for the real CLOCK eviction).
 
-Ginject has no HTTP client or storage module: outbound calls use `net/http` with `trace.Transport` (see `trace/README.md`).
+Ginject has no HTTP client or persistence module: outbound calls use `net/http` with `trace.Transport` (see `trace/README.md`).
 
 ---
 
@@ -696,7 +696,7 @@ func NewMemoryCache(opts *MemoryCacheOptions) *MemoryCache // nil = defaults
 | `Keys` | `Keys(ctx) []string` |
 | `TTL` | `TTL(ctx, key string) (time.Duration, bool)` |
 
-Errors: `ErrEmptyKey`, `ErrNegativeTTL` (a negative ttl writes nothing), `ErrEntryTooLarge` (`len(key)+len(val) > MaxBytes/64`), `ErrNotCounter`. **There is no `Stop`** (removed: nothing to stop).
+Errors: `ErrEmptyKey`, `ErrNegativeTTL` (a negative ttl writes nothing), `ErrEntryTooLarge` (`len(key)+len(val) > MaxBytes/64`), `ErrNotCounter`. Nothing to close: no method shuts a cache down; an unreferenced cache is collected.
 
 **`PersistenceConfig` and `NewMemoryCacheWithConfig` do not exist and never have — do not generate them.** The package has zero file I/O.
 
@@ -767,7 +767,7 @@ type HTTPSRedirect struct { Host string; Port int }  // fixed target host (no po
 type CSRF struct { TrustedOrigins []string } // scheme://host[:port], at most 64
 ```
 
-Wraps `http.CrossOriginProtection` (Go 1.25+): safe methods pass; `Sec-Fetch-Site` `same-origin`/`none` pass; any other value → `TrustedOrigins` or `403 Cross-origin request refused`; no `Sec-Fetch-Site` and no `Origin` → pass (not a browser); `Origin` host equal to the host → pass. `Origin` > 256 bytes refused. No token, no cookie, no context value, no body read. **`TokenLength`, `CookieName`, `HeaderName`, `ContextKey`, `GenerateCSRFToken`, `CompareTokensSecurely` are gone — do not generate them.**
+Wraps `http.CrossOriginProtection` (Go 1.25+): safe methods pass; `Sec-Fetch-Site` `same-origin`/`none` pass; any other value → `TrustedOrigins` or `403 Cross-origin request refused`; no `Sec-Fetch-Site` and no `Origin` → pass (not a browser); `Origin` host equal to the host → pass. `Origin` > 256 bytes refused. No token, no cookie, no context value, no body read. **`TrustedOrigins` is the only field and the package exports nothing else: do not generate token fields or helpers.**
 
 ### `middlewares/cors` (changed, design 0014)
 
@@ -784,7 +784,7 @@ type CORS struct {
 func (instance CORS) NewMiddleware() common.MiddlewareFn
 ```
 
-**Panics at `Create()`**: empty `AllowOrigins` (`invalid cors: AllowOrigins is empty` — the zero value allows nothing), `"*"` with other entries or with `IsAllowCredentials`, an origin that is not lower-case `scheme://host[:port]` or `scheme://*.host[:port]`, `null`, more than 256 origins or 64 list entries, a name that is not an RFC 9110 token. `Vary: Origin` on every response with a list. Preflight is exactly `OPTIONS` + `Origin` + `Access-Control-Request-Method` (`204`); any other `OPTIONS` reaches its `PREFLIGHT_…` route. A non-matching origin gets no CORS header but is still served. A WebSocket upgrade from a non-matching `Origin` → `403 Origin not allowed`. **`AllowOrigin` (any), regexp origins, `IsPreflightContinue`, `OptionsSuccessStatus` are gone.**
+**Panics at `Create()`**: empty `AllowOrigins` (`invalid cors: AllowOrigins is empty` — the zero value allows nothing), `"*"` with other entries or with `IsAllowCredentials`, an origin that is not lower-case `scheme://host[:port]` or `scheme://*.host[:port]`, `null`, more than 256 origins or 64 list entries, a name that is not an RFC 9110 token. `Vary: Origin` on every response with a list. Preflight is exactly `OPTIONS` + `Origin` + `Access-Control-Request-Method` (`204`); any other `OPTIONS` reaches its `PREFLIGHT_…` route. A non-matching origin gets no CORS header but is still served. A WebSocket upgrade from a non-matching `Origin` → `403 Origin not allowed`. **The seven fields listed above are the only options; origins are exact strings or `*.` patterns.**
 
 ### `middlewares/helmet` (changed, design 0014)
 
@@ -797,7 +797,7 @@ type Helmet struct {
 }
 ```
 
-Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **`DNSPrefetchControl`, `PermittedCrossDomainPolicies`, `HSTSMaxAge`, `HSTSExcludeSubDomains`, `HSTSPreload`, `DisableHSTS` are gone.**
+Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **The eight string fields above are the only options; the always-sent headers can't be configured.**
 
 ### `middlewares/compress`
 

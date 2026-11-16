@@ -93,3 +93,21 @@ building, `csrf`, `cors`, `helmet`, `compress` (writer cap, `Range`, encoded res
 Sources: [Go release history](https://go.dev/doc/devel/release),
 [x/net v0.62.0 advisory](https://seclists.org/oss-sec/2026/q4/407),
 [GO-2026-4440](https://pkg.go.dev/vuln/GO-2026-4440).
+
+## Addendum: `middlewares/loadshed` (HEAD db45eec)
+
+- **H1, high: the adaptive limit can be steered** (`adaptive.go:173-174`, `:195-207`). Driven to
+  `min`: a flood of cheap requests (404s, refused auth, aborted connections) lowers the baseline, and
+  each lower window average also refreshes `baselineAt`, so no probe corrects it; then a few slow
+  uploads (close to the 30 s read timeout, inside `longSample`) push the gradient near 0 and the limit
+  falls 20 % per window to `GOMAXPROCS`: two slow connections plus queue filler shut out a 2 vCPU app.
+  Driven to `max`: cheap requests under pressure grow the limit up to 4,096; switching to expensive
+  routes then admits 4,096 at once and exhausts memory.
+- **M4, medium: packed window sum overflows** (`adaptive.go:143-147`) once a window holds more than
+  about 9,380 samples of 30 s (limit ≥ 2,346): the carry adds to the count, windows close early.
+- **L10, low:** `elapsed` is taken before `compress` flushes on `Close` (`core/http_writer.go:49`,
+  `compress.go:396`): a slow reader holds a slot without slowing the sample.
+- gosec: 5 hits, false positives. No leak in refusals; queue and timers bounded; hand-off race-free.
+
+Decision (orchestrator): H1 and M4 fixed in roadmap 0005 through an architect revision of 0014
+`loadshed`, keeping L12; L10 documented.

@@ -591,10 +591,9 @@ func (c UploadController) CREATE(body ctx.Body) any {
 ```go
 cors.CORS{}                           // panics at Create(): invalid cors: AllowOrigins is empty
 cors.CORS{AllowOrigins: []string{"*"}, IsAllowCredentials: true} // panics: * never with credentials
-cors.CORS{AllowOrigin: "https://app.example.com"}               // does not compile: the field is AllowOrigins
 ```
 
-**Why It's Wrong**: the zero value allows nothing (design 0014), `*` with credentials would give every site credentialed access, and the old `AllowOrigin any` / regexp origins, `IsPreflightContinue` and `OptionsSuccessStatus` are gone.
+**Why It's Wrong**: the zero value allows nothing (design 0014) and `*` with credentials would give every site credentialed access. The fields are exactly `AllowOrigins`, `AllowMethods`, `AllowHeaders`, `ExposeHeaders`, `MaxAge`, `IsAllowCredentials`, `IsAllowPrivateNetwork`; origins are exact strings or `*.` patterns, never patterns of another syntax.
 
 **RIGHT**:
 ```go
@@ -605,7 +604,7 @@ cors.CORS{AllowOrigins: []string{"https://app.example.com", "https://*.example.c
 
 ### 12.2 GOTCHA: CSRF Tokens
 
-**WRONG**: generating `csrf.CSRF{CookieName: ..., HeaderName: ...}`, `csrf.GenerateCSRFToken`, or front-end code that reads a CSRF cookie and sends `X-CSRF-Token`.
+**WRONG**: generating CSRF token fields or helpers on `csrf.CSRF`, or front-end code that reads a CSRF cookie and sends a token header.
 
 **Why It's Wrong**: `csrf` now wraps `http.CrossOriginProtection` (Fetch Metadata + `Origin`): there is no token, no cookie and no context value. The only option is `TrustedOrigins`.
 
@@ -625,3 +624,22 @@ ip := c.Request.Header.Get("X-Real-IP")
 
 **Rule**: never parse a forwarding header yourself; without `proxy` bound the client is the connection's peer, by design.
 
+
+### 12.4 GOTCHA: Security Limits Left to the App (security review 0005)
+
+Each is documented once in the package README named; generated code must respect them.
+
+- **Header value slices are shared** between responses (`helmet`, `cors`, `compress`, static
+  `Cache-Control`, the scope's `X-Request-Id` / `Traceparent`): change headers with `Set` / `Add` /
+  `Del` or a new slice, never `h[k][0] = …` (`core/README.md` › Response writer).
+- **`c.Redirect` takes any URL**: validate a URL from the request (local paths only) before
+  redirecting (`ctx/README.md` › Redirect).
+- **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `ctx.Map` or a
+  struct, never as a format argument or the format string (`ctx/README.md` › JSON).
+- **`trace.Transport` sends `traceparent` to every host**, and an incoming valid `traceparent`
+  sets the trace ID and flags: never authorize by a trace ID (`trace/README.md` › Security).
+- **`proxy` hops mode (`TrustedHops`) doesn't check the peer**: only when the app is unreachable
+  except through the proxies (`middlewares/proxy/README.md` › Security).
+- **Throttler**: a client with an IPv6 /48 can evict its own /64 counters from the 32,768-entry
+  default store; `SlidingWindow` / `TokenBucket` are exact within one process only, even with a
+  shared `Backend` (`guards/throttler/README.md` › Known limits).

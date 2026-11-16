@@ -157,7 +157,7 @@ app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
 #### Request and trace IDs
 - Every response (a route, a 404, a 405, an error) carries `X-Request-Id: <request ID>` (16 hex characters, the same as `c.GetID()`) and `Traceparent: 00-<trace ID>-<request ID>-<flags>`.
 - The request ID is always the app's own: neither an incoming `X-Request-Id` nor a `traceparent` sets it.
-- One valid incoming `traceparent` continues its trace ID and keeps its flags (`& 03`); an absent, repeated or invalid one (upper case, zero IDs, version `ff`, CR/LF, a megabyte of junk) is ignored silently and a new, time-ordered trace starts with flags `03`.
+- One valid incoming `traceparent` continues its trace ID and keeps its flags (`& 03`), so a client chooses the trace ID of its request (see [trace › Security](../trace/README.md#security)); an absent, repeated or invalid one (upper case, zero IDs, version `ff`, CR/LF, a megabyte of junk) is ignored silently and a new, time-ordered trace starts with flags `03`.
 - The scope is in `c.Context()`, `c.Request.Context()` and the `*http.Request` every middleware receives, so guards, interceptors, filters, the handler and a service called with `c.Context()` all read the same IDs. A goroutine that keeps `c.Context()` reads them after the request ended and the pooled context was reused; concurrent requests never read each other's scope.
 - An outbound `net/http` request built with `c.Context()` and sent through `trace.Transport` forwards the trace (`Traceparent`); see [trace](../trace/README.md#outbound-calls).
 - A WebSocket handshake follows the same rules: the 101 response carries both headers, and the connection ID (the `connected` payload's `id`, the `WSConnmgr` key) is the handshake's request ID. Each message dispatched to a topic is its own message with its own ID (a frame naming two topics is two messages); its `c.Context()` carries the connection's trace, the connection ID and the message ID, and is done when the connection closes.
@@ -679,6 +679,8 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
 ## Response writer
 
 Every layer receives the same writer as `c.ResponseWriter` (middlewares as their `http.ResponseWriter`). It records whether a response was sent, and forwards `Flush`, `Hijack`, `ReadFrom` (so `http.ServeFile` keeps `sendfile`) and `Unwrap` (so `http.ResponseController` reaches `SetWriteDeadline` and friends). Like `net/http`'s own writer, don't use it after the request returns: a late write on an idle context is dropped.
+
+Some header values are slices built once and shared, so setting them costs no allocation: the `Cache-Control: no-cache` of static files, the headers of `helmet`, `cors` and `compress`, and the `X-Request-Id` and `Traceparent` values, which share their memory with the request's trace scope. Change a header only through `Header().Set`, `Add` or `Del`, or by assigning a new slice. Never write into the slice you read (`w.Header()["Cache-Control"][0] = "no-store"`): that changes the value for every other response that shares it, and is a data race.
 
 ## Handler injection
 

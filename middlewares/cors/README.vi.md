@@ -171,6 +171,9 @@ Giúp `CORS` là một `common.MiddlewareFn`. Chỉ dùng trong test; framework 
 - **WebSocket** (`Upgrade: websocket`): `Origin` không khớp bị từ chối `403`, message
   `Origin not allowed`; khớp hoặc không có thì đi tiếp. Truyền `cors` cho `EnableWS` để kiểm tra
   handshake.
+- Giá trị header được dùng chung giữa các response (dựng một lần lúc khởi động). Chỉ đổi bằng
+  `Header().Set`, `Add` hoặc `Del`, không bao giờ ghi thẳng vào slice
+  (`w.Header()["Access-Control-Allow-Methods"][0] = "…"`): làm vậy đổi mọi response khác và là data race.
 - Request và context được chuyển tiếp nguyên vẹn, body không bao giờ bị đọc.
 
 ## Giới Hạn
