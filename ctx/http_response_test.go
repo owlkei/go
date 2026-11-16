@@ -596,3 +596,12 @@ func TestHTTPContext_JSONPEqualsMarshal_RandomPayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPContext_JSONNilAppenderPointerWritesNull(t *testing.T) {
+	c, w := newResponseContext("/")
+	var nilAppender *jsonAppenderValue
+	jsonOK(t, c, nilAppender)
+	if w.Body.String() != "null" {
+		t.Error(test.DiffMessage(w.Body.String(), "null", "JSON of a nil pointer to a JSONAppender writes null instead of panicking with runtime text"))
+	}
+}

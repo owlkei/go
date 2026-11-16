@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/dangduoc08/ginject/aggregation"
@@ -124,6 +125,11 @@ func (c *HTTPContext) Redirect(url string) {
 	http.Redirect(c.ResponseWriter, c.Request, url, c.Code)
 }
 
+func isNilPointer(v any) bool {
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
+}
+
 func encodeJSON(data any, args []any) []byte {
 	var body []byte
 	var err error
@@ -134,6 +140,9 @@ func encodeJSON(data any, args []any) []byte {
 		}
 		body, err = json.Marshal(json.RawMessage(v))
 	case JSONAppender:
+		if isNilPointer(v) {
+			return []byte("null")
+		}
 		return v.AppendJSON(nil)
 	case Map:
 		body, err = json.Marshal(&v)

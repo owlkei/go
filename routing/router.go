@@ -55,6 +55,8 @@ const (
 
 const partialParamReason = "parameter must be a whole segment like {name}"
 
+const literalDollarReason = "a $ segment is reserved for parameters; name it like {name}"
+
 type RouterItem struct {
 	Method       string
 	Version      string
@@ -285,7 +287,10 @@ func compileRoute(route string) compiledRoute {
 			triePattern.WriteByte('$')
 			continue
 		}
-		if seg == "$" || strings.Contains(seg, "*") {
+		if seg == "$" {
+			panic(invalidRoute(route, literalDollarReason))
+		}
+		if strings.Contains(seg, "*") {
 			compiled.isStatic = false
 		}
 		triePattern.WriteString(seg)

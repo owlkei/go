@@ -743,3 +743,10 @@ func TestRouter_Match_ConcurrentNoRace(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestRouter_Add_PanicsOnLiteralDollarSegment(t *testing.T) {
+	reason := "a $ segment is reserved for parameters; name it like {name}"
+	expectRoutePanic(t, "R9", "/price/$", reason, func() {
+		NewRouter().Add(http.MethodGet, "/price/$", "", noop)
+	})
+}
