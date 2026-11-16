@@ -604,10 +604,10 @@ func TestHTTPError_FilterPanicIsLogged(t *testing.T) {
 func lcTraceApp(t *testing.T, events *[]trace.Event, mu *sync.Mutex) *App {
 	t.Helper()
 	return lcNewApp(t, lcConfig{setup: func(app *App) {
-		app.event.On(trace.EventName, func(args ...any) {
+		app.tracer.Listen(func(e trace.Event) {
 			mu.Lock()
 			defer mu.Unlock()
-			*events = append(*events, args[0].(trace.Event))
+			*events = append(*events, e)
 		})
 	}})
 }

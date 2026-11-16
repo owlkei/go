@@ -153,10 +153,10 @@ func handlerEventNames(t *testing.T, path string) []string {
 	app := New()
 	var mu sync.Mutex
 	var names []string
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		if te := args[0].(trace.Event); te.Stage == trace.StageHandler {
+		if te := e; te.Stage == trace.StageHandler {
 			names = append(names, te.Name)
 		}
 	})

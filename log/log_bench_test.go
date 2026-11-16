@@ -1,121 +1,19 @@
 package log
 
 import (
-	"context"
+	"errors"
 	"io"
-	"log/slog"
+	"strings"
 	"testing"
-	"time"
+
+	"github.com/dangduoc08/ginject/internal/color"
 )
 
-func BenchmarkPrettyHandler_Handle_NoAttrs(b *testing.B) {
-	h := NewPrettyHandler(io.Discard, &PrettyHandlerOptions{
-		TimeFormat:     time.DateTime,
-		HandlerOptions: slog.HandlerOptions{Level: slog.LevelDebug},
-	})
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "hello world", 0)
-	b.ResetTimer()
-	for range b.N {
-		_ = h.Handle(context.Background(), r)
-	}
-}
-
-func BenchmarkPrettyHandler_Handle_WithAttrs(b *testing.B) {
-	h := NewPrettyHandler(io.Discard, &PrettyHandlerOptions{
-		TimeFormat:     time.DateTime,
-		HandlerOptions: slog.HandlerOptions{Level: slog.LevelDebug},
-	})
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "hello world", 0)
-	r.AddAttrs(
-		slog.String("url", "/api/v1/users"),
-		slog.Int("status", 200),
-		slog.Bool("cached", false),
-	)
-	b.ResetTimer()
-	for range b.N {
-		_ = h.Handle(context.Background(), r)
-	}
-}
-
-func BenchmarkLoadLogOptions_Default(b *testing.B) {
-	for range b.N {
-		loadLogOptions(nil)
-	}
-}
-
-func BenchmarkLoadLogOptions_Custom(b *testing.B) {
-	opts := &LogOptions{
-		Level:      ErrorLevel,
-		LogFormat:  TextFormat,
-		TimeFormat: "2006-01-02",
-	}
-	for range b.N {
-		loadLogOptions(opts)
-	}
-}
-
-func BenchmarkPrettyHandler_Handle_NestedStages(b *testing.B) {
-	h := NewPrettyHandler(io.Discard, &PrettyHandlerOptions{
-		TimeFormat:     time.DateTime,
-		HandlerOptions: slog.HandlerOptions{Level: slog.LevelDebug},
-	})
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "/api/v1/users", 0)
-	r.AddAttrs(
-		slog.String("id", "a0eef3e5-b715-4c2e-9c7c-d239e24d305f"),
-		slog.String("transport", "HTTP"),
-		slog.Int("code", 200),
-		slog.String("operation", "GET"),
-		slog.Any("middleware", []map[string]Colored{
-			{"CORS": {Text: "120µs (4%)", Color: ColorGray}},
-			{"CSRF": {Text: "80µs (3%)", Color: ColorGray}},
-			{"Helmet": {Text: "40µs (1%)", Color: ColorGray}},
-		}),
-		slog.Any("guard", []map[string]Colored{
-			{"AuthGuard": {Text: "300µs (10%)", Color: ColorGreen}},
-		}),
-		slog.Any("pre_interceptor", []map[string]Colored{
-			{"LogInterceptor": {Text: "15µs (0%)", Color: ColorGray}},
-		}),
-		slog.Any("handler", []map[string]Colored{
-			{"READ_users": {Text: "2ms (68%)", Color: ColorBlue}},
-		}),
-		slog.Any("post_interceptor", []map[string]Colored{
-			{"LogInterceptor": {Text: "90ns (0%)", Color: ColorGray}},
-		}),
-		slog.String("total", "2.9ms"),
-	)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = h.Handle(context.Background(), r)
-	}
-}
-
-func BenchmarkPrettyHandler_Handle_LargeMap(b *testing.B) {
-	h := NewPrettyHandler(io.Discard, &PrettyHandlerOptions{
-		TimeFormat:     time.DateTime,
-		HandlerOptions: slog.HandlerOptions{Level: slog.LevelDebug},
-	})
-	meta := make(map[string]int, 20)
-	for i := range 20 {
-		meta[string(rune('a'+i%26))+string(rune('A'+i))] = i
-	}
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "meta", 0)
-	r.AddAttrs(slog.Any("meta", meta))
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = h.Handle(context.Background(), r)
-	}
-}
-
-func BenchmarkNewPrettyHandler(b *testing.B) {
-	for range b.N {
-		NewPrettyHandler(io.Discard, &PrettyHandlerOptions{
-			TimeFormat:     time.DateTime,
-			HandlerOptions: slog.HandlerOptions{Level: slog.LevelDebug},
-		})
-	}
+type benchUser struct {
+	Name     string
+	Password string
+	Age      int
+	City     string
 }
 
 type benchTagPerson struct {
@@ -133,12 +31,91 @@ func (noopLogger) Warn(string, ...any)  {}
 func (noopLogger) Error(string, ...any) {}
 func (noopLogger) Fatal(string, ...any) {}
 
+func BenchmarkLog_Info_Scalars_JSON(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Info("request", "url", "/api/v1/users", "status", 200, "ok", true, "took", 1.5)
+	}
+}
+
+func BenchmarkLog_Info_Struct_JSON(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	user := benchUser{Name: "duoc", Password: "secret", Age: 30, City: "Hanoi"}
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Info("login", "user", user)
+	}
+}
+
+func BenchmarkLog_Info_Struct_JSON_WithMaskRule(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat, MaskFields: []string{"password"}})
+	user := benchUser{Name: "duoc", Password: "secret", Age: 30, City: "Hanoi"}
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Info("login", "user", user)
+	}
+}
+
+func BenchmarkLog_BelowLevel(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat, Level: InfoLevel})
+	user := benchUser{Name: "duoc", Password: "secret", Age: 30, City: "Hanoi"}
+	args := []any{"user", user}
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Debug("x", args...)
+	}
+}
+
+func BenchmarkLog_ErrorWithStack_JSON(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	stack := strings.Repeat("goroutine 1 [running]:\nmain.handler(0x1)\n\t/app/main.go:42 +0x1d\n", 20)
+	err := errors.New("boom")
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Error("UnhandledPanic", "id", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "method", "GET", "path", "/api/v1/users", "panic", err, "stack", stack)
+	}
+}
+
+func BenchmarkLog_AccessLine_Pretty(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: PrettyFormat})
+	middleware := []map[string]color.Colored{
+		{"CORS": {Text: "120µs (4%)", Color: color.Gray}},
+		{"CSRF": {Text: "80µs (3%)", Color: color.Gray}},
+		{"Helmet": {Text: "40µs (1%)", Color: color.Gray}},
+	}
+	handler := []map[string]color.Colored{{"READ_users": {Text: "2ms (68%)", Color: color.Blue}}}
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Info("/api/v1/users",
+			"id", "a0eef3e5-b715-4c2e-9c7c-d239e24d305f",
+			"transport", "HTTP",
+			"code", 200,
+			"operation", "GET",
+			"middleware", middleware,
+			"handler", handler,
+			"total", "2.9ms",
+		)
+	}
+}
+
+func BenchmarkLog_Info_LargeMap_Pretty(b *testing.B) {
+	logger := newLog(io.Discard, false, &LogOptions{LogFormat: PrettyFormat})
+	meta := make(map[string]int, 20)
+	for i := range 20 {
+		meta[string(rune('a'+i%26))+string(rune('A'+i))] = i
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.Info("meta", "meta", meta)
+	}
+}
+
 func BenchmarkWrapLogger_Info_TaggedStruct(b *testing.B) {
 	l := WrapLogger(noopLogger{}, nil)
 	p := benchTagPerson{Age: 10, name: "Joh", School: "MIT", policy: "ok"}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		l.Info("test", "person", p)
 	}
 }
@@ -147,28 +124,16 @@ func BenchmarkWrapLogger_Info_TaggedStruct_WithMaskRule(b *testing.B) {
 	l := WrapLogger(noopLogger{}, []string{"person.name"})
 	p := benchTagPerson{Age: 10, name: "Joh", School: "MIT", policy: "ok"}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		l.Info("test", "person", p)
 	}
 }
 
 func BenchmarkWrapLogger_Info_NoStructArgs(b *testing.B) {
 	l := WrapLogger(noopLogger{}, nil)
+	args := []any{"url", "/api/v1/users", "status", 200}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		l.Info("test", "url", "/api/v1/users", "status", 200)
-	}
-}
-
-func BenchmarkJSONHandler_Handle_NoStructAttrs_Unwrapped(b *testing.B) {
-	h := slog.NewJSONHandler(io.Discard, nil)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
-	r.AddAttrs(slog.String("url", "/api/v1/users"), slog.Int("status", 200))
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = h.Handle(context.Background(), r)
+	for b.Loop() {
+		l.Info("test", args...)
 	}
 }

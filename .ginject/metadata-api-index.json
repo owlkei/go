@@ -220,35 +220,15 @@
         "NotSubscribedException", "TopicNotFoundException"
       ]
     },
-    "event": {
-      "responsibility": "Event emission (Node.js EventEmitter-style)",
-      "public_types": {
-        "Event": {
-          "methods": [
-            "On(eventName string, fn func(args ...any))",
-            "Once(eventName string, fn func(args ...any))",
-            "Off(eventName string, fn func(args ...any))",
-            "Emit(eventName string, args ...any)",
-            "RemoveAllListeners(eventName string)",
-            "ListenerCount(eventName string) int",
-            "HasListeners(eventName string) bool",
-            "EventNames() []string",
-            "SetMaxListeners(n int)",
-            "Reset()"
-          ],
-          "notes": "On/Once/Off/Emit all take variadic ...any, not a single `data any`/`fn func(any)` — a listener written as func(data any) does not satisfy func(args ...any) and will not compile."
-        }
-      }
-    },
     "trace": {
       "responsibility": "Request tracing and observability",
-      "event_name_constant": "trace.EventName = \"trace\" (NOT \"ginject:trace\")",
+      "tracer": "type Tracer (zero value ready): Enabled() bool, Emit(Event), Listen(func(Event)) (stop func()); synchronous, no recover, 0 allocs. There is no event bus and no EventName constant.",
       "trace_stages": [
         "middleware", "guard", "pre_interceptor", "post_interceptor",
         "exception_filter", "pipe", "handler", "complete"
       ],
       "notes": "No \"handshake\" stage exists. Interceptor is split into pre_interceptor/post_interceptor (two constants), not one combined \"interceptor\". Exception filter stage string is \"exception_filter\", not \"filter\".",
-      "transports": ["HTTP", "WS", "GQL", "RPC"]
+      "transports": ["HTTP", "WS"]
     },
     "memorybroker": {
       "responsibility": "Lightweight in-process topic-based pub/sub broker (no queue groups, no persistence, no ack/retry)",

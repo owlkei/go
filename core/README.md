@@ -533,7 +533,9 @@ WS handlers reply with their last result as the message.
 
 ### Trace events
 
-With a listener on `trace.EventName`, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
+With a listener on the app's `trace.Tracer` (the access log is one), each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
+
+Every event carries `ID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic) and `Code`. `Enabled()` is asked once per request: a request that started without a listener emits nothing. With `EnableAccessLog()`, the access log is stopped once at shutdown, after the `OnShutdown` hooks, so the lines of the last requests are written before the process exits.
 
 ### Rules
 
@@ -562,7 +564,7 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 - What remains is the cost of `reflect.Value.Call` (one allocation for the result slice, plus one per result that is not pointer-shaped) and whatever the accessors and pipes do.
 - **One route struct per route.** At `Create()` each route gets an immutable `httpRoute` (module middlewares, guards and interceptors with the global ones in front, the handler plan, the filter list, the `SERVE` index), stored in a slice at the router item's index: a request does one slice index instead of three map lookups keyed by the pattern string.
 - **No closure without middleware.** A route without middleware gets a shared no-op `c.Next`; with middlewares, one closure and one flag per request, passed to every `Use` (a closure kept on the pooled context would let a leaked `next` continue another request). Guards and interceptors are called directly, and a refused guard reaches the filters without a panic.
-- **One listener check, one recover.** `HasListeners` is asked once per request; `handleRequest` holds the request's only `defer` / `recover`, and `ServeHTTP` releases the context in straight-line code.
+- **One listener check, one recover.** `Tracer.Enabled` (one atomic load) is asked once per request; `handleRequest` holds the request's only `defer` / `recover`, and `ServeHTTP` releases the context in straight-line code.
 - **Fixed bodies.** The 404, 405, 410 and fixed 500 bodies are byte slices built once; a miss tries only the methods that have routes for the `Allow` header, which comes from a table built once.
 - **One atomic load for the body cap.** The cap is an `atomic.Int64` written when a serving call starts and loaded only for a request with a body (about 1 ns, no allocation). The rest of the server code runs once per start or stop.
 - **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ParamValues`, whose capacity `Reset` keeps.

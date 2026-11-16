@@ -8,7 +8,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/trace"
@@ -119,12 +118,12 @@ func (p *handlerPipe[C]) resolve(c C) reflect.Value {
 	return v
 }
 
-func (p *handlerPipe[C]) resolveTraced(c C, ev *event.Event, transport string, elapsed *time.Duration) reflect.Value {
+func (p *handlerPipe[C]) resolveTraced(c C, ev *trace.Tracer, transport string, elapsed *time.Duration) reflect.Value {
 	start := time.Now()
 	defer func() {
 		d := time.Since(start)
 		*elapsed += d
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StagePipe, Name: p.name, Transport: transport, Duration: d})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StagePipe, Name: p.name, Transport: transport, Duration: d})
 	}()
 	return p.resolve(c)
 }
@@ -293,11 +292,11 @@ func resolveHTTPArg(a *handlerArg[*ctx.HTTPContext], c *ctx.HTTPContext) reflect
 	return a.pipe.resolve(c)
 }
 
-func (p *httpHandlerPlan) invoke(c *ctx.HTTPContext, ev *event.Event) []reflect.Value {
-	return p.call(c, ev, ev.HasListeners(trace.EventName))
+func (p *httpHandlerPlan) invoke(c *ctx.HTTPContext, ev *trace.Tracer) []reflect.Value {
+	return p.call(c, ev, ev.Enabled())
 }
 
-func (p *httpHandlerPlan) call(c *ctx.HTTPContext, ev *event.Event, traced bool) []reflect.Value {
+func (p *httpHandlerPlan) call(c *ctx.HTTPContext, ev *trace.Tracer, traced bool) []reflect.Value {
 	var stack [handlerStackArgs + 1]reflect.Value
 	in := handlerCallArgs(stack[:], p.recv, len(p.args))
 	if traced {
@@ -309,7 +308,7 @@ func (p *httpHandlerPlan) call(c *ctx.HTTPContext, ev *event.Event, traced bool)
 	return p.fn.Call(in)
 }
 
-func (p *httpHandlerPlan) invokeTraced(c *ctx.HTTPContext, ev *event.Event, in []reflect.Value) []reflect.Value {
+func (p *httpHandlerPlan) invokeTraced(c *ctx.HTTPContext, ev *trace.Tracer, in []reflect.Value) []reflect.Value {
 	start := time.Now()
 	var pipes time.Duration
 	for i := range p.args {
@@ -321,7 +320,7 @@ func (p *httpHandlerPlan) invokeTraced(c *ctx.HTTPContext, ev *event.Event, in [
 		}
 	}
 	defer func() {
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageHandler, Name: p.name, Duration: time.Since(start) - pipes})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageHandler, Name: p.name, Transport: trace.TransportHTTP, Duration: time.Since(start) - pipes})
 	}()
 	return p.fn.Call(in)
 }
@@ -357,10 +356,10 @@ func resolveWSArg(a *handlerArg[*ctx.WSContext], c *ctx.WSContext) reflect.Value
 	return a.pipe.resolve(c)
 }
 
-func (p *wsHandlerPlan) invoke(c *ctx.WSContext, ev *event.Event) []reflect.Value {
+func (p *wsHandlerPlan) invoke(c *ctx.WSContext, ev *trace.Tracer) []reflect.Value {
 	var stack [handlerStackArgs + 1]reflect.Value
 	in := handlerCallArgs(stack[:], p.recv, len(p.args))
-	if ev.HasListeners(trace.EventName) {
+	if ev.Enabled() {
 		return p.invokeTraced(c, ev, in)
 	}
 	for i := range p.args {
@@ -369,7 +368,7 @@ func (p *wsHandlerPlan) invoke(c *ctx.WSContext, ev *event.Event) []reflect.Valu
 	return p.fn.Call(in)
 }
 
-func (p *wsHandlerPlan) invokeTraced(c *ctx.WSContext, ev *event.Event, in []reflect.Value) []reflect.Value {
+func (p *wsHandlerPlan) invokeTraced(c *ctx.WSContext, ev *trace.Tracer, in []reflect.Value) []reflect.Value {
 	var pipes time.Duration
 	for i := range p.args {
 		a := &p.args[i]

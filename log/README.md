@@ -1,6 +1,6 @@
 # Log
 
-*Package `log` is the built-in logger of `Ginject`: a `common.Logger` on top of `log/slog` with a pretty, text or JSON format, `log` struct tags and field masking that also apply to a logger you bring.*
+*Package `log` is the built-in logger of `Ginject`: a `common.Logger` on top of `log/slog` with a JSON, text or pretty format, `log` struct tags and field masking that also apply to a logger you bring.*
 
 - [Log](#log)
   - [Key Features](#key-features)
@@ -8,22 +8,26 @@
   - [`LogOptions` Parameters](#logoptions-parameters)
     - [Level](#level)
     - [LogFormat](#logformat)
-    - [TimeFormat](#timeformat)
     - [AddSource](#addsource)
     - [MaskFields](#maskfields)
-    - [Transports](#transports)
+  - [Formats](#formats)
   - [Functions](#functions)
     - [NewLog](#newlog)
     - [WrapLogger](#wraplogger)
-    - [NewPrettyHandler](#newprettyhandler)
+  - [How values are written](#how-values-are-written)
   - [Struct tags](#struct-tags)
-  - [Other exported types](#other-exported-types)
+  - [Masking](#masking)
+  - [Limits and guarantees](#limits-and-guarantees)
+  - [Other exported names](#other-exported-names)
+  - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- One logger per call: `NewLog` builds a new logger from its options every time.
-- Structs are logged field by field, named by their `log` tag; `log:"-"` skips a field.
-- Masking by path: `password` masks every `password` key at any depth, `token.*` every leaf under `token`.
+- One logger per call: `NewLog` builds a new, independent logger from its options every time.
+- JSON when stdout is not a terminal, the pretty tree when it is, with no configuration.
+- Errors, `fmt.Stringer`s and `slog.LogValuer`s are written through their method, never expanded.
+- Masking by path, case-insensitive, at any depth: `password` masks `Password`, `user.password` and a `password` inside a slice of structs.
+- A call never panics because of a value and never forges a line: control characters are escaped.
 - The tags and masking also apply to your own logger through `WrapLogger`.
 
 ## Usage
@@ -58,6 +62,8 @@ The line holds `"user":{"name":"duoc","password":"[REDACTED]"}`.
 
 ## `LogOptions` Parameters
 
+`NewLog` copies the options: later changes to the struct or to its `MaskFields` slice have no effect, and the options are never modified.
+
 ### Level
 Type: `slog.Level`
 
@@ -65,25 +71,16 @@ Default: `log.InfoLevel` (the zero value of `slog.Level`)
 
 Required: `false`
 
-The lowest level that is written: `DebugLevel`, `InfoLevel`, `WarnLevel`, `ErrorLevel` or `FatalLevel`. `-1` is read as `InfoLevel`.
+The lowest level that is written: `DebugLevel`, `InfoLevel`, `WarnLevel`, `ErrorLevel` or `FatalLevel`. The value is used as given.
 
 ### LogFormat
 Type: `logFormat`
 
-Default: `log.PrettyFormat`
+Default: `log.PrettyFormat` when stdout is a terminal (a character device), `log.JSONFormat` otherwise
 
 Required: `false`
 
-`log.TextFormat` (slog's text handler), `log.JSONFormat` (slog's JSON handler) or `log.PrettyFormat` (colored, one value per line).
-
-### TimeFormat
-Type: `string`
-
-Default: `time.DateTime`
-
-Required: `false`
-
-The time layout of the pretty format.
+`log.JSONFormat`, `log.TextFormat` or `log.PrettyFormat`. A format you set wins whatever the output is. Use JSON in production: a container then gets machine-readable lines without ANSI codes.
 
 ### AddSource
 Type: `bool`
@@ -92,7 +89,7 @@ Default: `false`
 
 Required: `false`
 
-Adds the source file and line to each record.
+Adds the file and line of the code that called the logger method, also through `WrapLogger`: slog's `source` in JSON and Text, a last row `source` with `file:line` in Pretty. Without it no caller lookup is made.
 
 ### MaskFields
 Type: `[]string`
@@ -101,27 +98,30 @@ Default: `nil`
 
 Required: `false`
 
-The paths to mask, see [WrapLogger](#wraplogger).
+The paths to mask, see [Masking](#masking).
 
-### Transports
-Type: `[]*LogTransport`
+## Formats
 
-Default: `nil`
+The level is written `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL` in all three formats.
 
-Required: `false`
+| Format | Line |
+|---|---|
+| `JSONFormat` | `{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"SignedIn","user":{"name":"duoc"}}` |
+| `TextFormat` | `time=2026-11-16T10:00:00.000+07:00 level=INFO msg=SignedIn user=map[name:duoc]` |
+| `PrettyFormat` | an empty line, the colored level label, the time (`2006-01-02 15:04:05`, local), the message in brackets, then one row per argument as a tree (map keys sorted, `null` for nil) |
 
-Not read: every format writes to stdout. `LogTransport` has `Filename string` and `Level slog.Level`.
+Output is stdout. To write elsewhere, bring a logger with `app.SetLogger(log.WrapLogger(myLogger, fields))`.
 
 ## Functions
 
 ### NewLog
 
-Builds a new logger from the options and wraps it with its `MaskFields` (see [WrapLogger](#wraplogger)). Output goes to stdout.
+Builds a new logger from the options. Output goes to stdout.
 
 #### Parameters
 - 1st parameter: `*LogOptions`
 
-- Description: The options; `nil` means the defaults
+- Description: The options; `nil` means level Info, the default format, no source and no mask rule
 
 #### Returns
 - 1st value: `common.Logger`
@@ -133,14 +133,16 @@ logger := log.NewLog(&log.LogOptions{LogFormat: log.TextFormat})
 ```
 
 #### Rules
-- Every call returns a new logger, also for `nil` options.
-- The options of each call apply to the logger it returns: a text logger writes text lines (`msg=hello`), a JSON logger writes JSON lines (`"msg":"hello"`).
-- The `MaskFields` of one call mask on that logger only.
-- Without options, the format is `PrettyFormat` and the time layout `time.DateTime`.
+- Every call returns a new logger; the options of each call apply to the logger it returns, and the `MaskFields` of one call mask on that logger only.
+- JSON is one object per line with slog's keys (`time`, `level`, `msg`, then the arguments); Text is slog's `key=value` line.
+- A call below the level writes nothing, calls no method of an argument and allocates nothing.
+- Every record is one `Write` to the output; JSON and Text records of concurrent calls never interleave.
+- `Fatal` writes the record at the `FATAL` level, then exits the process with status 1, whatever the level.
+- Arguments are `key, value` pairs; a `slog.Attr` argument is one pair; a trailing key without a value is written under `!BADKEY`, and so is a pair whose key is not a string (`"!BADKEY":42`).
 
 ### WrapLogger
 
-Wraps any `common.Logger` so that struct arguments are expanded by their `log` tags and the values at `maskFields` paths are replaced with `[REDACTED]`.
+Returns a logger that converts and masks the arguments (see [How values are written](#how-values-are-written) and [Masking](#masking)), then calls the same method of `next` once.
 
 #### Parameters
 - 1st parameter: `common.Logger`
@@ -161,18 +163,21 @@ logger := log.WrapLogger(myLogger, []string{"password", "token.*"})
 ```
 
 #### Rules
-- `WrapLogger(l, nil)` returns `l` unchanged when `l` came from `NewLog` or `WrapLogger`; any other logger is wrapped and every call is forwarded to it.
-- An exact rule (`password`) masks that key at the top level and as the last segment of a nested path (`user.password`), never a key that only ends with the text (`userpassword`).
-- A multi-segment rule (`user.password`) masks only its own suffix, not `admin.password`.
-- A struct value under an exact rule is masked whole, without looking inside.
-- A wildcard rule (`password.*`) masks every leaf nested under the path, keeps the structure, reaches into tagged structs, and does not mask the bare `password` key.
-- Several rules apply together; keys no rule names are passed through.
-- A trailing key with no value and a value whose key is not a `string` pass through unchanged.
+- A logger from `NewLog` or `WrapLogger` with no fields is returned as it is.
+- A logger from `NewLog` or `WrapLogger` with fields becomes one logger with the rules of both, not a second layer: each call converts and masks once and reaches the innermost logger once.
+- Any other logger is wrapped; each method calls the same method of that logger once, with structs as `map[string]any` and changed slices as `[]any`.
+- `maskFields` is copied.
+- A value that needs no conversion and no masking is passed on as the same value, and when no argument needs any, the argument slice itself is passed on.
+- An error, a `fmt.Stringer` or a `slog.LogValuer` reaches a wrapped logger unchanged, and none of its methods is called.
+- `WrapLogger(nil, fields)` panics with `invalid logger: WrapLogger needs a logger`.
 - Safe for concurrent calls.
 
-### NewPrettyHandler
+## How values are written
 
-`NewPrettyHandler(out io.Writer, opts *PrettyHandlerOptions) *PrettyHandler` returns the `slog.Handler` of the pretty format. `PrettyHandlerOptions` holds `TimeFormat string` and the embedded `slog.HandlerOptions`. `(*PrettyHandler).Handle` writes one record: the level, the message (an empty message is skipped), then each attribute on its own line, slices, structs and maps as indented children (map keys sorted), `nil` as `null`.
+- A value whose type, or pointer type, implements `error`, `fmt.Stringer` or `slog.LogValuer` is written through that method (`Error()`, `String()`, the resolved `LogValue()`), in every format: a `*url.URL` is its URL, never its fields. A nil pointer or nil interface is written as `null` without calling a method.
+- Any other struct becomes a map of its fields (see [Struct tags](#struct-tags)); pointers are followed.
+- Maps with string or integer keys become `map[string]any` (integer keys in decimal) when one of their values changes; slices and arrays become `[]any` when one of their elements changes.
+- `time.Time` and `time.Duration` keep slog's formatting.
 
 ## Struct tags
 
@@ -182,29 +187,67 @@ logger := log.WrapLogger(myLogger, []string{"password", "token.*"})
 - Nested structs are expanded the same way.
 - A struct that implements `fmt.Stringer`, `error` or `slog.LogValuer` is not expanded.
 
-## Other exported types
+## Masking
 
-- `Color` (`string`) with `ColorGray`, `ColorGreen`, `ColorBlue`, `ColorYellow`, `ColorOrange`, `ColorRed`, and `Colored` (`Text string`, `Color Color`, `String() string`): a value printed in its own color by the pretty format.
-- `DebugLevel`, `InfoLevel`, `WarnLevel`, `ErrorLevel`, `FatalLevel` (`slog.Level`; `FatalLevel` is `12`) and `TextFormat`, `JSONFormat`, `PrettyFormat`.
+A value's path is its key, then the keys under it joined by `.` (`user.password`). Elements of a slice or array have the path of the slice. A matched value is replaced by `[REDACTED]`. Matching ignores ASCII case.
+
+| Rule | Path | Masked |
+|---|---|---|
+| `password` | `password`, `Password`, `user.password` | yes |
+| `password` | `mypassword`, `userpassword` | no |
+| `user.password` | `user.password`, `a.user.password` | yes |
+| `user.password` | `admin.password` | no |
+| `password.*` | `password.person.value` | yes, the leaves under it; the structure is kept |
+| `password.*` | `password` | no |
+
+- A rule without `*` that matches a struct, map or slice replaces it whole.
+- Masking reaches struct fields, map values, slice and array elements, `slog.Attr` arguments and the attributes of a `slog.Group`, at any depth up to the limits below.
+- A tagged field is matched by its tag name.
+- An error, a `Stringer` or a `LogValuer` is masked only when its own path matches; its text is never searched.
+- Never masked: the message, the keys, the text of an error or a `Stringer`, and the values of a map whose keys are neither strings nor integers.
+
+## Limits and guarantees
+
+- Nesting is followed 16 levels deep; a value below that is written `[MAX_DEPTH]`. After 1,000 values inside one argument, each remaining value is written `[TRUNCATED]`. A value that contains itself ends.
+- A panic raised by a value's own `String`, `Error` or `LogValue` is recovered: the call writes one line with the original level and message and a `log_error` pair with the recovered value, and the logger keeps working.
+- In Pretty, every control character of the message and of the keys is written escaped (`\n`, `\r`, `\t`, `\x1b`, the C1 controls U+0080 to U+009F), so a value cannot forge a line or send terminal escape codes. In string values a line feed starts a new, indented line (a stack trace stays readable); everything else is escaped.
+- JSON and Text rely on slog's escaping; JSON also escapes the C1 controls.
+- A logger is immutable and safe for concurrent use; it starts no goroutine and opens no file.
+
+## Other exported names
+
+- `DebugLevel`, `InfoLevel`, `WarnLevel`, `ErrorLevel`, `FatalLevel` (`slog.Level`; `FatalLevel` is `12`).
+- `TextFormat`, `JSONFormat`, `PrettyFormat` (`logFormat`).
+
+## Performance notes
+
+- **Level first.** A call below the level returns before touching its arguments (about 5 ns, no allocation).
+- **No copy when nothing changes.** Scalars and errors take a path without reflection; through `WrapLogger` the argument slice is passed on as it is when no value needs work.
+- **The record is built once.** The built-in logger builds the `slog.Record` itself and looks up the caller only with `AddSource`.
+- **No `ReplaceAttr` per attribute.** The four slog levels need none; only `Fatal` uses a handler that renames its level.
+- **Struct fields are read once per type** (name, index, tag) and kept in a `sync.Map`.
+- **A recover only when a method can run.** The scalar path has no `defer`; arguments with values whose methods may be called go through one deferred `recover`.
 
 ## Benchmarks
 
-Machine-dependent, captured when this README was written (darwin/amd64, Intel Core i7-9750H @ 2.60GHz):
+Machine-dependent, captured when this README was written:
 
 ```sh
 go test -run '^$' -bench . -benchmem ./log/
 ```
 
-| Benchmark | ns/op | B/op | allocs/op |
-|-----------|-------|------|-----------|
-| BenchmarkPrettyHandler_Handle_NoAttrs | 195.8 | 0 | 0 |
-| BenchmarkPrettyHandler_Handle_WithAttrs | 485.8 | 128 | 1 |
-| BenchmarkLoadLogOptions_Default | 2.299 | 0 | 0 |
-| BenchmarkLoadLogOptions_Custom | 1.099 | 0 | 0 |
-| BenchmarkPrettyHandler_Handle_NestedStages | 5982 | 3056 | 49 |
-| BenchmarkPrettyHandler_Handle_LargeMap | 6015 | 3496 | 48 |
-| BenchmarkNewPrettyHandler | 1220 | 848 | 28 |
-| BenchmarkWrapLogger_Info_TaggedStruct | 996.2 | 840 | 14 |
-| BenchmarkWrapLogger_Info_TaggedStruct_WithMaskRule | 1082 | 824 | 13 |
-| BenchmarkWrapLogger_Info_NoStructArgs | 60.49 | 128 | 2 |
-| BenchmarkJSONHandler_Handle_NoStructAttrs_Unwrapped | 417.9 | 0 | 0 |
+```console
+goos: darwin
+goarch: amd64
+cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
+BenchmarkLog_Info_Scalars_JSON-12                        	  981242	      1223 ns/op	     144 B/op	       3 allocs/op
+BenchmarkLog_Info_Struct_JSON-12                         	  422803	      2836 ns/op	     601 B/op	      16 allocs/op
+BenchmarkLog_Info_Struct_JSON_WithMaskRule-12            	  397663	      3616 ns/op	     657 B/op	      20 allocs/op
+BenchmarkLog_BelowLevel-12                               	284131327	         4.836 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLog_ErrorWithStack_JSON-12                      	  336297	      3657 ns/op	     176 B/op	       2 allocs/op
+BenchmarkLog_AccessLine_Pretty-12                        	  153910	      8847 ns/op	    4192 B/op	      51 allocs/op
+BenchmarkLog_Info_LargeMap_Pretty-12                     	  115861	     10201 ns/op	    5896 B/op	      51 allocs/op
+BenchmarkWrapLogger_Info_TaggedStruct-12                 	 2077896	       579.0 ns/op	     568 B/op	       9 allocs/op
+BenchmarkWrapLogger_Info_TaggedStruct_WithMaskRule-12    	 1544994	       795.6 ns/op	     600 B/op	      11 allocs/op
+BenchmarkWrapLogger_Info_NoStructArgs-12                 	57461472	        22.52 ns/op	       0 B/op	       0 allocs/op
+```

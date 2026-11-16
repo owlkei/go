@@ -12,7 +12,6 @@ import (
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/routing"
@@ -63,7 +62,7 @@ type HTTP struct {
 	versioning          *versioning.Versioning
 	isVersioningEnabled bool
 
-	event  *event.Event
+	tracer *trace.Tracer
 	logger common.Logger
 
 	routes            []*httpRoute
@@ -299,7 +298,7 @@ func (http *HTTP) runMiddleware(ex *httpExchange, m *httpMiddleware, w stdHTTP.R
 	ex.middlewareStart = time.Now()
 	m.use(ex.Request, w, next)
 	ex.middleware = nil
-	m.emit(http.event, ex.GetID(), time.Since(ex.middlewareStart), 0)
+	m.emit(http.tracer, ex.GetID(), time.Since(ex.middlewareStart), 0)
 	return *proceed
 }
 
@@ -359,7 +358,7 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 		agg.InterceptorData = value
 	}
 
-	results := route.plan.call(c, http.event, ex.traced)
+	results := route.plan.call(c, http.tracer, ex.traced)
 	result := reflect.Value{}
 	switch len(results) {
 	case 0:
@@ -386,7 +385,7 @@ func (http *HTTP) runGuard(ex *httpExchange, g *httpGuard) bool {
 	}
 	start := time.Now()
 	isAllowed := g.canActivate(&ex.HTTPContext)
-	http.event.Emit(trace.EventName, trace.Event{ID: ex.GetID(), Stage: trace.StageGuard, Name: g.name, Duration: time.Since(start)})
+	http.tracer.Emit(trace.Event{ID: ex.GetID(), Stage: trace.StageGuard, Name: g.name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
 	return isAllowed
 }
 
@@ -396,7 +395,7 @@ func (http *HTTP) runIntercept(ex *httpExchange, i *httpInterceptor, agg *aggreg
 	}
 	start := time.Now()
 	value := i.intercept(&ex.HTTPContext, agg)
-	http.event.Emit(trace.EventName, trace.Event{ID: ex.GetID(), Stage: trace.StagePreInterceptor, Name: i.name, Duration: time.Since(start)})
+	http.tracer.Emit(trace.Event{ID: ex.GetID(), Stage: trace.StagePreInterceptor, Name: i.name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
 	return value
 }
 
@@ -410,7 +409,7 @@ func (http *HTTP) runPosts(ex *httpExchange, aggregations []*aggregation.Aggrega
 		}
 		start := time.Now()
 		data = agg.Aggregate()
-		http.event.Emit(trace.EventName, trace.Event{ID: ex.GetID(), Stage: trace.StagePostInterceptor, Name: agg.Name, Duration: time.Since(start)})
+		http.tracer.Emit(trace.Event{ID: ex.GetID(), Stage: trace.StagePostInterceptor, Name: agg.Name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
 	}
 	return data
 }
@@ -486,7 +485,7 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 	}
 	if m := ex.middleware; m != nil {
 		ex.middleware = nil
-		m.emit(http.event, ex.GetID(), time.Since(ex.middlewareStart), code)
+		m.emit(http.tracer, ex.GetID(), time.Since(ex.middlewareStart), code)
 	}
 }
 

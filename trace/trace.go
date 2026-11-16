@@ -2,8 +2,6 @@ package trace
 
 import "time"
 
-const EventName = "trace"
-
 const (
 	StageMiddleware      = "middleware"
 	StageGuard           = "guard"
@@ -18,8 +16,6 @@ const (
 const (
 	TransportHTTP = "HTTP"
 	TransportWS   = "WS"
-	TransportGQL  = "GQL"
-	TransportRPC  = "RPC"
 )
 
 type Event struct {

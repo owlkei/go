@@ -412,6 +412,9 @@ func (app *App) runShutdownHooks() {
 				}
 			}
 		}
+		if app.accesslog != nil {
+			app.accesslog.Stop()
+		}
 
 		app.serveMu.Lock()
 		app.isRunningHooks = false

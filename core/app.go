@@ -12,7 +12,6 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/devtool"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/log"
@@ -29,7 +28,7 @@ type App struct {
 	ctxPool   sync.Pool
 	wsCtxPool sync.Pool
 
-	event *event.Event
+	tracer trace.Tracer
 
 	isDevtoolEnabled bool
 	devtool          *devtool.Devtool
@@ -72,7 +71,6 @@ func New() *App {
 	app := &App{
 		http:      newHTTP(),
 		ws:        nil,
-		event:     event.NewEvent(),
 		broker:    memorybroker.NewMemoryBroker(),
 		container: newContainer(),
 		logger:    log.NewLog(nil),
@@ -119,8 +117,8 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				c.Request = r
 				c.Status(http.StatusSwitchingProtocols)
 				err := app.ws.handshake(c)
-				if app.event.HasListeners(trace.EventName) {
-					app.event.Emit(trace.EventName, trace.Event{
+				if app.tracer.Enabled() {
+					app.tracer.Emit(trace.Event{
 						ID:        c.GetID(),
 						Stage:     trace.StageComplete,
 						Transport: trace.TransportHTTP,
@@ -139,14 +137,14 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header()[ctx.RequestID] = []string{c.GetID()}
-	ex.traced = app.event.HasListeners(trace.EventName)
+	ex.traced = app.tracer.Enabled()
 	app.http.handleRequest(ex)
 	if ex.traced {
 		code := ex.writer.status()
 		if code == 0 {
 			code = http.StatusOK
 		}
-		app.event.Emit(trace.EventName, trace.Event{
+		app.tracer.Emit(trace.Event{
 			ID:        c.GetID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportHTTP,
@@ -213,20 +211,20 @@ func (app *App) initWS() {
 	app.wsConfig.injectedProviders = app.container.providerByKey
 	app.wsConfig.container = app.container
 	app.wsConfig.logger = app.logger
-	app.wsConfig.event = app.event
+	app.wsConfig.tracer = &app.tracer
 	app.wsConfig.broker = &app.broker
 	planByEvent := app.container.wsPlanByEvent
 	app.wsConfig.resolveAndCallHandler = func(pattern string, _ any, c *ctx.WSContext) []reflect.Value {
-		return planByEvent[pattern].invoke(c, app.event)
+		return planByEvent[pattern].invoke(c, &app.tracer)
 	}
 	app.wsConfig.newCtx = func() *ctx.WSContext { return app.wsCtxPool.Get().(*ctx.WSContext) }
 	app.wsConfig.releaseCtx = app.releaseWSCtx
 	app.ws = NewWS(app.wsConfig)
 	app.ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		if !app.event.HasListeners(trace.EventName) {
+		if !app.tracer.Enabled() {
 			return
 		}
-		app.event.Emit(trace.EventName, trace.Event{
+		app.tracer.Emit(trace.Event{
 			ID:        c.GetID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportWS,
@@ -243,13 +241,13 @@ func (app *App) initAccessLog() {
 	}
 
 	app.accesslog = accesslog.NewAccessLog(&accesslog.AccessLogConfig{
-		Event:  app.event,
+		Tracer: &app.tracer,
 		Logger: app.logger,
 	})
 }
 
 func (app *App) initRoutes() {
-	app.http.event = app.event
+	app.http.tracer = &app.tracer
 	app.http.logger = app.logger
 	for _, h := range app.container.httpMainHandlers {
 		app.http.addRoute(h, app.container.httpPlanByPattern[h.Pattern])
@@ -259,13 +257,13 @@ func (app *App) initRoutes() {
 func (app *App) initExceptionFilters() {
 	for i := len(app.container.httpExceptionFilters) - 1; i >= 0; i-- {
 		ef := app.container.httpExceptionFilters[i]
-		app.http.addFilter(ef, traceHTTPCatch(app.event, ef.Name, ef.Handler.(common.HTTPCatch)))
+		app.http.addFilter(ef, traceHTTPCatch(&app.tracer, ef.Name, ef.Handler.(common.HTTPCatch)))
 	}
 
 	if app.ws != nil {
 		for i := len(app.container.wsExceptionFilters) - 1; i >= 0; i-- {
 			ef := app.container.wsExceptionFilters[i]
-			catchFn := traceWSCatch(app.event, ef.Name, ef.Handler.(common.WSCatch))
+			catchFn := traceWSCatch(&app.tracer, ef.Name, ef.Handler.(common.WSCatch))
 			app.ws.catchFnsByEvent[ef.EventName] = append(app.ws.catchFnsByEvent[ef.EventName], catchFn)
 		}
 	}
@@ -287,11 +285,11 @@ func (app *App) initExceptionFilters() {
 			}
 
 			if isHTTPFilter {
-				app.http.addGlobalFilter(traceHTTPCatch(app.event, name, httpCatch))
+				app.http.addGlobalFilter(traceHTTPCatch(&app.tracer, name, httpCatch))
 			}
 
 			if isWSFilter && app.ws != nil {
-				tracedWSCatch := traceWSCatch(app.event, name, wsCatch)
+				tracedWSCatch := traceWSCatch(&app.tracer, name, wsCatch)
 				for _, h := range app.container.wsMainHandlers {
 					app.ws.catchFnsByEvent[h.EventName] = append(app.ws.catchFnsByEvent[h.EventName], tracedWSCatch)
 				}
@@ -300,31 +298,31 @@ func (app *App) initExceptionFilters() {
 	}
 }
 
-func traceHTTPCatch(ev *event.Event, name string, fn common.HTTPCatch) common.HTTPCatch {
+func traceHTTPCatch(ev *trace.Tracer, name string, fn common.HTTPCatch) common.HTTPCatch {
 	return func(c *ctx.HTTPContext, ex *exception.Exception) {
-		if !ev.HasListeners(trace.EventName) {
+		if !ev.Enabled() {
 			fn(c, ex)
 			return
 		}
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Duration: time.Since(start)})
+			ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
 		}()
 		fn(c, ex)
 	}
 }
 
-func traceWSCatch(ev *event.Event, name string, fn common.WSCatch) common.WSCatch {
+func traceWSCatch(ev *trace.Tracer, name string, fn common.WSCatch) common.WSCatch {
 	return func(c *ctx.WSContext, ex *exception.Exception) {
-		if !ev.HasListeners(trace.EventName) {
+		if !ev.Enabled() {
 			fn(c, ex)
 			return
 		}
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
+			ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
 		}()
 		fn(c, ex)
 	}
@@ -361,7 +359,7 @@ func (app *App) initGuards() {
 			}
 
 			if isWSGuard && app.ws != nil {
-				mw := traceWSHandler(app.event, trace.StageGuard, name, common.BuildWSGuardMiddleware(wsCanActivate))
+				mw := traceWSHandler(&app.tracer, trace.StageGuard, name, common.BuildWSGuardMiddleware(wsCanActivate))
 				for _, h := range app.container.wsMainHandlers {
 					app.ws.eventMatcher.AddMiddlewares(h.EventName, mw)
 				}
@@ -375,22 +373,22 @@ func (app *App) initGuards() {
 
 	if app.ws != nil {
 		for _, mg := range app.container.wsGuards {
-			mw := traceWSHandler(app.event, trace.StageGuard, mg.Name, common.BuildWSGuardMiddleware(mg.Handler.(common.WSCanActivate)))
+			mw := traceWSHandler(&app.tracer, trace.StageGuard, mg.Name, common.BuildWSGuardMiddleware(mg.Handler.(common.WSCanActivate)))
 			app.ws.eventMatcher.AddMiddlewares(mg.EventName, mw)
 		}
 	}
 }
 
-func traceWSHandler(ev *event.Event, stage, name string, h ctx.WSHandler) ctx.WSHandler {
+func traceWSHandler(ev *trace.Tracer, stage, name string, h ctx.WSHandler) ctx.WSHandler {
 	return func(c *ctx.WSContext) {
-		if !ev.HasListeners(trace.EventName) {
+		if !ev.Enabled() {
 			h(c)
 			return
 		}
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: stage, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
+			ev.Emit(trace.Event{ID: c.GetID(), Stage: stage, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
 		}()
 		h(c)
 	}
@@ -399,10 +397,10 @@ func traceWSHandler(ev *event.Event, stage, name string, h ctx.WSHandler) ctx.WS
 func (app *App) initInterceptors() {
 	if app.ws != nil {
 		app.ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {
-			if !app.event.HasListeners(trace.EventName) {
+			if !app.tracer.Enabled() {
 				return
 			}
-			app.event.Emit(trace.EventName, trace.Event{
+			app.tracer.Emit(trace.Event{
 				ID:        c.GetID(),
 				Stage:     trace.StagePostInterceptor,
 				Name:      name,
@@ -433,7 +431,7 @@ func (app *App) initInterceptors() {
 
 			if isWSInterceptor && app.ws != nil {
 				for _, h := range app.container.wsMainHandlers {
-					mw := traceWSHandler(app.event, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(name, wsIntercept))
+					mw := traceWSHandler(&app.tracer, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(name, wsIntercept))
 					app.ws.eventMatcher.AddMiddlewares(h.EventName, mw)
 				}
 			}
@@ -446,7 +444,7 @@ func (app *App) initInterceptors() {
 
 	if app.ws != nil {
 		for _, mi := range app.container.wsInterceptors {
-			mw := traceWSHandler(app.event, trace.StagePreInterceptor, mi.Name, common.BuildWSInterceptMiddleware(mi.Name, mi.Handler.(common.WSIntercept)))
+			mw := traceWSHandler(&app.tracer, trace.StagePreInterceptor, mi.Name, common.BuildWSInterceptMiddleware(mi.Name, mi.Handler.(common.WSIntercept)))
 			app.ws.eventMatcher.AddMiddlewares(mi.EventName, mw)
 		}
 	}

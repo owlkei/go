@@ -37,11 +37,17 @@
       "thread_safe": true,
       "synchronization": "built-in sync.Pool atomic operations"
     },
-    "event.Event": {
-      "description": "Event listeners and emitters (Node-style EventEmitter, no topic pattern matching)",
-      "access": "concurrent On/Once/Off/Emit/ListenerCount/HasListeners",
+    "trace.Tracer": {
+      "description": "Typed trace listeners of one app (replaces the removed event bus)",
+      "access": "concurrent Enabled/Emit/Listen/stop",
       "thread_safe": true,
-      "synchronization": "single sync.RWMutex over two maps (opts, onceOpts); Emit copies listeners to a private slice before unlocking, then invokes outside the lock"
+      "synchronization": "immutable listener slice behind an atomic.Pointer; Enabled and Emit take no lock; Listen and stop copy the slice under one mutex"
+    },
+    "accesslog.AccessLog": {
+      "description": "Access log listener and its worker goroutine",
+      "access": "listener on request goroutines, one worker, Stop at shutdown",
+      "thread_safe": true,
+      "synchronization": "64 shards (sync.Mutex + map + eviction list each), a buffered channel to the worker (select with default, never blocks), atomic drop counter and stopped flag"
     },
     "memorybroker.Broker": {
       "description": "Pub/sub message broker (exact/suffix-wildcard/global/complex topic matching)",

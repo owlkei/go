@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/trace"
 )
 
 func BenchmarkServeHTTP(b *testing.B) {
@@ -24,7 +24,7 @@ func BenchmarkServeHTTP(b *testing.B) {
 }
 
 func BenchmarkTraceHTTPCatch_NoListener(b *testing.B) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := newHTTPContext()
 	ex := exception.BadRequestException("bad")
 	fn := traceHTTPCatch(ev, "bench.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})

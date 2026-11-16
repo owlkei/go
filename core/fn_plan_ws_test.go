@@ -9,7 +9,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/trace"
 	"golang.org/x/net/websocket"
@@ -72,7 +71,7 @@ func planWS(t testing.TB, controller any, name string, providers map[string]Prov
 func TestWSHandlerPlan_InjectsWSContext(t *testing.T) {
 	h := &planWSCtl{}
 	c := planWSContext()
-	planWS(t, h, "WCtx", nil).invoke(c, event.NewEvent())
+	planWS(t, h, "WCtx", nil).invoke(c, &trace.Tracer{})
 	if len(h.got) != 1 || h.got[0] != any(c) {
 		t.Error(test.DiffMessage(h.got, []any{c}, "B1, B8: *ctx.WSContext is the message's context"))
 	}
@@ -81,7 +80,7 @@ func TestWSHandlerPlan_InjectsWSContext(t *testing.T) {
 func TestWSHandlerPlan_InjectsConn(t *testing.T) {
 	h := &planWSCtl{}
 	c := planWSContext()
-	planWS(t, h, "WConn", nil).invoke(c, event.NewEvent())
+	planWS(t, h, "WConn", nil).invoke(c, &trace.Tracer{})
 	if len(h.got) != 1 || h.got[0] != any(c.Conn) {
 		t.Error(test.DiffMessage(h.got, []any{c.Conn}, "B1, B8: *websocket.Conn is c.Conn"))
 	}
@@ -90,7 +89,7 @@ func TestWSHandlerPlan_InjectsConn(t *testing.T) {
 func TestWSHandlerPlan_InjectsWSPayload(t *testing.T) {
 	h := &planWSCtl{}
 	c := planWSContext()
-	planWS(t, h, "WPayload", nil).invoke(c, event.NewEvent())
+	planWS(t, h, "WPayload", nil).invoke(c, &trace.Tracer{})
 	if len(h.got) != 1 || !planSameMap(h.got[0], c.WSPayload()) {
 		t.Error(test.DiffMessage(h.got, c.WSPayload(), "B1, B8: ctx.WSPayload is c.WSPayload()"))
 	}
@@ -104,7 +103,7 @@ func TestWSHandlerPlan_InjectsNext(t *testing.T) {
 	h := &planWSCtl{}
 	c := planWSContext()
 	c.Next = func() { planNextCalls++ }
-	planWS(t, h, "WNext", nil).invoke(c, event.NewEvent())
+	planWS(t, h, "WNext", nil).invoke(c, &trace.Tracer{})
 	if planNextCalls != 1 {
 		t.Error(test.DiffMessage(planNextCalls, 1, "B1, B8: ctx.Next acts on c.Next"))
 	}
@@ -113,7 +112,7 @@ func TestWSHandlerPlan_InjectsNext(t *testing.T) {
 func TestWSHandlerPlan_InjectsPublisher(t *testing.T) {
 	pub := planInstallPublisher(t)
 	h := &planWSCtl{}
-	planWS(t, h, "WPublisher", nil).invoke(planWSContext(), event.NewEvent())
+	planWS(t, h, "WPublisher", nil).invoke(planWSContext(), &trace.Tracer{})
 	if len(h.got) != 1 || h.got[0] != any(pub) {
 		t.Error(test.DiffMessage(h.got, []any{pub}, "B1: common.Publisher is the value stored under publisherKey"))
 	}
@@ -164,7 +163,7 @@ func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	h.got = nil
 	h.calls = 0
 	planPipeCalls = nil
-	results := plan.invoke(c, event.NewEvent())
+	results := plan.invoke(c, &trace.Tracer{})
 
 	if len(refGot) != 6 {
 		t.Fatal(test.DiffMessage(len(refGot), 6, "fixture: the reference handler records 6 arguments"))
@@ -225,7 +224,7 @@ func TestWSHandlerPlan_PayloadPipe(t *testing.T) {
 	planResetState(t)
 	h := &planWSCtl{}
 	c := planWSContext()
-	planWS(t, h, "WPipe", nil).invoke(c, event.NewEvent())
+	planWS(t, h, "WPipe", nil).invoke(c, &trace.Tracer{})
 
 	if len(planPipeCalls) != 1 {
 		t.Fatal(test.DiffMessage(len(planPipeCalls), 1, "B10: Transform runs once per message"))
@@ -248,7 +247,7 @@ func TestWSHandlerPlan_PayloadPipe(t *testing.T) {
 func TestWSHandlerPlan_TransformReturnsNil(t *testing.T) {
 	h := &planWSCtl{}
 	plan := planWS(t, h, "WNilPipe", nil)
-	rec := planPanicOf(func() { plan.invoke(planWSContext(), event.NewEvent()) })
+	rec := planPanicOf(func() { plan.invoke(planWSContext(), &trace.Tracer{}) })
 	planWantTransformFailure(t, rec, "core.nilWSPipe", "nil")
 	if h.calls != 0 {
 		t.Error(test.DiffMessage(h.calls, 0, "B11: the handler is not called"))
@@ -257,7 +256,7 @@ func TestWSHandlerPlan_TransformReturnsNil(t *testing.T) {
 
 func TestWSHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
 	planResetState(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	c := planWSContext()
 	planWS(t, &planWSCtl{}, "WPipe", nil).invoke(c, ev)
@@ -279,7 +278,7 @@ func TestWSHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
 }
 
 func TestWSHandlerPlan_PipePanicStillEmitsStagePipe(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	plan := planWS(t, &planWSCtl{}, "WPanicPipe", nil)
 	rec := planPanicOf(func() { plan.invoke(planWSContext(), ev) })
@@ -296,7 +295,7 @@ func TestWSHandlerPlan_PipePanicStillEmitsStagePipe(t *testing.T) {
 }
 
 func TestWSHandlerPlan_EmitsNoStageHandler(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	planWS(t, &planWSCtl{}, "WOne", nil).invoke(planWSContext(), ev)
 	if got := log.all(); len(got) != 0 {
@@ -306,14 +305,14 @@ func TestWSHandlerPlan_EmitsNoStageHandler(t *testing.T) {
 
 func TestWSHandlerPlan_NoResult(t *testing.T) {
 	h := &planWSCtl{}
-	got := planWS(t, h, "WNone", nil).invoke(planWSContext(), event.NewEvent())
+	got := planWS(t, h, "WNone", nil).invoke(planWSContext(), &trace.Tracer{})
 	if len(got) != 0 || h.calls != 1 {
 		t.Error(test.DiffMessage([]any{len(got), h.calls}, []any{0, 1}, "B7: no results, one call"))
 	}
 }
 
 func TestWSHandlerPlan_ReturnsResult(t *testing.T) {
-	got := planWS(t, &planWSCtl{}, "WOne", nil).invoke(planWSContext(), event.NewEvent())
+	got := planWS(t, &planWSCtl{}, "WOne", nil).invoke(planWSContext(), &trace.Tracer{})
 	if len(got) != 1 || got[0].String() != "one" {
 		t.Error(test.DiffMessage(got, []any{"one"}, "B7: one result"))
 	}

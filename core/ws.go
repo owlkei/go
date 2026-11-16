@@ -8,7 +8,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/internal/crypto"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/memorybroker"
@@ -25,7 +24,7 @@ type WSConfig struct {
 	injectedProviders map[string]Provider
 	container         *container
 	logger            common.Logger
-	event             *event.Event
+	tracer            *trace.Tracer
 	broker            *memorybroker.Broker
 
 	resolveAndCallHandler func(pattern string, f any, c *ctx.WSContext) []reflect.Value
@@ -60,7 +59,7 @@ func NewWS(cfg *WSConfig) *WS {
 		eventMatcher:          wsevent.NewWSEvent(),
 		connmgr:               NewWSConnmgr(cfg.logger, cfg.broker),
 		path:                  path,
-		globalMiddlewares:     resolveGlobalMiddlewares(cfg.globalMiddlewares, cfg.injectedProviders, cfg.container, cfg.event),
+		globalMiddlewares:     resolveGlobalMiddlewares(cfg.globalMiddlewares, cfg.injectedProviders, cfg.container, cfg.tracer),
 		injectedProviders:     cfg.injectedProviders,
 		logger:                cfg.logger,
 		newCtx:                cfg.newCtx,
@@ -72,7 +71,7 @@ func NewWS(cfg *WSConfig) *WS {
 	return &ws
 }
 
-func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProviders map[string]Provider, c *container, ev *event.Event) []ctx.HTTPHandler {
+func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProviders map[string]Provider, c *container, ev *trace.Tracer) []ctx.HTTPHandler {
 	resolved := make([]ctx.HTTPHandler, len(middlewares))
 	for i, gm := range middlewares {
 		resolved[i] = handshakeMiddleware(newHTTPMiddleware(gm, injectedProviders, c), ev)
@@ -81,9 +80,9 @@ func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProvide
 	return resolved
 }
 
-func handshakeMiddleware(m httpMiddleware, ev *event.Event) ctx.HTTPHandler {
+func handshakeMiddleware(m httpMiddleware, ev *trace.Tracer) ctx.HTTPHandler {
 	return func(c *ctx.HTTPContext) {
-		if !ev.HasListeners(trace.EventName) {
+		if !ev.Enabled() {
 			m.use(c.Request, c.ResponseWriter, c.Next)
 			return
 		}

@@ -2,448 +2,496 @@ package log
 
 import (
 	"bytes"
-	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
+	"reflect"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
+	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func newTestHandler(level slog.Level) (*PrettyHandler, *bytes.Buffer) {
+var allFormats = []logFormat{JSONFormat, TextFormat, PrettyFormat}
+
+func formatName(f logFormat) string {
+	switch f {
+	case JSONFormat:
+		return "JSON"
+	case TextFormat:
+		return "Text"
+	default:
+		return "Pretty"
+	}
+}
+
+func newTestLog(format logFormat, opts LogOptions) (common.Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
-	h := NewPrettyHandler(buf, &PrettyHandlerOptions{
-		TimeFormat:     time.DateTime,
-		HandlerOptions: slog.HandlerOptions{Level: level},
-	})
-	return h, buf
+	opts.LogFormat = format
+	if opts.Level == InfoLevel {
+		opts.Level = DebugLevel
+	}
+	return newLog(buf, false, &opts), buf
 }
 
-func TestLoadLogOptions_NilInput(t *testing.T) {
-	opts := loadLogOptions(nil)
-	if opts == nil {
-		t.Error(test.DiffMessage(nil, "*LogOptions", "nil input should return non-nil opts"))
-	}
-}
-
-func TestLoadLogOptions_DefaultLogFormat(t *testing.T) {
-	opts := loadLogOptions(nil)
-	if opts.LogFormat != PrettyFormat {
-		t.Error(test.DiffMessage(opts.LogFormat, PrettyFormat, "default LogFormat should be PrettyFormat"))
-	}
-}
-
-func TestLoadLogOptions_DefaultTimeFormat(t *testing.T) {
-	opts := loadLogOptions(nil)
-	if opts.TimeFormat != time.DateTime {
-		t.Error(test.DiffMessage(opts.TimeFormat, time.DateTime, "default TimeFormat"))
-	}
-}
-
-func TestLoadLogOptions_PreservesCustomLevel(t *testing.T) {
-	opts := loadLogOptions(&LogOptions{Level: ErrorLevel})
-	if opts.Level != ErrorLevel {
-		t.Error(test.DiffMessage(opts.Level, ErrorLevel, "custom level should be preserved"))
-	}
-}
-
-func TestLoadLogOptions_PreservesCustomTimeFormat(t *testing.T) {
-	opts := loadLogOptions(&LogOptions{TimeFormat: "2006-01-02"})
-	if opts.TimeFormat != "2006-01-02" {
-		t.Error(test.DiffMessage(opts.TimeFormat, "2006-01-02", "custom TimeFormat"))
-	}
-}
-
-func TestLoadLogOptions_PreservesCustomLogFormat(t *testing.T) {
-	opts := loadLogOptions(&LogOptions{LogFormat: TextFormat})
-	if opts.LogFormat != TextFormat {
-		t.Error(test.DiffMessage(opts.LogFormat, TextFormat, "custom LogFormat"))
-	}
-}
-
-func TestLoadLogOptions_LevelMinusOneDefaultsToInfo(t *testing.T) {
-	opts := loadLogOptions(&LogOptions{Level: -1})
-	if opts.Level != InfoLevel {
-		t.Error(test.DiffMessage(opts.Level, InfoLevel, "Level=-1 sentinel should default to InfoLevel"))
-	}
-}
-
-func newTestLogInstance(level slog.Level) (*logInstance, *bytes.Buffer) {
-	h, buf := newTestHandler(level)
-	return &logInstance{slog: slog.New(h)}, buf
-}
-
-func TestLogInstance_Debug(t *testing.T) {
-	instance, buf := newTestLogInstance(slog.LevelDebug)
-	instance.Debug("debug msg")
-	out := buf.String()
-	if !strings.Contains(out, "DEBUG") || !strings.Contains(out, "debug msg") {
-		t.Error(test.DiffMessage(out, "contains DEBUG and debug msg", "Debug should log at debug level"))
-	}
-}
-
-func TestLogInstance_Info(t *testing.T) {
-	instance, buf := newTestLogInstance(slog.LevelDebug)
-	instance.Info("info msg")
-	out := buf.String()
-	if !strings.Contains(out, "INFO") || !strings.Contains(out, "info msg") {
-		t.Error(test.DiffMessage(out, "contains INFO and info msg", "Info should log at info level"))
-	}
-}
-
-func TestLogInstance_Warn(t *testing.T) {
-	instance, buf := newTestLogInstance(slog.LevelDebug)
-	instance.Warn("warn msg")
-	out := buf.String()
-	if !strings.Contains(out, "WARN") || !strings.Contains(out, "warn msg") {
-		t.Error(test.DiffMessage(out, "contains WARN and warn msg", "Warn should log at warn level"))
-	}
-}
-
-func TestLogInstance_Error(t *testing.T) {
-	instance, buf := newTestLogInstance(slog.LevelDebug)
-	instance.Error("error msg")
-	out := buf.String()
-	if !strings.Contains(out, "ERROR") || !strings.Contains(out, "error msg") {
-		t.Error(test.DiffMessage(out, "contains ERROR and error msg", "Error should log at error level"))
-	}
-}
-
-func TestLogInstance_Debug_ForwardsArgs(t *testing.T) {
-	instance, buf := newTestLogInstance(slog.LevelDebug)
-	instance.Debug("msg", "key", "value")
-	out := buf.String()
-	if !strings.Contains(out, "key") || !strings.Contains(out, "value") {
-		t.Error(test.DiffMessage(out, "contains key and value", "Debug should forward key/value args to the handler"))
-	}
-}
-
-func TestPrettyHandler_Handle_ContainsLevelInfo(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "INFO") {
-		t.Error(test.DiffMessage(buf.String(), "contains INFO", "INFO level label"))
-	}
-}
-
-func TestPrettyHandler_Handle_ContainsLevelDebug(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelDebug, "msg", 0)
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "DEBUG") {
-		t.Error(test.DiffMessage(buf.String(), "contains DEBUG", "DEBUG level label"))
-	}
-}
-
-func TestPrettyHandler_Handle_ContainsLevelWarn(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelWarn, "msg", 0)
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "WARN") {
-		t.Error(test.DiffMessage(buf.String(), "contains WARN", "WARN level label"))
-	}
-}
-
-func TestPrettyHandler_Handle_ContainsLevelError(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelError, "msg", 0)
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "ERROR") {
-		t.Error(test.DiffMessage(buf.String(), "contains ERROR", "ERROR level label"))
-	}
-}
-
-func TestPrettyHandler_Handle_ContainsLevelFatal(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), FatalLevel, "msg", 0)
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "FATAL") {
-		t.Error(test.DiffMessage(buf.String(), "contains FATAL", "FATAL level label"))
-	}
-}
-
-func TestPrettyHandler_Handle_ContainsMessage(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "hello world", 0)
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "hello world") {
-		t.Error(test.DiffMessage(buf.String(), "contains hello world", "message"))
-	}
-}
-
-func TestPrettyHandler_Handle_EmptyMessageSkipped(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "", 0)
-	_ = h.Handle(context.Background(), r)
-	if strings.Contains(buf.String(), "[]") {
-		t.Error(test.DiffMessage(buf.String(), "no []", "empty message must not produce [] block"))
-	}
-}
-
-func TestPrettyHandler_Handle_SingleAttr_UsesLastBranch(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.String("k", "v"))
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "└──") {
-		t.Error(test.DiffMessage(buf.String(), "contains └──", "single attr should use last-branch symbol"))
-	}
-}
-
-func TestPrettyHandler_Handle_MultipleAttrs_MiddleAndLastBranch(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.String("k1", "v1"), slog.String("k2", "v2"))
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "├──") {
-		t.Error(test.DiffMessage(buf.String(), "contains ├──", "first attr should use middle-branch symbol"))
-	}
-	if !strings.Contains(buf.String(), "└──") {
-		t.Error(test.DiffMessage(buf.String(), "contains └──", "last attr should use last-branch symbol"))
-	}
-}
-
-func TestPrettyHandler_Handle_AttrKeyPresent(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.String("mykey", "myvalue"))
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "mykey") {
-		t.Error(test.DiffMessage(buf.String(), "contains mykey", "attr key"))
-	}
-}
-
-func TestPrettyHandler_Handle_StringAttrValueNotQuoted(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.String("k", "hello"))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	if !strings.Contains(out, "hello") {
-		t.Error(test.DiffMessage(out, "contains hello", "string attr value"))
-	}
-	if strings.Contains(out, `"hello"`) {
-		t.Error(test.DiffMessage(out, `does not contain "hello"`, "string attr value should not be quoted"))
-	}
-}
-
-func TestPrettyHandler_Handle_IntAttrValuePresent(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Int("count", 42))
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "42") {
-		t.Error(test.DiffMessage(buf.String(), "contains 42", "int attr value"))
-	}
-}
-
-func TestPrettyHandler_Handle_BoolAttrValuePresent(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Bool("ok", true))
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "true") {
-		t.Error(test.DiffMessage(buf.String(), "contains true", "bool attr value"))
-	}
-}
-
-func TestPrettyHandler_Handle_NilAttrShowsNull(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("ptr", nil))
-	_ = h.Handle(context.Background(), r)
-	if !strings.Contains(buf.String(), "null") {
-		t.Error(test.DiffMessage(buf.String(), "contains null", "nil attr value should display as null"))
-	}
-}
-
-func TestPrettyHandler_Handle_StartsAndEndsWithNewline(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	if !strings.HasPrefix(out, "\n") {
-		t.Error(test.DiffMessage(out, "starts with \\n", "output must start with newline"))
-	}
-	if !strings.HasSuffix(out, "\n") {
-		t.Error(test.DiffMessage(out, "ends with \\n", "output must end with newline"))
-	}
-}
-
-func TestPrettyHandler_Handle_SliceAttr_ElementsRenderedWithoutIndexKey(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("tags", []string{"admin", "beta"}))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	for _, want := range []string{"admin", "beta"} {
-		if !strings.Contains(out, want) {
-			t.Error(test.DiffMessage(out, "contains "+want, "slice attr should render each element's value directly"))
-		}
-	}
-	for _, notWant := range []string{ansiRed + "0" + ansiReset, ansiRed + "1" + ansiReset} {
-		if strings.Contains(out, notWant) {
-			t.Error(test.DiffMessage(out, "no index keys", "slice attr should not render its element index as a key"))
-		}
-	}
-}
-
-func TestPrettyHandler_Handle_SliceOfStructsAttr_FieldsRenderedDirectlyUnderParent(t *testing.T) {
-	type entry struct {
-		Name     string
-		Duration string
-	}
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("stage", []entry{
-		{Name: "M1", Duration: "10ms"},
-		{Name: "M2", Duration: "20ms"},
-	}))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-
-	for _, want := range []string{"M1", "10ms", "M2", "20ms"} {
-		if !strings.Contains(out, want) {
-			t.Error(test.DiffMessage(out, "contains "+want, "slice-of-structs elements should be rendered"))
-		}
-	}
-	for _, notWant := range []string{ansiRed + "0" + ansiReset, ansiRed + "1" + ansiReset} {
-		if strings.Contains(out, notWant) {
-			t.Error(test.DiffMessage(out, "no index keys", "slice-of-structs elements should not be wrapped in an index-keyed node"))
-		}
-	}
-	nameCount := strings.Count(out, ansiRed+"Name"+ansiReset)
-	if nameCount != 2 {
-		t.Error(test.DiffMessage(nameCount, 2, "each struct element's own fields should be spliced in directly, one 'Name' key per element"))
-	}
-}
-
-func TestPrettyHandler_Handle_StructAttr_FieldNameKeyedChildren(t *testing.T) {
-	type addr struct {
-		City string
-	}
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("addr", addr{City: "Hanoi"}))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	if !strings.Contains(out, "City") || !strings.Contains(out, "Hanoi") {
-		t.Error(test.DiffMessage(out, "contains City Hanoi", "struct attr should render field-name-keyed children"))
-	}
-}
-
-func TestPrettyHandler_Handle_MapAttr_KeyKeyedChildrenSorted(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("meta", map[string]int{"score": 42, "age": 30}))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	ageIdx := strings.Index(out, "age")
-	scoreIdx := strings.Index(out, "score")
-	if ageIdx == -1 || scoreIdx == -1 || ageIdx > scoreIdx {
-		t.Error(test.DiffMessage(out, "age before score", "map attr children should be sorted by key"))
-	}
-}
-
-func TestPrettyHandler_Handle_NestedContainer_UsesContinuationBar(t *testing.T) {
-	type wrapper struct {
-		Tags []string
-	}
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("w", wrapper{Tags: []string{"a", "b"}}))
-	r.AddAttrs(slog.String("done", "yes"))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	if !strings.Contains(out, "│") {
-		t.Error(test.DiffMessage(out, "contains │", "a non-last top-level container should indent children under a continuation bar"))
-	}
-}
-
-func TestPrettyHandler_Handle_StringerStruct_PrintedInlineNotExpanded(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("at", time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)))
-	_ = h.Handle(context.Background(), r)
-	out := buf.String()
-	if strings.Contains(out, "wall") || strings.Contains(out, "ext") {
-		t.Error(test.DiffMessage(out, "no internal time.Time fields", "a Stringer struct should be printed inline via String(), not expanded into its fields"))
-	}
-	if !strings.Contains(out, "2024") {
-		t.Error(test.DiffMessage(out, "contains 2024", "a Stringer struct should still show its String() representation"))
-	}
-}
-
-func valueColumn(t *testing.T, line, value string) int {
+func jsonLine(t *testing.T, line string) map[string]any {
 	t.Helper()
-	line = ansiSeq.ReplaceAllString(line, "")
-	i := strings.Index(line, value)
-	if i == -1 {
-		t.Fatalf("value %q not found in line %q", value, line)
+	var out map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimRight(line, "\n")), &out); err != nil {
+		t.Fatalf("not one JSON object: %v\n%q", err, line)
 	}
-	return len([]rune(line[:i]))
+	return out
 }
 
-var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
+var ansiCodes = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
-func TestPrettyHandler_Handle_NestedValues_AlignAcrossDepths(t *testing.T) {
-	type inner struct {
-		VeryLongFieldName string
+func plain(s string) string { return ansiCodes.ReplaceAllString(s, "") }
+
+type countingWriter struct {
+	buf    bytes.Buffer
+	writes int
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	return w.buf.Write(p)
+}
+
+func TestNewLog_NilOptions(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := newLog(buf, false, nil)
+	logger.Debug("hidden")
+	logger.Info("shown", "password", "visible")
+	out := buf.String()
+	if strings.Contains(out, "hidden") {
+		t.Error(test.DiffMessage(out, "no debug line", "L1: nil options mean level Info"))
 	}
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("a", inner{VeryLongFieldName: "deep"}))
-	r.AddAttrs(slog.String("bb", "shallow"))
-	_ = h.Handle(context.Background(), r)
+	if !strings.Contains(out, "shown") || !strings.Contains(out, "visible") {
+		t.Error(test.DiffMessage(out, "the info line, nothing masked", "L1: nil options mean no mask rule"))
+	}
+	if NewLog(nil) == nil {
+		t.Error(test.DiffMessage(nil, "a logger", "L1: NewLog(nil) returns a logger"))
+	}
+}
 
-	var deepCol, shallowCol int
-	for _, line := range strings.Split(buf.String(), "\n") {
-		switch {
-		case strings.Contains(line, "VeryLongFieldName"):
-			deepCol = valueColumn(t, line, "deep")
-		case strings.Contains(line, "\x1b[31mbb"):
-			shallowCol = valueColumn(t, line, "shallow")
+func TestNewLog_DoesNotModifyOptions(t *testing.T) {
+	opts := &LogOptions{Level: -1, LogFormat: JSONFormat, AddSource: true, MaskFields: []string{"password", "token"}}
+	want := &LogOptions{Level: -1, LogFormat: JSONFormat, AddSource: true, MaskFields: []string{"password", "token"}}
+	NewLog(opts)
+	newLog(io.Discard, false, opts)
+	WrapLogger(&instanceRecorder{}, opts.MaskFields)
+	if !reflect.DeepEqual(opts, want) {
+		t.Error(test.DiffMessage(opts, want, "L2: NewLog and WrapLogger never modify their arguments"))
+	}
+}
+
+func TestNewLog_LaterOptionChangesIgnored(t *testing.T) {
+	buf := &bytes.Buffer{}
+	opts := &LogOptions{LogFormat: JSONFormat, MaskFields: []string{"password"}}
+	logger := newLog(buf, false, opts)
+	opts.Level = ErrorLevel
+	opts.MaskFields[0] = "other"
+	opts.MaskFields = append(opts.MaskFields, "more")
+	logger.Info("x", "password", "secret", "other", "kept")
+	out := buf.String()
+	if !strings.Contains(out, `"password":"[REDACTED]"`) || !strings.Contains(out, `"other":"kept"`) {
+		t.Error(test.DiffMessage(out, "password masked, other kept, info shown", "L2: later changes to the options have no effect"))
+	}
+}
+
+func TestWrapLogger_LaterMaskFieldChangesIgnored(t *testing.T) {
+	cap := &capturingLogger{}
+	fields := []string{"password"}
+	l := WrapLogger(cap, fields)
+	fields[0] = "other"
+	l.Info("x", "password", "secret")
+	if cap.args()[1] != maskPlaceholder {
+		t.Error(test.DiffMessage(cap.args()[1], maskPlaceholder, "L2: WrapLogger copies maskFields"))
+	}
+}
+
+func TestLog_JSONLine(t *testing.T) {
+	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger.Info("hello", "k", "v", "n", 3)
+	line := jsonLine(t, buf.String())
+	if line["msg"] != "hello" || line["level"] != "INFO" || line["k"] != "v" || line["n"] != float64(3) {
+		t.Error(test.DiffMessage(line, "msg hello, level INFO, k v, n 3", "L4: JSON uses slog's keys"))
+	}
+	if _, ok := line["time"]; !ok {
+		t.Error(test.DiffMessage(line, "a time key", "L4: JSON has time"))
+	}
+	if !strings.HasSuffix(buf.String(), "\n") || strings.Count(buf.String(), "\n") != 1 {
+		t.Error(test.DiffMessage(buf.String(), "exactly one line", "L4: one JSON object per line"))
+	}
+}
+
+func TestLog_TextLine(t *testing.T) {
+	logger, buf := newTestLog(TextFormat, LogOptions{})
+	logger.Warn("hello", "k", "v")
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "msg=hello") || !strings.Contains(out, "k=v") || !strings.Contains(out, "time=") {
+		t.Error(test.DiffMessage(out, "time=… level=WARN msg=hello k=v", "L4: Text is slog's key=value line"))
+	}
+}
+
+func TestLog_LevelLabels(t *testing.T) {
+	saved := exit
+	exit = func(int) {}
+	defer func() { exit = saved }()
+
+	for _, format := range allFormats {
+		logger, buf := newTestLog(format, LogOptions{})
+		logger.Debug("m")
+		logger.Info("m")
+		logger.Warn("m")
+		logger.Error("m")
+		logger.Fatal("m")
+		out := buf.String()
+		for _, label := range []string{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"} {
+			if !strings.Contains(out, label) {
+				t.Error(test.DiffMessage(out, "contains "+label, "L4: "+formatName(format)+" writes the level "+label))
+			}
 		}
 	}
-	if deepCol == 0 || shallowCol == 0 {
-		t.Fatalf("did not find both lines: deepCol=%d shallowCol=%d\n%s", deepCol, shallowCol, buf.String())
+}
+
+func TestLog_LevelLabelsJSONAndText(t *testing.T) {
+	saved := exit
+	exit = func(int) {}
+	defer func() { exit = saved }()
+
+	jsonLogger, jsonBuf := newTestLog(JSONFormat, LogOptions{})
+	textLogger, textBuf := newTestLog(TextFormat, LogOptions{})
+	for _, logger := range []common.Logger{jsonLogger, textLogger} {
+		logger.Debug("m")
+		logger.Info("m")
+		logger.Warn("m")
+		logger.Error("m")
+		logger.Fatal("m")
 	}
-	if deepCol != shallowCol {
-		t.Error(test.DiffMessage(shallowCol, deepCol, "a shallow top-level attr's value should align with a deeper nested field's value when the nested key is the longest in the record"))
+	for _, label := range []string{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"} {
+		if !strings.Contains(jsonBuf.String(), `"level":"`+label+`"`) {
+			t.Error(test.DiffMessage(jsonBuf.String(), `"level":"`+label+`"`, "L4: JSON level label"))
+		}
+		if !strings.Contains(textBuf.String(), "level="+label+" ") {
+			t.Error(test.DiffMessage(textBuf.String(), "level="+label, "L4: Text level label"))
+		}
 	}
 }
 
-func TestPrettyHandler_Handle_ColoredValue_UsesItsOwnColorNotStringerGreen(t *testing.T) {
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-	r.AddAttrs(slog.Any("dur", Colored{Text: "10ms (2%)", Color: ColorRed}))
-	_ = h.Handle(context.Background(), r)
+func TestLog_DefaultFormatTerminal(t *testing.T) {
+	buf := &bytes.Buffer{}
+	newLog(buf, true, nil).Info("hello", "k", "v")
 	out := buf.String()
-	if !strings.Contains(out, string(ColorRed)+"10ms (2%)"+ansiReset) {
-		t.Error(test.DiffMessage(out, "contains red-colored \"10ms (2%)\"", "a Colored value should render with its own Color, not the generic Stringer green"))
+	if !strings.HasPrefix(out, "\n") || !strings.Contains(out, "└──") || strings.HasPrefix(strings.TrimSpace(out), "{") {
+		t.Error(test.DiffMessage(out, "the Pretty tree", "L4: with LogFormat zero, a terminal gets Pretty"))
 	}
 }
 
-func TestPrettyHandler_Handle_ConcurrentCalls_NoDataRace(t *testing.T) {
-	h, _ := newTestHandler(slog.LevelDebug)
-
-	const goroutines = 32
-	var wg sync.WaitGroup
-	wg.Add(goroutines)
-	for i := range goroutines {
-		go func(i int) {
-			defer wg.Done()
-			r := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
-			r.AddAttrs(
-				slog.Int("i", i),
-				slog.Any("meta", map[string]int{"a": i, "b": i * 2}),
-			)
-			_ = h.Handle(context.Background(), r)
-		}(i)
+func TestLog_DefaultFormatNotTerminal(t *testing.T) {
+	buf := &bytes.Buffer{}
+	newLog(buf, false, nil).Info("hello", "k", "v")
+	line := jsonLine(t, buf.String())
+	if line["msg"] != "hello" || strings.Contains(buf.String(), "\x1b") {
+		t.Error(test.DiffMessage(buf.String(), "a JSON line without ANSI codes", "L4: with LogFormat zero, anything else gets JSON"))
 	}
-	wg.Wait()
 }
+
+func TestLog_ExplicitFormatBeatsTerminal(t *testing.T) {
+	buf := &bytes.Buffer{}
+	newLog(buf, true, &LogOptions{LogFormat: JSONFormat}).Info("hello")
+	jsonLine(t, buf.String())
+	buf.Reset()
+	newLog(buf, false, &LogOptions{LogFormat: PrettyFormat}).Info("hello")
+	if !strings.HasPrefix(buf.String(), "\n") {
+		t.Error(test.DiffMessage(buf.String(), "Pretty", "L4: an explicit format wins whatever the output"))
+	}
+}
+
+func TestLog_BelowLevelWritesNothing(t *testing.T) {
+	for _, format := range allFormats {
+		buf := &bytes.Buffer{}
+		logger := newLog(buf, false, &LogOptions{LogFormat: format, Level: WarnLevel})
+		logger.Debug("d", "k", "v")
+		logger.Info("i", "k", "v")
+		if buf.Len() != 0 {
+			t.Error(test.DiffMessage(buf.String(), "", "L3: "+formatName(format)+" writes nothing below the level"))
+		}
+		logger.Warn("w")
+		if buf.Len() == 0 {
+			t.Error(test.DiffMessage("", "a line", "L3: "+formatName(format)+" writes at the level"))
+		}
+	}
+}
+
+func TestLog_BelowLevelCallsNoMethod(t *testing.T) {
+	var calls atomicCounter
+	args := []any{
+		"s", countingStringer{&calls},
+		"e", countingError{&calls},
+		"v", countingValuer{&calls},
+		"ps", &ptrCountingStringer{&calls},
+		"st", countingHolder{Inner: countingStringer{&calls}},
+	}
+	for _, format := range allFormats {
+		for _, rules := range [][]string{nil, {"password"}} {
+			logger, buf := newTestLog(format, LogOptions{Level: ErrorLevel, MaskFields: rules})
+			logger.Debug("x", args...)
+			logger.Info("x", args...)
+			logger.Warn("x", args...)
+			if calls.load() != 0 || buf.Len() != 0 {
+				t.Error(test.DiffMessage(calls.load(), 0, "L3: no method of an argument is called below the level ("+formatName(format)+")"))
+			}
+		}
+	}
+}
+
+func TestLog_BelowLevelAllocatesNothing(t *testing.T) {
+	var calls atomicCounter
+	args := []any{"user", &ptrCountingStringer{&calls}, "n", 1, "p", benchUser{Name: "a", Password: "b"}}
+	for _, format := range allFormats {
+		for _, rules := range [][]string{nil, {"password"}} {
+			logger, _ := newTestLog(format, LogOptions{Level: InfoLevel + 1, MaskFields: rules})
+			if n := testing.AllocsPerRun(50, func() { logger.Debug("x", args...) }); n != 0 {
+				t.Error(test.DiffMessage(n, 0.0, "L3: a dropped line allocates nothing ("+formatName(format)+")"))
+			}
+		}
+	}
+}
+
+func TestLog_AddSourceIsCaller(t *testing.T) {
+	for _, format := range allFormats {
+		logger, buf := newTestLog(format, LogOptions{AddSource: true})
+		_, file, line, _ := runtime.Caller(0)
+		logger.Info("here")
+		where := file + ":" + strconv.Itoa(line+1)
+		out := buf.String()
+		switch format {
+		case JSONFormat:
+			parsed := jsonLine(t, out)
+			src, _ := parsed["source"].(map[string]any)
+			if src == nil || src["file"] != file || src["line"] != float64(line+1) {
+				t.Error(test.DiffMessage(parsed["source"], where, "L5: JSON source is the caller"))
+			}
+		default:
+			if !strings.Contains(plain(out), where) {
+				t.Error(test.DiffMessage(plain(out), "contains "+where, "L5: "+formatName(format)+" names the caller"))
+			}
+		}
+	}
+}
+
+func TestLog_AddSourceThroughWrapLogger(t *testing.T) {
+	for _, format := range allFormats {
+		logger, buf := newTestLog(format, LogOptions{AddSource: true})
+		wrapped := WrapLogger(logger, []string{"password"})
+		_, file, line, _ := runtime.Caller(0)
+		wrapped.Info("here", "password", "s")
+		where := file + ":" + strconv.Itoa(line+1)
+		out := buf.String()
+		if format == JSONFormat {
+			src, _ := jsonLine(t, out)["source"].(map[string]any)
+			if src == nil || src["file"] != file || src["line"] != float64(line+1) {
+				t.Error(test.DiffMessage(src, where, "L5: JSON source is the caller through WrapLogger"))
+			}
+		} else if !strings.Contains(plain(out), where) {
+			t.Error(test.DiffMessage(plain(out), "contains "+where, "L5: "+formatName(format)+" names the caller through WrapLogger"))
+		}
+	}
+}
+
+func TestLog_PrettySourceIsLastRow(t *testing.T) {
+	logger, buf := newTestLog(PrettyFormat, LogOptions{AddSource: true})
+	logger.Info("here", "k", "v")
+	lines := strings.Split(strings.TrimRight(plain(buf.String()), "\n"), "\n")
+	last := lines[len(lines)-1]
+	if !strings.Contains(last, "└──") || !strings.Contains(last, "source") || !strings.Contains(last, "log_test.go:") {
+		t.Error(test.DiffMessage(last, "└── source … log_test.go:<line>", "L5: Pretty prints source as the last row"))
+	}
+}
+
+func TestLog_NoSourceWithoutAddSource(t *testing.T) {
+	for _, format := range allFormats {
+		logger, buf := newTestLog(format, LogOptions{})
+		logger.Info("here", "k", "v")
+		if strings.Contains(buf.String(), "source") || strings.Contains(buf.String(), "log_test.go") {
+			t.Error(test.DiffMessage(buf.String(), "no source", "L5: "+formatName(format)+" without AddSource has no source"))
+		}
+	}
+}
+
+func TestLog_OneWritePerRecord(t *testing.T) {
+	for _, format := range allFormats {
+		w := &countingWriter{}
+		logger := newLog(w, false, &LogOptions{LogFormat: format, Level: DebugLevel})
+		logger.Info("m", "a", 1, "b", map[string]int{"x": 1, "y": 2}, "c", benchUser{Name: "n", Password: "p"})
+		logger.Error("m")
+		if w.writes != 2 {
+			t.Error(test.DiffMessage(w.writes, 2, "L6: one Write per record ("+formatName(format)+")"))
+		}
+	}
+}
+
+func TestLog_ConcurrentRecordsNeverInterleave(t *testing.T) {
+	for _, format := range []logFormat{JSONFormat, TextFormat} {
+		buf := &bytes.Buffer{}
+		logger := newLog(buf, false, &LogOptions{LogFormat: format, MaskFields: []string{"password"}})
+		var wg sync.WaitGroup
+		for i := range 16 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := range 50 {
+					logger.Info("line", "i", i, "j", j, "user", benchUser{Name: "n", Password: "p"})
+				}
+			}()
+		}
+		wg.Wait()
+		lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+		if len(lines) != 800 {
+			t.Fatal(test.DiffMessage(len(lines), 800, "L6: every record is one line ("+formatName(format)+")"))
+		}
+		if format == JSONFormat {
+			for _, line := range lines {
+				jsonLine(t, line)
+			}
+		}
+	}
+}
+
+func TestLog_ConcurrentCalls_NoRace(t *testing.T) {
+	for _, format := range allFormats {
+		buf := &bytes.Buffer{}
+		logger := newLog(buf, false, &LogOptions{LogFormat: format, MaskFields: []string{"password"}})
+		var wg sync.WaitGroup
+		for i := range 16 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for range 50 {
+					logger.Info("line", "i", i, "user", benchUser{Name: "n", Password: "p"}, "m", map[string]any{"password": "x"}, "err", errors.New("e"))
+				}
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+func TestLog_FatalLogsThenExits(t *testing.T) {
+	saved := exit
+	defer func() { exit = saved }()
+
+	for _, format := range allFormats {
+		buf := &bytes.Buffer{}
+		logger := newLog(buf, false, &LogOptions{LogFormat: format})
+		var code = -1
+		var written string
+		exit = func(c int) {
+			code = c
+			written = buf.String()
+		}
+		logger.Fatal("going down", "k", "v")
+		if code != 1 {
+			t.Error(test.DiffMessage(code, 1, "L7: Fatal exits with 1 ("+formatName(format)+")"))
+		}
+		if !strings.Contains(written, "FATAL") || !strings.Contains(written, "going down") {
+			t.Error(test.DiffMessage(written, "the FATAL record", "L7: the record is written before exit ("+formatName(format)+")"))
+		}
+	}
+}
+
+func TestLog_FatalBelowNothingStillExits(t *testing.T) {
+	saved := exit
+	defer func() { exit = saved }()
+	var code = -1
+	exit = func(c int) { code = c }
+	newLog(&bytes.Buffer{}, false, &LogOptions{LogFormat: JSONFormat, Level: FatalLevel}).Fatal("x")
+	if code != 1 {
+		t.Error(test.DiffMessage(code, 1, "L7: Fatal always exits"))
+	}
+}
+
+func TestLog_ColoredIsPlainTextInJSON(t *testing.T) {
+	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger.Info("x", "middleware", []map[string]color.Colored{{"CORS": {Text: "120µs (4%)", Color: color.Red}}})
+	out := buf.String()
+	if strings.Contains(out, `\u001b`) || strings.Contains(out, "\x1b") || strings.Contains(out, "Color") {
+		t.Error(test.DiffMessage(out, "no ANSI code and no Color field", "A4: JSON writes only the Text of a Colored"))
+	}
+	if !strings.Contains(out, `"middleware":[{"CORS":"120µs (4%)"}]`) {
+		t.Error(test.DiffMessage(out, `"middleware":[{"CORS":"120µs (4%)"}]`, "A4: the JSON shape"))
+	}
+}
+
+func TestLog_ColoredIsPlainTextInText(t *testing.T) {
+	logger, buf := newTestLog(TextFormat, LogOptions{})
+	logger.Info("x", "d", color.Colored{Text: "120µs (4%)", Color: color.Red})
+	out := buf.String()
+	if strings.Contains(out, "\x1b") || strings.Contains(out, `\x1b`) || !strings.Contains(out, "120µs (4%)") {
+		t.Error(test.DiffMessage(out, "the text without ANSI code", "A4: Text writes only the Text of a Colored"))
+	}
+}
+
+func TestLog_JSONEscapesControlChars(t *testing.T) {
+	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	msg := "/a\n\x1b[2K FAKE\r\nERROR forged\u0085"
+	logger.Info(msg, "k\n\x1b", "v\n\x1b[2J")
+	out := buf.String()
+	if strings.Count(out, "\n") != 1 || strings.ContainsAny(out, "\x1b\r\u0085") {
+		t.Error(test.DiffMessage(out, "one line, no raw control", "F4: JSON escapes control characters"))
+	}
+	if jsonLine(t, out)["msg"] != msg {
+		t.Error(test.DiffMessage(jsonLine(t, out)["msg"], msg, "F4: the message survives the round trip"))
+	}
+}
+
+func TestLog_TextEscapesControlChars(t *testing.T) {
+	logger, buf := newTestLog(TextFormat, LogOptions{})
+	logger.Info("/a\n\x1b[2K FAKE\r\nERROR forged", "k", "v\n\x1b[2J")
+	out := buf.String()
+	if strings.Count(out, "\n") != 1 || strings.ContainsAny(out, "\x1b\r") {
+		t.Error(test.DiffMessage(out, "one line, no raw control", "F4: Text escapes control characters"))
+	}
+}
+
+func TestLog_AttrArgument(t *testing.T) {
+	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger.Info("x", slog.String("a", "1"), "b", 2, slog.Int("c", 3))
+	line := jsonLine(t, buf.String())
+	if line["a"] != "1" || line["b"] != float64(2) || line["c"] != float64(3) {
+		t.Error(test.DiffMessage(line, "a=1 b=2 c=3", "V1: a slog.Attr argument is one pair"))
+	}
+}
+
+func TestLog_OddArguments(t *testing.T) {
+	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger.Info("x", "a", 1, "dangling")
+	line := jsonLine(t, buf.String())
+	if line["a"] != float64(1) || line["!BADKEY"] != "dangling" {
+		t.Error(test.DiffMessage(line, "a=1 !BADKEY=dangling", "V1: a trailing key is passed on as slog prints it"))
+	}
+}
+
+func TestLog_NonStringKey(t *testing.T) {
+	logger, buf := newTestLog(JSONFormat, LogOptions{MaskFields: []string{"password"}})
+	logger.Info("x", 42, "value", "k", "v")
+	out := buf.String()
+	if !strings.Contains(out, `"!BADKEY":42`) || !strings.Contains(out, `"k":"v"`) {
+		t.Error(test.DiffMessage(out, `"!BADKEY":42 and k=v`, "V1: a non-string key is passed on as slog prints it"))
+	}
+}
+
+type atomicCounter struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (c *atomicCounter) add()      { c.mu.Lock(); c.n++; c.mu.Unlock() }
+func (c *atomicCounter) load() int { c.mu.Lock(); defer c.mu.Unlock(); return c.n }

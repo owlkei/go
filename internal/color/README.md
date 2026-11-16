@@ -1,11 +1,12 @@
 # Color
 
-*Package `color` wraps text in ANSI escape codes for terminal output: bootstrap panics, the startup log and the log handler.*
+*Package `color` wraps text in ANSI escape codes for terminal output: bootstrap panics, the startup log, the pretty log format and the access log.*
 
 - [Color](#color)
   - [Usage](#usage)
   - [Functions](#functions)
     - [Fmt functions](#fmt-functions)
+  - [Colored](#colored)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
@@ -72,6 +73,22 @@ color.FmtRed("%s: %s", "core", "duplicate provider")
 - Each function returns `<open> + text + <close>` with the codes in the table.
 - Without arguments, the format is used verbatim: `FmtRed("100%")` → `"\x1b[31m100%\x1b[0m"`, and verbs such as `%d %s` stay as written.
 - With arguments, the text is `fmt.Sprintf(format, a...)`.
+
+## Colored
+
+`Colored{Text string; Color Color}` is a text with its color. The access log uses it for the duration of each stage.
+
+| `Color` constant | Code |
+|---|---|
+| `Gray` | `\x1b[90m` |
+| `Green` | `\x1b[32m` |
+| `Blue` | `\x1b[34m` |
+| `Yellow` | `\x1b[33m` |
+| `Orange` | `\x1b[38;5;208m` |
+| `Red` | `\x1b[31m` |
+
+- The pretty log format prints `Text` in `Color`, then resets.
+- `Colored` implements `slog.LogValuer` (its `Text`), so the JSON and Text log formats write only the text, never the ANSI code.
 
 ## Performance notes
 

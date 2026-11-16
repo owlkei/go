@@ -7,7 +7,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/trace"
 )
@@ -22,7 +21,7 @@ func benchHandshakeContext() *ctx.HTTPContext {
 func BenchmarkHandshake_NoListener(b *testing.B) {
 	ws := NewWS(&WSConfig{
 		logger:            log.NewLog(nil),
-		event:             event.NewEvent(),
+		tracer:            &trace.Tracer{},
 		injectedProviders: map[string]Provider{},
 		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}, wsHandshakeTraceMiddlewareB{}},
@@ -37,12 +36,12 @@ func BenchmarkHandshake_NoListener(b *testing.B) {
 }
 
 func BenchmarkHandshake_WithListener(b *testing.B) {
-	ev := event.NewEvent()
-	ev.On(trace.EventName, func(args ...any) {})
+	ev := &trace.Tracer{}
+	ev.Listen(func(trace.Event) {})
 
 	ws := NewWS(&WSConfig{
 		logger:            log.NewLog(nil),
-		event:             ev,
+		tracer:            ev,
 		injectedProviders: map[string]Provider{},
 		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}, wsHandshakeTraceMiddlewareB{}},

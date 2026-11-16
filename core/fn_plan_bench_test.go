@@ -6,7 +6,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/trace"
 	"golang.org/x/net/websocket"
 )
@@ -61,7 +60,7 @@ func benchHTTPPlan(b *testing.B, name string) *httpHandlerPlan {
 func BenchmarkHTTPHandlerPlan_Invoke_NoArgs(b *testing.B) {
 	plan := benchHTTPPlan(b, "NoArgs")
 	c := benchPlanContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -71,7 +70,7 @@ func BenchmarkHTTPHandlerPlan_Invoke_NoArgs(b *testing.B) {
 func BenchmarkHTTPHandlerPlan_Invoke_Param(b *testing.B) {
 	plan := benchHTTPPlan(b, "Param")
 	c := benchPlanContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -81,7 +80,7 @@ func BenchmarkHTTPHandlerPlan_Invoke_Param(b *testing.B) {
 func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe(b *testing.B) {
 	plan := benchHTTPPlan(b, "QueryPipe")
 	c := benchPlanContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -91,7 +90,7 @@ func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe(b *testing.B) {
 func BenchmarkHTTPHandlerPlan_Invoke_BodyPipeWithProvider(b *testing.B) {
 	plan := benchHTTPPlan(b, "BodyPipeWithProvider")
 	c := benchPlanContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -101,7 +100,7 @@ func BenchmarkHTTPHandlerPlan_Invoke_BodyPipeWithProvider(b *testing.B) {
 func BenchmarkHTTPHandlerPlan_Invoke_FiveBuiltins(b *testing.B) {
 	plan := benchHTTPPlan(b, "FiveBuiltins")
 	c := benchPlanContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -111,8 +110,8 @@ func BenchmarkHTTPHandlerPlan_Invoke_FiveBuiltins(b *testing.B) {
 func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe_Traced(b *testing.B) {
 	plan := benchHTTPPlan(b, "QueryPipe")
 	c := benchPlanContext()
-	ev := event.NewEvent()
-	ev.On(trace.EventName, func(args ...any) {})
+	ev := &trace.Tracer{}
+	ev.Listen(func(trace.Event) {})
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -135,7 +134,7 @@ func benchWSContext() *ctx.WSContext {
 func BenchmarkWSHandlerPlan_Invoke_Payload(b *testing.B) {
 	plan := benchWSPlan(b, "Payload")
 	c := benchWSContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)
@@ -145,7 +144,7 @@ func BenchmarkWSHandlerPlan_Invoke_Payload(b *testing.B) {
 func BenchmarkWSHandlerPlan_Invoke_PayloadPipe(b *testing.B) {
 	plan := benchWSPlan(b, "PayloadPipe")
 	c := benchWSContext()
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	b.ReportAllocs()
 	for b.Loop() {
 		plan.invoke(c, ev)

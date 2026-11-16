@@ -97,7 +97,7 @@ wants its own response writes it and returns without `next()`.
 
 - `App.ServeHTTP` (`core/app.go`): caps a request body (never `nil` / `http.NoBody`), takes a pooled
   `httpExchange` (the `ctx.HTTPContext` plus the tracking `responseWriter` of `core/http_writer.go`),
-  sets `X-Request-Id`, asks `HasListeners` once, calls `HTTP.handleRequest`, emits `complete` with
+  sets `X-Request-Id`, asks `tracer.Enabled()` once, calls `HTTP.handleRequest`, emits `complete` with
   the status actually written, releases the exchange (no `defer`).
 - `HTTP.handleRequest` (`core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
   while middlewares run (a panic there is the HTTP layer's) and the route's filter list from the

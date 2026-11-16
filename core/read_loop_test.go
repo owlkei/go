@@ -11,7 +11,6 @@ import (
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
@@ -387,13 +386,13 @@ func TestHandleUnsubscribe_RemovesTopicAndAcks(t *testing.T) {
 
 func TestDispatchWSEvent_GuardEmitsTraceWithWSTransport(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageGuard {
 			d := te
 			got = &d
@@ -425,13 +424,13 @@ func TestDispatchWSEvent_GuardEmitsTraceWithWSTransport(t *testing.T) {
 
 func TestDispatchWSEvent_ExceptionFilterEmitsTraceWithWSTransport(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageExceptionFilter {
 			d := te
 			got = &d
@@ -468,13 +467,13 @@ func TestDispatchWSEvent_ExceptionFilterEmitsTraceWithWSTransport(t *testing.T) 
 
 func TestDispatchWSEvent_InterceptorPrePostEventsMatchInCountAndOrder(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var pre, post []string
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePreInterceptor:
 			pre = append(pre, te.Name)
@@ -483,7 +482,7 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchInCountAndOrder(t *testing
 		}
 	})
 	ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
 	}
 
 	pattern := "chat.to.*"
@@ -530,13 +529,13 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchInCountAndOrder(t *testing
 
 func TestDispatchWSEvent_InterceptorPrePostEventsMatchWhenShortCircuited(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var preCount, postCount int
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePreInterceptor:
 			preCount++
@@ -545,7 +544,7 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchWhenShortCircuited(t *test
 		}
 	})
 	ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
 	}
 
 	pattern := "chat.to.*"
@@ -594,20 +593,20 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchWhenShortCircuited(t *test
 
 func TestDispatchWSEvent_EmitsCompleteWithWSTransport(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageComplete {
 			d := te
 			got = &d
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.EventName, trace.Event{
+		ev.Emit(trace.Event{
 			ID:        c.GetID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportWS,
@@ -657,13 +656,13 @@ func TestDispatchWSEvent_EmitsCompleteWithWSTransport(t *testing.T) {
 
 func TestDispatchWSEvent_CompleteIDMatchesGuardEventID(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var guardID, completeID string
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StageGuard:
 			guardID = te.ID
@@ -672,7 +671,7 @@ func TestDispatchWSEvent_CompleteIDMatchesGuardEventID(t *testing.T) {
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
 	}
 
 	pattern := "chat.to.*"
@@ -708,19 +707,19 @@ func TestDispatchWSEvent_CompleteIDMatchesGuardEventID(t *testing.T) {
 
 func TestDispatchWSEvent_CompleteFiresOnGuardDenial(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var completeCount int
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageComplete {
 			completeCount++
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
 	}
 
 	pattern := "chat.to.*"
@@ -752,19 +751,19 @@ func TestDispatchWSEvent_CompleteFiresOnGuardDenial(t *testing.T) {
 
 func TestDispatchWSEvent_CompleteFiresOnHandlerPanic(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var completeCount int
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageComplete {
 			completeCount++
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
+		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
 	}
 
 	pattern := "chat.to.*"
@@ -794,20 +793,20 @@ func TestDispatchWSEvent_CompleteFiresOnHandlerPanic(t *testing.T) {
 
 func TestHandleSubscribe_EmitsCompleteWithWSTransport(t *testing.T) {
 	ws := newTestWSBare(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var mu sync.Mutex
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
+	ev.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageComplete {
 			d := te
 			got = &d
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.EventName, trace.Event{
+		ev.Emit(trace.Event{
 			ID:        c.GetID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportWS,

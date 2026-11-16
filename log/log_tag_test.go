@@ -1,7 +1,6 @@
 package log
 
 import (
-	"context"
 	"log/slog"
 	"strings"
 	"sync"
@@ -164,19 +163,17 @@ func TestWrapLogger_CustomLoggerAutomaticallyBenefits(t *testing.T) {
 	}
 }
 
-func TestPrettyHandler_Handle_TaggedUnexportedFieldIncluded(t *testing.T) {
+func TestPretty_TaggedUnexportedFieldIncluded(t *testing.T) {
 	p := tagPerson{Age: 10, name: "Joh", School: "MIT", policy: "ok"}
-	h, buf := newTestHandler(slog.LevelDebug)
-	r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
-	r.AddAttrs(slog.Any("person", p))
-	_ = h.Handle(context.Background(), r)
+	logger, buf := newTestLog(PrettyFormat, LogOptions{})
+	logger.Info("test", "person", p)
 
 	out := buf.String()
 	if !strings.Contains(out, "name") || !strings.Contains(out, "Joh") {
-		t.Error(test.DiffMessage(out, "contains name Joh", "pretty handler should also expose the tagged unexported field standalone (no WrapLogger involved)"))
+		t.Error(test.DiffMessage(out, "contains name Joh", "V3: the Pretty format exposes the tagged unexported field"))
 	}
 	if strings.Contains(out, "policy") {
-		t.Error(test.DiffMessage(out, "no policy", "untagged unexported field must not leak into pretty output"))
+		t.Error(test.DiffMessage(out, "no policy", "V3: untagged unexported field must not leak into pretty output"))
 	}
 }
 

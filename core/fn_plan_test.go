@@ -13,7 +13,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 	ctxlookalike "github.com/dangduoc08/ginject/internal/test/lookalike/ctx"
@@ -40,14 +39,15 @@ func (*planPublisher) Publish(string, ...any) error { return nil }
 type planTraceLog struct {
 	mu     sync.Mutex
 	events []trace.Event
+	stop   func()
 }
 
-func planListen(ev *event.Event) *planTraceLog {
+func planListen(ev *trace.Tracer) *planTraceLog {
 	l := &planTraceLog{}
-	ev.On(trace.EventName, func(args ...any) {
+	l.stop = ev.Listen(func(e trace.Event) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		l.events = append(l.events, args[0].(trace.Event))
+		l.events = append(l.events, e)
 	})
 	return l
 }
@@ -160,7 +160,7 @@ func planRequestContext() *ctx.HTTPContext {
 }
 
 func planInvoke(p *httpHandlerPlan, c *ctx.HTTPContext) []reflect.Value {
-	return p.invoke(c, event.NewEvent())
+	return p.invoke(c, &trace.Tracer{})
 }
 
 type recCtxPipe struct{ Kind string }
@@ -1109,7 +1109,7 @@ func TestHTTPHandlerPlan_PipeReceiverIsFreshEachRequest(t *testing.T) {
 
 func TestHTTPHandlerPlan_ConcurrentInvokeNoRace(t *testing.T) {
 	plan := planHTTP(t, planConcurrentCtl{}, "Run", nil)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 
 	var wg sync.WaitGroup
 	for g := 0; g < 64; g++ {
@@ -1189,9 +1189,9 @@ func TestHTTPHandlerPlan_TransformReturnsAssignableType(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_NoListenerEmitsNothing(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
-	ev.RemoveAllListeners(trace.EventName)
+	log.stop()
 	h := &planCtl{}
 	plan := planHTTP(t, h, "HMixed", nil)
 	plan.invoke(planRequestContext(), ev)
@@ -1211,13 +1211,13 @@ func TestHTTPHandlerPlan_TracedEqualsUntraced(t *testing.T) {
 
 	c := planRequestContext()
 	c.Next = func() { planNextCalls++ }
-	untraced := plan.invoke(c, event.NewEvent())
+	untraced := plan.invoke(c, &trace.Tracer{})
 	gotUntraced := h.got
 	pipesUntraced := planPipeCalls
 
 	h.got = nil
 	planPipeCalls = nil
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	planListen(ev)
 	traced := plan.invoke(c, ev)
 
@@ -1238,7 +1238,7 @@ func TestHTTPHandlerPlan_TracedEqualsUntraced(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	c := planRequestContext()
 	planHTTP(t, &planCtl{}, "HSlow", nil).invoke(c, ev)
@@ -1263,7 +1263,7 @@ func TestHTTPHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_TwoPipesEmitInOrder(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	planHTTP(t, &planCtl{}, "HTwoSlow", nil).invoke(planRequestContext(), ev)
 
@@ -1275,7 +1275,7 @@ func TestHTTPHandlerPlan_TwoPipesEmitInOrder(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_NonPipeEmitsNoStagePipe(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	h := &planCtl{}
 	c := planRequestContext()
@@ -1288,7 +1288,7 @@ func TestHTTPHandlerPlan_NonPipeEmitsNoStagePipe(t *testing.T) {
 
 func TestHTTPHandlerPlan_PipePanicStillEmitsStagePipe(t *testing.T) {
 	planResetState(t)
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	plan := planHTTP(t, &planCtl{}, "HPanicMid", nil)
 	rec := planPanicOf(func() { plan.invoke(planRequestContext(), ev) })
@@ -1306,7 +1306,7 @@ func TestHTTPHandlerPlan_PipePanicStillEmitsStagePipe(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_WrongPipeResultStillEmitsStagePipe(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	plan := planHTTP(t, &planCtl{}, "HNilPipe", nil)
 	rec := planPanicOf(func() { plan.invoke(planRequestContext(), ev) })
@@ -1320,7 +1320,7 @@ func TestHTTPHandlerPlan_WrongPipeResultStillEmitsStagePipe(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_EmitsStageHandler(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	c := planRequestContext()
 	planHTTP(t, &planCtl{}, "HOne", nil).invoke(c, ev)
@@ -1336,13 +1336,13 @@ func TestHTTPHandlerPlan_EmitsStageHandler(t *testing.T) {
 	if e.ID != c.GetID() || e.ID == "" {
 		t.Error(test.DiffMessage(e.ID, c.GetID(), "B14: ID"))
 	}
-	if e.Transport != "" {
-		t.Error(test.DiffMessage(e.Transport, "", "B14: the handler event has no Transport"))
+	if e.Transport != trace.TransportHTTP {
+		t.Error(test.DiffMessage(e.Transport, trace.TransportHTTP, "T7: the handler event carries its Transport"))
 	}
 }
 
 func TestHTTPHandlerPlan_HandlerPanicStillEmitsStageHandler(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	plan := planHTTP(t, &planCtl{}, "HPanics", nil)
 	rec := planPanicOf(func() { plan.invoke(planRequestContext(), ev) })
@@ -1356,7 +1356,7 @@ func TestHTTPHandlerPlan_HandlerPanicStillEmitsStageHandler(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_ArgumentFailureEmitsNoStageHandler(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	plan := planHTTP(t, &planCtl{}, "HNilPipe", nil)
 	_ = planPanicOf(func() { plan.invoke(planRequestContext(), ev) })
@@ -1366,7 +1366,7 @@ func TestHTTPHandlerPlan_ArgumentFailureEmitsNoStageHandler(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_HandlerDurationExcludesPipes(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	log := planListen(ev)
 	planHTTP(t, &planCtl{}, "HSlow", nil).invoke(planRequestContext(), ev)
 
@@ -1380,7 +1380,7 @@ func TestHTTPHandlerPlan_HandlerDurationExcludesPipes(t *testing.T) {
 }
 
 func TestHTTPHandlerPlan_ListenerAddedBetweenCalls(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	plan := planHTTP(t, &planCtl{}, "HOne", nil)
 
 	plan.invoke(planRequestContext(), ev)
@@ -1390,7 +1390,7 @@ func TestHTTPHandlerPlan_ListenerAddedBetweenCalls(t *testing.T) {
 		t.Errorf("B17: a listener added between calls takes effect on the next call: %d handler events", len(got))
 	}
 
-	ev.RemoveAllListeners(trace.EventName)
+	log.stop()
 	plan.invoke(planRequestContext(), ev)
 	if got := log.byStage(trace.StageHandler); len(got) != 1 {
 		t.Errorf("B17: a listener removed between calls takes effect on the next call: %d handler events", len(got))

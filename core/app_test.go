@@ -13,7 +13,6 @@ import (
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
@@ -427,10 +426,10 @@ func TestTrace_EmitsPerStageAndComplete(t *testing.T) {
 	var stages []string
 	var complete *trace.Event
 
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageComplete {
 			d := te
 			complete = &d
@@ -491,10 +490,10 @@ func TestTrace_PipeStageExcludedFromHandlerDuration(t *testing.T) {
 
 	var mu sync.Mutex
 	var pipeEvent, handlerEvent *trace.Event
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePipe:
 			d := te
@@ -544,10 +543,10 @@ func TestTrace_ExceptionFilterStageFiresOnPanic(t *testing.T) {
 	var sawExceptionFilter bool
 	var complete *trace.Event
 
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		if te.Stage == trace.StageExceptionFilter {
 			sawExceptionFilter = true
 		}
@@ -599,10 +598,10 @@ func TestTrace_PipePanicStillEmitsPipeEventAndReachesExceptionFilter(t *testing.
 	var sawExceptionFilter bool
 	var complete *trace.Event
 
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePipe:
 			d := te
@@ -663,10 +662,10 @@ func TestTrace_HandlerPanicAfterSuccessfulPipeStillExcludesPipeDuration(t *testi
 	var pipeEvent, handlerEvent *trace.Event
 	var complete *trace.Event
 
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePipe:
 			d := te
@@ -747,10 +746,10 @@ func TestTrace_InterceptorPrePostEventsMatchInCountAndOrder(t *testing.T) {
 	var pre []string
 	var post []string
 
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePreInterceptor:
 			pre = append(pre, te.Name)
@@ -809,10 +808,10 @@ func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
 	var mu sync.Mutex
 	var pre, post []string
 
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StagePreInterceptor:
 			pre = append(pre, te.Name)
@@ -865,10 +864,10 @@ func TestTrace_WSHandshakeEmitsStageCompleteWithHTTPTransport(t *testing.T) {
 	var mu sync.Mutex
 	var complete *trace.Event
 	var preMiddlewareTransport string
-	app.event.On(trace.EventName, func(args ...any) {
+	app.tracer.Listen(func(e trace.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		te := args[0].(trace.Event)
+		te := e
 		switch te.Stage {
 		case trace.StageMiddleware:
 			preMiddlewareTransport = te.Transport
@@ -1116,7 +1115,7 @@ func TestGetLocalIP(t *testing.T) {
 }
 
 func TestTraceHTTPCatch_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := newHTTPContext()
 	ex := exception.BadRequestException("bad")
 	var called bool
@@ -1128,12 +1127,12 @@ func TestTraceHTTPCatch_NoListener_StillCallsWrapped(t *testing.T) {
 }
 
 func TestTraceHTTPCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := newHTTPContext()
 	ex := exception.BadRequestException("bad")
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
+	ev.Listen(func(e trace.Event) {
+		te := e
 		got = &te
 	})
 	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})
@@ -1147,7 +1146,7 @@ func TestTraceHTTPCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
 }
 
 func TestTraceWSHandler_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := ctx.NewWSContext()
 	var called bool
 	h := traceWSHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.WSContext) { called = true })
@@ -1158,11 +1157,11 @@ func TestTraceWSHandler_NoListener_StillCallsWrapped(t *testing.T) {
 }
 
 func TestTraceWSHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := ctx.NewWSContext()
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
+	ev.Listen(func(e trace.Event) {
+		te := e
 		got = &te
 	})
 	h := traceWSHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.WSContext) {})
@@ -1176,7 +1175,7 @@ func TestTraceWSHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
 }
 
 func TestTraceWSCatch_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := ctx.NewWSContext()
 	ex := exception.BadRequestException("bad")
 	var called bool
@@ -1188,12 +1187,12 @@ func TestTraceWSCatch_NoListener_StillCallsWrapped(t *testing.T) {
 }
 
 func TestTraceWSCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	c := ctx.NewWSContext()
 	ex := exception.BadRequestException("bad")
 	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
+	ev.Listen(func(e trace.Event) {
+		te := e
 		got = &te
 	})
 	fn := traceWSCatch(ev, "Test.Filter", func(c *ctx.WSContext, ex *exception.Exception) {})

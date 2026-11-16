@@ -501,7 +501,8 @@ type ExceptionFilterable any // matched by its method:
 - `injectedProviders map[string]Provider` — read-only after app.Create()
 - `routing.Router` — read-only after app.Create()
 - `sync.Pool` for context pooling — handles synchronization
-- `event.Event` — single sync.RWMutex over two maps (opts, onceOpts); no sharding
+- `trace.Tracer` — listeners in an immutable slice behind an `atomic.Pointer`; `Enabled` / `Emit` take no lock, `Listen` / `stop` serialize on one mutex
+- `accesslog.AccessLog` — 64 shards (mutex + map each) of pending requests, a bounded queue to one worker goroutine, atomic drop counter
 - `memorybroker.Broker` — single sync.RWMutex over 4 maps (exact/prefix/global/complex); no sharding; PublishAsync tracked via sync.WaitGroup so Close() can drain in-flight goroutines
 
 **Not Thread-Safe (by design)**:

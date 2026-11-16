@@ -12,7 +12,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/trace"
@@ -156,8 +155,8 @@ func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provi
 	return httpMiddleware{use: m.Use, name: name}
 }
 
-func (m *httpMiddleware) emit(ev *event.Event, id string, duration time.Duration, code int) {
-	ev.Emit(trace.EventName, trace.Event{ID: id, Stage: trace.StageMiddleware, Name: m.name, Transport: trace.TransportHTTP, Duration: duration, Code: code})
+func (m *httpMiddleware) emit(ev *trace.Tracer, id string, duration time.Duration, code int) {
+	ev.Emit(trace.Event{ID: id, Stage: trace.StageMiddleware, Name: m.name, Transport: trace.TransportHTTP, Duration: duration, Code: code})
 }
 
 const panicStackLimit = 4 << 10

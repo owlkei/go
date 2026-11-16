@@ -7,7 +7,6 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
@@ -74,15 +73,15 @@ func (wsHandshakeTraceMiddleware) Use(_ *http.Request, _ http.ResponseWriter, ne
 }
 
 func TestHandshake_EmitsMiddlewareTraceWithHTTPTransport(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var got []trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		got = append(got, args[0].(trace.Event))
+	ev.Listen(func(e trace.Event) {
+		got = append(got, e)
 	})
 
 	ws := NewWS(&WSConfig{
 		logger:            log.NewLog(nil),
-		event:             ev,
+		tracer:            ev,
 		injectedProviders: map[string]Provider{},
 		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}},
@@ -117,15 +116,15 @@ func (wsHandshakeTraceMiddlewareB) Use(_ *http.Request, _ http.ResponseWriter, n
 }
 
 func TestHandshake_EmitsOneTraceEventPerMiddleware(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 	var got []trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		got = append(got, args[0].(trace.Event))
+	ev.Listen(func(e trace.Event) {
+		got = append(got, e)
 	})
 
 	ws := NewWS(&WSConfig{
 		logger:            log.NewLog(nil),
-		event:             ev,
+		tracer:            ev,
 		injectedProviders: map[string]Provider{},
 		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}, wsHandshakeTraceMiddlewareB{}},
@@ -154,11 +153,11 @@ func TestHandshake_EmitsOneTraceEventPerMiddleware(t *testing.T) {
 }
 
 func TestHandshake_NoListener_StillSucceeds(t *testing.T) {
-	ev := event.NewEvent()
+	ev := &trace.Tracer{}
 
 	ws := NewWS(&WSConfig{
 		logger:            log.NewLog(nil),
-		event:             ev,
+		tracer:            ev,
 		injectedProviders: map[string]Provider{},
 		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}},

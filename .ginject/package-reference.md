@@ -16,7 +16,7 @@
 type App struct {
     http    *HTTP
     ws      *WS
-    event   *event.Event
+    tracer  trace.Tracer
     broker  memorybroker.Broker
     Logger  common.Logger
     // ... other unexported fields
@@ -374,37 +374,6 @@ All constructors share the shape `func XException(message string, opts ...any) E
 
 ---
 
-## Package: `event`
-
-**Responsibility**: In-process event emission (Node.js `EventEmitter`-style)
-
-```go
-type Event struct { /* internal */ }
-func NewEvent() *Event
-```
-
-| Method | Signature |
-|--------|-----------|
-| `On` | `On(eventName string, fn func(args ...any))` — variadic, NOT `func(data any)` |
-| `Once` | `Once(eventName string, fn func(args ...any))` |
-| `Off` | `Off(eventName string, fn func(args ...any))` |
-| `Emit` | `Emit(eventName string, args ...any)` — variadic |
-| `RemoveAllListeners` | `RemoveAllListeners(eventName string)` |
-| `ListenerCount` | `ListenerCount(eventName string) int` |
-| `HasListeners` | `HasListeners(eventName string) bool` |
-| `EventNames` | `EventNames() []string` |
-| `SetMaxListeners` | `SetMaxListeners(n int)` |
-| `Reset` | `Reset()` |
-
-**Usage** (a listener written as `func(data any)` does NOT compile — it must accept `...any`):
-```go
-e := event.NewEvent()
-e.On("user.created", func(args ...any) { /* handle */ })
-e.Emit("user.created", userData)
-```
-
----
-
 ## Package: `log`
 
 **Responsibility**: Structured logging (wraps `log/slog`)
@@ -416,14 +385,17 @@ func WrapLogger(next common.Logger, maskFields []string) common.Logger
 
 ```go
 type LogOptions struct {
-    AddSource  bool
-    Level      slog.Level          // DebugLevel/InfoLevel/WarnLevel/ErrorLevel/FatalLevel
-    LogFormat  logFormat           // TextFormat/JSONFormat/PrettyFormat
-    TimeFormat string
-    Transports []*LogTransport     // {Filename string; Level slog.Level}
-    MaskFields []string
+    Level      slog.Level          // DebugLevel/InfoLevel/WarnLevel/ErrorLevel/FatalLevel; used as given
+    LogFormat  logFormat           // TextFormat/JSONFormat/PrettyFormat; zero: Pretty on a terminal, JSON otherwise
+    AddSource  bool                // the caller's file:line in all three formats
+    MaskFields []string            // case-insensitive rules; see log/README.md
 }
 ```
+
+- No `Transports`, no `TimeFormat`, no `Output`: output is stdout; anything else is a custom logger behind `WrapLogger`.
+- The Pretty handler is unexported; `internal/color.Colored{Text, Color}` is printed in its color by Pretty and as its `Text` in JSON and Text.
+- A logger call never panics because of a value: depth 16, 1,000 values per argument, `[MAX_DEPTH]` / `[TRUNCATED]`, a panicking `String` / `Error` / `LogValue` gives a `log_error` pair.
+- `WrapLogger(nil, …)` panics; `WrapLogger` of a built-in or wrapped logger merges the rules (one layer).
 
 ---
 
@@ -521,8 +493,6 @@ app.BindWSHandler("users.created", func(pub common.Publisher) {
 **Responsibility**: Request tracing and observability
 
 ```go
-const EventName = "trace"   // NOT "ginject:trace"
-
 const (
     StageMiddleware      = "middleware"
     StageGuard           = "guard"
@@ -538,8 +508,6 @@ const (
 const (
     TransportHTTP = "HTTP"   // uppercase, NOT "http"
     TransportWS   = "WS"
-    TransportGQL  = "GQL"
-    TransportRPC  = "RPC"
 )
 
 type Event struct {
@@ -552,7 +520,15 @@ type Event struct {
     Target    string
     Code      int
 }
+
+type Tracer struct{ /* unexported; the zero value is ready */ }
+func (t *Tracer) Enabled() bool                        // one atomic load
+func (t *Tracer) Emit(e Event)                         // synchronous, in registration order, no recover, 0 allocs
+func (t *Tracer) Listen(fn func(Event)) (stop func())  // stop removes exactly that registration
 ```
+
+- There is no event bus: the `event` package was removed (design 0010). `core` holds one `trace.Tracer`
+  per app (`app.tracer`); the access log is its only listener today. Every event carries `Transport`.
 
 ---
 
@@ -794,7 +770,7 @@ type Helmet struct {
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog`; wired in via `App.EnableAccessLog()`.
+- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.Logger}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. Bounded: 64 stages per request, 16,384 pending requests, 1,024 queued lines (drops are reported as `Warn("AccessLog", "dropped", n)`).
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
 - `internal/*` — private utilities (color, ds, str, crypto, num, slice, test). Not importable from outside the module.
 
