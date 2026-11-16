@@ -50,7 +50,8 @@ rerunning this baseline.
   `cache` + `memorycache` + `httpclient`; `storage` (known data-loss risks in transactions and
   compaction); then a security audit of the HTTP side, `/kb update`, and the final HTTP report.
 - **0005 WebSocket**: `core/ws*.go`, `read_loop.go`, `write_loop.go`, `wsevent`, `memorybroker`,
-  `pattern`.
+  `pattern`, and Ginject's own WebSocket implementation replacing `golang.org/x/net/websocket`
+  (decided 2026-11-16, `docs/roadmap/backlog.md`).
 
 ## Log
 - 2026-11-16: run started on `roadmap/cleanup-and-baseline` from `9121a5f`. Files already modified
