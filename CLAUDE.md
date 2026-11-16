@@ -47,6 +47,21 @@ and race-freedom first.
   before writing it; prove it with `-bench . -benchmem -count 5` before and after (`benchstat`).
   Benchmarks: `for b.Loop()` + `b.ReportAllocs()`.
 
+## Product principles (the maintainer, 2026-11-16)
+
+Ginject is for vibecoders and small teams building with AI, not for enterprises tuning every knob.
+
+- **Powerful inside, small outside.** Build everything a production backend needs, but in the
+  framework's lower layers. The surface users see is as small as possible: they learn only what they
+  must, and use only what they should.
+- **One obvious way.** No two APIs for the same job; no option whose effect depends on another call.
+- **Safe defaults, little configuration.** Defaults are production-safe; options exist only for what
+  real apps need to change. Deep tuning goes through standard Go escape hatches (`App` is an
+  `http.Handler`), documented as advanced.
+- **Hide by default.** A new identifier is unexported (or under `internal/`) unless users need it.
+  Designs list every exported addition and justify it; the reviewer flags exported names users don't
+  need.
+
 ## Workflow
 
 The user approves **plans and designs**; Claude does the rest. Outside a roadmap run Claude commits only

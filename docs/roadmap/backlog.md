@@ -22,6 +22,30 @@ documentation points to other packages) with an implementation of its own, once 
   benchmarks against `coder/websocket` and `gorilla/websocket` in `bench/`.
 - **Joins the remaining WebSocket work:** acks, backpressure, limits, hooks, shutdown, broker.
 
+## Public API surface (after roadmap 0004)
+
+Decided 2026-11-16 (Product principles in `CLAUDE.md`): Ginject exports about 607 functions, types and
+methods outside `sample/` and `bench/`, most of them framework internals (`common.Construct`,
+`BuildHTTPInterceptMiddleware`, the `common.InsertedRoutes` global, `routing` internals,
+`ctx.BinderOf`, the devtool builder). A dedicated roadmap, after 0004 and before WebSocket: review
+every exported name, move internals to `internal/` or unexport them, collapse duplicate ways of doing
+one job, and rewrite the docs around the resulting surface.
+
+## MCP (with the devtools platform)
+
+Decided 2026-11-16: Ginject gets MCP support when development of the devtools platform starts, in
+three forms:
+
+1. **A developer MCP:** tools AI coding agents query to write correct Ginject code (concepts, the
+   route DSL, injectable types, examples, scaffolding of modules / controllers / guards, a handler
+   signature check, explanations of bootstrap panics). Lives outside the framework's code.
+2. **A runtime MCP module** (for example `modules/mcp`, `app.EnableMCP()`): an app's routes exposed as
+   MCP tools, with input schemas from the DTOs (the devtool snapshot already computes them), the
+   Streamable HTTP transport, auth through guards, nothing exposed unless chosen, rate limits.
+   Implemented by Ginject itself (JSON-RPC over HTTP), to keep `go.mod` free of dependencies.
+3. **A devtools MCP:** AI agents read a running app through the devtools platform (routes, DI graph,
+   traces of failed requests).
+
 ## Heavy techniques waiting for approval
 
 Designed and measured in the roadmap 0002 designs, not built (each needs the maintainer's approval
