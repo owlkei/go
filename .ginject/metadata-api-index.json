@@ -182,14 +182,14 @@
         }
       },
       "examples": {
-        "READ_BY_ID": "GET /:id",
-        "READ_BY_ID_AND_NAME": "GET /:id/:name",
+        "READ_BY_ID": "GET /{ID}",
+        "READ_BY_ID_AND_NAME": "GET /{ID}/{NAME}",
         "CREATE_OF_COMMENTS": "POST /comments",
-        "DELETE_BY_ID_VERSION_2": "DELETE /v2/:id",
+        "DELETE_BY_ID_VERSION_2": "DELETE /{ID} (version 2)",
         "READ_ANY": "GET /*"
       },
       "notes": [
-        "Router.Match signature is func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string): nil on a miss; the item is shared and read-only; the slice is params plus one value per route parameter (design 0002). Router.Group does not exist.", "Route parameters are {name} whole segments (READ_BY_ID routes to GET /{id}); there is no :id syntax."
+        "Router.Match signature is func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string): nil on a miss; the item is shared and read-only; the slice is params plus one value per route parameter (design 0002). Router.Group does not exist.", "Route parameters are {name} whole segments (READ_BY_ID routes to GET /{ID}: the parameter name keeps the case of the method name); there is no :id syntax."
       ]
     },
     "exception": {

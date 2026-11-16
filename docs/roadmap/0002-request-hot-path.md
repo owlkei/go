@@ -1,6 +1,6 @@
 # 0002: Request hot path
 
-Status: Running
+Status: Done
 
 ## Goal
 Every package a request passes through before and around the handler gets the deep dive: bugs fixed,
@@ -29,7 +29,7 @@ the commit), README.
 | 4 | Errors and results: `exception`, `aggregation` (cheaper exceptions and error bodies: part of hot spot 9) | tdd | docs/design/0004-exception.md | 3 | deep dive done | done |
 | 5 | Pipeline layers and the route DSL: `common` (DSL parsing is cold; layer dispatch, the catch chain and interceptor closures are hot: hot spots 9 and 11) | tdd | docs/design/0005-common.md | 2, 3, 4 | deep dive done | done |
 | 6 | Handler injection: `core/fn.go` (argument resolution and `reflect.Value.Call` per request: hot spot 1, the largest) | tdd | docs/design/0006-injection.md | 3, 5 | deep dive done for `fn.go`; the rest of `core` untouched | done |
-| 7 | Measure: rerun `make bench-compare` and the load test, compare with the baseline | light | - | 1-6 | `docs/review/http-0002.md` with before → after per scenario | todo |
+| 7 | Measure: rerun `make bench-compare` and the load test, compare with the baseline | light | - | 1-6 | `docs/review/http-0002.md` with before → after per scenario | done |
 
 ## Decisions
 - Breaking the public API is allowed; the architecture stays (Module → Controller → Provider, the
@@ -91,3 +91,12 @@ the commit), README.
   per request with the same allocation count (suspected: `reflect.Call` copying the large
   controller receiver; unconfirmed, for 0003). Found for 0003: `SERVE_<x>_ANY` compiles to the
   glob `/<x>*/`, so it never serves `/<x>/...` — pre-existing (verified on `f036f50`).
+- Step 7: done, `docs/review/http-0002.md`. Static 1,672 → 793 ns (goal under 1 µs: met);
+  allocations halved only on Exception (−70 %; others −26 to −39 %); every scenario 48-65 % faster.
+  The load test ran on a thermally throttled laptop, so it is reported relative to net/http.
+- Review (`ginject-reviewer`, all commits of the run): no high-severity regression. Fixed: string
+  binding still saturated some out-of-range numbers (decision 0001 Q3); routes differing only in
+  parameter names registered silently and the served one changed per start (pre-existing); a nil
+  `*Exception` passed to `JSON` leaked runtime text; a literal `$` route segment became an unnamed
+  parameter; doc examples (`/:id`, `common/rest.go`); the report's Exception baseline footnoted; a
+  README for the lookalike fixture.

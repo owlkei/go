@@ -103,7 +103,7 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
 
 Controller method names are parsed into HTTP routes — no annotations needed. Naming tokens: `READ`→GET, `CREATE`→POST, `UPDATE`→PUT, `MODIFY`→PATCH, `DELETE`→DELETE, `PREFLIGHT`→OPTIONS. Separator tokens: `BY` (path param), `AND` (additional segment), `OF` (sub-resource), `ANY` (wildcard), `VERSION` (version tag), `FILE` (file serving).
 
-Example: `READ_BY_ID_AND_NAME` → `GET /:id/:name`
+Example: `READ_BY_ID_AND_NAME` → `GET /{ID}/{NAME}` (parameter names keep the method name's case; `READ_users_BY_id` → `GET /users/{id}`)
 
 Versioning adds a `_VERSION_X` suffix: `READ_VERSION_1` → version 1 of that route.
 
@@ -163,10 +163,10 @@ Controllers embed `common.WS` (alongside or instead of `common.HTTP`). Handler n
 Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `core/`, `common/`, `routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires during `app.Create()`'s module/controller wiring, never on the request path, so an uncaught panic there is fail-fast by design.
 
 Message format is `"<category>: <detail>"`:
-- `"route conflict: ..."` (`common/rest.go`)
+- `"route conflict: ..."` (`common/http.go`: the same method, version and route shape; routes that differ only in parameter names conflict)
 - `"event conflict: ..."` (`common/ws.go`)
 - `"invalid handler: ..."` (`routing/router.go`)
-- `"invalid route: ..."` (`routing/router.go`: a partial parameter segment such as `/files/{name}.json`, or more than 64 segments)
+- `"invalid route: ..."` (`routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments)
 - `"invalid module: ..."` (`core/module_builder.go`)
 - `"dependency injection: ..."` (`core/fn.go`)
 
