@@ -262,3 +262,41 @@ func TestTracer_ConcurrentListenStopEmit_NoRace(t *testing.T) {
 		t.Error(test.DiffMessage(false, true, "T3: the permanent listener is still registered"))
 	}
 }
+
+func TestEvent_SpanFieldsReachListeners(t *testing.T) {
+	var tr Tracer
+	var got Event
+	tr.Listen(func(e Event) { got = e })
+	want := Event{
+		ID:        "0f1e2d3c4b5a6978",
+		TraceID:   "4bf92f3577b34da6a3ce929d0e0e4736",
+		SpanID:    "00f067aa0ba902b7",
+		ParentID:  "0f1e2d3c4b5a6978",
+		Stage:     StageHandler,
+		Name:      "n",
+		Transport: TransportHTTP,
+		Code:      200,
+	}
+	tr.Emit(want)
+	if got != want {
+		t.Error(test.DiffMessage(got, want, "E1-E3: TraceID, SpanID and ParentID are delivered unchanged"))
+	}
+}
+
+func TestEvent_SpanFieldsAreStrings(t *testing.T) {
+	e := Event{}
+	got := []string{e.TraceID, e.SpanID, e.ParentID}
+	if got[0] != "" || got[1] != "" || got[2] != "" {
+		t.Error(test.DiffMessage(got, []string{"", "", ""}, "Q3: the span fields are plain strings, empty by default"))
+	}
+}
+
+func TestTracer_EmitWithSpanFieldsAllocatesNothing(t *testing.T) {
+	var tr Tracer
+	var sink int
+	tr.Listen(func(e Event) { sink += len(e.SpanID) })
+	e := Event{ID: "id", TraceID: "t", SpanID: "s", ParentID: "p", Stage: StageHandler}
+	if n := testing.AllocsPerRun(100, func() { tr.Emit(e) }); n != 0 {
+		t.Error(test.DiffMessage(n, 0.0, "E5: events with span fields still cost no allocation to emit"))
+	}
+}

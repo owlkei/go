@@ -111,7 +111,9 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext) {
 }
 ```
 
-**Rule**: Never hold onto context reference after handler returns
+**Rule**: Never hold onto context reference after handler returns. To keep the request's IDs for
+later work (a goroutine, a service call), keep `httpCtx.Context()` instead: it is not pooled, and its
+trace scope (`internal/tracecontext`) stays readable after the request ended.
 
 ---
 

@@ -131,12 +131,15 @@ func BenchmarkHTTPContext_Redirect(b *testing.B) {
 	}
 }
 
-func BenchmarkHTTPContext_SetID(b *testing.B) {
-	var c contextID
+func BenchmarkHTTPContext_Init_Traceparent(b *testing.B) {
+	c := newTestHTTPContext()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	w := httptest.NewRecorder()
 	b.ReportAllocs()
 	for b.Loop() {
-		c.id = ""
-		c.SetID()
+		c.Init(w, r)
+		c.Reset()
 	}
 }
 

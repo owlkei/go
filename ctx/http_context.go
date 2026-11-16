@@ -10,6 +10,7 @@ import (
 
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
 
 type JSONAppender interface {
@@ -20,7 +21,7 @@ type HTTPContext struct {
 	*http.Request
 	http.ResponseWriter
 
-	contextID
+	scope *tracecontext.Scope
 
 	body         Body
 	form         Form
@@ -52,8 +53,16 @@ func NewHTTPContext() *HTTPContext {
 func (c *HTTPContext) Init(w http.ResponseWriter, r *http.Request) {
 	c.Timestamp = time.Now()
 	c.ResponseWriter = w
-	c.Request = r
-	c.SetID()
+	scopeContext, scope := tracecontext.NewRequest(r.Context(), r.Header, c.Timestamp)
+	c.scope = scope
+	c.Request = r.WithContext(scopeContext)
+}
+
+func (c *HTTPContext) GetID() string {
+	if c.scope == nil {
+		return ""
+	}
+	return c.scope.Request
 }
 
 func (c *HTTPContext) Reset() {

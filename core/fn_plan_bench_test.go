@@ -45,7 +45,7 @@ func (benchPlanCtl) PayloadPipe(benchWSDTO) {}
 
 func benchPlanContext() *ctx.HTTPContext {
 	c := benchHTTPContext("/?name=ann&page=2")
-	c.SetID()
+	c.Init(c.ResponseWriter, c.Request)
 	c.ParamKeys = map[string][]int{"id": {0}}
 	c.ParamValues = []string{"7"}
 	return c

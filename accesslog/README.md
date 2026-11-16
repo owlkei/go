@@ -49,7 +49,10 @@ One `Logger.Info` call per request, made on the access log's worker goroutine. T
 
 | Key | Value |
 |---|---|
-| `id` | the request ID (the `X-Request-Id` header) |
+| `trace_id` | the trace ID (32 hex characters, the `Traceparent` header's trace) |
+| `request` | HTTP only: the request ID (the `X-Request-Id` header) |
+| `connection` | WebSocket only: the connection ID (the handshake's request ID); left out when the message has none |
+| `message` | WebSocket only: the message ID |
 | `transport` | `HTTP` or `WS` |
 | `code` | the status written (an `int`; `0` for WebSocket messages) |
 | `operation` | the HTTP method, or the WebSocket message type |
@@ -60,14 +63,15 @@ One `Logger.Info` call per request, made on the access log's worker goroutine. T
 A JSON line:
 
 ```json
-{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","id":"a0eef3e5b7154c2e","transport":"HTTP","code":200,"operation":"GET","middleware":[{"CORS":"120µs (4%)"}],"handler":[{"READ_users":"2ms (68%)"}],"total":"2.90ms"}
+{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","trace_id":"019a8b3c4d5e7f3a9c1e2b4d6f8a0c2e","request":"a0eef3e5b7154c2e","transport":"HTTP","code":200,"operation":"GET","middleware":[{"CORS":"120µs (4%)"}],"handler":[{"READ_users":"2ms (68%)"}],"total":"2.90ms"}
 ```
 
 In the pretty format each entry is printed in a color picked by its duration: gray below 10 ms, then green, blue (50 ms), yellow (100 ms), orange (300 ms) and red from 1 s. JSON and Text carry only the text.
 
 - Durations have two decimals of their unit (`1.23µs`, `1.23ms`, `1.23s`) and are written as they are below 1 µs (`500ns`).
 - A percentage is the share of the sum of the stage durations, not of `total`. The largest remainders receive the extra points (ties go to the earlier entry), so the shares sum to exactly 100; they are all 0 when the sum is 0.
-- A request without stage events (a 404) logs the four fixed pairs and `total`.
+- The ID keys are the same as the scoped logger's (`trace_id`, `request`, `connection`, `message`), so access lines join user logs on them. An empty ID is left out. Stage events are joined to their line by the event's `ID`; span IDs play no part.
+- A request without stage events (a 404) logs the fixed pairs and `total`.
 - Events of different requests never mix, whatever the interleaving.
 
 ## `AccessLogConfig` Parameters
@@ -172,11 +176,11 @@ go test -run '^$' -bench . -benchmem ./accesslog/
 goos: darwin
 goarch: amd64
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkAccessLog_Request_1Stage-12              	 2912655	       388.2 ns/op	     597 B/op	       4 allocs/op
-BenchmarkAccessLog_Request_6Stages-12             	 1956883	       645.6 ns/op	    1101 B/op	       8 allocs/op
-BenchmarkAccessLog_Request_6Stages_Parallel-12    	 1639288	       842.4 ns/op	    1474 B/op	       4 allocs/op
-BenchmarkAccessLog_WorkerLine-12                  	   87806	     15001 ns/op	    3992 B/op	      39 allocs/op
-BenchmarkFormatDuration-12                        	27459612	        39.51 ns/op	       8 B/op	       1 allocs/op
-BenchmarkColorForDuration-12                      	385296932	         2.935 ns/op	       0 B/op	       0 allocs/op
-BenchmarkShortName-12                             	159170472	         7.722 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAccessLog_Request_1Stage-12              	 3834548	       315.9 ns/op	     629 B/op	       4 allocs/op
+BenchmarkAccessLog_Request_6Stages-12             	 1952538	       615.1 ns/op	    1178 B/op	       9 allocs/op
+BenchmarkAccessLog_Request_6Stages_Parallel-12    	 1681592	       740.6 ns/op	    1713 B/op	       4 allocs/op
+BenchmarkAccessLog_WorkerLine-12                  	   88210	     13186 ns/op	    4072 B/op	      40 allocs/op
+BenchmarkFormatDuration-12                        	33985016	        35.56 ns/op	       8 B/op	       1 allocs/op
+BenchmarkColorForDuration-12                      	498652584	         2.459 ns/op	       0 B/op	       0 allocs/op
+BenchmarkShortName-12                             	175961790	         6.805 ns/op	       0 B/op	       0 allocs/op
 ```

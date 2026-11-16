@@ -190,8 +190,8 @@ func TestWSHandleRequest_SendsConnectedPayloadAndRegisters(t *testing.T) {
 	if got.Type != TypeConnected {
 		t.Error(test.DiffMessage(got.Type, TypeConnected, "handleRequest should send a connected payload on handshake"))
 	}
-	if got.ID == "" {
-		t.Error(test.DiffMessage(got.ID, "<non-empty connection id>", "connected payload should carry a generated connection id"))
+	if len(got.ID) != 16 || !isLowerHex(got.ID) {
+		t.Error(test.DiffMessage(got.ID, "<16 lowercase hexadecimal characters>", "W2: a connection without a scoped request gets a span ID, not a UUID"))
 	}
 
 	if _, ok := ws.connmgr.Get(got.ID); !ok {

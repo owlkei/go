@@ -1,6 +1,8 @@
 package ctx
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -8,9 +10,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
 
 func newTestHTTPContext() *HTTPContext {
@@ -24,36 +28,211 @@ func TestNewHTTPContext_DefaultCode(t *testing.T) {
 	}
 }
 
-func TestSetID_IgnoresRequestIDHeader(t *testing.T) {
+func TestHTTPContext_Init_GetIDIsRequest(t *testing.T) {
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	s := tracecontext.ScopeOf(c.Context())
+	if s == nil {
+		t.Fatal(test.DiffMessage(s, "<a scope>", "S1: Init puts a scope in the request context"))
+	}
+	if c.GetID() != s.Request {
+		t.Error(test.DiffMessage(c.GetID(), s.Request, "S1: GetID is Scope.Request"))
+	}
+	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
+		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "S2: the ID is a span ID"))
+	}
+}
+
+func TestHTTPContext_Init_IgnoresRequestIDHeader(t *testing.T) {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set(RequestID, "test-request-id")
 	c.Init(httptest.NewRecorder(), r)
-	if c.id == "test-request-id" {
-		t.Error(test.DiffMessage(c.id, "<generated id, not the header value>", "SetID must always generate its own ID and ignore the X-Request-Id header"))
+	if c.GetID() == "test-request-id" {
+		t.Error(test.DiffMessage(c.GetID(), "<generated id, not the header value>", "S2: no header can set the request ID"))
 	}
-	if c.id == "" {
-		t.Error(test.DiffMessage(c.id, "<non-empty id>", "SetID must still generate an ID when a header is present"))
+	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
+		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "S2: Init still generates an ID when a header is present"))
 	}
-}
-
-func TestSetID_GeneratedWhenNoHeader(t *testing.T) {
-	c := newTestHTTPContext()
-	r := httptest.NewRequest("GET", "/", nil)
-	c.Init(httptest.NewRecorder(), r)
-	if len(c.id) != 16 || !isLowerHex(c.id) {
-		t.Error(test.DiffMessage(c.id, "<16 lowercase hexadecimal characters>", "B24: Init should generate the id eagerly"))
+	if s := tracecontext.ScopeOf(c.Context()); s.Upstream != "test-request-id" {
+		t.Error(test.DiffMessage(s.Upstream, "test-request-id", "S4: a valid X-Request-Id is the upstream"))
 	}
 }
 
-func TestSetID_Idempotent(t *testing.T) {
+func TestHTTPContext_Init_IgnoresTraceparentAsRequestID(t *testing.T) {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
 	c.Init(httptest.NewRecorder(), r)
-	first := c.id
-	c.SetID()
-	if c.id != first {
-		t.Error(test.DiffMessage(c.id, first, "SetID idempotent"))
+	s := tracecontext.ScopeOf(c.Context())
+	if c.GetID() == "00f067aa0ba902b7" {
+		t.Error(test.DiffMessage(c.GetID(), "<own ID>", "S2: the incoming parent ID is not the request ID"))
+	}
+	if s.TraceID != "4bf92f3577b34da6a3ce929d0e0e4736" || s.Parent != "00f067aa0ba902b7" {
+		t.Error(test.DiffMessage([]string{s.TraceID, s.Parent}, []string{"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7"}, "S3: Init continues the incoming trace"))
+	}
+}
+
+func TestHTTPContext_Init_TraceIDUsesTimestamp(t *testing.T) {
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	s := tracecontext.ScopeOf(c.Context())
+	if want := fmt.Sprintf("%012x", c.Timestamp.UnixMilli()); s.TraceID[:12] != want {
+		t.Error(test.DiffMessage(s.TraceID[:12], want, "S1: the scope is built with c.Timestamp"))
+	}
+}
+
+func TestHTTPContext_Init_RequestCarriesScope(t *testing.T) {
+	c := newTestHTTPContext()
+	r := httptest.NewRequest("GET", "/path?q=1", nil)
+	c.Init(httptest.NewRecorder(), r)
+
+	s := tracecontext.ScopeOf(c.Context())
+	if s == nil {
+		t.Fatal(test.DiffMessage(s, "<a scope>", "S1: c.Context() carries the scope"))
+	}
+	if tracecontext.ScopeOf(c.Request.Context()) != s {
+		t.Error(test.DiffMessage(tracecontext.ScopeOf(c.Request.Context()), s, "S1: c.Request.Context() carries the same scope"))
+	}
+	if c.Request == r {
+		t.Error(test.DiffMessage(c.Request, "<a copy of the request>", "S1: Init replaces the request with r.WithContext(scope)"))
+	}
+	if c.Request.URL != r.URL || c.Request.Method != r.Method {
+		t.Error(test.DiffMessage(c.Request.URL, r.URL, "S1: the copy is the same request"))
+	}
+	if tracecontext.ScopeOf(r.Context()) != nil {
+		t.Error(test.DiffMessage(tracecontext.ScopeOf(r.Context()), nil, "S1: the request passed in is not modified"))
+	}
+}
+
+func TestHTTPContext_Init_ContextKeepsRequestContextValues(t *testing.T) {
+	type key struct{}
+	parent, cancel := context.WithCancel(context.WithValue(context.Background(), key{}, "v"))
+	r := httptest.NewRequest("GET", "/", nil).WithContext(parent)
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), r)
+	if c.Context().Value(key{}) != "v" {
+		t.Error(test.DiffMessage(c.Context().Value(key{}), "v", "S1: the scope context wraps the request's context"))
+	}
+	cancel()
+	select {
+	case <-c.Context().Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("S9: cancelling the server's request context cancels c.Context()")
+	}
+}
+
+func TestHTTPContext_Init_NestedScopeUsesHeaders(t *testing.T) {
+	outer, outerScope := tracecontext.NewRequest(context.Background(), http.Header{}, time.Now())
+	r := httptest.NewRequest("GET", "/", nil).WithContext(outer)
+	r.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), r)
+	s := tracecontext.ScopeOf(c.Context())
+	if s == outerScope || s.TraceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Error(test.DiffMessage([]any{s == outerScope, s.TraceID}, []any{false, "4bf92f3577b34da6a3ce929d0e0e4736"}, "S11: Init builds a new scope from the headers whatever the context carries"))
+	}
+}
+
+func TestHTTPContext_Init_GetIDEmptyBeforeInitAndAfterReset(t *testing.T) {
+	c := newTestHTTPContext()
+	if c.GetID() != "" {
+		t.Error(test.DiffMessage(c.GetID(), "", "S10: GetID is empty before Init"))
+	}
+	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	c.Reset()
+	if c.GetID() != "" {
+		t.Error(test.DiffMessage(c.GetID(), "", "S10: GetID is empty after Reset"))
+	}
+}
+
+func TestHTTPContext_ScopeSurvivesReuse(t *testing.T) {
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/first", nil))
+	kept := c.Context()
+	firstID := c.GetID()
+	firstTrace := tracecontext.ScopeOf(kept).TraceID
+	firstTraceparent := tracecontext.ScopeOf(kept).Traceparent()
+
+	c.Reset()
+	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/second", nil))
+
+	s := tracecontext.ScopeOf(kept)
+	if s == nil {
+		t.Fatal(test.DiffMessage(s, "<a scope>", "S8: the kept context still carries its scope after Reset and reuse"))
+	}
+	if s.Request != firstID || s.TraceID != firstTrace || s.Traceparent() != firstTraceparent {
+		t.Error(test.DiffMessage([]string{s.Request, s.TraceID}, []string{firstID, firstTrace}, "S8: the kept context reads the first request's IDs"))
+	}
+	if c.GetID() == firstID || tracecontext.ScopeOf(c.Context()) == s {
+		t.Error(test.DiffMessage(c.GetID(), "<the second request's own ID>", "S8: the reused context holds a new scope"))
+	}
+}
+
+func TestHTTPContext_ScopeSurvivesCancel(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	r := httptest.NewRequest("GET", "/", nil).WithContext(parent)
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), r)
+	kept := c.Context()
+	id := c.GetID()
+	cancel()
+	c.Reset()
+	if s := tracecontext.ScopeOf(kept); s == nil || s.Request != id {
+		t.Error(test.DiffMessage(s, id, "S8: a cancelled context still reads its IDs"))
+	}
+}
+
+func TestHTTPContext_Init_ConcurrentContextsIsolated(t *testing.T) {
+	const goroutines = 16
+	const rounds = 200
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	seen := map[string]struct{}{}
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c := newTestHTTPContext()
+			var kept []context.Context
+			var ids []string
+			for i := 0; i < rounds; i++ {
+				c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+				kept = append(kept, c.Context())
+				ids = append(ids, c.GetID())
+				c.Reset()
+			}
+			for i, k := range kept {
+				if s := tracecontext.ScopeOf(k); s == nil || s.Request != ids[i] {
+					t.Error(test.DiffMessage(s, ids[i], "S8: every kept context reads its own request ID"))
+					return
+				}
+			}
+			mu.Lock()
+			for _, id := range ids {
+				seen[id] = struct{}{}
+			}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	if len(seen) != goroutines*rounds {
+		t.Error(test.DiffMessage(len(seen), goroutines*rounds, "S2: request IDs are unique across contexts"))
+	}
+}
+
+func TestHTTPContext_SetIDRemoved(t *testing.T) {
+	if _, ok := reflect.TypeFor[*HTTPContext]().MethodByName("SetID"); ok {
+		t.Error(test.DiffMessage("SetID", "<no such method>", "SetID is removed: the ID comes from the scope built in Init"))
+	}
+}
+
+func TestHTTPContext_ContextMethodFromRequest(t *testing.T) {
+	c := newTestHTTPContext()
+	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	var asContext Context = c
+	if asContext.Context() != c.Request.Context() {
+		t.Error(test.DiffMessage(asContext.Context(), c.Request.Context(), "Context() on the interface is the request's context"))
 	}
 }
 
@@ -64,8 +243,8 @@ func TestGetID(t *testing.T) {
 	if c.GetID() == "" {
 		t.Error(test.DiffMessage(c.GetID(), "<non-empty id>", "GetID"))
 	}
-	if c.GetID() != c.id {
-		t.Error(test.DiffMessage(c.GetID(), c.id, "GetID must return the same ID stored on the context"))
+	if c.GetID() != tracecontext.ScopeOf(c.Context()).Request {
+		t.Error(test.DiffMessage(c.GetID(), tracecontext.ScopeOf(c.Context()).Request, "GetID must return the request ID of the scope"))
 	}
 }
 
@@ -115,8 +294,8 @@ func TestHTTPContext_Init(t *testing.T) {
 	if c.ResponseWriter != http.ResponseWriter(w) {
 		t.Error(test.DiffMessage(c.ResponseWriter, w, "B26: Init should set ResponseWriter"))
 	}
-	if c.Request != r {
-		t.Error(test.DiffMessage(c.Request, r, "B26: Init should set Request"))
+	if c.Request == nil || c.Request.URL != r.URL || c.Request.Method != r.Method {
+		t.Error(test.DiffMessage(c.Request, r, "B26: Init should set Request to a copy of the request"))
 	}
 	if len(c.GetID()) != 16 {
 		t.Error(test.DiffMessage(len(c.GetID()), 16, "B26: Init should set the id"))
@@ -129,7 +308,7 @@ func TestHTTPContext_Init(t *testing.T) {
 	for i := 0; i < v.NumField(); i++ {
 		name := v.Type().Field(i).Name
 		switch name {
-		case "Request", "ResponseWriter", "contextID", "Timestamp", "Code":
+		case "Request", "ResponseWriter", "scope", "Timestamp", "Code":
 			continue
 		}
 		if !v.Field(i).IsZero() {
@@ -166,8 +345,8 @@ func TestReset_ClearsAllFields(t *testing.T) {
 	if c.Code != http.StatusOK {
 		t.Error(test.DiffMessage(c.Code, http.StatusOK, "Reset Code"))
 	}
-	if c.id != "" {
-		t.Error(test.DiffMessage(c.id, "", "Reset ID"))
+	if c.GetID() != "" {
+		t.Error(test.DiffMessage(c.GetID(), "", "Reset ID"))
 	}
 	if c.Request != nil {
 		t.Error(test.DiffMessage(c.Request, nil, "Reset Request"))

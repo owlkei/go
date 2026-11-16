@@ -1114,37 +1114,6 @@ func TestGetLocalIP(t *testing.T) {
 	}
 }
 
-func TestTraceHTTPCatch_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := &trace.Tracer{}
-	c := newHTTPContext()
-	ex := exception.BadRequestException("bad")
-	var called bool
-	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) { called = true })
-	fn(c, &ex)
-	if !called {
-		t.Error(test.DiffMessage(false, true, "wrapped catch fn should still run when no listener is attached"))
-	}
-}
-
-func TestTraceHTTPCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := &trace.Tracer{}
-	c := newHTTPContext()
-	ex := exception.BadRequestException("bad")
-	var got *trace.Event
-	ev.Listen(func(e trace.Event) {
-		te := e
-		got = &te
-	})
-	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})
-	fn(c, &ex)
-	if got == nil {
-		t.Fatal("expected a trace event to be emitted when a listener is attached")
-	}
-	if got.Stage != trace.StageExceptionFilter || got.Name != "Test.Filter" {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Name}, []any{trace.StageExceptionFilter, "Test.Filter"}, "traceHTTPCatch emitted event fields"))
-	}
-}
-
 func TestTraceWSHandler_NoListener_StillCallsWrapped(t *testing.T) {
 	ev := &trace.Tracer{}
 	c := ctx.NewWSContext()

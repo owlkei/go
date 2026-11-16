@@ -16,7 +16,7 @@
   └─ Can set initial context
   ↓
 [ACCEPTED] — websocket.Conn established
-  ├─ connID generated (UUID)
+  ├─ connID = handshake scope's Request (16 hex)
   └─ Registered in WSConnMgr
   ↓
 [RUNNING] — Messages flow
@@ -55,7 +55,7 @@ app.ws.upgrade(w, r, websocket.Server{
 **Phase 3: Connection Acceptance**
 ```
 websocket.Conn accepted
-connID := generateUUID()
+connID := connectionID(wsConn) // ScopeOf(wsConn.Request().Context()).Request, else NewSpanID()
 WSConnMgr.Register(connID, conn)
     ├─ sendChan := make(chan WSPayload, 32)
     ├─ writeLoop() spawned
@@ -69,7 +69,11 @@ readLoop() — Per-connection goroutine
     ├─ Receives JSON message
     ├─ Parses message
     ├─ Matches to handler
-    ├─ Invokes handler (same pipeline as HTTP)
+    ├─ One WSContext per topic of a subscribe / publish frame: Init builds a message scope
+    │  (tracecontext.NewMessage: connection's trace ID and flags, Connection = Parent = connID,
+    │  a fresh Message ID = c.GetID()); ping, pong, unsubscribe and unknown types / topics get none
+    ├─ Invokes handler (same pipeline as HTTP); c.Context() is the message context, done when the
+    │  connection's handler returns, kept IDs readable after the close
     └─ Handler can memorybroker.Publish()
 
 writeLoop() — Per-connection goroutine

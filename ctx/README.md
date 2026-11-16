@@ -10,7 +10,7 @@
   - [`HTTPContext`](#httpcontext)
     - [Fields](#fields)
     - [NewHTTPContext, Init and Reset](#newhttpcontext-init-and-reset)
-    - [SetID and GetID](#setid-and-getid)
+    - [GetID and Context](#getid-and-context)
     - [Status](#status)
     - [Text](#text)
     - [JSON](#json)
@@ -99,6 +99,7 @@ func main() {
 
 - A context belongs to one request and one goroutine. `core` takes it from a pool, calls `Init`, runs the pipeline, calls `Reset` and puts it back. Don't keep the context, or anything that aliases it (`ParamValues`, `Aggregations()`), after the request ends.
 - `GetID` is a pure read after `Init`: goroutines started by a handler may log it.
+- `c.Context()` outlives the request: a goroutine that keeps it (or a context derived from it) still reads the request's IDs after the handler returned, after the pooled context was reused and after the request was cancelled. Pass `c.Context()` to services and goroutines, never `c` itself.
 - A `*Binder` is immutable and safe for concurrent use. `BinderOf` may be called from any goroutine.
 
 ## Security
@@ -107,7 +108,7 @@ func main() {
 - The JSONP callback is reduced to `[A-Za-z0-9_$.[]]`, cut to 128 bytes and served with `X-Content-Type-Options: nosniff`.
 - `Redirect` passes the target to `http.Redirect`, which escapes it. It doesn't check where the target points: validate a user-supplied URL (such as `//evil.example`) in the handler.
 - `JSON` and `Text` with a format string insert `args` unescaped: pass trusted values only.
-- The request ID is a correlation ID, not a secret: it is not cryptographically random.
+- The request ID is a correlation ID, not a secret: never authorize by it. Its bits come from `crypto/rand`, so a client can't guess or choose it; an incoming `X-Request-Id` or `traceparent` never becomes the request ID.
 
 ## `HTTPContext`
 
@@ -116,7 +117,7 @@ func main() {
 #### Request
 Type: `*http.Request` (embedded)
 
-The request. Set by `Init`.
+The request. `Init` sets it to a copy of the request it receives, whose context carries the request's trace scope; the request passed in is not modified.
 
 #### ResponseWriter
 Type: `http.ResponseWriter` (embedded)
@@ -160,7 +161,7 @@ The time `Init` ran.
 
 `NewHTTPContext() *HTTPContext` returns a context with `Code` set to `200`.
 
-`Init(w http.ResponseWriter, r *http.Request)` sets `Timestamp`, `ResponseWriter`, `Request` and the request ID, and nothing else.
+`Init(w http.ResponseWriter, r *http.Request)` sets `Timestamp`, `ResponseWriter`, the request's trace scope and `Request` (`r.WithContext` of a context that carries the scope), and nothing else. The scope holds the request ID, the trace ID (continued from a valid incoming `traceparent`, or new and made from `Timestamp`) and the caller's ID (`upstream`).
 
 `Reset()` drops every reference the context holds (request, writer, parsed input, parameters, aggregations, `Next`) and sets `Code` back to `200`. It keeps the capacity of `ParamValues` and of the aggregation list, with every element cleared, so the next request appends without allocating; a slice whose capacity is over 64 is dropped.
 
@@ -176,16 +177,24 @@ defer c.Reset()
 - A capacity of up to 64 is kept; over 64 the slice is dropped (`nil`).
 - `AddAggregation` on a warm context allocates nothing.
 - A context reused after `Reset` has no trace of the previous request: ID, code, body, form, files, query, header, parameters, aggregations and `Next`.
+- `Init` leaves `r` unchanged and keeps the values, deadline and cancellation of `r.Context()` in `c.Context()`.
 
-### SetID and GetID
+### GetID and Context
 
-`SetID()` generates the request ID; `GetID() string` returns it. `Init` calls `SetID`.
+`GetID() string` returns the request ID, which `core` also sends as the `X-Request-Id` response header. `Context() context.Context` (promoted from `Request`) returns the request's context, which carries the trace scope that loggers and `modules/httpclient` read.
+
+```go
+func (ctl UsersController) READ(c *ctx.HTTPContext) string {
+	go audit(c.Context(), c.GetID())
+	return "ok"
+}
+```
 
 #### Rules
-- The ID is 16 lowercase hexadecimal characters and never empty.
-- `SetID` keeps the ID it already has until `Reset`.
-- The `X-Request-Id` request header is ignored.
-- 10,000 consecutive IDs hold at least 9,990 distinct values; IDs generated concurrently differ.
+- The ID is 16 lowercase hexadecimal characters; it is `""` before `Init` and after `Reset`.
+- Neither the `X-Request-Id` nor the `traceparent` request header sets it; a valid `traceparent` only continues the trace ID, and a valid `X-Request-Id` becomes the scope's upstream.
+- `c.Context()` and `c.Request.Context()` carry the same scope; a context kept after `Reset` and reuse still reads the first request's IDs.
+- IDs of contexts used concurrently are unique and never mix.
 
 ### Status
 
@@ -324,12 +333,12 @@ The context of a WebSocket message. It embeds `*websocket.Conn` and has the fiel
 | Method | Description |
 |--------|-------------|
 | `NewWSContext() *WSContext` | Returns an empty context. |
-| `Init(conn *websocket.Conn)` | Sets `Timestamp`, the connection and a 16-character request ID. |
+| `Init(conn *websocket.Conn)` | Sets `Timestamp`, the connection and the message's trace scope: a 16-character message ID, the connection's trace ID and the connection ID (the handshake's request ID) as its parent. Without a connection, a request or a scope on it (`Init(nil)`), the message starts its own trace and has no connection. |
 | `Reset()` | Zeroes every field except `Timestamp`: ID, connection, payload, context, send function, aggregations and `Next`. |
-| `SetID()` / `GetID() string` | Same rules as `HTTPContext`. |
+| `GetID() string` | The message ID; `""` before `Init` and after `Reset`. Every message has its own, and it never changes after `Init`. |
 | `WSPayload() WSPayload` / `SetWSPayload(p WSPayload)` | The message payload; `nil` before `SetWSPayload`. |
 | `Send(data any)` / `SetSend(fn func(data any))` | Sends through the function set by `SetSend`; does nothing without one. |
-| `Context() context.Context` / `SetContext(ctx context.Context)` | `context.Background()` until `SetContext` and after `Reset`. |
+| `Context() context.Context` / `SetContext(ctx context.Context)` | After `Init`, the message context: it carries the message scope and is done when the connection's handler returns; it keeps its IDs after `Reset` and after the connection closed. `context.Background()` before `Init` (unless `SetContext` set one) and after `Reset`. `SetContext` keeps the message scope: a context derived from the message context is stored as it is, any other is wrapped so the message scope stays the nearest, and `nil` is ignored. |
 | `AddAggregation(a *aggregation.Aggregation)` / `Aggregations() []*aggregation.Aggregation` | Same rules as `HTTPContext`. |
 
 ## Request data types
@@ -521,7 +530,7 @@ An uploaded file bound by `File.Bind`.
 
 | Name | Definition |
 |------|------------|
-| `Context` | `interface { Reset(); SetID(); GetID() string }`, implemented by both contexts. |
+| `Context` | `interface { Reset(); GetID() string; Context() context.Context }`, implemented by both contexts. |
 | `JSONAppender` | `interface { AppendJSON(dst []byte) []byte }`: a value that writes its own JSON. |
 | `Map` | `map[string]any`. |
 | `ErrFunc` | `func(error)`. |
@@ -529,7 +538,7 @@ An uploaded file bound by `File.Bind`.
 | `WSHandler` | `func(*WSContext)`. |
 | `Next` | `func()`. |
 | `Redirect` | `func(string)`. |
-| `RequestID` | `"X-Request-Id"`, the response header name `core` writes the ID under. |
+| `RequestID` | `"X-Request-Id"`, the response header name `core` writes the ID under (next to `Traceparent`). |
 | `TagBind` | `"bind"`. |
 | `ErrBindTarget` | `errors.New("ctx: bind target must be a struct")`. |
 
@@ -542,6 +551,7 @@ An uploaded file bound by `File.Bind`.
 - **Response headers** are assigned to the header map directly (`h["Content-Type"] = []string{…}`), without `Header.Set`'s canonicalization.
 - **JSON.** A `Map` or `map[string]any` is encoded through a pointer, which `encoding/json` serves a few percent faster; every other value is passed as is. A `JSONAppender` skips `encoding/json`.
 - **Kept capacity.** `Reset` keeps the backing arrays of `ParamValues` and the aggregation list (up to 64 elements, cleared), so a warm context appends without allocating: `AddAggregation` plus `Reset` costs about 17 ns and 0 allocations.
+- **Trace scope.** `Init` builds the request scope once (the 55-byte `traceparent` string and one context value that holds the scope, together 240 B) and copies the request with `r.WithContext` (about 320 B), so middleware that only sees `*http.Request` reads the same IDs: about 220 ns and 3 allocations per request. A WebSocket message costs one scope (2 allocations, 240 B). Nothing is pooled: the scope must outlive the request.
 - **Numbers** go through `num.F64ToAnyNumOK`, whose boxed result allocates for values that are not small integers.
 
 ## Benchmarks
@@ -574,8 +584,9 @@ BenchmarkBodyHas_Shallow-12               	77327365	        15.38 ns/op	       0
 BenchmarkBodySet_Deep-12                  	12601377	       103.1 ns/op	       0 B/op	       0 allocs/op
 BenchmarkBodyDel_Missing-12               	20962118	        58.08 ns/op	       0 B/op	       0 allocs/op
 BenchmarkHTTPContext_BodyJSON-12          	  279868	      4028 ns/op	    1657 B/op	      33 allocs/op
-BenchmarkHTTPContext_Init-12              	10443634	       118.2 ns/op	      16 B/op	       1 allocs/op
-BenchmarkHTTPContext_Reset-12             	 7728946	       138.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkHTTPContext_Init-12                           	 3497109	       339.6 ns/op	     560 B/op	       3 allocs/op
+BenchmarkHTTPContext_Reset-12                          	 3568476	       336.8 ns/op	     560 B/op	       3 allocs/op
+BenchmarkHTTPContext_Init_Traceparent-12               	 3423823	       350.9 ns/op	     560 B/op	       3 allocs/op
 BenchmarkReset_WithInterceptor-12         	68541798	        17.48 ns/op	       0 B/op	       0 allocs/op
 BenchmarkHTTPContext_Text-12              	21880407	        54.83 ns/op	      32 B/op	       2 allocs/op
 BenchmarkHTTPContext_TextWithArgs-12      	15389197	        77.88 ns/op	      16 B/op	       1 allocs/op
@@ -586,7 +597,6 @@ BenchmarkHTTPContext_JSON_Appender-12     	15344856	        77.92 ns/op	      80
 BenchmarkHTTPContext_JSON_RawString-12    	 3032109	       394.7 ns/op	     144 B/op	       6 allocs/op
 BenchmarkHTTPContext_JSONP-12             	 1225665	       979.0 ns/op	     224 B/op	      12 allocs/op
 BenchmarkHTTPContext_Redirect-12          	 4669641	       259.6 ns/op	     160 B/op	       2 allocs/op
-BenchmarkHTTPContext_SetID-12             	31716030	        37.67 ns/op	      16 B/op	       1 allocs/op
 BenchmarkHTTPContext_FormURLEncoded-12    	  389557	      2869 ns/op	    7043 B/op	      27 allocs/op
 BenchmarkForm_Bind-12                     	 6289000	       190.0 ns/op	     176 B/op	       4 allocs/op
 BenchmarkForm_BindValue-12                	11435869	       104.8 ns/op	      32 B/op	       2 allocs/op
@@ -599,4 +609,8 @@ BenchmarkParam_BindValue-12               	10277520	       116.2 ns/op	      32 
 BenchmarkHTTPContext_Query-12             	 2726178	       439.5 ns/op	     448 B/op	       5 allocs/op
 BenchmarkQuery_Bind-12                    	 3935589	       311.3 ns/op	     312 B/op	       5 allocs/op
 BenchmarkQuery_BindValue-12               	 7465959	       161.6 ns/op	      48 B/op	       2 allocs/op
+BenchmarkWSContext_Init_NoConnection-12                	 5032401	       238.4 ns/op	     240 B/op	       2 allocs/op
+BenchmarkWSContext_Init_ConnectionWithoutRequest-12    	 5011898	       238.6 ns/op	     240 B/op	       2 allocs/op
 ```
+
+The `HTTPContext_Init`, `HTTPContext_Reset` and `WSContext_Init` lines were captured again with the trace scope (design 0011), the same day.

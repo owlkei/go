@@ -1,16 +1,13 @@
 package crypto
 
 import (
-	cryptoRand "crypto/rand"
+	"crypto/rand"
 	"encoding/hex"
-	"math/rand/v2"
 )
-
-const hexDigits = "0123456789abcdef"
 
 func UUID() (string, error) {
 	var uuid [16]byte
-	if _, err := cryptoRand.Read(uuid[:]); err != nil {
+	if _, err := rand.Read(uuid[:]); err != nil {
 		return "", err
 	}
 
@@ -28,23 +25,4 @@ func UUID() (string, error) {
 	buf[23] = '-'
 	hex.Encode(buf[24:36], uuid[10:16])
 	return string(buf[:]), nil
-}
-
-func RandomHex(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	return string(AppendRandomHex(make([]byte, 0, n), n))
-}
-
-func AppendRandomHex(dst []byte, n int) []byte {
-	for n > 0 {
-		r := rand.Uint64()
-		for k := min(n, 16); k > 0; k-- {
-			dst = append(dst, hexDigits[r&0xf])
-			r >>= 4
-		}
-		n -= min(n, 16)
-	}
-	return dst
 }

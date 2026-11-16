@@ -20,6 +20,9 @@ const (
 
 type Event struct {
 	ID        string
+	TraceID   string
+	SpanID    string
+	ParentID  string
 	Stage     string
 	Name      string
 	Transport string

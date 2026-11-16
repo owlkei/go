@@ -254,13 +254,19 @@ func lineArgs(job flushJob) (string, []any) {
 		}
 	}
 
-	size := 10 + 2*len(order)
+	size := 14 + 2*len(order)
 	if stagesDropped > 0 {
 		size += 2
 	}
 	args := make([]any, 0, size)
+	args = appendID(args, "trace_id", e.TraceID)
+	if e.Transport == trace.TransportWS {
+		args = appendID(args, "connection", e.ParentID)
+		args = appendID(args, "message", e.ID)
+	} else {
+		args = appendID(args, "request", e.ID)
+	}
 	args = append(args,
-		"id", e.ID,
 		"transport", e.Transport,
 		"code", e.Code,
 		"operation", e.Operation,
@@ -297,6 +303,13 @@ func lineArgs(job flushJob) (string, []any) {
 	}
 	args = append(args, "total", formatDuration(e.Duration))
 	return cutTarget(e.Target), args
+}
+
+func appendID(args []any, key, value string) []any {
+	if value == "" {
+		return args
+	}
+	return append(args, key, value)
 }
 
 func containsString(list []string, s string) bool {

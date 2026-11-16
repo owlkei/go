@@ -17,6 +17,7 @@
     - [Form and multipart upload](#form-and-multipart-upload)
     - [Query parameters](#query-parameters)
     - [Custom headers](#custom-headers)
+    - [Trace propagation](#trace-propagation)
     - [Streaming response](#streaming-response)
     - [Server-Sent Events (SSE)](#server-sent-events-sse)
     - [Download a file](#download-a-file)
@@ -50,6 +51,7 @@
 - Fluent `RequestBuilder` chaining — Axios-like ergonomics in Go
 - First-class DI integration via `ClientService` — no boilerplate wiring
 - Middleware chain: `Middleware func(Handler) Handler` — compose auth, logging, tracing
+- W3C trace propagation: a request built with a Ginject request's context carries its `traceparent`
 - Lifecycle hooks: `OnBeforeRequest`, `OnAfterResponse`, `OnError`
 - Retry with configurable exponential backoff
 - Streaming responses — `Stream()` and `SSE()` modes
@@ -142,7 +144,7 @@ Embed `httpclient.ClientService` in any controller or provider:
 
 ```go
 type UserController struct {
-    common.REST
+    common.HTTP
     httpclient.ClientService
 }
 ```
@@ -256,6 +258,30 @@ c.SetHeaders(map[string]string{
     "X-Api-Key":    apiKey,
 })
 ```
+
+### Trace propagation
+
+Pass the context of the request (or WebSocket message) you are serving, and the call carries its
+trace in a `Traceparent` header: the trace ID, and your request ID (or message ID) as the parent.
+The service you call, if it runs Ginject, logs your request ID as its `upstream`.
+
+```go
+func (instance UserController) READ_BY_id(c *ctx.HTTPContext, param ctx.Param) string {
+    resp, err := instance.Get("/profiles/" + param.Get("id")).
+        Context(c.Context()).
+        Send()
+    if err != nil {
+        panic(exception.BadGatewayException(err.Error()))
+    }
+    return resp.Text()
+}
+```
+
+- A `traceparent` you set yourself (`Header`, `Headers`, `SetHeader`) wins: nothing is overwritten.
+- No `Context(…)`, or a context without a Ginject scope: no header.
+- Every retry sends the same value. `OnBeforeRequest` hooks run after it is set and may delete it.
+- The incoming `X-Request-Id` and `tracestate` are never forwarded.
+- The header goes to every host you call with that context, third parties included. It holds identifiers only; delete it in an `OnBeforeRequest` hook for a host that must not see them.
 
 ### Streaming response
 
@@ -500,7 +526,7 @@ All methods return `RequestBuilder` for chaining. `Send()` terminates the chain.
 
 | Method | Description |
 |--------|-------------|
-| `Context(ctx context.Context)` | Override the request context |
+| `Context(ctx context.Context)` | Override the request context; a Ginject request's context also forwards its `traceparent` |
 | `Header(key, value string)` | Set a per-request header (overrides client default) |
 | `Headers(headers map[string]string)` | Set multiple per-request headers |
 | `Query(key string, value any)` | Append a query parameter; `[]string` → repeated key |

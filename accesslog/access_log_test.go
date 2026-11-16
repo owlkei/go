@@ -93,11 +93,11 @@ func setup(t *testing.T) (*trace.Tracer, *fakeLogger, *AccessLog) {
 }
 
 func stageEvent(id, stage, name string, d time.Duration) trace.Event {
-	return trace.Event{ID: id, Stage: stage, Name: name, Transport: trace.TransportHTTP, Duration: d}
+	return trace.Event{ID: id, TraceID: "trace-" + id, Stage: stage, Name: name, Transport: trace.TransportHTTP, Duration: d}
 }
 
 func completeEvent(id string, code int, target string, d time.Duration) trace.Event {
-	return trace.Event{ID: id, Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: target, Code: code, Duration: d}
+	return trace.Event{ID: id, TraceID: "trace-" + id, Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: target, Code: code, Duration: d}
 }
 
 func argValue(t *testing.T, args []any, key string) any {
@@ -192,12 +192,12 @@ func TestAccessLog_LineArgumentsInOrder(t *testing.T) {
 	for i := 0; i < len(got.args); i += 2 {
 		keys = append(keys, got.args[i].(string))
 	}
-	wantKeys := []string{"id", "transport", "code", "operation", "middleware", "guard", "handler", "total"}
+	wantKeys := []string{"trace_id", "request", "transport", "code", "operation", "middleware", "guard", "handler", "total"}
 	if !slices.Equal(keys, wantKeys) {
 		t.Error(test.DiffMessage(keys, wantKeys, "A1: the argument keys in order"))
 	}
-	if got.args[1] != "req-1" || got.args[3] != trace.TransportHTTP || got.args[5] != 200 || got.args[7] != "GET" {
-		t.Error(test.DiffMessage(got.args[:8], []any{"id", "req-1", "transport", "HTTP", "code", 200, "operation", "GET"}, "A1: the fixed pairs, code is an int"))
+	if wantPairs := []any{"trace_id", "trace-req-1", "request", "req-1", "transport", "HTTP", "code", 200, "operation", "GET"}; !slices.Equal(got.args[:10], wantPairs) {
+		t.Error(test.DiffMessage(got.args[:10], wantPairs, "A1, E7: the fixed pairs, code is an int"))
 	}
 	wantMiddleware := []map[string]color.Colored{{"M1": {Text: "1ms (17%)", Color: colorForDuration(time.Millisecond)}}}
 	if !slices.EqualFunc(stageOf(t, got.args, trace.StageMiddleware), wantMiddleware, maps.Equal) {
@@ -246,7 +246,7 @@ func TestAccessLog_StagesInArrivalOrder(t *testing.T) {
 
 	args := logger.lines()[0].args
 	var keys []string
-	for i := 8; i < len(args)-2; i += 2 {
+	for i := 10; i < len(args)-2; i += 2 {
 		keys = append(keys, args[i].(string))
 	}
 	want := []string{trace.StageHandler, trace.StageMiddleware, trace.StageGuard}
@@ -315,7 +315,7 @@ func TestAccessLog_NoStagesLogsFixedPairsAndTotal(t *testing.T) {
 	tr.Emit(completeEvent("r", 404, "/nope", 1500*time.Microsecond))
 	al.Stop()
 	args := logger.lines()[0].args
-	want := []any{"id", "r", "transport", "HTTP", "code", 404, "operation", "GET", "total", "1.5ms"}
+	want := []any{"trace_id", "trace-r", "request", "r", "transport", "HTTP", "code", 404, "operation", "GET", "total", "1.5ms"}
 	if !slices.Equal(args, want) {
 		t.Error(test.DiffMessage(args, want, "A3: a request without stages logs the four pairs and total"))
 	}
@@ -444,8 +444,8 @@ func TestAccessLog_ConcurrentRequests_NoRace(t *testing.T) {
 	lines := logger.lines()
 	for _, line := range lines {
 		id := strings.TrimPrefix(line.msg, "/")
-		if argValue(t, line.args, "id") != id {
-			t.Fatal(test.DiffMessage(argValue(t, line.args, "id"), id, "A5: the line carries its own ID"))
+		if argValue(t, line.args, "request") != id {
+			t.Fatal(test.DiffMessage(argValue(t, line.args, "request"), id, "A5: the line carries its own ID"))
 		}
 		for _, stage := range []string{trace.StageMiddleware, trace.StageHandler} {
 			list := stageOf(t, line.args, stage)
@@ -979,5 +979,96 @@ func TestShortName(t *testing.T) {
 		if got := shortName(c.name); got != c.want {
 			t.Error(test.DiffMessage(got, c.want, "A2: shortName("+c.name+")"))
 		}
+	}
+}
+
+func argKeys(args []any) []string {
+	var keys []string
+	for i := 0; i+1 < len(args); i += 2 {
+		keys = append(keys, args[i].(string))
+	}
+	return keys
+}
+
+func TestLineArgs_HTTPKeys(t *testing.T) {
+	e := trace.Event{
+		ID: "0f1e2d3c4b5a6978", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "0f1e2d3c4b5a6978", ParentID: "00f067aa0ba902b7",
+		Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: "/users", Code: 200, Duration: 10 * time.Millisecond,
+	}
+	msg, args := lineArgs(flushJob{done: e})
+	if msg != "/users" {
+		t.Error(test.DiffMessage(msg, "/users", "E7: the message is still the target"))
+	}
+	want := []any{
+		"trace_id", "4bf92f3577b34da6a3ce929d0e0e4736", "request", "0f1e2d3c4b5a6978",
+		"transport", "HTTP", "code", 200, "operation", "GET", "total", "10ms",
+	}
+	if !slices.Equal(args, want) {
+		t.Error(test.DiffMessage(args, want, "E7: an HTTP line starts with trace_id and request, the incoming parent is not printed"))
+	}
+	if slices.Contains(argKeys(args), "id") {
+		t.Error(test.DiffMessage(argKeys(args), "<no id key>", "E7: the key id is gone"))
+	}
+}
+
+func TestLineArgs_HTTPKeysKeepStagesAfterOperation(t *testing.T) {
+	e := completeEvent("r1", 200, "/", time.Millisecond)
+	e.ParentID = "00f067aa0ba902b7"
+	job := flushJob{done: e, rec: &record{id: "r1", stages: []stageEntry{{stage: trace.StageGuard, name: "auth.Guard", duration: time.Microsecond}}}}
+	_, args := lineArgs(job)
+	want := []string{"trace_id", "request", "transport", "code", "operation", "guard", "total"}
+	if got := argKeys(args); !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "E7: the rest of the line is unchanged"))
+	}
+}
+
+func TestLineArgs_WSKeys(t *testing.T) {
+	e := trace.Event{
+		ID: "aaaaaaaaaaaaaaaa", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "aaaaaaaaaaaaaaaa", ParentID: "bbbbbbbbbbbbbbbb",
+		Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: "PUBLISH", Target: "chat.to.user2", Duration: 2 * time.Millisecond,
+	}
+	_, args := lineArgs(flushJob{done: e})
+	want := []any{
+		"trace_id", "4bf92f3577b34da6a3ce929d0e0e4736", "connection", "bbbbbbbbbbbbbbbb", "message", "aaaaaaaaaaaaaaaa",
+		"transport", "WS", "code", 0, "operation", "PUBLISH", "total", "2ms",
+	}
+	if !slices.Equal(args, want) {
+		t.Error(test.DiffMessage(args, want, "E7: a WS line starts with trace_id, connection and message"))
+	}
+}
+
+func TestLineArgs_WSWithoutConnection(t *testing.T) {
+	e := trace.Event{
+		ID: "aaaaaaaaaaaaaaaa", TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "aaaaaaaaaaaaaaaa",
+		Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: "SUBSCRIBE", Target: "t", Duration: time.Millisecond,
+	}
+	_, args := lineArgs(flushJob{done: e})
+	want := []string{"trace_id", "message", "transport", "code", "operation", "total"}
+	if got := argKeys(args); !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "E7: connection is skipped when ParentID is empty"))
+	}
+}
+
+func TestAccessLog_CorrelatesByEventIDNotSpanID(t *testing.T) {
+	tr, logger, al := setup(t)
+	stage := stageEvent("req-1", trace.StageGuard, "G1", time.Millisecond)
+	stage.SpanID = "1111111111111111"
+	stage.ParentID = "req-1"
+	other := stageEvent("req-2", trace.StageGuard, "G2", time.Millisecond)
+	other.SpanID = "2222222222222222"
+	other.ParentID = "req-2"
+	done := completeEvent("req-1", 200, "/a", time.Millisecond)
+	done.SpanID = "req-1"
+	tr.Emit(stage)
+	tr.Emit(other)
+	tr.Emit(done)
+	al.Stop()
+
+	lines := logger.lines()
+	if len(lines) != 1 {
+		t.Fatal(test.DiffMessage(len(lines), 1, "E7: one line per complete event"))
+	}
+	if got := entryTexts(stageOf(t, lines[0].args, trace.StageGuard)); len(got) != 1 || !strings.HasPrefix(got[0], "G1=") {
+		t.Error(test.DiffMessage(got, []string{"G1=…"}, "E7: stages are joined by Event.ID, so span IDs don't matter"))
 	}
 }

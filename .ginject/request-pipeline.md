@@ -65,7 +65,7 @@ wants its own response writes it and returns without `next()`.
 
 - Body `{"code":<int>,"error":<string>,"message":<string>}`, `Content-Type: application/json`;
   `Content-Length`, `Content-Encoding`, `ETag` and `Last-Modified` set earlier are removed, other
-  headers (`X-Request-Id`, CORS) stay.
+  headers (`X-Request-Id`, `Traceparent`, CORS) stay.
 - An exception (`exception.Exception`, a non-nil `*exception.Exception`, an `error` wrapping one at
   any depth) answers with its code, `Error()` and message. An empty `Error()` becomes the status text
   (or `Internal Server Error`), an empty message `Unhandled exception has occurred`. A code outside
@@ -97,8 +97,15 @@ wants its own response writes it and returns without `next()`.
 
 - `App.ServeHTTP` (`core/app.go`): caps a request body (never `nil` / `http.NoBody`), takes a pooled
   `httpExchange` (the `ctx.HTTPContext` plus the tracking `responseWriter` of `core/http_writer.go`),
-  sets `X-Request-Id`, asks `tracer.Enabled()` once, calls `HTTP.handleRequest`, emits `complete` with
-  the status actually written, releases the exchange (no `defer`).
+  reads the trace scope `Init` built (`ex.scope`), sets `X-Request-Id` and `Traceparent` from the
+  scope's prebuilt header slices (every response: route, 404, 405, error), asks `tracer.Enabled()`
+  once, calls `HTTP.handleRequest`, emits `complete` with the status actually written, releases the
+  exchange (no `defer`). The WS path passes `c.Request` (the scoped request) to the upgrade, sets both
+  headers on the 101 through `websocket.Config.Header`, and releases the exchange after the upgrade
+  when the library refused it before `Handshake`.
+- Trace scope (design 0011, `internal/tracecontext`): the request ID is always ours; one valid
+  `traceparent` continues the trace ID, anything else is ignored silently. Middleware, guards,
+  interceptors, filters and the handler read the same `*Scope` (`r.Context()` / `c.Context()`).
 - `HTTP.handleRequest` (`core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
   while middlewares run (a panic there is the HTTP layer's) and the route's filter list from the
   first guard on.

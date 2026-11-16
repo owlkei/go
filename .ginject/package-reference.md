@@ -122,6 +122,9 @@ Any struct implementing the respective method qualifies — no tags, no registra
 
 **Responsibility**: Request context objects and dependency types
 
+`ctx.Context` is `interface { Reset(); GetID() string; Context() context.Context }` (no `SetID`: the ID comes
+from the trace scope built in `Init`, design 0011).
+
 ### HTTPContext
 
 ```go
@@ -140,14 +143,15 @@ type HTTPContext struct {
 
 | Method | Signature | Notes |
 |--------|-----------|-------|
-| `Init` | `Init(w http.ResponseWriter, r *http.Request)` | No `InitWithMaxBodySize` variant exists |
+| `Init` | `Init(w http.ResponseWriter, r *http.Request)` | No `InitWithMaxBodySize` variant exists. Builds the trace scope and sets `c.Request = r.WithContext(<scope ctx>)`: `c.Request != r` afterwards |
 | `Reset` | `Reset()` | Clears all fields for pool reuse |
 | `Status` | `Status(code int) *HTTPContext` | Sets `c.Code`; chainable — call BEFORE `JSON`/`Text`, since they write using whatever `Code` is current |
 | `Text` | `Text(data string, args ...any)` | Formats only when `args` are given |
 | `JSON` | `JSON(data any, args ...any)` | A `string` is raw JSON (formatted only with `args`); a `JSONAppender` writes its own bytes; anything else goes through `encoding/json`. An encoding error panics with a 500 `exception.Exception` and writes nothing |
 | `JSONP` | `JSONP(data any, args ...any)` | Callback from the cached `Query()`, reduced to `[A-Za-z0-9_$.[]]` and 128 bytes; falls back to `JSON` when nothing is left; sends `X-Content-Type-Options: nosniff` |
 | `Redirect` | `Redirect(url string)` | Uses `c.Code` when it is 3xx, else 301 |
-| `GetID` | `GetID() string` | 16 lowercase hex characters, generated in `Init` |
+| `GetID` | `GetID() string` | The scope's `Request`: 16 lowercase hex characters (`crypto/rand`), `""` before `Init` / after `Reset`; never from a header |
+| `Context` | `Context() context.Context` (promoted from `*http.Request`) | Carries the trace scope (`tracecontext.ScopeOf`); outlives the request |
 | `Body` | `Body() Body` | Lazily parses a JSON body (`application/json` or `application/*+json`, case-insensitive), never `nil`; 400 `Invalid JSON body` / `Cannot read request body`, 413 on `*http.MaxBytesError` |
 | `Form` / `File` | `Form() Form` / `File() File` | One multipart parse shared by both; never `nil`; 400 `Invalid form body`, 413 over the limit |
 | `AddAggregation` / `Aggregations` | `AddAggregation(a *aggregation.Aggregation)` / `Aggregations() []*aggregation.Aggregation` | Per-request list, cleared by `Reset` (same on `WSContext`) |
@@ -175,13 +179,14 @@ type WSContext struct {
 
 | Method | Signature |
 |--------|-----------|
-| `Init` | `Init(conn *websocket.Conn)` — one parameter, NOT `(w, r)` |
+| `Init` | `Init(conn *websocket.Conn)` — one parameter, NOT `(w, r)`; builds the message scope from `conn.Request().Context()` |
+| `GetID` | `GetID() string` — the message ID (`Scope.Message`), one per dispatch |
 | `Reset` | `Reset()` |
 | `WSPayload` | `WSPayload() WSPayload` — returns the map by value, NOT `*WSPayload` |
 | `SetWSPayload` | `SetWSPayload(p WSPayload)` |
 | `Send` | `Send(data any)` |
 | `SetSend` | `SetSend(fn func(data any))` |
-| `Context` / `SetContext` | `Context() context.Context` / `SetContext(ctx context.Context)` |
+| `Context` / `SetContext` | `Context() context.Context` / `SetContext(ctx context.Context)` — the message context after `Init` (done when the connection's handler returns); `SetContext` keeps the message scope nearest, ignores `nil` |
 
 `type WSPayload map[string]any` — a map type, not a struct.
 
@@ -511,6 +516,9 @@ const (
 
 type Event struct {
     ID        string
+    TraceID   string   // the scope's trace ID ("" without a scope)
+    SpanID    string   // complete: == ID; other stages: a fresh NewSpanID() (only while traced)
+    ParentID  string   // complete: Scope.Parent; other stages: == ID
     Stage     string
     Name      string
     Transport string
@@ -528,6 +536,8 @@ func (t *Tracer) Listen(fn func(Event)) (stop func())  // stop removes exactly t
 
 - There is no event bus (design 0010). `core` holds one `trace.Tracer`
   per app (`app.tracer`); the access log is its only listener today. Every event carries `Transport`.
+- Span tree per unit (request or WS message): `complete` is the root, emitted last; every other stage is
+  a child of `ID`. HTTP exception filter events follow `ex.traced` like every other stage.
 
 ---
 
@@ -652,6 +662,7 @@ type HTTPClientModuleOptions struct {
 ```
 
 Provides `ClientService` (**not** `HTTPClientService`) with `Get/Post/Put/Patch/Delete/Head/Options(path string) RequestBuilder`. **There is no `NewHTTPClientModule()` function.**
+`Send()` on a builder whose `Context(ctx)` carries a trace scope sets `Traceparent` (unless the caller set one); `X-Request-Id` and `tracestate` are never forwarded.
 
 ## Package: `modules/storage`
 
@@ -766,8 +777,10 @@ type Helmet struct {
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.Logger}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. Bounded: 64 stages per request, 16,384 pending requests, 1,024 queued lines (drops are reported as `Warn("AccessLog", "dropped", n)`).
+- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.Logger}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. Bounded: 64 stages per request, 16,384 pending requests, 1,024 queued lines (drops are reported as `Warn("AccessLog", "dropped", n)`). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS); there is no `id` key.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
-- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test). Not importable from outside the module.
+- `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`). All random bytes from one 512-byte `crypto/rand` buffer behind a mutex.
+- `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.
+- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext). Not importable from outside the module.
 
 **There is no `data/` package or directory anywhere in this repository** — an earlier doc listed one; it never existed.

@@ -5,6 +5,7 @@
 - [Trace](#trace)
   - [Usage](#usage)
   - [`Event` Fields](#event-fields)
+  - [Spans](#spans)
   - [Stages and transports](#stages-and-transports)
   - [`Tracer` Methods](#tracer-methods)
     - [Enabled](#enabled)
@@ -44,6 +45,9 @@ func main() {
 | Field | Type | Set on |
 |---|---|---|
 | `ID` | `string` | every event: the request or message ID |
+| `TraceID` | `string` | every event of a unit that has a trace scope: the 32-hex trace ID |
+| `SpanID` | `string` | the span of the event: the unit's ID on `complete`, a fresh 16-hex ID on every other stage |
+| `ParentID` | `string` | `complete`: the incoming `traceparent` parent ID or `""` (HTTP, handshake), the connection ID (WS message); every other stage: the unit's ID |
 | `Stage` | `string` | every event, one of the stages below |
 | `Name` | `string` | every stage event: the middleware, guard, interceptor, filter or pipe type, or the handler's method name |
 | `Transport` | `string` | every event: `TransportHTTP` or `TransportWS` |
@@ -51,6 +55,16 @@ func main() {
 | `Operation` | `string` | `complete`: the HTTP method, or the WS message type |
 | `Target` | `string` | `complete`: the URL path without the query string, or the WS topic |
 | `Code` | `int` | `complete`: the status written; a `middleware` event that ended in a panic: the status of the error response |
+
+## Spans
+
+The events of one request (or WebSocket message) form a flat tree in the W3C Trace Context model:
+
+- `complete` is the root span: `SpanID == ID`, and `ParentID` is the caller's span (HTTP) or the connection (WS message).
+- Every other stage event is one child span with its own `SpanID` and `ParentID == ID`.
+- The events of a unit are emitted on its goroutine in lifecycle order, the root last, and their span IDs all differ.
+- Span IDs are generated only while a listener exists. Events emitted without a trace scope leave `TraceID`, `SpanID` and `ParentID` empty.
+- `TraceID`, `SpanID` and `ParentID` reach listeners unchanged, and emitting an event with them allocates nothing.
 
 ## Stages and transports
 
@@ -132,7 +146,7 @@ defer stop()
 
 ## Performance notes
 
-- The listeners are an immutable slice behind an `atomic.Pointer`: `Enabled` is one atomic load, `Emit` one load and direct typed calls, with no lock and no boxing of the event. `Listen` and `stop` copy the slice under a mutex (bootstrap and shutdown only).
+- The listeners are an immutable slice behind an `atomic.Pointer`: `Enabled` is one atomic load, `Emit` one load and direct typed calls, with no lock and no boxing of the event. An `Event` is 160 bytes, passed by value. `Listen` and `stop` copy the slice under a mutex (bootstrap and shutdown only).
 
 ## Benchmarks
 
@@ -146,7 +160,7 @@ go test -run '^$' -bench . -benchmem ./trace/
 goos: darwin
 goarch: amd64
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkTracer_Enabled-12          	1000000000	         1.146 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTracer_Emit-12             	188557948	         6.795 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTracer_Emit_Parallel-12    	910376110	         1.616 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTracer_Enabled-12          	1000000000	         1.066 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTracer_Emit-12             	145073950	         8.275 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTracer_Emit_Parallel-12    	901271748	         1.449 ns/op	       0 B/op	       0 allocs/op
 ```

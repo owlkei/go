@@ -151,7 +151,17 @@ app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
 
 ### ServeHTTP
 
-`ServeHTTP(w http.ResponseWriter, r *http.Request)` serves one request: it caps a request body at the app's limit (10 MiB, or the `MaxRequestBodyBytes` of the serving call; a request without a body, `nil` or `http.NoBody`, is not wrapped), takes a pooled context, sets the `X-Request-Id` header, runs the [request lifecycle](#request-lifecycle) and, with a trace listener, emits the `complete` event, whose `Code` is the status actually written (`200` when nothing was written). Requests to the WebSocket path are upgraded when `EnableWS` was called.
+`ServeHTTP(w http.ResponseWriter, r *http.Request)` serves one request: it caps a request body at the app's limit (10 MiB, or the `MaxRequestBodyBytes` of the serving call; a request without a body, `nil` or `http.NoBody`, is not wrapped), takes a pooled context, builds the request's trace scope, sets the `X-Request-Id` and `Traceparent` response headers before any middleware runs, runs the [request lifecycle](#request-lifecycle) and, with a trace listener, emits the `complete` event, whose `Code` is the status actually written (`200` when nothing was written). Requests to the WebSocket path are upgraded when `EnableWS` was called.
+
+#### Request and trace IDs
+- Every response (a route, a 404, a 405, an error) carries `X-Request-Id: <request ID>` (16 hex characters, the same as `c.GetID()`) and `Traceparent: 00-<trace ID>-<request ID>-<flags>`.
+- The request ID is always the app's own: neither an incoming `X-Request-Id` nor a `traceparent` sets it.
+- One valid incoming `traceparent` continues its trace ID and keeps its flags (`& 03`); an absent, repeated or invalid one (upper case, zero IDs, version `ff`, CR/LF, a megabyte of junk) is ignored silently and a new, time-ordered trace starts with flags `03`.
+- The scope is in `c.Context()`, `c.Request.Context()` and the `*http.Request` every middleware receives, so guards, interceptors, filters, the handler and a service called with `c.Context()` all read the same IDs. A goroutine that keeps `c.Context()` reads them after the request ended and the pooled context was reused; concurrent requests never read each other's scope.
+- `modules/httpclient` forwards the trace (`Traceparent`) of a request built with `.Context(c.Context())`.
+- A WebSocket handshake follows the same rules: the 101 response carries both headers, and the connection ID (the `connected` payload's `id`, the `WSConnmgr` key) is the handshake's request ID. Each message dispatched to a topic is its own message with its own ID (a frame naming two topics is two messages); its `c.Context()` carries the connection's trace, the connection ID and the message ID, and is done when the connection closes.
+- A refused upgrade (bad version, missing key) still releases the pooled context.
+- The scope adds one allocation to a request with no trace listener (7 for a static route, 4 for a 404, 5 for a 405), and continuing a trace costs no more.
 
 ### Get
 
@@ -702,7 +712,9 @@ WS handlers reply with their last result as the message.
 
 Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
 
-Every event carries `ID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic) and `Code`. `Enabled()` is asked once per request: a request that started without a listener emits nothing. With `EnableAccessLog()`, the access log is stopped once at shutdown, after the `OnShutdown` hooks, so the lines of the last requests are written before the process exits.
+Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic) and `Code`. `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
+
+The events of one request or WebSocket message form a span tree: `complete` is emitted last and is the root (`SpanID == ID`, `ParentID` the incoming `traceparent` parent, `""`, or the connection ID for a WS message); every other stage is a child with a fresh `SpanID` and `ParentID == ID`, in lifecycle order. Span IDs are generated only while a listener exists: without one, a request generates its own ID and nothing else. With `EnableAccessLog()`, the access log is stopped once at shutdown, after the `OnShutdown` hooks, so the lines of the last requests are written before the process exits.
 
 ### Rules
 
@@ -737,6 +749,7 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 - **One atomic load for the body cap.** The cap is an `atomic.Int64` written when a serving call starts and loaded only for a request with a body (about 1 ns, no allocation). The rest of the server code runs once per start or stop.
 - **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ParamValues`, whose capacity `Reset` keeps.
 - **Tracking writer in the pooled exchange.** The writer lives next to the context in the pool, so it costs no allocation.
+- **The trace scope.** Each request builds one scope (the `traceparent` string and a context value of 240 B together) and copies the request with `r.WithContext` (320 B) so middleware sees the IDs: about +270 ns, +530 B and +1 allocation against the request ID it replaces. The response headers reuse one-element slices prebuilt in the scope, so they allocate nothing. The random bytes come from a 512-byte `crypto/rand` buffer (`internal/tracecontext`), one system call per about 28 requests.
 - **The cost of an unexpected panic.** A non-exception panic captures up to 4 KiB of stack for its log line: about 25 µs and 7.6 KB per request, against about 1.6 µs for an exception.
 
 ## Benchmarks
@@ -745,19 +758,22 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz, Go 1.27.4), `g
 
 | Benchmark | ns/op | B/op | allocs/op |
 |-----------|-------|------|-----------|
-| BenchmarkServeHTTP_Static (`GET`, a string result) | 636 | 96 | 6 |
-| BenchmarkServeHTTP_Chain (a middleware, a guard, an interceptor) | 806 | 440 | 10 |
-| BenchmarkServeHTTP_MultiInterceptor (three interceptors) | 972 | 672 | 9 |
-| BenchmarkServeHTTP_NotFound | 523 | 48 | 3 |
-| BenchmarkServeHTTP_MethodNotAllowed | 464 | 64 | 4 |
-| BenchmarkServeHTTP_Exception (a handler panics an exception) | 1570 | 256 | 6 |
-| BenchmarkServeHTTP_PanicString (a handler panics a string: stack capture for the log) | 26977 | 7668 | 12 |
+| BenchmarkServeHTTP_Static (`GET`, a string result) | 940 | 624 | 7 |
+| BenchmarkServeHTTP_StaticWithTraceparent (a valid incoming `traceparent`) | 943 | 624 | 7 |
+| BenchmarkServeHTTP_StaticWithListener (a trace listener: two stage spans) | 1210 | 640 | 8 |
+| BenchmarkServeHTTP_StaticParallel | 687 | 624 | 7 |
+| BenchmarkServeHTTP_Chain (a middleware, a guard, an interceptor) | 1117 | 968 | 11 |
+| BenchmarkServeHTTP_MultiInterceptor (three interceptors) | 1320 | 1200 | 10 |
+| BenchmarkServeHTTP_NotFound | 760 | 576 | 4 |
+| BenchmarkServeHTTP_MethodNotAllowed | 716 | 592 | 5 |
+| BenchmarkServeHTTP_Exception (a handler panics an exception) | 1645 | 784 | 7 |
+| BenchmarkServeHTTP_PanicString (a handler panics a string: stack capture for the log) | 27471 | 8036 | 12 |
 | BenchmarkHTTPHandlerPlan_Invoke_NoArgs (`func() string`) | 210 | 40 | 2 |
 | BenchmarkHTTPHandlerPlan_Invoke_Param (`func(ctx.Param) ctx.Map`) | 206 | 24 | 1 |
 | BenchmarkHTTPHandlerPlan_Invoke_QueryPipe (two-field DTO) | 265 | 48 | 2 |
 | BenchmarkHTTPHandlerPlan_Invoke_BodyPipeWithProvider | 278 | 56 | 2 |
 | BenchmarkHTTPHandlerPlan_Invoke_FiveBuiltins | 575 | 16 | 1 |
-| BenchmarkHTTPHandlerPlan_Invoke_QueryPipe_Traced | 915 | 304 | 6 |
+| BenchmarkHTTPHandlerPlan_Invoke_QueryPipe_Traced | 654 | 80 | 4 |
 | BenchmarkNewHTTPHandlerPlan (cold, `Create()`) | 1086 | 352 | 10 |
 | BenchmarkReturnHTTP_String | 71 | 46 | 1 |
 | BenchmarkReturnHTTP_Int | 89 | 43 | 2 |
@@ -765,12 +781,13 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz, Go 1.27.4), `g
 | BenchmarkReturnHTTP_Map | 1011 | 219 | 10 |
 | BenchmarkReturnHTTP_PointerToStruct | 273 | 62 | 2 |
 | BenchmarkReturnHTTP_InterfaceString | 60 | 43 | 1 |
-| BenchmarkTraceHTTPCatch_NoListener | 22 | 0 | 0 |
 | BenchmarkModuleBuilderBuild (cold) | 8073 | 824 | 10 |
 | BenchmarkCreate_FiveControllers (cold) | 41706 | 27392 | 378 |
 | BenchmarkCreate_ChainedProviders (cold) | 118651 | 78177 | 697 |
 | BenchmarkCreate_StaticSubmodules (cold) | 73707 | 69824 | 496 |
 | BenchmarkCreate_DynamicSubmodules (cold) | 62788 | 6720 | 66 |
+
+The trace scope (design 0011, same machine, `benchstat` against the code before it, 6 runs): Static 615 → 884 ns (96 → 624 B, 6 → 7 allocations), NotFound 485 → 745 ns (48 → 576 B, 3 → 4), MethodNotAllowed 433 → 699 ns (64 → 592 B, 4 → 5).
 
 Against the previous dispatch (same machine, `benchstat`, 5 runs): Static 837 → 636 ns (9 → 6 allocations), Chain 1,277 → 806 ns (13 → 10), NotFound 2,387 → 523 ns (23 → 3), MethodNotAllowed 2,285 → 464 ns (23 → 4), Exception 1,913 → 1,570 ns (10 → 6), MultiInterceptor 1,827 → 972 ns (15 → 9).
 

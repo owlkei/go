@@ -161,7 +161,8 @@ callOnReady()              then the app is marked created
 1. App.ServeHTTP(w, r)
    └─ a request with a body: r.Body = http.MaxBytesReader(w, r.Body, cap) (cap > 0)
    └─ app.ctxPool.Get() → *httpExchange (context + tracking writer), c.Init(&ex.writer, r)
-   └─ X-Request-Id set; Tracer.Enabled() asked once
+      (Init builds the trace scope with tracecontext.NewRequest and sets c.Request = r.WithContext(scope ctx))
+   └─ ex.scope = ScopeOf(c.Request.Context()); X-Request-Id + Traceparent set from scope.Headers(); Tracer.Enabled() asked once
 2. HTTP.handleRequest (the only defer / recover)
    └─ routing.Router.Match(method, path, version, params), retried with the neutral version
    └─ no route: global middlewares, then 404 / 405 (+ Allow) from precomputed bytes
@@ -172,22 +173,23 @@ callOnReady()              then the app is marked created
 5. app.releaseCtx(ex): c.Reset() (keeps slice capacity), back to the pool
 ```
 
-**Performance**: measured numbers are in `core/README.md` › Benchmarks (a static route is about 0.6 µs and 6 allocations).
+**Performance**: measured numbers are in `core/README.md` › Benchmarks (a static route is about 0.9 µs and 7 allocations).
 
 ### 2.3 WebSocket Connection Lifecycle
 
 ```
 1. HTTP upgrade request arrives
 2. Handshake middleware chain runs (same pipeline as HTTP)
-3. websocket.Conn accepted
-4. connID (UUID) generated
+3. websocket.Conn accepted (the 101 carries X-Request-Id + Traceparent of the handshake scope)
+4. connID = the handshake scope's Request (16 hex; NewSpanID() when the conn's request has no scope)
 5. WSConnMgr.Register(connID, conn)
    └─ Creates send channel (buffer 32)
    └─ Spawns writeLoop() goroutine
    └─ Spawns readLoop() goroutine
 6. Client can now send messages
 7. readLoop() reads and dispatches to handlers
-8. Each message creates temporary *ctx.WSContext (pooled)
+8. Each message (one per topic of a frame) creates temporary *ctx.WSContext (pooled); Init builds its message scope
+   (tracecontext.NewMessage: connection's trace, Connection = Parent = connID, own Message ID)
 9. Handler can memorybroker.Publish() — fanout to all subscribers
 10. Each subscriber: conn.TrySend() → non-blocking send to channel
 11. writeLoop() drains channel and writes to wire
@@ -208,7 +210,7 @@ type HTTPContext struct {
     *http.Request              // Raw request
     http.ResponseWriter        // Raw response writer
     
-    contextID                  // Request ID (16 lowercase hex characters, made in Init)
+    scope *tracecontext.Scope  // trace scope built in Init; GetID() = scope.Request (16 lowercase hex)
     
     body Body                  // Parsed request body
     form Form                  // Form data
@@ -232,7 +234,7 @@ type HTTPContext struct {
 1. Allocated from pool via `app.ctxPool.Get()`
 2. Initialized via `c.Init(w, r)`
 3. Used throughout request processing
-4. Reset via `c.Reset()` which clears all fields (no reference to the request, writer or parsed input survives)
+4. Reset via `c.Reset()` which clears all fields (no reference to the request, writer or parsed input survives); the scope pointer is dropped, never the scope: a kept `c.Context()` still reads its IDs
 5. Returned to pool via `app.ctxPool.Put(c)` for reuse
 
 **Operations**:
@@ -246,7 +248,8 @@ type HTTPContext struct {
 ```go
 type WSContext struct {
     *websocket.Conn            // Raw WebSocket connection
-    contextID                  // Request ID
+    scope *tracecontext.Scope  // message scope built in Init; GetID() = scope.Message
+    ctx context.Context        // the message context (carries the scope); SetContext keeps the scope nearest
     
     wsPayload *WSPayload       // Parsed incoming message
     Next Next                  // Middleware chain continuation

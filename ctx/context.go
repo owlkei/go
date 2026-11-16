@@ -1,28 +1,11 @@
 package ctx
 
-import "github.com/dangduoc08/ginject/internal/crypto"
+import "context"
 
 type Context interface {
 	Reset()
-	SetID()
 	GetID() string
-}
-
-const requestIDLength = 16
-
-type contextID struct {
-	id string
-}
-
-func (c *contextID) SetID() {
-	if c.id != "" {
-		return
-	}
-	c.id = crypto.RandomHex(requestIDLength)
-}
-
-func (c *contextID) GetID() string {
-	return c.id
+	Context() context.Context
 }
 
 type (

@@ -14,6 +14,7 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/trace"
 )
 
@@ -155,8 +156,30 @@ func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provi
 	return httpMiddleware{use: m.Use, name: name}
 }
 
-func (m *httpMiddleware) emit(ev *trace.Tracer, id string, duration time.Duration, code int) {
-	ev.Emit(trace.Event{ID: id, Stage: trace.StageMiddleware, Name: m.name, Transport: trace.TransportHTTP, Duration: duration, Code: code})
+func (m *httpMiddleware) emit(ev *trace.Tracer, scope *tracecontext.Scope, id string, duration time.Duration, code int) {
+	e := stageEvent(scope, id, trace.StageMiddleware, m.name, trace.TransportHTTP, duration)
+	e.Code = code
+	ev.Emit(e)
+}
+
+func stageEvent(scope *tracecontext.Scope, id, stage, name, transport string, duration time.Duration) trace.Event {
+	e := trace.Event{ID: id, Stage: stage, Name: name, Transport: transport, Duration: duration}
+	if scope != nil {
+		e.TraceID = scope.TraceID
+		e.SpanID = tracecontext.NewSpanID()
+		e.ParentID = id
+	}
+	return e
+}
+
+func completeEvent(scope *tracecontext.Scope, id, transport, operation, target string, code int, duration time.Duration) trace.Event {
+	e := trace.Event{ID: id, Stage: trace.StageComplete, Transport: transport, Operation: operation, Target: target, Code: code, Duration: duration}
+	if scope != nil {
+		e.TraceID = scope.TraceID
+		e.SpanID = id
+		e.ParentID = scope.Parent
+	}
+	return e
 }
 
 const panicStackLimit = 4 << 10

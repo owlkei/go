@@ -14,6 +14,7 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/str"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/routing"
 	"github.com/dangduoc08/ginject/trace"
 	"github.com/dangduoc08/ginject/versioning"
@@ -76,7 +77,7 @@ type httpRoute struct {
 	guards       []httpGuard
 	interceptors []httpInterceptor
 	plan         *httpHandlerPlan
-	filters      []common.HTTPCatch
+	filters      []httpFilter
 	isServe      bool
 	serveIndex   int
 }
@@ -84,6 +85,11 @@ type httpRoute struct {
 type httpGuard struct {
 	canActivate common.HTTPCanActivate
 	name        string
+}
+
+type httpFilter struct {
+	catch common.HTTPCatch
+	name  string
 }
 
 type httpInterceptor struct {
@@ -94,7 +100,8 @@ type httpInterceptor struct {
 type httpExchange struct {
 	ctx.HTTPContext
 	writer          responseWriter
-	filters         []common.HTTPCatch
+	scope           *tracecontext.Scope
+	filters         []httpFilter
 	middleware      *httpMiddleware
 	middlewareStart time.Time
 	traced          bool
@@ -107,6 +114,7 @@ func newHTTPExchange() *httpExchange {
 func (ex *httpExchange) reset() {
 	ex.HTTPContext.Reset()
 	ex.writer.reset(nil)
+	ex.scope = nil
 	ex.filters = nil
 	ex.middleware = nil
 	ex.traced = false
@@ -185,15 +193,15 @@ func (http *HTTP) addInterceptor(layer common.HTTPLayer) {
 	}
 }
 
-func (http *HTTP) addGlobalFilter(catch common.HTTPCatch) {
+func (http *HTTP) addGlobalFilter(name string, catch common.HTTPCatch) {
 	for _, route := range http.routes {
-		route.filters = append(route.filters, catch)
+		route.filters = append(route.filters, httpFilter{catch: catch, name: name})
 	}
 }
 
-func (http *HTTP) addFilter(layer common.HTTPLayer, catch common.HTTPCatch) {
+func (http *HTTP) addFilter(layer common.HTTPLayer) {
 	if route := http.routeOf(layer); route != nil {
-		route.filters = append(route.filters, catch)
+		route.filters = append(route.filters, httpFilter{catch: layer.Handler.(common.HTTPCatch), name: layer.Name})
 	}
 }
 
@@ -298,7 +306,7 @@ func (http *HTTP) runMiddleware(ex *httpExchange, m *httpMiddleware, w stdHTTP.R
 	ex.middlewareStart = time.Now()
 	m.use(ex.Request, w, next)
 	ex.middleware = nil
-	m.emit(http.tracer, ex.GetID(), time.Since(ex.middlewareStart), 0)
+	m.emit(http.tracer, ex.scope, ex.GetID(), time.Since(ex.middlewareStart), 0)
 	return *proceed
 }
 
@@ -385,7 +393,7 @@ func (http *HTTP) runGuard(ex *httpExchange, g *httpGuard) bool {
 	}
 	start := time.Now()
 	isAllowed := g.canActivate(&ex.HTTPContext)
-	http.tracer.Emit(trace.Event{ID: ex.GetID(), Stage: trace.StageGuard, Name: g.name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
+	http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StageGuard, g.name, trace.TransportHTTP, time.Since(start)))
 	return isAllowed
 }
 
@@ -395,7 +403,7 @@ func (http *HTTP) runIntercept(ex *httpExchange, i *httpInterceptor, agg *aggreg
 	}
 	start := time.Now()
 	value := i.intercept(&ex.HTTPContext, agg)
-	http.tracer.Emit(trace.Event{ID: ex.GetID(), Stage: trace.StagePreInterceptor, Name: i.name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
+	http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StagePreInterceptor, i.name, trace.TransportHTTP, time.Since(start)))
 	return value
 }
 
@@ -409,7 +417,7 @@ func (http *HTTP) runPosts(ex *httpExchange, aggregations []*aggregation.Aggrega
 		}
 		start := time.Now()
 		data = agg.Aggregate()
-		http.tracer.Emit(trace.Event{ID: ex.GetID(), Stage: trace.StagePostInterceptor, Name: agg.Name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
+		http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StagePostInterceptor, agg.Name, trace.TransportHTTP, time.Since(start)))
 	}
 	return data
 }
@@ -485,17 +493,17 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 	}
 	if m := ex.middleware; m != nil {
 		ex.middleware = nil
-		m.emit(http.tracer, ex.GetID(), time.Since(ex.middlewareStart), code)
+		m.emit(http.tracer, ex.scope, ex.GetID(), time.Since(ex.middlewareStart), code)
 	}
 }
 
 func (http *HTTP) catch(ex *httpExchange, rec any) {
-	for _, catchFn := range ex.filters {
+	for i := range ex.filters {
 		if ex.writer.status() != 0 {
 			http.logAfterResponse(ex, rec)
 			return
 		}
-		next, isHandled := callCatch(&ex.HTTPContext, catchFn, http.exceptionOf(ex, rec))
+		next, isHandled := http.runFilter(ex, &ex.filters[i], http.exceptionOf(ex, rec))
 		if isHandled {
 			return
 		}
@@ -509,6 +517,16 @@ func (http *HTTP) catch(ex *httpExchange, rec any) {
 		return
 	}
 	writeHTTPError(ex, http.exceptionOf(ex, rec))
+}
+
+func (http *HTTP) runFilter(ex *httpExchange, f *httpFilter, e *exception.Exception) (any, bool) {
+	if !ex.traced {
+		return callCatch(&ex.HTTPContext, f.catch, e)
+	}
+	start := time.Now()
+	next, isHandled := callCatch(&ex.HTTPContext, f.catch, e)
+	http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StageExceptionFilter, f.name, trace.TransportHTTP, time.Since(start)))
+	return next, isHandled
 }
 
 func callCatch(c *ctx.HTTPContext, catchFn common.HTTPCatch, e *exception.Exception) (next any, isHandled bool) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"golang.org/x/net/websocket"
 )
 
@@ -21,34 +22,26 @@ func TestWSContext_Init(t *testing.T) {
 	if c.Timestamp.IsZero() {
 		t.Error(test.DiffMessage(c.Timestamp.IsZero(), false, "Init should set Timestamp"))
 	}
-	if c.GetID() == "" {
-		t.Error(test.DiffMessage(c.GetID(), "<non-empty UUID>", "Init should generate an id"))
+	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
+		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "W5: Init should generate the message id"))
 	}
 }
 
-func TestWSContext_SetID(t *testing.T) {
-	c := NewWSContext()
-	c.SetID()
-	if c.id == "" {
-		t.Error(test.DiffMessage(c.id, "<non-empty UUID>", "SetID should generate an id"))
-	}
-}
-
-func TestWSContext_SetIDIdempotent(t *testing.T) {
-	c := NewWSContext()
-	c.SetID()
-	first := c.id
-	c.SetID()
-	if c.id != first {
-		t.Error(test.DiffMessage(c.id, first, "SetID should not overwrite an existing id"))
+func TestWSContext_SetIDRemoved(t *testing.T) {
+	if _, ok := reflect.TypeFor[*WSContext]().MethodByName("SetID"); ok {
+		t.Error(test.DiffMessage("SetID", "<no such method>", "SetID is removed: the ID comes from the scope built in Init"))
 	}
 }
 
 func TestWSContext_GetID(t *testing.T) {
 	c := NewWSContext()
-	c.SetID()
-	if c.GetID() != c.id {
-		t.Error(test.DiffMessage(c.GetID(), c.id, "GetID should return the id"))
+	if c.GetID() != "" {
+		t.Error(test.DiffMessage(c.GetID(), "", "S10: GetID is empty before Init"))
+	}
+	c.Init(nil)
+	s := tracecontext.ScopeOf(c.Context())
+	if s == nil || c.GetID() != s.Message {
+		t.Error(test.DiffMessage(c.GetID(), s, "W5: GetID is Scope.Message"))
 	}
 }
 
@@ -84,15 +77,15 @@ func TestWSContext_SetContext(t *testing.T) {
 func TestWSContext_Reset(t *testing.T) {
 	c := NewWSContext()
 	type key struct{}
-	c.SetID()
+	c.Init(nil)
 	c.SetContext(context.WithValue(context.Background(), key{}, "v"))
 	c.SetWSPayload(WSPayload{"foo": "bar"})
 	c.Next = func() {}
 
 	c.Reset()
 
-	if c.id != "" {
-		t.Error(test.DiffMessage(c.id, "", "Reset should clear id"))
+	if c.GetID() != "" {
+		t.Error(test.DiffMessage(c.GetID(), "", "Reset should clear id"))
 	}
 	if c.ctx != nil {
 		t.Error(test.DiffMessage(c.ctx, nil, "Reset should clear ctx"))
@@ -108,14 +101,6 @@ func TestWSContext_Reset(t *testing.T) {
 	}
 	if c.Context() != context.Background() {
 		t.Error(test.DiffMessage(c.Context(), context.Background(), "Context should fall back to Background after Reset"))
-	}
-}
-
-func TestWSContext_Init_IDIsSixteenLowercaseHex(t *testing.T) {
-	c := NewWSContext()
-	c.Init(&websocket.Conn{})
-	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
-		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "B24: Init should generate the id eagerly"))
 	}
 }
 

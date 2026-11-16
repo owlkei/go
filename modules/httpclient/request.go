@@ -12,7 +12,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
+
+const traceparentHeader = "Traceparent"
 
 type multipartFile struct {
 	field    string
@@ -289,6 +293,12 @@ func (rb *requestBuilder) buildRequest(ctx context.Context) (*http.Request, erro
 
 	for k, v := range rb.headers {
 		req.Header.Set(k, v)
+	}
+
+	if _, isSet := req.Header[traceparentHeader]; !isSet {
+		if scope := tracecontext.ScopeOf(ctx); scope != nil && scope.Traceparent() != "" {
+			req.Header[traceparentHeader] = []string{scope.Traceparent()}
+		}
 	}
 
 	if rb.bodyBytes != nil {

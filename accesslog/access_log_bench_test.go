@@ -30,9 +30,9 @@ func benchStages(id string, n int) []trace.Event {
 	}
 	events := make([]trace.Event, 0, n+1)
 	for i := range n {
-		events = append(events, trace.Event{ID: id, Stage: names[i].stage, Name: names[i].name, Transport: trace.TransportHTTP, Duration: time.Duration(40+i*20) * time.Microsecond})
+		events = append(events, trace.Event{ID: id, TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "00f067aa0ba902b7", ParentID: id, Stage: names[i].stage, Name: names[i].name, Transport: trace.TransportHTTP, Duration: time.Duration(40+i*20) * time.Microsecond})
 	}
-	return append(events, trace.Event{ID: id, Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: "/api/v1/users", Code: 200, Duration: 3 * time.Millisecond})
+	return append(events, trace.Event{ID: id, TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: id, Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: "/api/v1/users", Code: 200, Duration: 3 * time.Millisecond})
 }
 
 func BenchmarkAccessLog_Request_1Stage(b *testing.B) {

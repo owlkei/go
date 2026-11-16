@@ -8,8 +8,8 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/internal/crypto"
 	"github.com/dangduoc08/ginject/internal/str"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/memorybroker"
 	"github.com/dangduoc08/ginject/trace"
 	"github.com/dangduoc08/ginject/wsevent"
@@ -88,7 +88,7 @@ func handshakeMiddleware(m httpMiddleware, ev *trace.Tracer) ctx.HTTPHandler {
 		}
 		start := time.Now()
 		m.use(c.Request, c.ResponseWriter, c.Next)
-		m.emit(ev, c.GetID(), time.Since(start), 0)
+		m.emit(ev, tracecontext.ScopeOf(c.Context()), c.GetID(), time.Since(start), 0)
 	}
 }
 
@@ -173,12 +173,7 @@ func (ws *WS) handleRequest(wsConn *websocket.Conn) {
 		_ = wsConn.Close()
 	}()
 
-	connID, err := crypto.UUID()
-	if err != nil {
-		ws.logger.Error("WSConnIDGenerationFailed", "error", err)
-		return
-	}
-
+	connID := connectionID(wsConn)
 	if err := websocket.JSON.Send(wsConn, WSPayload{
 		ID:   connID,
 		Type: TypeConnected,
@@ -195,6 +190,15 @@ func (ws *WS) handleRequest(wsConn *websocket.Conn) {
 
 	readLoop(conn, ws)
 	close(done)
+}
+
+func connectionID(wsConn *websocket.Conn) string {
+	if r := wsConn.Request(); r != nil {
+		if s := tracecontext.ScopeOf(r.Context()); s != nil && s.Request != "" {
+			return s.Request
+		}
+	}
+	return tracecontext.NewSpanID()
 }
 
 func pingLoop(wsConn *websocket.Conn, conn *WSConnection, done <-chan struct{}, logger common.Logger) {

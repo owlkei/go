@@ -10,6 +10,7 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/trace"
 	"golang.org/x/net/websocket"
 )
@@ -123,7 +124,7 @@ func (p *handlerPipe[C]) resolveTraced(c C, ev *trace.Tracer, transport string, 
 	defer func() {
 		d := time.Since(start)
 		*elapsed += d
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StagePipe, Name: p.name, Transport: transport, Duration: d})
+		ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StagePipe, p.name, transport, d))
 	}()
 	return p.resolve(c)
 }
@@ -320,7 +321,7 @@ func (p *httpHandlerPlan) invokeTraced(c *ctx.HTTPContext, ev *trace.Tracer, in 
 		}
 	}
 	defer func() {
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageHandler, Name: p.name, Transport: trace.TransportHTTP, Duration: time.Since(start) - pipes})
+		ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StageHandler, p.name, trace.TransportHTTP, time.Since(start)-pipes))
 	}()
 	return p.fn.Call(in)
 }

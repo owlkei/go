@@ -229,7 +229,7 @@
         "action": "Handshake middleware + guards pass",
         "effects": [
           "websocket.Conn established",
-          "connID generated (UUID)",
+          "connID = handshake request ID (16 hex, from the trace scope)",
           "Connection registered in WSConnMgr",
           "LastSeen timestamp set"
         ]

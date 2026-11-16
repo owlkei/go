@@ -14,6 +14,7 @@ import (
 	"github.com/dangduoc08/ginject/devtool"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/memorybroker"
 	"github.com/dangduoc08/ginject/trace"
@@ -21,7 +22,10 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-const loggerKey = "github.com/dangduoc08/ginject/common/common.Logger"
+const (
+	loggerKey         = "github.com/dangduoc08/ginject/common/common.Logger"
+	traceparentHeader = "Traceparent"
+)
 
 type App struct {
 	http      *HTTP
@@ -108,35 +112,17 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ex.writer.reset(w)
 	c := &ex.HTTPContext
 	c.Init(&ex.writer, r)
+	ex.scope = tracecontext.ScopeOf(c.Request.Context())
+	requestID, traceparent := ex.scope.Headers()
 
 	if app.isWSEnabled && app.ws.isWSPath(r.URL.Path) {
-		app.ws.upgrade(w, r, websocket.Server{
-			Handshake: func(wsCfg *websocket.Config, r *http.Request) error {
-				defer app.releaseCtx(ex)
-
-				c.Request = r
-				c.Status(http.StatusSwitchingProtocols)
-				err := app.ws.handshake(c)
-				if app.tracer.Enabled() {
-					app.tracer.Emit(trace.Event{
-						ID:        c.GetID(),
-						Stage:     trace.StageComplete,
-						Transport: trace.TransportHTTP,
-						Operation: c.Method,
-						Target:    c.URL.Path,
-						Code:      c.Code,
-						Duration:  time.Since(c.Timestamp),
-					})
-				}
-				return err
-			},
-			Handler: websocket.Handler(app.ws.handleRequest),
-		})
-
+		app.serveWS(w, ex, requestID, traceparent)
 		return
 	}
 
-	w.Header()[ctx.RequestID] = []string{c.GetID()}
+	h := w.Header()
+	h[ctx.RequestID] = requestID
+	h[traceparentHeader] = traceparent
 	ex.traced = app.tracer.Enabled()
 	app.http.handleRequest(ex)
 	if ex.traced {
@@ -144,17 +130,36 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if code == 0 {
 			code = http.StatusOK
 		}
-		app.tracer.Emit(trace.Event{
-			ID:        c.GetID(),
-			Stage:     trace.StageComplete,
-			Transport: trace.TransportHTTP,
-			Operation: c.Method,
-			Target:    c.URL.Path,
-			Code:      code,
-			Duration:  time.Since(c.Timestamp),
-		})
+		app.tracer.Emit(completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, code, time.Since(c.Timestamp)))
 	}
 	app.releaseCtx(ex)
+}
+
+func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, traceparent []string) {
+	c := &ex.HTTPContext
+	isReleased := false
+	app.ws.upgrade(w, c.Request, websocket.Server{
+		Handshake: func(wsCfg *websocket.Config, _ *http.Request) error {
+			isReleased = true
+			defer app.releaseCtx(ex)
+
+			if wsCfg.Header == nil {
+				wsCfg.Header = make(http.Header, 2)
+			}
+			wsCfg.Header[ctx.RequestID] = requestID
+			wsCfg.Header[traceparentHeader] = traceparent
+			c.Status(http.StatusSwitchingProtocols)
+			err := app.ws.handshake(c)
+			if app.tracer.Enabled() {
+				app.tracer.Emit(completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, c.Code, time.Since(c.Timestamp)))
+			}
+			return err
+		},
+		Handler: websocket.Handler(app.ws.handleRequest),
+	})
+	if !isReleased {
+		app.releaseCtx(ex)
+	}
 }
 
 func (app *App) Create(m *Module) {
@@ -206,14 +211,7 @@ func (app *App) initWS() {
 		if !app.tracer.Enabled() {
 			return
 		}
-		app.tracer.Emit(trace.Event{
-			ID:        c.GetID(),
-			Stage:     trace.StageComplete,
-			Transport: trace.TransportWS,
-			Operation: operation,
-			Target:    target,
-			Duration:  time.Since(c.Timestamp),
-		})
+		app.tracer.Emit(completeEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.TransportWS, operation, target, 0, time.Since(c.Timestamp)))
 	}
 }
 
@@ -239,7 +237,7 @@ func (app *App) initRoutes() {
 func (app *App) initExceptionFilters() {
 	for i := len(app.container.httpExceptionFilters) - 1; i >= 0; i-- {
 		ef := app.container.httpExceptionFilters[i]
-		app.http.addFilter(ef, traceHTTPCatch(&app.tracer, ef.Name, ef.Handler.(common.HTTPCatch)))
+		app.http.addFilter(ef)
 	}
 
 	if app.ws != nil {
@@ -267,7 +265,7 @@ func (app *App) initExceptionFilters() {
 			}
 
 			if isHTTPFilter {
-				app.http.addGlobalFilter(traceHTTPCatch(&app.tracer, name, httpCatch))
+				app.http.addGlobalFilter(name, httpCatch)
 			}
 
 			if isWSFilter && app.ws != nil {
@@ -280,21 +278,6 @@ func (app *App) initExceptionFilters() {
 	}
 }
 
-func traceHTTPCatch(ev *trace.Tracer, name string, fn common.HTTPCatch) common.HTTPCatch {
-	return func(c *ctx.HTTPContext, ex *exception.Exception) {
-		if !ev.Enabled() {
-			fn(c, ex)
-			return
-		}
-
-		start := time.Now()
-		defer func() {
-			ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Transport: trace.TransportHTTP, Duration: time.Since(start)})
-		}()
-		fn(c, ex)
-	}
-}
-
 func traceWSCatch(ev *trace.Tracer, name string, fn common.WSCatch) common.WSCatch {
 	return func(c *ctx.WSContext, ex *exception.Exception) {
 		if !ev.Enabled() {
@@ -304,7 +287,7 @@ func traceWSCatch(ev *trace.Tracer, name string, fn common.WSCatch) common.WSCat
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
+			ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StageExceptionFilter, name, trace.TransportWS, time.Since(start)))
 		}()
 		fn(c, ex)
 	}
@@ -370,7 +353,7 @@ func traceWSHandler(ev *trace.Tracer, stage, name string, h ctx.WSHandler) ctx.W
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(trace.Event{ID: c.GetID(), Stage: stage, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
+			ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), stage, name, trace.TransportWS, time.Since(start)))
 		}()
 		h(c)
 	}
@@ -382,13 +365,7 @@ func (app *App) initInterceptors() {
 			if !app.tracer.Enabled() {
 				return
 			}
-			app.tracer.Emit(trace.Event{
-				ID:        c.GetID(),
-				Stage:     trace.StagePostInterceptor,
-				Name:      name,
-				Transport: trace.TransportWS,
-				Duration:  duration,
-			})
+			app.tracer.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StagePostInterceptor, name, trace.TransportWS, duration))
 		}
 	}
 

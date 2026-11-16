@@ -5,14 +5,15 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/aggregation"
+	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"golang.org/x/net/websocket"
 )
 
 type WSContext struct {
 	*websocket.Conn
 
-	contextID
-	ctx context.Context
+	scope *tracecontext.Scope
+	ctx   context.Context
 
 	Next Next
 
@@ -30,11 +31,32 @@ func NewWSContext() *WSContext {
 func (c *WSContext) Init(conn *websocket.Conn) {
 	c.Timestamp = time.Now()
 	c.Conn = conn
-	c.SetID()
+	c.ctx, c.scope = tracecontext.NewMessage(connectionContext(conn), c.Timestamp)
+}
+
+func connectionContext(conn *websocket.Conn) context.Context {
+	if conn == nil {
+		return context.Background()
+	}
+	r := conn.Request()
+	if r == nil {
+		return context.Background()
+	}
+	if parent := r.Context(); tracecontext.ScopeOf(parent) != nil {
+		return parent
+	}
+	return context.Background()
+}
+
+func (c *WSContext) GetID() string {
+	if c.scope == nil {
+		return ""
+	}
+	return c.scope.Message
 }
 
 func (c *WSContext) Reset() {
-	c.id = ""
+	c.scope = nil
 	c.ctx = nil
 	c.Next = nil
 	c.Conn = nil
@@ -77,5 +99,11 @@ func (c *WSContext) Context() context.Context {
 }
 
 func (c *WSContext) SetContext(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	if c.scope != nil && tracecontext.ScopeOf(ctx) != c.scope {
+		ctx = tracecontext.With(ctx, c.scope)
+	}
 	c.ctx = ctx
 }
