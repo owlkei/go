@@ -1,6 +1,6 @@
 # 0004: Trace context and logging
 
-Status: Approved
+Status: Running
 
 ## Goal
 Every log line written while Ginject serves something can be tied to the request (or WebSocket
@@ -22,7 +22,7 @@ bounded amount of memory, and a panic flood can't flood the log.
 ## Steps
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
-| 1 | Trace context IDs: one generator (`crypto/rand`, honest package name) for a 128-bit trace ID (time-ordered prefix) and 64-bit span IDs, W3C format; the request ID is ours, always (`X-Request-Id`); a valid incoming `traceparent` continues its trace ID, an invalid one is ignored; `traceparent` on the response; WS connection ID = the handshake's request ID (no more UUID), each message its own ID with the connection as parent | tdd | docs/design/0011-trace-context.md | - | IDs match the W3C grammar; no duplicate in 10M; parallel generation unique; hostile `traceparent` values ignored; benchmarks under 100 ns | todo |
+| 1 | Trace context IDs: one generator (`crypto/rand`, honest package name) for a 128-bit trace ID (time-ordered prefix) and 64-bit span IDs, W3C format; the request ID is ours, always (`X-Request-Id`); a valid incoming `traceparent` continues its trace ID, an invalid one is ignored; `traceparent` on the response; WS connection ID = the handshake's request ID (no more UUID), each message its own ID with the connection as parent | tdd | docs/design/0011-trace-context.md | - | IDs match the W3C grammar; no duplicate in 10M; parallel generation unique; hostile `traceparent` values ignored; benchmarks under 100 ns | doing |
 | 2 | Scope in `context.Context`: every trigger point puts its scope (trace, span, request, connection, message, upstream) in the context it hands out; `Context()` joins the `ctx.Context` interface; `modules/httpclient` forwards `traceparent` from a request's context | tdd | docs/design/0011-trace-context.md | 1 | middleware, guard, interceptor, filter, handler and a service called with `c.Context()` all see the same scope; a goroutine holding it after the request still reads its own IDs | todo |
 | 3 | Spans on trace events: span ID and parent on every `trace.Tracer` event (one span per stage, the request as root), generated only while a listener exists | tdd | docs/design/0011-trace-context.md | 1 | the event tree of a request rebuilds the lifecycle order; 0 extra cost with no listener | todo |
 | 4 | Logger API: the injected `common.Logger` gains `From(ctx)` (same logger plus the scope's fields as key-value arguments, readable by any log library); what `SetLogger` accepts stays the 5-method interface adapters implement | tdd | docs/design/0012-log-pipeline.md | 2 | `s.Logger.From(ctx).Info(…)` carries the IDs with the built-in logger and with an adapter (zap-shaped test double); existing `s.Logger.Info(…)` calls unchanged | todo |
@@ -124,3 +124,4 @@ wrote them (debugging from an `X-Request-Id`, and the devtools timeline of a req
 
 ## Log
 - 2026-11-16: roadmap approved by the user.
+- 2026-11-16: designs 0011 and 0012 approved by the user, every open question as recommended; Pretty keeps duration colors (0012 A2 amended); heavy techniques 0011 H1, 0012 H1-H3 approved. Run started.
