@@ -1,6 +1,6 @@
 # 0005: Middlewares, built-in modules and security
 
-Status: Approved
+Status: Designed
 
 ## Goal
 Every middleware, guard and built-in module Ginject ships follows current standards and security
@@ -95,3 +95,4 @@ HTTP work before WebSocket.
 
 ## Log
 - 2026-11-17: roadmap approved by the user.
+- 2026-11-17: designs 0013, 0014 and 0015 approved by the user, every open question as recommended; 0014 and 0015 reconciled (CLOCK eviction, `Incr` for the fixed window). Condition: small public API, every name documented clearly (the docs feed a website later).

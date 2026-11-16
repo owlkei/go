@@ -157,3 +157,7 @@ points to cover:
   from `helmet` must allow them (nonces or hashes for inline scripts).
 - Errors and 404 pages as HTML for page routes, JSON for API routes.
 - Forms: `csrf` (0005) already protects them; validation errors rendered back into the form.
+- Middleware refusals (`csrf` 403, `hostcheck` 421, `loadshed` 503) run before routing, so they
+  pick HTML or JSON from the `Accept` header, not from the route.
+- CSP: per-request nonces for inline scripts; Owlky's assets embedded in the binary and served from
+  the app's own origin (`'self'`).
