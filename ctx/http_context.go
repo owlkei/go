@@ -57,7 +57,19 @@ func (c *HTTPContext) Init(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *HTTPContext) Reset() {
-	*c = HTTPContext{Code: http.StatusOK}
+	paramValues := keepCapacity(c.ParamValues)
+	aggregations := keepCapacity(c.aggregations)
+	*c = HTTPContext{Code: http.StatusOK, ParamValues: paramValues, aggregations: aggregations}
+}
+
+const keptCapacityLimit = 64
+
+func keepCapacity[T any](values []T) []T {
+	if cap(values) > keptCapacityLimit {
+		return nil
+	}
+	clear(values[:cap(values)])
+	return values[:0]
 }
 
 func (c *HTTPContext) AddAggregation(a *aggregation.Aggregation) {

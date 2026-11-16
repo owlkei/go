@@ -135,14 +135,14 @@ Type: `[]string`
 
 Default: `nil`
 
-Route parameter values. Written by the router; valid only during the request.
+Route parameter values. Written by the router into this slice's own backing array; valid only during the request (`Param()` copies them). Don't keep the slice after the request: the pooled context reuses it.
 
 #### Next
 Type: `Next`
 
 Default: `nil`
 
-Calls the next handler of the pipeline.
+The `next` of the request's middlewares: it only says "continue". `core` sets it per request (a shared no-op on routes without middleware).
 
 #### Code
 Type: `int`
@@ -162,7 +162,7 @@ The time `Init` ran.
 
 `Init(w http.ResponseWriter, r *http.Request)` sets `Timestamp`, `ResponseWriter`, `Request` and the request ID, and nothing else.
 
-`Reset()` drops every reference the context holds (request, writer, parsed input, parameters, aggregations, `Next`) and sets `Code` back to `200`.
+`Reset()` drops every reference the context holds (request, writer, parsed input, parameters, aggregations, `Next`) and sets `Code` back to `200`. It keeps the capacity of `ParamValues` and of the aggregation list, with every element cleared, so the next request appends without allocating; a slice whose capacity is over 64 is dropped.
 
 ```go
 c := ctx.NewHTTPContext()
@@ -172,7 +172,9 @@ defer c.Reset()
 
 #### Rules
 - `Code` is `200` after `NewHTTPContext` and after `Reset`; `Init` doesn't change it.
-- After `Reset`, every field except `Timestamp` is zero: `ParamValues` is `nil`.
+- After `Reset`, the context equals `NewHTTPContext()` in every field except the capacity of `ParamValues` and of the aggregation list: both have length 0 and every element of their backing arrays is zero.
+- A capacity of up to 64 is kept; over 64 the slice is dropped (`nil`).
+- `AddAggregation` on a warm context allocates nothing.
 - A context reused after `Reset` has no trace of the previous request: ID, code, body, form, files, query, header, parameters, aggregations and `Next`.
 
 ### SetID and GetID
@@ -539,6 +541,7 @@ An uploaded file bound by `File.Bind`.
 - **Field level capacity.** The plan counts the field levels of nested struct fields, so `Bind` allocates the slice once.
 - **Response headers** are assigned to the header map directly (`h["Content-Type"] = []string{…}`), without `Header.Set`'s canonicalization.
 - **JSON.** A `Map` or `map[string]any` is encoded through a pointer, which `encoding/json` serves a few percent faster; every other value is passed as is. A `JSONAppender` skips `encoding/json`.
+- **Kept capacity.** `Reset` keeps the backing arrays of `ParamValues` and the aggregation list (up to 64 elements, cleared), so a warm context appends without allocating: `AddAggregation` plus `Reset` costs about 17 ns and 0 allocations.
 - **Numbers** go through `num.F64ToAnyNumOK`, whose boxed result allocates for values that are not small integers.
 
 ## Benchmarks
@@ -572,7 +575,8 @@ BenchmarkBodySet_Deep-12                  	12601377	       103.1 ns/op	       0 
 BenchmarkBodyDel_Missing-12               	20962118	        58.08 ns/op	       0 B/op	       0 allocs/op
 BenchmarkHTTPContext_BodyJSON-12          	  279868	      4028 ns/op	    1657 B/op	      33 allocs/op
 BenchmarkHTTPContext_Init-12              	10443634	       118.2 ns/op	      16 B/op	       1 allocs/op
-BenchmarkHTTPContext_Reset-12             	10782450	       115.7 ns/op	      16 B/op	       1 allocs/op
+BenchmarkHTTPContext_Reset-12             	 7728946	       138.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkReset_WithInterceptor-12         	68541798	        17.48 ns/op	       0 B/op	       0 allocs/op
 BenchmarkHTTPContext_Text-12              	21880407	        54.83 ns/op	      32 B/op	       2 allocs/op
 BenchmarkHTTPContext_TextWithArgs-12      	15389197	        77.88 ns/op	      16 B/op	       1 allocs/op
 BenchmarkHTTPContext_JSON_Map-12          	 1369316	       876.2 ns/op	     144 B/op	      10 allocs/op

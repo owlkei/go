@@ -190,8 +190,8 @@ func TestReset_ClearsAllFields(t *testing.T) {
 	if c.ParamKeys != nil {
 		t.Error(test.DiffMessage(c.ParamKeys, nil, "Reset ParamKeys"))
 	}
-	if c.ParamValues != nil {
-		t.Error(test.DiffMessage(c.ParamValues, nil, "Reset ParamValues"))
+	if len(c.ParamValues) != 0 {
+		t.Error(test.DiffMessage(c.ParamValues, []string{}, "H3: Reset ParamValues must be empty"))
 	}
 	if c.Next != nil {
 		t.Error(test.DiffMessage(c.Next, nil, "Reset Next"))
@@ -231,6 +231,11 @@ func TestReset_EveryFieldIsZeroAfterUse(t *testing.T) {
 			continue
 		case "Timestamp":
 			continue
+		case "ParamValues", "aggregations":
+			if v.Field(i).Len() != 0 {
+				t.Error(test.DiffMessage(v.Field(i).Len(), 0, "H3: after Reset "+name+" must be empty"))
+			}
+			continue
 		}
 		if !v.Field(i).IsZero() {
 			t.Error(test.DiffMessage(v.Field(i), "<zero>", "B27: after Reset the context should hold no reference to the request, the writer, the payload or parsed input, but "+name+" is set"))
@@ -250,8 +255,8 @@ func TestReset_ClearsParamValuesAndAggregations(t *testing.T) {
 
 	c.Reset()
 
-	if c.ParamValues != nil {
-		t.Error(test.DiffMessage(c.ParamValues, nil, "B27: Reset should clear ParamValues to nil (no capacity is retained)"))
+	if len(c.ParamValues) != 0 {
+		t.Error(test.DiffMessage(len(c.ParamValues), 0, "H3: Reset should cut ParamValues to length 0"))
 	}
 	if len(c.Aggregations()) != 0 {
 		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: Reset should empty the aggregation list"))
@@ -465,5 +470,114 @@ func TestHTTPContext_Redirect(t *testing.T) {
 	}
 	if loc := w.Header().Get("Location"); loc != "/new-location" {
 		t.Error(test.DiffMessage(loc, "/new-location", "Redirect should set the Location header"))
+	}
+}
+
+func dirtyHTTPContext(t *testing.T) *HTTPContext {
+	t.Helper()
+	buf, contentType := buildMultipartFileBody(t, "avatar", "photo.png", "bytes")
+	c := newTestHTTPContext()
+	r := httptest.NewRequest("POST", "/path?callback=cb&a=1", buf)
+	r.Header.Set("Content-Type", contentType)
+	c.Init(httptest.NewRecorder(), r)
+	c.Status(http.StatusAccepted)
+	c.ParamKeys = map[string][]int{"id": {0}}
+	c.ParamValues = append(make([]string, 0, 8), "1", "2")
+	_ = c.Param()
+	_ = c.Query()
+	_ = c.Header()
+	_ = c.Form()
+	_ = c.File()
+	_ = c.Body()
+	c.AddAggregation(aggregation.NewAggregation())
+	c.AddAggregation(aggregation.NewAggregation())
+	c.Next = func() {}
+	return c
+}
+
+func TestReset_EqualsNewContextExceptCapacity(t *testing.T) {
+	c := dirtyHTTPContext(t)
+	c.Reset()
+
+	if len(c.ParamValues) != 0 || len(c.aggregations) != 0 {
+		t.Error(test.DiffMessage([]int{len(c.ParamValues), len(c.aggregations)}, []int{0, 0}, "H3-eq: after Reset both kept slices have length 0"))
+	}
+	got := *c
+	got.ParamValues = nil
+	got.aggregations = nil
+	want := *NewHTTPContext()
+	if !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "H3-eq: after Reset the context equals NewHTTPContext() in every field except the two capacities"))
+	}
+}
+
+func TestReset_KeepsCapacityOfParamValuesAndAggregations(t *testing.T) {
+	c := dirtyHTTPContext(t)
+	c.Reset()
+
+	if cap(c.ParamValues) < 8 {
+		t.Error(test.DiffMessage(cap(c.ParamValues), 8, "H3: Reset keeps the capacity of ParamValues"))
+	}
+	if cap(c.aggregations) < 2 {
+		t.Error(test.DiffMessage(cap(c.aggregations), 2, "H3: Reset keeps the capacity of the aggregation list"))
+	}
+}
+
+func TestReset_ClearsElements(t *testing.T) {
+	c := dirtyHTTPContext(t)
+	c.Reset()
+
+	for i, v := range c.ParamValues[:cap(c.ParamValues)] {
+		if v != "" {
+			t.Error(test.DiffMessage(v, "", "H3-eq: every element of the ParamValues backing array is zero after Reset, index "+strconv.Itoa(i)))
+		}
+	}
+	for i, a := range c.aggregations[:cap(c.aggregations)] {
+		if a != nil {
+			t.Error(test.DiffMessage(a, nil, "H3-eq: every element of the aggregation backing array is zero after Reset, index "+strconv.Itoa(i)))
+		}
+	}
+}
+
+func TestReset_DropsOver64(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamValues = make([]string, 0, 65)
+	c.aggregations = make([]*aggregation.Aggregation, 0, 65)
+	c.Reset()
+
+	if c.ParamValues != nil {
+		t.Error(test.DiffMessage(cap(c.ParamValues), 0, "H3: Reset drops a ParamValues whose capacity is over 64"))
+	}
+	if c.aggregations != nil {
+		t.Error(test.DiffMessage(cap(c.aggregations), 0, "H3: Reset drops an aggregation list whose capacity is over 64"))
+	}
+}
+
+func TestReset_Keeps64(t *testing.T) {
+	c := newTestHTTPContext()
+	c.ParamValues = make([]string, 0, 64)
+	c.aggregations = make([]*aggregation.Aggregation, 0, 64)
+	c.Reset()
+
+	if cap(c.ParamValues) != 64 {
+		t.Error(test.DiffMessage(cap(c.ParamValues), 64, "H3: Reset keeps a ParamValues whose capacity is exactly 64"))
+	}
+	if cap(c.aggregations) != 64 {
+		t.Error(test.DiffMessage(cap(c.aggregations), 64, "H3: Reset keeps an aggregation list whose capacity is exactly 64"))
+	}
+}
+
+func TestReset_AddAggregationOnWarmContextDoesNotAllocate(t *testing.T) {
+	a := aggregation.NewAggregation()
+	c := newTestHTTPContext()
+	c.AddAggregation(a)
+	c.Reset()
+
+	allocs := testing.AllocsPerRun(100, func() {
+		c.AddAggregation(a)
+		c.Reset()
+	})
+	if allocs != 0 {
+		t.Error(test.DiffMessage(allocs, 0.0, "P6, H3: AddAggregation on a warm context allocates nothing"))
 	}
 }

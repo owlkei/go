@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/dangduoc08/ginject/aggregation"
 )
 
 type benchJSONStruct struct {
@@ -135,5 +137,15 @@ func BenchmarkHTTPContext_SetID(b *testing.B) {
 	for b.Loop() {
 		c.id = ""
 		c.SetID()
+	}
+}
+
+func BenchmarkReset_WithInterceptor(b *testing.B) {
+	a := aggregation.NewAggregation()
+	c := newTestHTTPContext()
+	b.ReportAllocs()
+	for b.Loop() {
+		c.AddAggregation(a)
+		c.Reset()
 	}
 }
