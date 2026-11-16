@@ -161,3 +161,11 @@ points to cover:
   pick HTML or JSON from the `Accept` header, not from the route.
 - CSP: per-request nonces for inline scripts; Owlky's assets embedded in the binary and served from
   the app's own origin (`'self'`).
+
+## WebSocket bugs found while documenting (roadmap 0005, for 0006)
+
+Found 2026-11-17 while rewriting the main README (not fixed; the WebSocket roadmap owns them):
+- `EnableWS(nil)` crashes on a nil pointer instead of a bootstrap panic.
+- `EnableWS` writes into the caller's `*WSConfig`: two apps sharing one config overwrite each other.
+- The goroutine that drops dead WebSocket connections never stops, even after `Stop()`.
+- `Publisher.Publish` silently drops every payload after the first.

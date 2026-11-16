@@ -21,18 +21,18 @@
 
 | Token | Meaning | Example |
 |-------|---------|---------|
-| `BY` | Path parameter | `READ_BY_ID` → `GET /:id` |
-| `AND` | Additional path segment | `READ_BY_ID_AND_NAME` → `GET /:id/:name` |
+| `BY` | Path parameter | `READ_BY_ID` → `GET /{id}` |
+| `AND` | Additional path segment | `READ_BY_ID_AND_NAME` → `GET /{id}/{name}` |
 | `OF` | Sub-resource | `READ_OF_POSTS` → `GET /posts` |
 | `ANY` | Wildcard segment | `READ_ANY` → `GET /*` |
 | `FILE` | File serving | `READ_FILE` → `GET /*` (static files) |
 
 **Examples**:
-- `READ_BY_ID` → `GET /:id`
-- `READ_BY_ID_AND_PAGE` → `GET /:id/:page`
+- `READ_BY_ID` → `GET /{id}`
+- `READ_BY_ID_AND_PAGE` → `GET /{id}/{page}`
 - `READ_OF_COMMENTS` → `GET /comments`
 - `CREATE_COMMENT` → `POST /comment`
-- `DELETE_BY_ID_AND_VERSION` → `DELETE /:id/:version`
+- `DELETE_BY_ID_AND_VERSION` → `DELETE /{id}/{version}`
 - Parameters of one resource keep their declaration order for any count: `READ_x_BY_a_AND_b_AND_c` → `GET /x/{a}/{b}/{c}/`, `READ_m_BY_a_AND_b_OF_u_BY_d` → `GET /u/{d}/m/{a}/{b}/`
 - `READ_ANY` → `GET /*` (catch-all)
 - `READ_FILE_ANY` → `GET /*` (static file serving)
@@ -42,11 +42,11 @@
 | Token | Meaning | Example |
 |-------|---------|---------|
 | `VERSION_X` | API version | `READ_VERSION_1` → `GET /v1/...` |
-| `VERSION_X_BY_ID` | Versioned with param | `READ_VERSION_2_BY_ID` → `GET /v2/:id` |
+| `VERSION_X_BY_ID` | Versioned with param | `READ_VERSION_2_BY_ID` → `GET /v2/{id}` |
 
 **Rule**: Version tag is appended AFTER all other tokens. Examples:
 - `READ_VERSION_1` → version 1 of READ
-- `READ_BY_ID_VERSION_2` → version 2 of READ/:id
+- `READ_BY_ID_VERSION_2` → version 2 of READ/{id}
 - `CREATE_OF_USERS_VERSION_3` → version 3 of POST /users
 
 ### 1.4 Reserved/Special Tokens
@@ -316,14 +316,14 @@ Overlapping shapes (`/{id}` beside `/all` or `/*.html`) are legal and resolved b
 **Valid**:
 ```go
 // Method name: READ_BY_ID_AND_NAME
-// Routes to: GET /:id/:name ✓
+// Routes to: GET /{id}/{name} ✓
 func (c *UserController) READ_BY_ID_AND_NAME() { ... }
 ```
 
 **Invalid**:
 ```go
 // Method name defines params, but handler expects different names
-// Routes to: GET /:id (only :id extracted)
+// Routes to: GET /{id} (only :id extracted)
 // Param map won't have "userId" → error at runtime
 func (c *UserController) READ_BY_ID(params ctx.Param) {
     // This fails:
@@ -342,9 +342,9 @@ func (c *UserController) READ_BY_ID(params ctx.Param) {
 **Output**:
 ```
 httpMethod = "GET"
-route = "/:id"
+route = "/{id}"
 version = "1"
-pattern = "GET /:id" (used for routing lookup)
+pattern = "GET /{id}" (used for routing lookup)
 ```
 
 **Algorithm**:
