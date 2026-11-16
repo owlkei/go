@@ -8,6 +8,26 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
+func TestIsDynamicModule(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"func(pkg.Provider) *core.Module", true},
+		{"func(pkg.A, pkg.B) *core.Module", true},
+		{"func() *core.Module", true},
+		{"*core.Module", false},
+		{"func() error", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		got := isDynamicModule(c.in)
+		if got != c.want {
+			t.Error(test.DiffMessage(got, c.want, "isDynamicModule("+c.in+")"))
+		}
+	}
+}
+
 func TestModuleBuilderImports(t *testing.T) {
 	child := ModuleBuilder().Build()
 	b := ModuleBuilder().Imports(child)

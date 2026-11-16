@@ -8,6 +8,26 @@ import (
 	"github.com/dangduoc08/ginject/common"
 )
 
+func BenchmarkGenControllerKey(b *testing.B) {
+	m := ModuleBuilder().Build()
+	c := &mockController{}
+	b.ReportAllocs()
+	for b.Loop() {
+		genControllerKey(m, c)
+	}
+}
+
+func BenchmarkToUniqueControllers(b *testing.B) {
+	m := ModuleBuilder().Build()
+	c1 := &mockController{}
+	c2 := &mockController{}
+	b.ReportAllocs()
+	for b.Loop() {
+		controllers := []Controller{c1, c2, c1, c2, c1}
+		toUniqueControllers(m, &controllers)
+	}
+}
+
 type benchPrefixTargetController struct{ common.HTTP }
 
 func (c benchPrefixTargetController) NewController() Controller      { return c }

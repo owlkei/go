@@ -4,7 +4,7 @@
 
 ## 1. Handler Plans (design 0006)
 
-Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `core/fn.go`
+Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `core/fn_plan.go`
 (`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `core/module.go`
 (`bindHTTPController` / `bindWSController` build the plans into `Module.httpPlanByPattern` /
 `wsPlanByEvent`) and `core/app.go` (`resolveAndCallHandler` looks the plan up and calls `invoke`).
@@ -143,7 +143,7 @@ route's exception filter chain (`common.RunHTTPCatchChain`). `invoke` never reco
 
 ### 4.2 No Per-Request Timeout Check
 
-There is no deadline check before handler invocation — `ctx.HTTPContext.IsDeadlineExceeded()` does not exist (verified absent from `ctx/http_context.go`), and no code in `core/fn.go`'s handler-invocation path references it or `exception.RequestTimeoutException` at all. A handler runs to completion regardless of how long it takes; only the underlying `http.Server`'s connection-level timeouts (`ReadTimeout`/`WriteTimeout`, set once in `core.App.Listen()`) provide any time bound, and those act on the connection, not the handler goroutine.
+There is no deadline check before handler invocation — `ctx.HTTPContext.IsDeadlineExceeded()` does not exist (verified absent from `ctx/http_context.go`), and no code in `core/fn_plan.go`'s handler-invocation path references it or `exception.RequestTimeoutException` at all. A handler runs to completion regardless of how long it takes; only the underlying `http.Server`'s connection-level timeouts (`ReadTimeout`/`WriteTimeout`, set once in `core.App.Listen()`) provide any time bound, and those act on the connection, not the handler goroutine.
 
 ### 4.3 Common Handler Errors
 

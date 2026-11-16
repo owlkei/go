@@ -81,7 +81,6 @@ const (
 var (
 	bindersByType   sync.Map
 	anyType         = reflect.TypeFor[any]()
-	stringType      = reflect.TypeFor[string]()
 	stringSliceType = reflect.TypeFor[[]string]()
 	dataFileType    = reflect.TypeFor[*DataFile]()
 	dataFilesType   = reflect.TypeFor[[]*DataFile]()

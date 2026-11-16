@@ -1,11 +1,15 @@
 package core
 
 import (
+	"errors"
+	"go/token"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/routing"
 )
@@ -26,9 +30,6 @@ var fieldNameByRole = map[string]string{
 	"exceptionFilter": "ExceptionFilter",
 	"ws":              "WS",
 	"middleware":      "Middleware",
-}
-var injectableInterfaces = []string{
-	"github.com/dangduoc08/ginject/common/common.Logger",
 }
 
 type Module struct {
@@ -182,6 +183,35 @@ func (m *Module) bootstrapMainModule() {
 	}
 }
 
+func createStaticModuleFromDynamicModule(dynamicModule any) *Module {
+	dynamicModuleType := reflect.TypeOf(dynamicModule)
+	var args []reflect.Value
+
+	genError := func(dynamicModuleType reflect.Type, dynamicArgKey string, index int) error {
+		return errors.New(
+			color.FmtRed(
+				"dependency injection: can't resolve argument of '%v'. Please make sure that the argument '%v' at index [%v] is available in the injected providers",
+				strings.Replace(dynamicModuleType.String(), ") *core.Module", ")", 1),
+				dynamicArgKey,
+				index,
+			),
+		)
+	}
+
+	for i := 0; i < dynamicModuleType.NumIn(); i++ {
+		dynamicArgKey := genFieldKey(dynamicModuleType.In(i))
+		if p, ok := globalProviderByKey.Load(dynamicArgKey); ok {
+			args = append(args, reflect.ValueOf(p))
+		} else if iface, ok := globalInterfaceByKey.Load(dynamicArgKey); ok {
+			args = append(args, reflect.ValueOf(iface))
+		} else {
+			panic(genError(dynamicModuleType, dynamicArgKey, i))
+		}
+	}
+
+	return reflect.ValueOf(dynamicModule).Call(args)[0].Interface().(*Module)
+}
+
 func prependInjectedModules(m *Module, injectModules []*Module) {
 	if len(injectModules) == 0 {
 		return
@@ -210,6 +240,24 @@ func prependInjectedModules(m *Module, injectModules []*Module) {
 	}
 
 	toUniqueControllers(m, &m.controllers)
+}
+
+func toUniqueControllers(module *Module, controllers *[]Controller) {
+	seen := make(map[string]struct{}, len(*controllers))
+	uniqueControllers := make([]Controller, 0, len(*controllers))
+	for _, controller := range *controllers {
+		controllerKey := genControllerKey(module, controller)
+		if _, ok := seen[controllerKey]; !ok {
+			seen[controllerKey] = struct{}{}
+			uniqueControllers = append(uniqueControllers, controller)
+		}
+	}
+
+	*controllers = uniqueControllers
+}
+
+func genControllerKey(m *Module, c Controller) string {
+	return "[" + m.ID() + "]" + genFieldKey(reflect.TypeOf(c))
 }
 
 func (m *Module) injectStaticModules() {
@@ -319,10 +367,6 @@ func (m *Module) injectControllers(injectedProviders map[string]Provider) {
 	}
 }
 
-func controllerModulePrefixes(controllerType reflect.Type) []string {
-	return globalPrefixesByController[genFieldKey(controllerType)]
-}
-
 func (m *Module) bindHTTPController(controller Controller, injectedProviders map[string]Provider) {
 	controllerType := reflect.TypeOf(controller)
 	if _, ok := controllerType.FieldByName(fieldNameByRole["http"]); !ok {
@@ -374,6 +418,10 @@ func (m *Module) bindHTTPController(controller Controller, injectedProviders map
 	}
 }
 
+func controllerModulePrefixes(controllerType reflect.Type) []string {
+	return globalPrefixesByController[genFieldKey(controllerType)]
+}
+
 func (m *Module) bindHTTPExceptionFilters(controller Controller, controllerType reflect.Type, controllerPath string, http *common.HTTP, injectedProviders map[string]Provider) {
 	if _, ok := controllerType.FieldByName(fieldNameByRole["exceptionFilter"]); !ok {
 		return
@@ -393,6 +441,46 @@ func (m *Module) bindHTTPExceptionFilters(controller Controller, controllerType 
 			MainHandlerName: item.HTTP.Common.MainHandlerName,
 			Pattern:         item.HTTP.Pattern,
 		})
+	}
+}
+
+func buildFieldInjectionCallback(kind string, injectedProviders map[string]Provider) func(int, reflect.Type, reflect.Value, reflect.Value) {
+	return func(i int, ownerType reflect.Type, ownerValue, newInstance reflect.Value) {
+		field := ownerType.Field(i)
+		fieldType := field.Type
+		fieldName := field.Name
+		injectProviderKey := genFieldKey(fieldType)
+
+		if !token.IsExported(fieldName) {
+			panic(errors.New(
+				color.FmtRed(
+					"dependency injection: can't set value to unexported '%v' field of the '%v' %v",
+					fieldName,
+					ownerType.Name(),
+					kind,
+				),
+			))
+		}
+
+		if injectedProviders[injectProviderKey] != nil {
+			newInstance.Elem().Field(i).Set(reflect.ValueOf(injectedProviders[injectProviderKey]))
+		} else if p, ok := globalProviderByKey.Load(injectProviderKey); ok {
+			newInstance.Elem().Field(i).Set(reflect.ValueOf(p))
+		} else if iface, ok := globalInterfaceByKey.Load(injectProviderKey); ok {
+			newInstance.Elem().Field(i).Set(reflect.ValueOf(iface))
+		} else if !isInjectedProvider(fieldType) {
+			newInstance.Elem().Field(i).Set(ownerValue.Field(i))
+		} else {
+			panic(errors.New(
+				color.FmtRed(
+					"dependency injection: can't resolve dependencies of the '%v' provider. Please make sure that the argument dependency at index [%v] is available in the '%v' %v",
+					fieldType.String(),
+					i,
+					ownerType.Name(),
+					kind,
+				),
+			))
+		}
 	}
 }
 

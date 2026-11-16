@@ -13,20 +13,6 @@ const (
 	codeWSTopicNotFound = 4004
 )
 
-var wsCloseStatusText = map[int]string{
-	1000: "Normal Closure",
-	1001: "Going Away",
-	1002: "Protocol Error",
-	1003: "Unsupported Data",
-	1007: "Invalid Frame Payload Data",
-	1008: "Policy Violation",
-	1009: "Message Too Big",
-	1010: "Mandatory Extension",
-	1011: "Internal Error",
-	4001: "Not Subscribed",
-	4004: "Topic Not Found",
-}
-
 func GoingAwayException(message string, opts ...any) Exception {
 	return NewException(message, codeWSGoingAway, opts...)
 }

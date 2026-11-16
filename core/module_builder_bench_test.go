@@ -6,6 +6,14 @@ import (
 	"testing"
 )
 
+func BenchmarkIsDynamicModule(b *testing.B) {
+	s := "func(pkg.Provider) *core.Module"
+	b.ReportAllocs()
+	for b.Loop() {
+		isDynamicModule(s)
+	}
+}
+
 func BenchmarkModuleBuilderBuild(b *testing.B) {
 	p := &mockProvider{}
 	c := &mockController{}

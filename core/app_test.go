@@ -3,6 +3,7 @@ package core
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/event"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
@@ -1156,4 +1158,142 @@ func TestInitDevtool_DoesNotSpawnAServerGoroutine(t *testing.T) {
 
 	t.Errorf("devtool must not leave a goroutine behind while its transport is unimplemented: %d before, %d after",
 		before, runtime.NumGoroutine())
+}
+
+func TestGetLocalIP(t *testing.T) {
+	ip := getLocalIP()
+	if ip != "" {
+		if net := reflect.TypeOf(ip).Kind(); net != reflect.String {
+			t.Error(test.DiffMessage(net, reflect.String, "getLocalIP should return string"))
+		}
+	}
+}
+
+func TestTraceHTTPHandler_NoListener_StillCallsWrapped(t *testing.T) {
+	ev := event.NewEvent()
+	c := newHTTPContext()
+	var called bool
+	h := traceHTTPHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.HTTPContext) { called = true })
+	h(c)
+	if !called {
+		t.Error(test.DiffMessage(false, true, "wrapped handler should still run when no listener is attached"))
+	}
+}
+
+func TestTraceHTTPHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
+	ev := event.NewEvent()
+	c := newHTTPContext()
+	var got *trace.Event
+	ev.On(trace.EventName, func(args ...any) {
+		te := args[0].(trace.Event)
+		got = &te
+	})
+	h := traceHTTPHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.HTTPContext) {})
+	h(c)
+	if got == nil {
+		t.Fatal("expected a trace event to be emitted when a listener is attached")
+	}
+	if got.Stage != trace.StageGuard || got.Name != "Test.Guard" {
+		t.Error(test.DiffMessage([]any{got.Stage, got.Name}, []any{trace.StageGuard, "Test.Guard"}, "traceHTTPHandler emitted event fields"))
+	}
+}
+
+func TestTraceHTTPCatch_NoListener_StillCallsWrapped(t *testing.T) {
+	ev := event.NewEvent()
+	c := newHTTPContext()
+	ex := exception.BadRequestException("bad")
+	var called bool
+	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) { called = true })
+	fn(c, &ex)
+	if !called {
+		t.Error(test.DiffMessage(false, true, "wrapped catch fn should still run when no listener is attached"))
+	}
+}
+
+func TestTraceHTTPCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
+	ev := event.NewEvent()
+	c := newHTTPContext()
+	ex := exception.BadRequestException("bad")
+	var got *trace.Event
+	ev.On(trace.EventName, func(args ...any) {
+		te := args[0].(trace.Event)
+		got = &te
+	})
+	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})
+	fn(c, &ex)
+	if got == nil {
+		t.Fatal("expected a trace event to be emitted when a listener is attached")
+	}
+	if got.Stage != trace.StageExceptionFilter || got.Name != "Test.Filter" {
+		t.Error(test.DiffMessage([]any{got.Stage, got.Name}, []any{trace.StageExceptionFilter, "Test.Filter"}, "traceHTTPCatch emitted event fields"))
+	}
+}
+
+func TestTraceWSHandler_NoListener_StillCallsWrapped(t *testing.T) {
+	ev := event.NewEvent()
+	c := ctx.NewWSContext()
+	var called bool
+	h := traceWSHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.WSContext) { called = true })
+	h(c)
+	if !called {
+		t.Error(test.DiffMessage(false, true, "wrapped handler should still run when no listener is attached"))
+	}
+}
+
+func TestTraceWSHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
+	ev := event.NewEvent()
+	c := ctx.NewWSContext()
+	var got *trace.Event
+	ev.On(trace.EventName, func(args ...any) {
+		te := args[0].(trace.Event)
+		got = &te
+	})
+	h := traceWSHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.WSContext) {})
+	h(c)
+	if got == nil {
+		t.Fatal("expected a trace event to be emitted when a listener is attached")
+	}
+	if got.Stage != trace.StageGuard || got.Name != "Test.Guard" || got.Transport != trace.TransportWS {
+		t.Error(test.DiffMessage([]any{got.Stage, got.Name, got.Transport}, []any{trace.StageGuard, "Test.Guard", trace.TransportWS}, "traceWSHandler emitted event fields"))
+	}
+}
+
+func TestTraceWSCatch_NoListener_StillCallsWrapped(t *testing.T) {
+	ev := event.NewEvent()
+	c := ctx.NewWSContext()
+	ex := exception.BadRequestException("bad")
+	var called bool
+	fn := traceWSCatch(ev, "Test.Filter", func(c *ctx.WSContext, ex *exception.Exception) { called = true })
+	fn(c, &ex)
+	if !called {
+		t.Error(test.DiffMessage(false, true, "wrapped catch fn should still run when no listener is attached"))
+	}
+}
+
+func TestTraceWSCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
+	ev := event.NewEvent()
+	c := ctx.NewWSContext()
+	ex := exception.BadRequestException("bad")
+	var got *trace.Event
+	ev.On(trace.EventName, func(args ...any) {
+		te := args[0].(trace.Event)
+		got = &te
+	})
+	fn := traceWSCatch(ev, "Test.Filter", func(c *ctx.WSContext, ex *exception.Exception) {})
+	fn(c, &ex)
+	if got == nil {
+		t.Fatal("expected a trace event to be emitted when a listener is attached")
+	}
+	if got.Stage != trace.StageExceptionFilter || got.Name != "Test.Filter" || got.Transport != trace.TransportWS {
+		t.Error(test.DiffMessage([]any{got.Stage, got.Name, got.Transport}, []any{trace.StageExceptionFilter, "Test.Filter", trace.TransportWS}, "traceWSCatch emitted event fields"))
+	}
+}
+
+func TestLogBoostrapNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Error(test.DiffMessage(r, nil, "logBoostrap should not panic"))
+		}
+	}()
+	logBoostrap(8080)
 }

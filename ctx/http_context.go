@@ -125,11 +125,6 @@ func (c *HTTPContext) Redirect(url string) {
 	http.Redirect(c.ResponseWriter, c.Request, url, c.Code)
 }
 
-func isNilPointer(v any) bool {
-	rv := reflect.ValueOf(v)
-	return rv.Kind() == reflect.Pointer && rv.IsNil()
-}
-
 func encodeJSON(data any, args []any) []byte {
 	var body []byte
 	var err error
@@ -155,6 +150,11 @@ func encodeJSON(data any, args []any) []byte {
 		panic(exception.InternalServerErrorException("Cannot encode JSON response", err))
 	}
 	return body
+}
+
+func isNilPointer(v any) bool {
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
 func sanitizeCallback(callback string) string {

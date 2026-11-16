@@ -76,6 +76,10 @@ func (m *moduleBuilder) getModuleType() ([]*Module, []any) {
 	return staticModules, dynamicModules
 }
 
+func isDynamicModule(moduleType string) bool {
+	return strings.HasPrefix(moduleType, "func(") && strings.HasSuffix(moduleType, "*core.Module")
+}
+
 func (m *moduleBuilder) Providers(providers ...Provider) *moduleBuilder {
 	m.providers = append(m.providers, providers...)
 	return m
@@ -102,6 +106,41 @@ func (m *moduleBuilder) Build() *Module {
 	module.Name = resolveModuleName()
 
 	return module
+}
+
+func resolveModuleName() string {
+	pcs := make([]uintptr, maxModuleNameStackDepth)
+	n := runtime.Callers(3, pcs)
+	if n == 0 {
+		return ""
+	}
+
+	frames := runtime.CallersFrames(pcs[:n])
+	var funcFallback string
+	isInnermost := true
+
+	for {
+		frame, more := frames.Next()
+
+		if !isSkippableModuleNameFrame(frame.Function) {
+			if fset, astFile, ok := parseModuleFile(frame.File); ok {
+				varName, funcName := moduleNameCandidatesAtLine(fset, astFile, frame.Line, isInnermost)
+				if varName != "" {
+					return astFile.Name.Name + "." + varName
+				}
+				if funcFallback == "" && funcName != "" {
+					funcFallback = astFile.Name.Name + "." + funcName
+				}
+			}
+			isInnermost = false
+		}
+
+		if !more {
+			break
+		}
+	}
+
+	return funcFallback
 }
 
 func parseModuleFile(path string) (*token.FileSet, *ast.File, bool) {
@@ -157,39 +196,4 @@ func moduleNameCandidatesAtLine(fset *token.FileSet, astFile *ast.File, line int
 		}
 	}
 	return
-}
-
-func resolveModuleName() string {
-	pcs := make([]uintptr, maxModuleNameStackDepth)
-	n := runtime.Callers(3, pcs)
-	if n == 0 {
-		return ""
-	}
-
-	frames := runtime.CallersFrames(pcs[:n])
-	var funcFallback string
-	isInnermost := true
-
-	for {
-		frame, more := frames.Next()
-
-		if !isSkippableModuleNameFrame(frame.Function) {
-			if fset, astFile, ok := parseModuleFile(frame.File); ok {
-				varName, funcName := moduleNameCandidatesAtLine(fset, astFile, frame.Line, isInnermost)
-				if varName != "" {
-					return astFile.Name.Name + "." + varName
-				}
-				if funcFallback == "" && funcName != "" {
-					funcFallback = astFile.Name.Name + "." + funcName
-				}
-			}
-			isInnermost = false
-		}
-
-		if !more {
-			break
-		}
-	}
-
-	return funcFallback
 }

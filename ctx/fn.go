@@ -1,6 +1,7 @@
 package ctx
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -28,3 +29,9 @@ func GetTagParamIndex(v string) (int, string) {
 	}
 	return 0, bindedField
 }
+
+var stringType = reflect.TypeFor[string]()
+
+const applicationJSON = "application/json"
+
+const multipartFormData = "multipart/form-data"

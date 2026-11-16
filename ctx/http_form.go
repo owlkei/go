@@ -11,7 +11,6 @@ import (
 type Form map[string][]string
 
 const (
-	multipartFormData             = "multipart/form-data"
 	applicationXWWWFormUrlencoded = "application/x-www-form-urlencoded"
 	defaultMaxMemory              = 32 << 20
 )

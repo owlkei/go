@@ -296,7 +296,7 @@ app.Listen(8080)
 
 ## Implementation Evidence
 
-**File**: `core/app.go:212-224`
+**File**: `core/app.go:217-229`
 ```go
 func (app *App) Create(m *Module) {
     app.initLogger()                    // Sequential
@@ -306,7 +306,7 @@ func (app *App) Create(m *Module) {
 }
 ```
 
-**File**: `core/module.go:137-163`
+**File**: `core/module.go:138-164`
 ```go
 func (m *Module) NewModule() *Module {
     m.Lock()  // ← Critical section
@@ -319,7 +319,7 @@ func (m *Module) NewModule() *Module {
 }
 ```
 
-**File**: `core/app.go:637-693`
+**File**: `core/app.go:727-783`
 ```go
 func (app *App) Listen(port int) error {
     // ... logging ...

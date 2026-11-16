@@ -9,7 +9,6 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/event"
-	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/trace"
 )
@@ -55,58 +54,6 @@ func TestGenProviderKey(t *testing.T) {
 	want := genFieldKey(reflect.TypeOf(p))
 	if got != want {
 		t.Error(test.DiffMessage(got, want, "genProviderKey"))
-	}
-}
-
-func TestGenControllerKey(t *testing.T) {
-	m := ModuleBuilder().Build()
-	c := &mockController{}
-	got := genControllerKey(m, c)
-	want := "[" + m.ID() + "]" + genFieldKey(reflect.TypeOf(c))
-	if got != want {
-		t.Error(test.DiffMessage(got, want, "genControllerKey"))
-	}
-}
-
-func TestIsDynamicModule(t *testing.T) {
-	cases := []struct {
-		in   string
-		want bool
-	}{
-		{"func(pkg.Provider) *core.Module", true},
-		{"func(pkg.A, pkg.B) *core.Module", true},
-		{"func() *core.Module", true},
-		{"*core.Module", false},
-		{"func() error", false},
-		{"", false},
-	}
-	for _, c := range cases {
-		got := isDynamicModule(c.in)
-		if got != c.want {
-			t.Error(test.DiffMessage(got, c.want, "isDynamicModule("+c.in+")"))
-		}
-	}
-}
-
-func TestToUniqueControllers(t *testing.T) {
-	m := ModuleBuilder().Build()
-	c1 := &mockController{}
-	c2 := &mockController{}
-
-	controllers := []Controller{c1, c1, c2, c1}
-	toUniqueControllers(m, &controllers)
-
-	if len(controllers) != 1 {
-		t.Error(test.DiffMessage(len(controllers), 1, "toUniqueControllers dedup"))
-	}
-}
-
-func TestToUniqueControllersEmpty(t *testing.T) {
-	m := ModuleBuilder().Build()
-	controllers := []Controller{}
-	toUniqueControllers(m, &controllers)
-	if len(controllers) != 0 {
-		t.Error(test.DiffMessage(len(controllers), 0, "toUniqueControllers empty"))
 	}
 }
 
@@ -203,15 +150,6 @@ func TestReturnHTTPSlice(t *testing.T) {
 	}
 }
 
-func TestGetLocalIP(t *testing.T) {
-	ip := getLocalIP()
-	if ip != "" {
-		if net := reflect.TypeOf(ip).Kind(); net != reflect.String {
-			t.Error(test.DiffMessage(net, reflect.String, "getLocalIP should return string"))
-		}
-	}
-}
-
 type fnTestProvider struct{ Tag string }
 
 func (p fnTestProvider) NewProvider() Provider { return p }
@@ -231,126 +169,6 @@ func TestReturnHTTPUint(t *testing.T) {
 	returnHTTP(c, reflect.ValueOf(uint(7)))
 	if w.Body.String() != "7" {
 		t.Error(test.DiffMessage(w.Body.String(), "7", "returnHTTP uint"))
-	}
-}
-
-func TestTraceHTTPHandler_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	var called bool
-	h := traceHTTPHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.HTTPContext) { called = true })
-	h(c)
-	if !called {
-		t.Error(test.DiffMessage(false, true, "wrapped handler should still run when no listener is attached"))
-	}
-}
-
-func TestTraceHTTPHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-	h := traceHTTPHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.HTTPContext) {})
-	h(c)
-	if got == nil {
-		t.Fatal("expected a trace event to be emitted when a listener is attached")
-	}
-	if got.Stage != trace.StageGuard || got.Name != "Test.Guard" {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Name}, []any{trace.StageGuard, "Test.Guard"}, "traceHTTPHandler emitted event fields"))
-	}
-}
-
-func TestTraceHTTPCatch_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	ex := exception.BadRequestException("bad")
-	var called bool
-	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) { called = true })
-	fn(c, &ex)
-	if !called {
-		t.Error(test.DiffMessage(false, true, "wrapped catch fn should still run when no listener is attached"))
-	}
-}
-
-func TestTraceHTTPCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
-	c := newHTTPContext()
-	ex := exception.BadRequestException("bad")
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-	fn := traceHTTPCatch(ev, "Test.Filter", func(c *ctx.HTTPContext, ex *exception.Exception) {})
-	fn(c, &ex)
-	if got == nil {
-		t.Fatal("expected a trace event to be emitted when a listener is attached")
-	}
-	if got.Stage != trace.StageExceptionFilter || got.Name != "Test.Filter" {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Name}, []any{trace.StageExceptionFilter, "Test.Filter"}, "traceHTTPCatch emitted event fields"))
-	}
-}
-
-func TestTraceWSHandler_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
-	c := ctx.NewWSContext()
-	var called bool
-	h := traceWSHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.WSContext) { called = true })
-	h(c)
-	if !called {
-		t.Error(test.DiffMessage(false, true, "wrapped handler should still run when no listener is attached"))
-	}
-}
-
-func TestTraceWSHandler_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
-	c := ctx.NewWSContext()
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-	h := traceWSHandler(ev, trace.StageGuard, "Test.Guard", func(c *ctx.WSContext) {})
-	h(c)
-	if got == nil {
-		t.Fatal("expected a trace event to be emitted when a listener is attached")
-	}
-	if got.Stage != trace.StageGuard || got.Name != "Test.Guard" || got.Transport != trace.TransportWS {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Name, got.Transport}, []any{trace.StageGuard, "Test.Guard", trace.TransportWS}, "traceWSHandler emitted event fields"))
-	}
-}
-
-func TestTraceWSCatch_NoListener_StillCallsWrapped(t *testing.T) {
-	ev := event.NewEvent()
-	c := ctx.NewWSContext()
-	ex := exception.BadRequestException("bad")
-	var called bool
-	fn := traceWSCatch(ev, "Test.Filter", func(c *ctx.WSContext, ex *exception.Exception) { called = true })
-	fn(c, &ex)
-	if !called {
-		t.Error(test.DiffMessage(false, true, "wrapped catch fn should still run when no listener is attached"))
-	}
-}
-
-func TestTraceWSCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
-	ev := event.NewEvent()
-	c := ctx.NewWSContext()
-	ex := exception.BadRequestException("bad")
-	var got *trace.Event
-	ev.On(trace.EventName, func(args ...any) {
-		te := args[0].(trace.Event)
-		got = &te
-	})
-	fn := traceWSCatch(ev, "Test.Filter", func(c *ctx.WSContext, ex *exception.Exception) {})
-	fn(c, &ex)
-	if got == nil {
-		t.Fatal("expected a trace event to be emitted when a listener is attached")
-	}
-	if got.Stage != trace.StageExceptionFilter || got.Name != "Test.Filter" || got.Transport != trace.TransportWS {
-		t.Error(test.DiffMessage([]any{got.Stage, got.Name, got.Transport}, []any{trace.StageExceptionFilter, "Test.Filter", trace.TransportWS}, "traceWSCatch emitted event fields"))
 	}
 }
 
@@ -423,52 +241,6 @@ func TestInjectDependencies_UnresolvedProviderReturnsError(t *testing.T) {
 	if err == nil {
 		t.Error(test.DiffMessage(nil, "error", "injectDependencies should error when a Provider field can't be resolved"))
 	}
-}
-
-func TestBuildFieldInjectionCallback_ResolvesFromLocalProviders(t *testing.T) {
-	p := injectDepsTestProvider{}
-	injectedProviders := map[string]Provider{
-		genFieldKey(reflect.TypeOf(p)): p,
-	}
-	cb := buildFieldInjectionCallback("guarder", injectedProviders)
-
-	ownerType := reflect.TypeOf(injectDepsComponent{})
-	ownerValue := reflect.ValueOf(injectDepsComponent{Plain: "kept"})
-	newInstance := reflect.New(ownerType)
-
-	cb(0, ownerType, ownerValue, newInstance)
-	cb(1, ownerType, ownerValue, newInstance)
-
-	got := newInstance.Elem().Interface().(injectDepsComponent)
-	if got.Provider != p {
-		t.Error(test.DiffMessage(got.Provider, p, "buildFieldInjectionCallback should resolve the Provider field"))
-	}
-	if got.Plain != "kept" {
-		t.Error(test.DiffMessage(got.Plain, "kept", "buildFieldInjectionCallback should pass through non-Provider fields unchanged"))
-	}
-}
-
-func TestBuildFieldInjectionCallback_UnresolvedProviderPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "buildFieldInjectionCallback should panic when a Provider field can't be resolved"))
-		}
-	}()
-
-	cb := buildFieldInjectionCallback("guarder", map[string]Provider{})
-	ownerType := reflect.TypeOf(injectDepsUnresolvable{})
-	ownerValue := reflect.ValueOf(injectDepsUnresolvable{})
-	newInstance := reflect.New(ownerType)
-	cb(0, ownerType, ownerValue, newInstance)
-}
-
-func TestLogBoostrapNoPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Error(test.DiffMessage(r, nil, "logBoostrap should not panic"))
-		}
-	}()
-	logBoostrap(8080)
 }
 
 type returnUser struct {

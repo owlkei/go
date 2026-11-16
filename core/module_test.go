@@ -14,6 +14,75 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
+func TestGenControllerKey(t *testing.T) {
+	m := ModuleBuilder().Build()
+	c := &mockController{}
+	got := genControllerKey(m, c)
+	want := "[" + m.ID() + "]" + genFieldKey(reflect.TypeOf(c))
+	if got != want {
+		t.Error(test.DiffMessage(got, want, "genControllerKey"))
+	}
+}
+
+func TestToUniqueControllers(t *testing.T) {
+	m := ModuleBuilder().Build()
+	c1 := &mockController{}
+	c2 := &mockController{}
+
+	controllers := []Controller{c1, c1, c2, c1}
+	toUniqueControllers(m, &controllers)
+
+	if len(controllers) != 1 {
+		t.Error(test.DiffMessage(len(controllers), 1, "toUniqueControllers dedup"))
+	}
+}
+
+func TestToUniqueControllersEmpty(t *testing.T) {
+	m := ModuleBuilder().Build()
+	controllers := []Controller{}
+	toUniqueControllers(m, &controllers)
+	if len(controllers) != 0 {
+		t.Error(test.DiffMessage(len(controllers), 0, "toUniqueControllers empty"))
+	}
+}
+
+func TestBuildFieldInjectionCallback_ResolvesFromLocalProviders(t *testing.T) {
+	p := injectDepsTestProvider{}
+	injectedProviders := map[string]Provider{
+		genFieldKey(reflect.TypeOf(p)): p,
+	}
+	cb := buildFieldInjectionCallback("guarder", injectedProviders)
+
+	ownerType := reflect.TypeOf(injectDepsComponent{})
+	ownerValue := reflect.ValueOf(injectDepsComponent{Plain: "kept"})
+	newInstance := reflect.New(ownerType)
+
+	cb(0, ownerType, ownerValue, newInstance)
+	cb(1, ownerType, ownerValue, newInstance)
+
+	got := newInstance.Elem().Interface().(injectDepsComponent)
+	if got.Provider != p {
+		t.Error(test.DiffMessage(got.Provider, p, "buildFieldInjectionCallback should resolve the Provider field"))
+	}
+	if got.Plain != "kept" {
+		t.Error(test.DiffMessage(got.Plain, "kept", "buildFieldInjectionCallback should pass through non-Provider fields unchanged"))
+	}
+}
+
+func TestBuildFieldInjectionCallback_UnresolvedProviderPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error(test.DiffMessage(nil, "panic", "buildFieldInjectionCallback should panic when a Provider field can't be resolved"))
+		}
+	}()
+
+	cb := buildFieldInjectionCallback("guarder", map[string]Provider{})
+	ownerType := reflect.TypeOf(injectDepsUnresolvable{})
+	ownerValue := reflect.ValueOf(injectDepsUnresolvable{})
+	newInstance := reflect.New(ownerType)
+	cb(0, ownerType, ownerValue, newInstance)
+}
+
 func resetModuleGlobals() {
 	mainModulePtr = 0
 	modulesInjectedFromMain = nil

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,8 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/devtool"
 	"github.com/dangduoc08/ginject/event"
+	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/memorybroker"
 	"github.com/dangduoc08/ginject/routing"
@@ -24,6 +27,10 @@ import (
 	"github.com/dangduoc08/ginject/versioning"
 	"golang.org/x/net/websocket"
 )
+
+var injectableInterfaces = []string{
+	"github.com/dangduoc08/ginject/common/common.Logger",
+}
 
 const (
 	DefaultMaxRequestBodyBytes = 10 << 20 // 10 MB
@@ -72,8 +79,6 @@ type App struct {
 	shutdownOnce sync.Once
 	shutdownChan chan struct{}
 }
-
-const publisherKey = "github.com/dangduoc08/ginject/common/common.Publisher"
 
 func New() *App {
 	app := &App{
@@ -313,6 +318,36 @@ func (app *App) initExceptionFilters(injectedProviders map[string]Provider) {
 	}
 }
 
+func traceHTTPCatch(ev *event.Event, name string, fn common.HTTPCatch) common.HTTPCatch {
+	return func(c *ctx.HTTPContext, ex *exception.Exception) {
+		if !ev.HasListeners(trace.EventName) {
+			fn(c, ex)
+			return
+		}
+
+		start := time.Now()
+		defer func() {
+			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Duration: time.Since(start)})
+		}()
+		fn(c, ex)
+	}
+}
+
+func traceWSCatch(ev *event.Event, name string, fn common.WSCatch) common.WSCatch {
+	return func(c *ctx.WSContext, ex *exception.Exception) {
+		if !ev.HasListeners(trace.EventName) {
+			fn(c, ex)
+			return
+		}
+
+		start := time.Now()
+		defer func() {
+			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: trace.StageExceptionFilter, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
+		}()
+		fn(c, ex)
+	}
+}
+
 func (app *App) initMiddlewares(injectedProviders map[string]Provider) {
 	if len(app.globalMiddlewares) > 0 {
 		for _, gm := range app.globalMiddlewares {
@@ -378,6 +413,36 @@ func (app *App) initGuards(injectedProviders map[string]Provider) {
 			mw := traceWSHandler(app.event, trace.StageGuard, mg.Name, common.BuildWSGuardMiddleware(mg.Handler.(common.WSCanActivate)))
 			app.ws.eventMatcher.AddMiddlewares(mg.EventName, mw)
 		}
+	}
+}
+
+func traceHTTPHandler(ev *event.Event, stage, name string, h ctx.HTTPHandler) ctx.HTTPHandler {
+	return func(c *ctx.HTTPContext) {
+		if !ev.HasListeners(trace.EventName) {
+			h(c)
+			return
+		}
+
+		start := time.Now()
+		defer func() {
+			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: stage, Name: name, Duration: time.Since(start)})
+		}()
+		h(c)
+	}
+}
+
+func traceWSHandler(ev *event.Event, stage, name string, h ctx.WSHandler) ctx.WSHandler {
+	return func(c *ctx.WSContext) {
+		if !ev.HasListeners(trace.EventName) {
+			h(c)
+			return
+		}
+
+		start := time.Now()
+		defer func() {
+			ev.Emit(trace.EventName, trace.Event{ID: c.GetID(), Stage: stage, Name: name, Transport: trace.TransportWS, Duration: time.Since(start)})
+		}()
+		h(c)
 	}
 }
 
@@ -599,6 +664,31 @@ func (app *App) Listen(port int) error {
 	logBoostrap(port)
 
 	return app.serveWithGracefulShutdown(server)
+}
+
+func logBoostrap(port int) {
+	accessURLs := color.FmtBold("%s", color.FmtBGYellow(" GG! Here Are Your Access URLs: ")) + "\n"
+	divider := color.FmtDim("--------------------------------------------") + "\n"
+	host := color.FmtBold("%s", color.FmtWhite("Localhost: ")) + color.FmtMagenta("%v:%v", "localhost", port) + "\n"
+	lan := color.FmtBold("%s", color.FmtWhite("      LAN: ")) + color.FmtMagenta("%v:%v", getLocalIP(), port) + "\n"
+	close := color.FmtItalic("%s", color.FmtGreen("Press CTRL+C to stop")) + "\n"
+
+	_, _ = fmt.Fprint(os.Stdout, "\n"+accessURLs+divider+host+lan+divider+close)
+}
+
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }
 
 func (app *App) serveWithGracefulShutdown(server *http.Server) error {

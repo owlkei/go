@@ -13,7 +13,6 @@ import (
 type Body map[string]any
 
 const (
-	applicationJSON  = "application/json"
 	applicationMedia = "application/"
 	jsonSuffix       = "+json"
 )
