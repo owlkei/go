@@ -14,7 +14,7 @@ func BenchmarkInjectProvidersIntoHTTPGuards_ApplyAll(b *testing.B) {
 		g.BindGuard(mockGuarder{})
 		g.BindGuard(mockGuarder{})
 		g.BindGuard(mockGuarder{})
-		g.InjectProvidersIntoHTTPGuards(r, benchCB)
+		g.InjectProvidersIntoHTTPGuards(r, benchCB, testConstruct)
 	}
 }
 

@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/routing"
 )
 
 type handlerTargets struct {
@@ -19,22 +19,6 @@ type handlerTargets struct {
 func (t handlerTargets) has(key string) bool {
 	return t.isAll || t.keys[key]
 }
-
-type singletonKey struct {
-	typ         reflect.Type
-	constructor string
-}
-
-type singletonEntry struct {
-	configuration any
-	val           any
-	once          sync.Once
-}
-
-var (
-	singletonsMu sync.Mutex
-	singletons   = make(map[singletonKey][]*singletonEntry)
-)
 
 func GetFuncName(handler any) string {
 	name := runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
@@ -87,7 +71,11 @@ func ParseFuncNameToURL(fnName string) (string, string, string) {
 				subStr[i] != TokenVersion {
 
 				if subStr[i] == TokenAny {
-					path += "*"
+					if method == routing.SERVE && path != "" && isGroupEnd(subStr, i+1) {
+						path += "/*"
+					} else {
+						path += "*"
+					}
 					isAny = true
 				}
 
@@ -162,6 +150,14 @@ func ParseFuncNameToURL(fnName string) (string, string, string) {
 	return method, "/" + strings.TrimPrefix(route, "/"), version
 }
 
+func isGroupEnd(subStr []string, i int) bool {
+	return i >= len(subStr) ||
+		subStr[i] == TokenBy ||
+		subStr[i] == TokenAnd ||
+		subStr[i] == TokenOf ||
+		subStr[i] == TokenVersion
+}
+
 func ParseWSFuncNameToEvent(fnName string) (string, bool) {
 	op, rest, found := strings.Cut(fnName, "_")
 	if !found || rest == "" {
@@ -205,47 +201,6 @@ func paramInsertIndex(rest string) int {
 		at += end + 1
 	}
 	return at
-}
-
-func Construct(obj any, constructor string) any {
-	value := reflect.ValueOf(obj)
-	key := singletonKey{typ: value.Type(), constructor: constructor}
-
-	singletonsMu.Lock()
-	entry := findSingleton(singletons[key], obj)
-	if entry == nil {
-		entry = &singletonEntry{configuration: snapshotConfiguration(obj, value)}
-		singletons[key] = append(singletons[key], entry)
-	}
-	singletonsMu.Unlock()
-
-	entry.once.Do(func() {
-		if objConstructor := value.MethodByName(constructor); objConstructor.IsValid() {
-			entry.val = objConstructor.Call(nil)[0].Interface()
-		} else {
-			entry.val = obj
-		}
-	})
-
-	return entry.val
-}
-
-func snapshotConfiguration(obj any, value reflect.Value) any {
-	if value.Kind() != reflect.Pointer || value.IsNil() {
-		return obj
-	}
-	snapshot := reflect.New(value.Elem().Type())
-	snapshot.Elem().Set(value.Elem())
-	return snapshot.Interface()
-}
-
-func findSingleton(entries []*singletonEntry, configuration any) *singletonEntry {
-	for _, entry := range entries {
-		if reflect.DeepEqual(entry.configuration, configuration) {
-			return entry
-		}
-	}
-	return nil
 }
 
 func ToWSEventName(s string) string {

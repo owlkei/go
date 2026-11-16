@@ -15,7 +15,6 @@
     - [Prefix](#prefix)
     - [GetPrefixes](#getprefixes)
     - [AddHandlerToRouterMap](#addhandlertoroutermap)
-    - [GetConfigurations](#getconfigurations)
   - [`WS` Controller Embed](#ws-controller-embed)
     - [AddHandlerToEventMap](#addhandlertoeventmap)
   - [Layers](#layers)
@@ -24,7 +23,6 @@
     - [Interceptor](#interceptor)
     - [ExceptionFilter](#exceptionfilter)
     - [Binding targets](#binding-targets)
-    - [Construct](#construct)
     - [Shape checks](#shape-checks)
     - [Item types](#item-types)
   - [Request-time functions](#request-time-functions)
@@ -181,7 +179,8 @@ method, route, version := common.ParseFuncNameToURL("READ_users_BY_id_OF_posts_B
 - `READ_BY_id` → `/{id}/`; `READ_BY_ID_AND_NAME` → `/{ID}/{NAME}/`.
 - Parameters of one resource keep their declaration order for any count: `READ_x_BY_a_AND_b_AND_c` → `/x/{a}/{b}/{c}/`; `READ_BY_a_AND_b_AND_c_AND_d` → `/{a}/{b}/{c}/{d}/`; `READ_m_BY_a_AND_b_AND_c_OF_u_BY_d_AND_e_AND_f` → `/u/{d}/{e}/{f}/m/{a}/{b}/{c}/`.
 - `OF` puts the parent first: `READ_users_BY_id_OF_posts_BY_post_id` → `/posts/{post_id}/users/{id}/`; `MODIFY_dm_events_OF_with_BY_participant_id_OF_dm_conversations_VERSION_V2` → `PATCH /dm_conversations/with/{participant_id}/dm_events/`, version `V2`.
-- `ANY` is a wildcard: `READ_ANY` → `/*/`; `SERVE_assets_ANY` → `SERVE /assets*/`; `READ_me_ANY_bers_OF_us_ANY_ers_BY_id_VERSION_v1_v1` → `/us*ers/{id}/me*bers/`, version `v1_v1`.
+- `ANY` is a wildcard: `READ_ANY` → `/*/`; `READ_assets_ANY` → `/assets*/`; `SERVE_me_ANY_bers` → `SERVE /me*bers/`; `READ_me_ANY_bers_OF_us_ANY_ers_BY_id_VERSION_v1_v1` → `/us*ers/{id}/me*bers/`, version `v1_v1`.
+- In a `SERVE` method, an `ANY` that ends a resource group after at least one name token is a segment of its own: `SERVE_static_ANY` → `SERVE /static/*/`; `SERVE_a_b_ANY` → `/a_b/*/`; `SERVE_assets_ANY_OF_public` → `/public/assets/*/`. `SERVE_ANY` → `/*/` and `SERVE_ANY_OF_static` → `/static/*/` are unchanged, and `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route.
 - `FILE` makes an extension: `READ_logo_png_FILE` → `/logo.png/`; `READ_ANY_HTML_FILE_OF_members_OF_ANY_JPEG_FILE_VERSION_112____3` → `/*.jpeg/members/*.html/`, version `112_3`.
 - The version is the rest of the name joined with `_`, empty parts dropped: `READ_users_VERSION_V_12` → `V_12`; `READ_users_VERSION_` and `READ_users_VERSION` → `""`.
 - An operation token inside a resource stays a word: `READ_users_CREATE_x` → `/users_CREATE_x/`.
@@ -284,9 +283,7 @@ Route pattern → the handler value.
 
 Related types:
 - `Prefix` (`Value string`, `Handlers []any`): one call of `HTTP.Prefix`.
-- `HTTPConfig` (`Method`, `Route`, `Version`, `Func`, all `string`): one entry of `GetConfigurations`.
 - `HTTPLayer` (`Handler any`, `ControllerPath`, `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, all `string`): a layer bound to one route, as `core` stores it.
-- `InsertedRoutes` (`map[string]string`): every route pattern inserted in the process → its method name.
 
 ### Prefix
 
@@ -358,29 +355,12 @@ instance.AddHandlerToRouterMap(nil, "READ_items", handler)
 ```
 
 #### Rules
-- `READ_items` adds one route and records `InsertedRoutes["/items/||/[GET]/"]`.
-- A second method with the same pattern panics: `route conflict: <name> method is conflicted with <name> method`.
-
-### GetConfigurations
-
-Returns every route in `InsertedRoutes` as an `HTTPConfig`.
-
-#### Returns
-- 1st value: `[]HTTPConfig`
-
-- Description: One entry per inserted route
-
-#### Usage
-
-```go
-for _, route := range instance.GetConfigurations() {
-	_ = route.Method
-}
-```
+- `READ_items` adds one route: `PatternToFuncNameMap["/items/||/[GET]/"]` is `READ_items`.
+- It never panics: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
 
 ## `WS` Controller Embed
 
-`WS` makes a controller a WebSocket controller. `EventMap` (`map[string]any`) holds event name → handler; `InsertedEvents` (`map[string]string`) every event of the process → its method name. `WSLayer` (`Handler any`, `EventName`, `Name` `string`) is a layer bound to one event.
+`WS` makes a controller a WebSocket controller. `EventMap` (`map[string]any`) holds event name → handler. `WSLayer` (`Handler any`, `EventName`, `Name` `string`) is a layer bound to one event.
 
 ### AddHandlerToEventMap
 
@@ -404,11 +384,11 @@ instance.AddHandlerToEventMap("SUBSCRIBE_chat_ANY", handler)
 #### Rules
 - A name that is not an event (`READ_users`) is ignored.
 - `SUBSCRIBE_chat_ANY` is stored under `chat.*`.
-- A second method with the same event panics: `event conflict: <name> event is conflicted with <name> event`.
+- It never panics: event conflicts are checked per app by `core` (`event conflict: <name> event is conflicted with <name> event`), so two apps may declare the same event.
 
 ## Layers
 
-Each layer is an embed with one `Bind…` method that returns its receiver, so calls chain. Bind a struct value that has the layer's method. The optional constructor is called once per configuration (see [Construct](#construct)); its result is the instance that runs.
+Each layer is an embed with one `Bind…` method that returns its receiver, so calls chain. Bind a struct value that has the layer's method. The optional constructor is called once per configuration and app, by `core` (see [Binding targets](#binding-targets)); its result is the instance that runs.
 
 ### Middleware
 
@@ -419,7 +399,7 @@ type MiddlewareFn interface {
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)
 ```
 
-`BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware` on the `Middleware` embed (field `MiddlewareHandlers`). Optional constructor: `NewMiddleware`. `InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb)` builds the `[]MiddlewareItem` that `core` registers. Middleware is an HTTP concept: a WebSocket connection runs only the middlewares given to `core`'s `EnableWS`, once, at the handshake, and no middleware runs per message.
+`BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware` on the `Middleware` embed (field `MiddlewareHandlers`). Optional constructor: `NewMiddleware`. `InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb, construct)` builds the `[]MiddlewareItem` that `core` registers. Middleware is an HTTP concept: a WebSocket connection runs only the middlewares given to `core`'s `EnableWS`, once, at the handshake, and no middleware runs per message.
 
 ### Guard
 
@@ -456,7 +436,7 @@ Write `Catch(*ctx.HTTPContext, *exception.Exception)` (context first) or its WS 
 
 ### Binding targets
 
-The eight `InjectProvidersInto…(r *HTTP | ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value))` functions run at `Create()`: they make a new instance of each bound layer, call `cb` once per field so `core` injects providers, pass it through `Construct`, check its shape and return one item per bound route or event.
+The seven `InjectProvidersInto…(r *HTTP | ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any)` functions run at `Create()`: they make a new instance of each bound layer, call `cb` once per field so `core` injects providers, pass it to `construct` with the constructor's name (`NewGuard`, `NewMiddleware`, `NewInterceptor`, `NewExceptionFilter`), check the shape of what it returns and return one item per bound route or event. `core` keeps the instances per app: equal configurations (same type, `reflect.DeepEqual`) share one instance, different ones get their own, and a layer without the constructor is used as given.
 
 #### Rules
 - No handlers: one item per route (HTTP) or event (WS) of the controller.
@@ -466,39 +446,6 @@ The eight `InjectProvidersInto…(r *HTTP | ws *WS, cb func(int, reflect.Type, r
 - A guard, interceptor or exception filter without its method, or with a wrong parameter or result type, panics.
 - Each item's `Common.Handler` is the callable method of the instance and, on HTTP, `Common.MainHandlerName` the route's method name.
 - `GuardShapeError`, `InterceptorShapeError` and `ExceptionFilterShapeError` return the error used for a global layer with no usable method; its text contains the layer's type.
-
-### Construct
-
-`Construct(obj any, constructor string) any` returns the instance of a layer configuration: the result of `obj.<constructor>()`, or `obj` itself when it has no such method.
-
-#### Parameters
-- 1st parameter: `any`
-
-- Description: The layer value, after provider injection
-
-- 2nd parameter: `string`
-
-- Description: The constructor's method name (`NewGuard`, `NewMiddleware`, `NewInterceptor`, `NewExceptionFilter`)
-
-#### Returns
-- 1st value: `any`
-
-- Description: The instance for this configuration
-
-#### Usage
-
-```go
-guard := common.Construct(&RoleGuard{Role: "admin"}, "NewGuard")
-```
-
-#### Rules
-- Two values are the same configuration when they have the same `reflect.Type` and are `reflect.DeepEqual`; the constructor name is part of the key.
-- Different configurations get their own instance: `Role: "admin"` and `Role: "user"` never share, with or without a constructor.
-- Equal configurations run the constructor once and return the identical result, also from 64 concurrent calls.
-- Two types with the same printed name (two local `guard` types) never share.
-- The same value with `NewGuard` and `NewMiddleware` runs each constructor once and returns each one's own result.
-- Without the constructor method, the result is the value given in the first call of its configuration.
-- A value holding a non-nil func, or a different channel, is never equal to another, so it is never shared.
 
 ### Shape checks
 
@@ -706,7 +653,6 @@ The pipe's key, one of the key constants above (`"body"`, `"query"`, …).
 - **Interceptor state on the context.** The interceptor middleware adds its aggregation to the request's context list (`c.AddAggregation`) instead of copying the `http.Request` with a new `context.WithValue`: about 95 ns and 2 allocations (the aggregation and the list, which `Reset` drops), where the old path took about 340 to 640 ns. `core` also no longer looks the list up in the request's `context.Context`, which saved one boxed key per request on every route.
 - **Catch chain as a loop.** One small function with the `recover` wraps each filter call, and the chain iterates instead of recursing. A re-thrown pointer is returned as is (0 allocations, about 11 ns for the chain), and a plain error builds its 500 with 1 allocation: an error that has no `Unwrap` or `As` method can't hold an exception, so `errors.As` is skipped for it.
 - **Shared 403.** A rejected WS guard panics one package-level exception value; an allowed guard costs about 2 ns.
-- **Cold path.** `Construct` compares configurations with `reflect.DeepEqual` under one mutex (about 220 ns for a cache hit), at `Create()` only.
 
 End to end (`make bench`, 10 alternating runs), the `Chain` scenario (a middleware, a guard and an interceptor) went from about 5.3 µs and 33 allocations to about 4.0 µs and 25 allocations, and the `Exception` scenario from about 3.9 µs to 3.5 µs with one allocation less.
 
@@ -727,7 +673,6 @@ go test -run '^$' -bench . -benchmem -count 5 ./common/
 | BenchmarkParseFnNameToURL_Simple | 215.7 | 48 | 3 |
 | BenchmarkParseFnNameToURL_Complex | 2217 | 1056 | 12 |
 | BenchmarkParseWSFuncNameToEvent | 136.1 | 16 | 1 |
-| BenchmarkConstruct | 222.6 | 0 | 0 |
 | BenchmarkGetPrefixes_NoHandlers | 492.4 | 720 | 7 |
 | BenchmarkGetPrefixes_WithHandlers | 638.8 | 704 | 7 |
 | BenchmarkAddPrefixesToRoute | 219.5 | 40 | 2 |

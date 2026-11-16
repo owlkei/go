@@ -27,7 +27,7 @@ func AsWSGuard(guarder any) (WSCanActivate, bool) {
 	return layer.CanActivate, true
 }
 
-func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []GuardItem {
+func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
 	guardItemArr := make([]GuardItem, 0, len(ws.funcNameByEvent)*len(g.GuardHandlers))
 
 	for _, guardHandler := range g.GuardHandlers {
@@ -40,7 +40,7 @@ func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, r
 		}
 
 		newGuarder := newGuard.Interface()
-		newGuarder = Construct(newGuarder, "NewGuard")
+		newGuarder = construct(newGuarder, "NewGuard")
 		guardHandler.guarder = newGuarder.(Guarder)
 
 		canActivate, ok := AsWSGuard(guardHandler.guarder)

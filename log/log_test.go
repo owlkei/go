@@ -71,14 +71,6 @@ func TestLoadLogOptions_LevelMinusOneDefaultsToInfo(t *testing.T) {
 	}
 }
 
-func TestNewLog_Singleton(t *testing.T) {
-	a := NewLog(nil)
-	b := NewLog(&LogOptions{LogFormat: JSONFormat})
-	if a != b {
-		t.Error(test.DiffMessage(b, a, "NewLog must return the same singleton"))
-	}
-}
-
 func newTestLogInstance(level slog.Level) (*logInstance, *bytes.Buffer) {
 	h, buf := newTestHandler(level)
 	return &logInstance{slog: slog.New(h)}, buf

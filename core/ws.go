@@ -23,6 +23,7 @@ type WSConfig struct {
 	Path              string
 	globalMiddlewares []common.MiddlewareFn
 	injectedProviders map[string]Provider
+	container         *container
 	logger            common.Logger
 	event             *event.Event
 	broker            *memorybroker.Broker
@@ -59,7 +60,7 @@ func NewWS(cfg *WSConfig) *WS {
 		eventMatcher:          wsevent.NewWSEvent(),
 		connmgr:               NewWSConnmgr(cfg.logger, cfg.broker),
 		path:                  path,
-		globalMiddlewares:     resolveGlobalMiddlewares(cfg.globalMiddlewares, cfg.injectedProviders, cfg.event),
+		globalMiddlewares:     resolveGlobalMiddlewares(cfg.globalMiddlewares, cfg.injectedProviders, cfg.container, cfg.event),
 		injectedProviders:     cfg.injectedProviders,
 		logger:                cfg.logger,
 		newCtx:                cfg.newCtx,
@@ -71,10 +72,10 @@ func NewWS(cfg *WSConfig) *WS {
 	return &ws
 }
 
-func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProviders map[string]Provider, ev *event.Event) []ctx.HTTPHandler {
+func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProviders map[string]Provider, c *container, ev *event.Event) []ctx.HTTPHandler {
 	resolved := make([]ctx.HTTPHandler, len(middlewares))
 	for i, gm := range middlewares {
-		resolved[i] = handshakeMiddleware(newHTTPMiddleware(gm, injectedProviders), ev)
+		resolved[i] = handshakeMiddleware(newHTTPMiddleware(gm, injectedProviders, c), ev)
 	}
 
 	return resolved

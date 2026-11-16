@@ -1,74 +1,10 @@
 package core
 
 import (
-	"reflect"
-	"strconv"
 	"testing"
 
 	"github.com/dangduoc08/ginject/common"
 )
-
-func BenchmarkGenControllerKey(b *testing.B) {
-	m := ModuleBuilder().Build()
-	c := &mockController{}
-	b.ReportAllocs()
-	for b.Loop() {
-		genControllerKey(m, c)
-	}
-}
-
-func BenchmarkToUniqueControllers(b *testing.B) {
-	m := ModuleBuilder().Build()
-	c1 := &mockController{}
-	c2 := &mockController{}
-	b.ReportAllocs()
-	for b.Loop() {
-		controllers := []Controller{c1, c2, c1, c2, c1}
-		toUniqueControllers(m, &controllers)
-	}
-}
-
-type benchPrefixTargetController struct{ common.HTTP }
-
-func (c benchPrefixTargetController) NewController() Controller      { return c }
-func (c benchPrefixTargetController) READ_benchprefixtarget() string { return "ok" }
-
-func seedGlobalPrefixesByControllerNoise(n int) {
-	noiseKey := genFieldKey(reflect.TypeOf(struct{ x int }{}))
-	for i := 0; i < n; i++ {
-		key := "[" + strconv.Itoa(i) + "]" + noiseKey
-		globalPrefixesByController[key] = []string{"/noise"}
-	}
-}
-
-func BenchmarkControllerModulePrefixes(b *testing.B) {
-	resetModuleGlobals()
-	defer resetModuleGlobals()
-
-	targetType := reflect.TypeOf(benchPrefixTargetController{})
-	seedGlobalPrefixesByControllerNoise(2000)
-	globalPrefixesByController[genFieldKey(targetType)] = []string{"/v1"}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		controllerModulePrefixes(targetType)
-	}
-}
-
-func BenchmarkRegisterControllerPrefixes(b *testing.B) {
-	controllers := make([]Controller, 100)
-	for i := range controllers {
-		controllers[i] = benchPrefixTargetController{}
-	}
-	m := ModuleBuilder().Controllers(controllers...).Build()
-	m.Prefix("v1")
-
-	resetModuleGlobals()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m.registerControllerPrefixes()
-	}
-}
 
 type benchModuleController0 struct{ common.HTTP }
 
@@ -95,22 +31,19 @@ type benchModuleController4 struct{ common.HTTP }
 func (c benchModuleController4) NewController() Controller         { return c }
 func (c benchModuleController4) READ_benchmoduleresource4() string { return "ok" }
 
-func BenchmarkNewModule_FiveControllers(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		resetModuleGlobals()
-		m := ModuleBuilder().
-			Controllers(
-				benchModuleController0{},
-				benchModuleController1{},
-				benchModuleController2{},
-				benchModuleController3{},
-				benchModuleController4{},
-			).
-			Build()
-		b.StartTimer()
-
-		m.NewModule()
+func BenchmarkCreate_FiveControllers(b *testing.B) {
+	m := ModuleBuilder().
+		Controllers(
+			benchModuleController0{},
+			benchModuleController1{},
+			benchModuleController2{},
+			benchModuleController3{},
+			benchModuleController4{},
+		).
+		Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(m)
 	}
 }
 
@@ -619,14 +552,11 @@ func benchChainProviders() []Provider {
 	return providers
 }
 
-func BenchmarkInjectProviders_ChainedDependencies(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		resetModuleGlobals()
-		m := ModuleBuilder().Providers(benchChainProviders()...).Build()
-		b.StartTimer()
-
-		m.injectProviders()
+func BenchmarkCreate_ChainedProviders(b *testing.B) {
+	m := ModuleBuilder().Providers(benchChainProviders()...).Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(m)
 	}
 }
 
@@ -642,15 +572,12 @@ func makeBenchStaticSubmodules(n int) []any {
 	return imports
 }
 
-func BenchmarkInjectStaticModules(b *testing.B) {
+func BenchmarkCreate_StaticSubmodules(b *testing.B) {
 	const n = 100
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		resetModuleGlobals()
-		root := ModuleBuilder().Imports(makeBenchStaticSubmodules(n)...).Build()
-		b.StartTimer()
-
-		root.injectStaticModules()
+	root := ModuleBuilder().Imports(makeBenchStaticSubmodules(n)...).Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(root)
 	}
 }
 
@@ -658,18 +585,15 @@ func benchCollectModulesDynamicFactory() *Module {
 	return ModuleBuilder().Build()
 }
 
-func BenchmarkCollectModules(b *testing.B) {
-	resetModuleGlobals()
+func BenchmarkCreate_DynamicSubmodules(b *testing.B) {
 	const n = 100
 	imports := make([]any, n)
 	for i := range imports {
 		imports[i] = benchCollectModulesDynamicFactory
 	}
 	root := ModuleBuilder().Imports(imports...).Build()
-	root.NewModule()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		root.collectModules()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(root)
 	}
 }

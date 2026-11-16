@@ -29,7 +29,6 @@ func (ctl bodyProbeController) READ_probe(c *ctx.HTTPContext) string {
 
 func bodyProbe(t *testing.T, mutate func(*http.Request)) string {
 	t.Helper()
-	resetModuleGlobals()
 	app := New()
 	app.Create(ModuleBuilder().Controllers(bodyProbeController{}).Build())
 

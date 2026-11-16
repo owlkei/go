@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/dangduoc08/ginject/common"
@@ -55,8 +54,6 @@ var levelLabel = map[slog.Level]string{
 	ErrorLevel: labelError,
 	FatalLevel: labelFatal,
 }
-var singleInstance common.Logger
-var once sync.Once
 
 func loadLogOptions(opts *LogOptions) *LogOptions {
 	if opts == nil {
@@ -79,44 +76,39 @@ func loadLogOptions(opts *LogOptions) *LogOptions {
 }
 
 func NewLog(opts *LogOptions) common.Logger {
-	once.Do(func() {
-		logOpts := loadLogOptions(opts)
+	logOpts := loadLogOptions(opts)
 
-		slogOptions := slog.HandlerOptions{
-			AddSource: logOpts.AddSource,
-			Level:     logOpts.Level,
-			ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
-				if attr.Key == slog.LevelKey {
-					level := attr.Value.Any().(slog.Level)
-					label, ok := levelLabel[level]
-					if !ok {
-						label = level.String()
-					}
-					attr.Value = slog.StringValue(label)
+	slogOptions := slog.HandlerOptions{
+		AddSource: logOpts.AddSource,
+		Level:     logOpts.Level,
+		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+			if attr.Key == slog.LevelKey {
+				level := attr.Value.Any().(slog.Level)
+				label, ok := levelLabel[level]
+				if !ok {
+					label = level.String()
 				}
+				attr.Value = slog.StringValue(label)
+			}
 
-				return attr
-			},
-		}
+			return attr
+		},
+	}
 
-		var handler slog.Handler
-		switch logOpts.LogFormat {
-		case TextFormat:
-			handler = slog.NewTextHandler(os.Stdout, &slogOptions)
-		case JSONFormat:
-			handler = slog.NewJSONHandler(os.Stdout, &slogOptions)
-		default:
-			handler = NewPrettyHandler(os.Stdout, &PrettyHandlerOptions{
-				TimeFormat:     logOpts.TimeFormat,
-				HandlerOptions: slogOptions,
-			})
-		}
+	var handler slog.Handler
+	switch logOpts.LogFormat {
+	case TextFormat:
+		handler = slog.NewTextHandler(os.Stdout, &slogOptions)
+	case JSONFormat:
+		handler = slog.NewJSONHandler(os.Stdout, &slogOptions)
+	default:
+		handler = NewPrettyHandler(os.Stdout, &PrettyHandlerOptions{
+			TimeFormat:     logOpts.TimeFormat,
+			HandlerOptions: slogOptions,
+		})
+	}
 
-		base := &logInstance{slog: slog.New(handler)}
-		singleInstance = WrapLogger(base, logOpts.MaskFields)
-	})
-
-	return singleInstance
+	return WrapLogger(&logInstance{slog: slog.New(handler)}, logOpts.MaskFields)
 }
 
 func (instance *logInstance) Debug(msg string, args ...any) {

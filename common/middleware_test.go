@@ -31,7 +31,7 @@ func TestInjectProvidersIntoHTTPMiddlewares_Empty(t *testing.T) {
 	m := &Middleware{}
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
 
-	items := m.InjectProvidersIntoHTTPMiddlewares(r, noopCB)
+	items := m.InjectProvidersIntoHTTPMiddlewares(r, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound middlewares → empty result"))
 	}
@@ -46,7 +46,7 @@ func TestInjectProvidersIntoHTTPMiddlewares_ApplyAll(t *testing.T) {
 		"CREATE_orders": "/orders/",
 	})
 
-	items := m.InjectProvidersIntoHTTPMiddlewares(r, noopCB)
+	items := m.InjectProvidersIntoHTTPMiddlewares(r, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "middleware with no handlers applies to all patterns"))
 	}
@@ -68,7 +68,7 @@ func TestInjectProvidersIntoHTTPMiddlewares_MainHandlerName(t *testing.T) {
 	m.BindMiddleware(mockMiddlewareFn{})
 
 	r := buildHTTP(map[string]string{"READ_items": "/items/"})
-	items := m.InjectProvidersIntoHTTPMiddlewares(r, noopCB)
+	items := m.InjectProvidersIntoHTTPMiddlewares(r, noopCB, testConstruct)
 
 	if len(items) != 1 {
 		t.Error(test.DiffMessage(len(items), 1, "one pattern → one item"))

@@ -11,7 +11,7 @@ func TestInjectProvidersIntoHTTPExceptionFilters_Empty(t *testing.T) {
 	e := &ExceptionFilter{}
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
 
-	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB)
+	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound filters → empty result"))
 	}
@@ -26,7 +26,7 @@ func TestInjectProvidersIntoHTTPExceptionFilters_ApplyAll(t *testing.T) {
 		"CREATE_orders": "/orders/",
 	})
 
-	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB)
+	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "filter with no handlers applies to all patterns"))
 	}
@@ -48,7 +48,7 @@ func TestInjectProvidersIntoHTTPExceptionFilters_MainHandlerName(t *testing.T) {
 	e.BindExceptionFilter(mockExFilter{})
 
 	r := buildHTTP(map[string]string{"READ_items": "/items/"})
-	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB)
+	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB, testConstruct)
 
 	if len(items) != 1 {
 		t.Error(test.DiffMessage(len(items), 1, "one pattern → one item"))
@@ -64,7 +64,7 @@ func TestInjectProvidersIntoHTTPExceptionFilters_HandlerIsCallableCatch(t *testi
 	e.BindExceptionFilter(mockExFilter{})
 
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
-	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB)
+	items := e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -84,7 +84,7 @@ func TestInjectProvidersIntoHTTPExceptionFilters_NoCatch_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "filter with no Catch method must panic"))
 		}
 	}()
-	e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB)
+	e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB, testConstruct)
 }
 
 func TestInjectProvidersIntoHTTPExceptionFilters_WrongParamType_Panics(t *testing.T) {
@@ -97,7 +97,7 @@ func TestInjectProvidersIntoHTTPExceptionFilters_WrongParamType_Panics(t *testin
 			t.Error(test.DiffMessage(nil, "panic", "Catch with a non-context first param must panic"))
 		}
 	}()
-	e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB)
+	e.InjectProvidersIntoHTTPExceptionFilters(r, noopCB, testConstruct)
 }
 
 func TestAsHTTPExceptionFilter_Valid(t *testing.T) {

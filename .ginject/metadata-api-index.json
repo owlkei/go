@@ -51,12 +51,10 @@
             "providers []Provider",
             "controllers []Controller",
             "imports []*Module",
-            "HTTPMainHandlers []HTTPMainHandler",
-            "WSHandlers []WSHandler",
             "IsGlobal bool - makes providers available to every module without an explicit import",
-            "OnInit func() - called during app.Create()'s module walk",
-            "OnReady func() - called once after app.Create() fully completes, in module-tree order",
-            "OnShutdown func() - called on graceful shutdown (SIGINT/SIGTERM, or app.Stop()), same module-tree order as OnReady (NOT reversed/LIFO)"
+            "OnInit func() - called during app.Create(), a module after the modules it imports, then its providers are constructed",
+            "OnReady func() - called once per app at the end of app.Create(), in the OnInit order",
+            "OnShutdown func() - called on graceful shutdown (SIGINT/SIGTERM, or app.Stop()), in the exact reverse of the OnInit order"
           ]
         },
         "ModuleBuilder": {

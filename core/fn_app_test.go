@@ -26,7 +26,6 @@ func (c appLookalikeController) READ_lookalike(x *ctxlookalike.HTTPContext) stri
 }
 
 func TestApp_LookalikeParameterPanicsAtCreate(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	rec := planPanicOf(func() {
@@ -59,7 +58,6 @@ func (c appResultController) READ_wrongpipe(p nilPipe) string {
 
 func serveResult(t *testing.T, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	resetModuleGlobals()
 	app := New()
 	app.Create(ModuleBuilder().Controllers(appResultController{}).Build())
 	w := httptest.NewRecorder()
@@ -147,7 +145,6 @@ func (c appServeController) READ_named() string { return "named" }
 
 func handlerEventNames(t *testing.T, path string) []string {
 	t.Helper()
-	resetModuleGlobals()
 	appServeDir = t.TempDir()
 	if err := os.WriteFile(filepath.Join(appServeDir, "logo.png"), []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)

@@ -96,30 +96,21 @@ func planSameMap(a, b any) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
+var planCtr = newContainer()
+
 func planInstallPublisher(t testing.TB) *planPublisher {
 	t.Helper()
-	old, had := globalInterfaceByKey.Load(publisherKey)
 	p := &planPublisher{}
-	globalInterfaceByKey.Store(publisherKey, common.Publisher(p))
-	t.Cleanup(func() {
-		if had {
-			globalInterfaceByKey.Store(publisherKey, old)
-		} else {
-			globalInterfaceByKey.Delete(publisherKey)
-		}
-	})
+	planCtr = newContainer()
+	planCtr.addInterface(publisherKey, common.Publisher(p))
+	t.Cleanup(func() { planCtr = newContainer() })
 	return p
 }
 
 func planRemovePublisher(t testing.TB) {
 	t.Helper()
-	old, had := globalInterfaceByKey.Load(publisherKey)
-	globalInterfaceByKey.Delete(publisherKey)
-	t.Cleanup(func() {
-		if had {
-			globalInterfaceByKey.Store(publisherKey, old)
-		}
-	})
+	planCtr = newContainer()
+	t.Cleanup(func() { planCtr = newContainer() })
 }
 
 func planResetState(t testing.TB) {
@@ -154,7 +145,7 @@ func planMethod(t testing.TB, controller any, name string) (reflect.Value, refle
 func planHTTP(t testing.TB, controller any, name string, providers map[string]Provider) *httpHandlerPlan {
 	t.Helper()
 	recv, m := planMethod(t, controller, name)
-	return newHTTPHandlerPlan(recv, m, providers)
+	return newHTTPHandlerPlan(recv, m, providers, planCtr)
 }
 
 func planRequestContext() *ctx.HTTPContext {
@@ -634,7 +625,7 @@ func TestHTTPHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	providers := planProviders()
 	h := &planCtl{}
 	recv, method := planMethod(t, h, "HAll")
-	plan := newHTTPHandlerPlan(recv, method, providers)
+	plan := newHTTPHandlerPlan(recv, method, providers, planCtr)
 	c := planRequestContext()
 	c.Next = func() { planNextCalls++ }
 
@@ -727,11 +718,11 @@ func planReferenceArg(t testing.TB, at reflect.Type, providers map[string]Provid
 	case refRedirectT:
 		return reflect.ValueOf(c.Redirect)
 	case refPublisherT:
-		p, _ := globalInterfaceByKey.Load(publisherKey)
+		p, _ := planCtr.interfaceFor(publisherKey)
 		return reflect.ValueOf(p)
 	}
 
-	inst, err := injectDependencies(reflect.New(at).Elem().Interface(), "pipe", providers)
+	inst, err := injectDependencies(reflect.New(at).Elem().Interface(), "pipe", providers, planCtr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -835,9 +826,9 @@ func TestNewHTTPHandlerPlan_PipeGetsLocalProvider(t *testing.T) {
 }
 
 func TestNewHTTPHandlerPlan_PipeGetsGlobalProvider(t *testing.T) {
-	resetModuleGlobals()
-	globalProviderByKey.Store(genFieldKey(reflect.TypeOf(fnTestProvider{})), Provider(fnTestProvider{Tag: "global"}))
-	t.Cleanup(resetModuleGlobals)
+	planCtr = newContainer()
+	planCtr.addGlobal(fnTestProvider{Tag: "global"})
+	t.Cleanup(func() { planCtr = newContainer() })
 	h := &planCtl{}
 	planInvoke(planHTTP(t, h, "HProvQuery", map[string]Provider{}), planRequestContext())
 	got, _ := h.got[0].(provQueryPipe)

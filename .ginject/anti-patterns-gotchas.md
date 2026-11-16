@@ -710,7 +710,7 @@ c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://a.example.com"}})
 c.BindMiddleware(cors.CORS{AllowOrigin: []string{"https://b.example.com"}})
 ```
 
-**The gotcha**: `common.Construct` (behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
+**The gotcha**: the app's layer cache (`(*container).construct` in `core/container.go`, behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance, inside one app, between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
 
 **Rule**: Equal configuration → one shared instance (its fields are yours to protect across requests); give the bindings different configuration when they must keep separate state.
 

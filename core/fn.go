@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"path"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strconv"
 	"time"
@@ -19,8 +18,6 @@ import (
 	"github.com/dangduoc08/ginject/trace"
 )
 
-var pkgFromControllerKeyReg = regexp.MustCompile(`\[.*?\]`)
-
 func isInjectedProvider(providerFieldType reflect.Type) bool {
 	instance := reflect.New(providerFieldType)
 	_, ok := instance.Interface().(Provider)
@@ -31,15 +28,11 @@ func genProviderKey(p Provider) string {
 	return genFieldKey(reflect.TypeOf(p))
 }
 
-func getPkgFromControllerKey(k string) string {
-	return pkgFromControllerKeyReg.ReplaceAllString(k, "")
-}
-
 func genFieldKey(t reflect.Type) string {
 	return t.PkgPath() + "/" + t.String()
 }
 
-func injectDependencies(component any, kind string, injectedProviders map[string]Provider) (reflect.Value, error) {
+func injectDependencies(component any, kind string, injectedProviders map[string]Provider, c *container) (reflect.Value, error) {
 	componentType := reflect.TypeOf(component)
 	componentValue := reflect.ValueOf(component)
 	newComponent := reflect.New(componentType)
@@ -64,12 +57,11 @@ func injectDependencies(component any, kind string, injectedProviders map[string
 
 		if componentFieldKey != "" && injectedProviders[componentFieldKey] != nil {
 			newComponent.Elem().Field(j).Set(reflect.ValueOf(injectedProviders[componentFieldKey]))
-		} else if p, ok := globalProviderByKey.Load(componentFieldKey); componentFieldKey != "" && ok {
+		} else if p, ok := c.global(componentFieldKey); componentFieldKey != "" && ok {
 			newComponent.Elem().Field(j).Set(reflect.ValueOf(p))
-		} else if iface, ok := globalInterfaceByKey.Load(componentFieldKey); componentFieldKey != "" && ok {
+		} else if iface, ok := c.interfaceFor(componentFieldKey); componentFieldKey != "" && ok {
 			newComponent.Elem().Field(j).Set(reflect.ValueOf(iface))
 		} else if !isInjectedProvider(componentFieldType) {
-
 			newComponent.Elem().Field(j).Set(componentValue.Field(j))
 		} else {
 			return reflect.ValueOf(nil), errors.New(
@@ -154,13 +146,13 @@ type httpMiddleware struct {
 	name string
 }
 
-func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provider) httpMiddleware {
+func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provider, c *container) httpMiddleware {
 	name := reflect.TypeOf(m).String()
-	injected, err := injectDependencies(m, "middleware", injectedProviders)
+	injected, err := injectDependencies(m, "middleware", injectedProviders, c)
 	if err != nil {
 		panic(err)
 	}
-	m = common.Construct(injected.Interface(), "NewMiddleware").(common.MiddlewareFn)
+	m = c.construct(injected.Interface(), "NewMiddleware").(common.MiddlewareFn)
 	return httpMiddleware{use: m.Use, name: name}
 }
 

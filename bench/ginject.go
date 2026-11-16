@@ -113,7 +113,7 @@ func NewGinject() http.Handler {
 
 func NewGinjectApp() *core.App {
 	app := core.New()
-	app.UseLogger(silentLogger{})
+	app.SetLogger(silentLogger{})
 	app.Create(
 		core.ModuleBuilder().
 			Controllers(ginjectController{}, ginjectChainController{}).

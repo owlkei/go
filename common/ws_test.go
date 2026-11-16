@@ -95,10 +95,6 @@ func TestAddToEventMap_StoresEntries(t *testing.T) {
 }
 
 func TestAddHandlerToEventMap_Stores(t *testing.T) {
-	orig := InsertedEvents
-	InsertedEvents = make(map[string]string)
-	defer func() { InsertedEvents = orig }()
-
 	ws := &WS{}
 	ws.AddHandlerToEventMap("SUBSCRIBE_message", nil)
 	if ws.EventMap == nil {
@@ -109,31 +105,23 @@ func TestAddHandlerToEventMap_Stores(t *testing.T) {
 	if _, ok := ws.EventMap[eventName]; !ok {
 		t.Error(test.DiffMessage("missing", eventName, "event stored in EventMap"))
 	}
-	if InsertedEvents[eventName] != "SUBSCRIBE_message" {
-		t.Error(test.DiffMessage(InsertedEvents[eventName], "SUBSCRIBE_message", "InsertedEvents entry"))
+	if ws.funcNameByEvent[eventName] != "SUBSCRIBE_message" {
+		t.Error(test.DiffMessage(ws.funcNameByEvent[eventName], "SUBSCRIBE_message", "function name stored by event"))
 	}
 }
 
 func TestAddHandlerToEventMap_WildcardStores(t *testing.T) {
-	orig := InsertedEvents
-	InsertedEvents = make(map[string]string)
-	defer func() { InsertedEvents = orig }()
-
 	ws := &WS{}
 	ws.AddHandlerToEventMap("SUBSCRIBE_chat_ANY", nil)
 	if _, ok := ws.EventMap["chat.*"]; !ok {
 		t.Error(test.DiffMessage("missing", "chat.*", "wildcard event stored"))
 	}
-	if InsertedEvents["chat.*"] != "SUBSCRIBE_chat_ANY" {
-		t.Error(test.DiffMessage(InsertedEvents["chat.*"], "SUBSCRIBE_chat_ANY", "InsertedEvents wildcard"))
+	if ws.funcNameByEvent["chat.*"] != "SUBSCRIBE_chat_ANY" {
+		t.Error(test.DiffMessage(ws.funcNameByEvent["chat.*"], "SUBSCRIBE_chat_ANY", "function name stored by wildcard event"))
 	}
 }
 
 func TestAddHandlerToEventMap_IgnoresNonWS(t *testing.T) {
-	orig := InsertedEvents
-	InsertedEvents = make(map[string]string)
-	defer func() { InsertedEvents = orig }()
-
 	ws := &WS{}
 	ws.AddHandlerToEventMap("READ_users", nil)
 	if len(ws.EventMap) != 0 {
@@ -141,16 +129,12 @@ func TestAddHandlerToEventMap_IgnoresNonWS(t *testing.T) {
 	}
 }
 
-func TestAddHandlerToEventMap_Conflict(t *testing.T) {
-	orig := InsertedEvents
-	InsertedEvents = make(map[string]string)
-	defer func() { InsertedEvents = orig }()
-
+func TestAddHandlerToEventMap_SameEventDoesNotPanic(t *testing.T) {
 	ws := &WS{}
 	ws.AddHandlerToEventMap("SUBSCRIBE_message", nil)
 	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "duplicate event should panic"))
+		if r := recover(); r != nil {
+			t.Error(test.DiffMessage(r, "no panic", "conflicts are checked per app by core, AddHandlerToEventMap no longer panics"))
 		}
 	}()
 	ws.AddHandlerToEventMap("SUBSCRIBE_message", nil)

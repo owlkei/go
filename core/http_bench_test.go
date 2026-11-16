@@ -49,9 +49,8 @@ func benchServe(b *testing.B, app *App, method, target string) {
 }
 
 func benchApp(controllers ...Controller) *App {
-	resetModuleGlobals()
 	app := New()
-	app.UseLogger(&mockLogger{})
+	app.SetLogger(&mockLogger{})
 	app.Create(ModuleBuilder().Controllers(controllers...).Build())
 	return app
 }

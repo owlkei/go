@@ -15,7 +15,7 @@ func BenchmarkInjectProvidersIntoWSInterceptors_ApplyAll(b *testing.B) {
 		ic.BindInterceptor(mockWSInterceptable{})
 		ic.BindInterceptor(mockWSInterceptable{})
 		ic.BindInterceptor(mockWSInterceptable{})
-		ic.InjectProvidersIntoWSInterceptors(ws, benchCB)
+		ic.InjectProvidersIntoWSInterceptors(ws, benchCB, testConstruct)
 	}
 }
 

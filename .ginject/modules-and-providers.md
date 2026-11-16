@@ -30,19 +30,10 @@ type Module struct {
     OnInit     func()
     OnReady    func()
     OnShutdown func()
-
-    HTTPExceptionFilters []common.HTTPLayer
-    HTTPMiddlewares      []common.HTTPLayer
-    HTTPGuards           []common.HTTPLayer
-    HTTPInterceptors     []common.HTTPLayer
-    HTTPMainHandlers     []common.HTTPLayer
-
-    WSGuards           []common.WSLayer
-    WSInterceptors     []common.WSLayer
-    WSExceptionFilters []common.WSLayer
-    WSMainHandlers     []common.WSLayer
 }
 ```
+
+`Create` never writes a `*Module`: the wiring results (routes, layers, provider instances) live in the app's container (`core/container.go`), so one module value can be given to any number of apps.
 
 **No `exports []string` field or `Export(...)` method exists anywhere** — there is no explicit export mechanism; anything registered as a `Provider`/`Controller` on a module is available per the normal import-tree resolution rules. `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown` are set directly on the built `*Module` (e.g. `module.IsGlobal = true`), not via builder methods.
 

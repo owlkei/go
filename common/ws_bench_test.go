@@ -11,13 +11,10 @@ func BenchmarkAddHandlerToEventMap(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		orig := InsertedEvents
-		InsertedEvents = make(map[string]string)
 		ws := &WS{}
 		for _, fn := range fns {
 			ws.AddHandlerToEventMap(fn, nil)
 		}
-		InsertedEvents = orig
 	}
 }
 

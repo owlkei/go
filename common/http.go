@@ -1,11 +1,9 @@
 package common
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/routing"
 )
@@ -19,8 +17,6 @@ var HTTPOperations = map[string]string{
 	"PREFLIGHT":   http.MethodOptions,
 	routing.SERVE: routing.SERVE,
 }
-
-var InsertedRoutes = make(map[string]string)
 
 const (
 	TokenBy      = "BY"
@@ -49,13 +45,6 @@ type HTTPLayer struct {
 	Method          string
 	Pattern         string
 	MainHandlerName string
-}
-
-type HTTPConfig struct {
-	Method  string
-	Route   string
-	Version string
-	Func    string
 }
 
 type HTTP struct {
@@ -142,47 +131,6 @@ func (r *HTTP) AddHandlerToRouterMap(modulePrefixes []string, fnName string, han
 			route = modulePrefix + route
 		}
 
-		pattern := routing.MethodRouteVersionToPattern(httpMethod, route, version)
-		if existing := conflictingRoute(pattern); existing != "" {
-			panic(errors.New(
-				color.FmtRed(
-					"route conflict: %v method is conflicted with %v method",
-					fnName,
-					existing,
-				),
-			))
-		}
-		InsertedRoutes[pattern] = fnName
-
 		r.addToRouters(fnName, route, version, httpMethod, handler)
 	}
-}
-
-func conflictingRoute(pattern string) string {
-	if fnName := InsertedRoutes[pattern]; fnName != "" {
-		return fnName
-	}
-	shape, _ := routing.ParseToParamKey(pattern)
-	for inserted, fnName := range InsertedRoutes {
-		if insertedShape, _ := routing.ParseToParamKey(inserted); insertedShape == shape {
-			return fnName
-		}
-	}
-	return ""
-}
-
-func (r *HTTP) GetConfigurations() []HTTPConfig {
-	routes := make([]HTTPConfig, 0, len(InsertedRoutes))
-
-	for routeMethod, fn := range InsertedRoutes {
-		method, route, version := routing.PatternToMethodRouteVersion(routeMethod)
-		routes = append(routes, HTTPConfig{
-			Method:  method,
-			Route:   route,
-			Version: version,
-			Func:    fn,
-		})
-	}
-
-	return routes
 }

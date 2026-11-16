@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -83,7 +84,7 @@ func (m *moduleBuilder) Build() *Module {
 	staticModules, dynamicModules := m.getModuleType()
 
 	module := &Module{
-		Mutex:          &sync.Mutex{},
+		imports:        slices.Clone(m.imports),
 		staticModules:  staticModules,
 		dynamicModules: dynamicModules,
 		providers:      m.providers,

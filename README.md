@@ -81,7 +81,7 @@ func main() {
     app := core.New()
     app.Create(core.ModuleBuilder().Imports(UserModule).Build())
     if err := app.Listen(3000, nil); err != nil {
-        app.Logger.Fatal("AppError", "error", err)
+        app.Logger().Fatal("AppError", "error", err)
     }
 }
 ```
@@ -100,7 +100,7 @@ func main() {
 app := core.New()
 
 app.
-    UseLogger(logger).
+    SetLogger(logger).
     BindGlobalMiddlewares(middlewares.CORS{}, middlewares.RequestLogger{}).
     BindGlobalGuards(RateLimiterGuard{}).
     BindGlobalInterceptors(ResponseInterceptor{}).
@@ -113,13 +113,13 @@ app.EnableVersioning(versioning.Versioning{
 
 app.Create(RootModule)
 if err := app.Listen(3000, nil); err != nil {
-    app.Logger.Fatal("AppError", "error", err)
+    app.Logger().Fatal("AppError", "error", err)
 }
 ```
 
 ### Module
 
-Modules group related controllers and providers. Static modules are singletons; dynamic modules accept configuration arguments.
+Modules group related controllers and providers. A module value is wired once per app (each `core.New()` owns its providers, routes and layers, so two apps in one process are independent); dynamic modules accept configuration arguments.
 
 **Static module:**
 

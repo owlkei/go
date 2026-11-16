@@ -13,7 +13,6 @@ import (
 )
 
 func TestPublisher_SharesBrokerWithWSConnmgr(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.EnableWS(&WSConfig{Path: "/ws"})
 	app.Create(ModuleBuilder().Build())
@@ -40,7 +39,6 @@ func (c publisherTestController) SUBSCRIBE_chat_ANY() ctx.Map {
 }
 
 func TestPublisher_HTTPHandlerFansOutToWSSubscriber(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.EnableWS(&WSConfig{Path: "/ws"})
 	app.Create(ModuleBuilder().Controllers(publisherTestController{}).Build())
@@ -99,7 +97,6 @@ func (c publisherWSTestController) SUBSCRIBE_relay_ANY(publisher common.Publishe
 }
 
 func TestPublisher_WSHandlerFansOutToOtherWSSubscriber(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.EnableWS(&WSConfig{Path: "/ws"})
 	app.Create(ModuleBuilder().Controllers(publisherWSTestController{}).Build())

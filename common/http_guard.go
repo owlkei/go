@@ -32,7 +32,7 @@ func AsHTTPGuard(guarder any) (HTTPCanActivate, bool) {
 	return layer.CanActivate, true
 }
 
-func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []GuardItem {
+func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
 	guardItemArr := make([]GuardItem, 0, len(r.PatternToFuncNameMap)*len(g.GuardHandlers))
 
 	for _, guardHandler := range g.GuardHandlers {
@@ -45,7 +45,7 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 		}
 
 		newGuarder := newGuard.Interface()
-		newGuarder = Construct(newGuarder, "NewGuard")
+		newGuarder = construct(newGuarder, "NewGuard")
 		guardHandler.guarder = newGuarder.(Guarder)
 
 		canActivate, ok := AsHTTPGuard(guardHandler.guarder)

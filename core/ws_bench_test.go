@@ -24,6 +24,7 @@ func BenchmarkHandshake_NoListener(b *testing.B) {
 		logger:            log.NewLog(nil),
 		event:             event.NewEvent(),
 		injectedProviders: map[string]Provider{},
+		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}, wsHandshakeTraceMiddlewareB{}},
 	})
 
@@ -43,6 +44,7 @@ func BenchmarkHandshake_WithListener(b *testing.B) {
 		logger:            log.NewLog(nil),
 		event:             ev,
 		injectedProviders: map[string]Provider{},
+		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}, wsHandshakeTraceMiddlewareB{}},
 	})
 

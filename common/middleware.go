@@ -46,7 +46,7 @@ func (m *Middleware) BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) 
 	return m
 }
 
-func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []MiddlewareItem {
+func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []MiddlewareItem {
 	middlewareItemArr := make([]MiddlewareItem, 0, len(r.PatternToFuncNameMap)*len(m.MiddlewareHandlers))
 
 	for _, middlewareHandler := range m.MiddlewareHandlers {
@@ -59,7 +59,7 @@ func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, re
 		}
 
 		newMiddlewareFn := newMiddleware.Interface()
-		newMiddlewareFn = Construct(newMiddlewareFn, "NewMiddleware")
+		newMiddlewareFn = construct(newMiddlewareFn, "NewMiddleware")
 		middlewareHandler.middlewareFn = newMiddlewareFn.(MiddlewareFn)
 
 		targets := httpHandlerTargets(r, middlewareHandler.handlers, "middleware", middlewarerType)

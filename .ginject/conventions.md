@@ -66,7 +66,7 @@ don't mass-rewrite the exceptions.
   `loadConfigOptions` (`modules/config/module.go:28`). Never normalize on the request path.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once
-  through `common.Construct` (`common/fn.go:210`, `core/app.go:294`) and which returns a private
+  through the app's container (`(*container).construct`, `core/container.go`) and which returns a private
   compiled type that implements `Use` (`compiledCORS`). `cors`, `csrf` and `helmet` follow it.
 - **Dynamic modules** are `Register(opts *<X>ModuleOptions) *core.Module` that accept `nil` and
   apply defaults, then set `IsGlobal` / `OnInit` on the built module

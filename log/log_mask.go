@@ -11,6 +11,9 @@ import (
 const maskPlaceholder = "[REDACTED]"
 
 func WrapLogger(next common.Logger, maskFields []string) common.Logger {
+	if wrapped, ok := next.(*maskingLogger); ok && maskFields == nil {
+		return wrapped
+	}
 	rules := make([]pattern.Pattern, len(maskFields))
 	for i, f := range maskFields {
 		rules[i] = pattern.NewPattern(f)

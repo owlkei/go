@@ -84,6 +84,7 @@ func TestHandshake_EmitsMiddlewareTraceWithHTTPTransport(t *testing.T) {
 		logger:            log.NewLog(nil),
 		event:             ev,
 		injectedProviders: map[string]Provider{},
+		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}},
 	})
 
@@ -126,6 +127,7 @@ func TestHandshake_EmitsOneTraceEventPerMiddleware(t *testing.T) {
 		logger:            log.NewLog(nil),
 		event:             ev,
 		injectedProviders: map[string]Provider{},
+		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}, wsHandshakeTraceMiddlewareB{}},
 	})
 
@@ -158,6 +160,7 @@ func TestHandshake_NoListener_StillSucceeds(t *testing.T) {
 		logger:            log.NewLog(nil),
 		event:             ev,
 		injectedProviders: map[string]Provider{},
+		container:         newContainer(),
 		globalMiddlewares: []common.MiddlewareFn{wsHandshakeTraceMiddleware{}},
 	})
 

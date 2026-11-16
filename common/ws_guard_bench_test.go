@@ -14,7 +14,7 @@ func BenchmarkInjectProvidersIntoWSGuards_ApplyAll(b *testing.B) {
 		g.BindGuard(mockWSGuarder{})
 		g.BindGuard(mockWSGuarder{})
 		g.BindGuard(mockWSGuarder{})
-		g.InjectProvidersIntoWSGuards(ws, benchCB)
+		g.InjectProvidersIntoWSGuards(ws, benchCB, testConstruct)
 	}
 }
 

@@ -39,7 +39,6 @@ func (c serveController) SERVE_number() int  { return 42 }
 
 func newServeApp(t *testing.T) *App {
 	t.Helper()
-	resetModuleGlobals()
 	serveRoot = filepath.Join(t.TempDir(), "public")
 	if err := os.MkdirAll(filepath.Join(serveRoot, "css"), 0o755); err != nil {
 		t.Fatal(err)

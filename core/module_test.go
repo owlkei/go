@@ -2,6 +2,7 @@ package core
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
@@ -12,46 +13,15 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
+	"golang.org/x/net/websocket"
 )
-
-func TestGenControllerKey(t *testing.T) {
-	m := ModuleBuilder().Build()
-	c := &mockController{}
-	got := genControllerKey(m, c)
-	want := "[" + m.ID() + "]" + genFieldKey(reflect.TypeOf(c))
-	if got != want {
-		t.Error(test.DiffMessage(got, want, "genControllerKey"))
-	}
-}
-
-func TestToUniqueControllers(t *testing.T) {
-	m := ModuleBuilder().Build()
-	c1 := &mockController{}
-	c2 := &mockController{}
-
-	controllers := []Controller{c1, c1, c2, c1}
-	toUniqueControllers(m, &controllers)
-
-	if len(controllers) != 1 {
-		t.Error(test.DiffMessage(len(controllers), 1, "toUniqueControllers dedup"))
-	}
-}
-
-func TestToUniqueControllersEmpty(t *testing.T) {
-	m := ModuleBuilder().Build()
-	controllers := []Controller{}
-	toUniqueControllers(m, &controllers)
-	if len(controllers) != 0 {
-		t.Error(test.DiffMessage(len(controllers), 0, "toUniqueControllers empty"))
-	}
-}
 
 func TestBuildFieldInjectionCallback_ResolvesFromLocalProviders(t *testing.T) {
 	p := injectDepsTestProvider{}
 	injectedProviders := map[string]Provider{
 		genFieldKey(reflect.TypeOf(p)): p,
 	}
-	cb := buildFieldInjectionCallback("guarder", injectedProviders)
+	cb := buildFieldInjectionCallback("guarder", injectedProviders, newContainer())
 
 	ownerType := reflect.TypeOf(injectDepsComponent{})
 	ownerValue := reflect.ValueOf(injectDepsComponent{Plain: "kept"})
@@ -76,22 +46,11 @@ func TestBuildFieldInjectionCallback_UnresolvedProviderPanics(t *testing.T) {
 		}
 	}()
 
-	cb := buildFieldInjectionCallback("guarder", map[string]Provider{})
+	cb := buildFieldInjectionCallback("guarder", map[string]Provider{}, newContainer())
 	ownerType := reflect.TypeOf(injectDepsUnresolvable{})
 	ownerValue := reflect.ValueOf(injectDepsUnresolvable{})
 	newInstance := reflect.New(ownerType)
 	cb(0, ownerType, ownerValue, newInstance)
-}
-
-func resetModuleGlobals() {
-	mainModulePtr = 0
-	modulesInjectedFromMain = nil
-	staticModuleByDynamicPtr = make(map[uintptr]*Module)
-	globalPrefixesByController = make(map[string][]string)
-	globalProviderByKey = sync.Map{}
-	providerSingletonByKey = make(map[string]Provider)
-	common.InsertedRoutes = make(map[string]string)
-	common.InsertedEvents = make(map[string]string)
 }
 
 var mtConstructOrder []string
@@ -110,15 +69,14 @@ func (p mtOrderedProviderB) NewProvider() Provider {
 	return p
 }
 
-func TestNewModule_ProviderHoisting_DependencyConstructedBeforeDependent(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_ProviderHoisting_DependencyConstructedBeforeDependent(t *testing.T) {
 	mtConstructOrder = nil
 
 	m := ModuleBuilder().
 		Providers(mtOrderedProviderB{}, mtOrderedProviderA{}).
 		Build()
 
-	m.NewModule()
+	mustCreate(t, New(), m)
 
 	if len(mtConstructOrder) != 2 || mtConstructOrder[0] != "A" || mtConstructOrder[1] != "B" {
 		t.Error(test.DiffMessage(mtConstructOrder, []string{"A", "B"}, "a provider's dependency must construct before the dependent, regardless of declaration order"))
@@ -134,8 +92,7 @@ func (p mtOnceProvider) NewProvider() Provider {
 	return p
 }
 
-func TestNewModule_ProviderConstructedOnce_AcrossDuplicateStaticImports(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_ProviderConstructedOnce_AcrossDuplicateStaticImports(t *testing.T) {
 	mtOnceConstructCount = 0
 
 	child := ModuleBuilder().Providers(mtOnceProvider{}).Build()
@@ -143,29 +100,36 @@ func TestNewModule_ProviderConstructedOnce_AcrossDuplicateStaticImports(t *testi
 	parentB := ModuleBuilder().Imports(child).Build()
 	root := ModuleBuilder().Imports(parentA, parentB).Build()
 
-	root.NewModule()
+	mustCreate(t, New(), root)
 
 	if mtOnceConstructCount != 1 {
 		t.Error(test.DiffMessage(mtOnceConstructCount, 1, "a provider reachable via two static-module paths must construct exactly once"))
 	}
 }
 
-type mtGlobalSubProvider struct{}
+type mtGlobalSubProvider struct{ Source string }
 
-func (p mtGlobalSubProvider) NewProvider() Provider { return p }
+func (p mtGlobalSubProvider) NewProvider() Provider { p.Source = "built"; return p }
 
-func TestNewModule_StaticSubmoduleGlobalProvider_PromotedToGlobal(t *testing.T) {
-	resetModuleGlobals()
+type mtGlobalSubConsumer struct{ G mtGlobalSubProvider }
 
-	child := ModuleBuilder().Providers(mtGlobalSubProvider{}).Build()
-	child.IsGlobal = true
-	root := ModuleBuilder().Imports(child).Build()
+func (p mtGlobalSubConsumer) NewProvider() Provider { return p }
 
-	root.NewModule()
+func TestCreate_StaticSubmoduleGlobalProvider_VisibleToOtherModules(t *testing.T) {
+	global := ModuleBuilder().Providers(mtGlobalSubProvider{}).Build()
+	global.IsGlobal = true
+	consumer := ModuleBuilder().Providers(mtGlobalSubConsumer{}).Build()
+	root := ModuleBuilder().Imports(global, consumer).Build()
 
-	key := genFieldKey(reflect.TypeOf(mtGlobalSubProvider{}))
-	if _, ok := globalProviderByKey.Load(key); !ok {
-		t.Error(test.DiffMessage(nil, "non-nil provider", "a provider from an IsGlobal static submodule imported by the main module must be promoted to globalProviderByKey"))
+	app := New()
+	mustCreate(t, app, root)
+
+	got, ok := app.Get(mtGlobalSubConsumer{}).(mtGlobalSubConsumer)
+	if !ok {
+		t.Fatal(test.DiffMessage(app.Get(mtGlobalSubConsumer{}), "a mtGlobalSubConsumer", "the consumer of an IsGlobal provider is constructed"))
+	}
+	if got.G.Source != "built" {
+		t.Error(test.DiffMessage(got.G.Source, "built", "a provider of an IsGlobal static submodule is global and injected as constructed"))
 	}
 }
 
@@ -177,8 +141,7 @@ func mtDynamicModuleNeedingProvider(_ mtDynMissingProvider) *Module {
 	return ModuleBuilder().Build()
 }
 
-func TestNewModule_DynamicModule_MissingGlobalDependencyPanics(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_DynamicModule_MissingGlobalDependencyPanics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error(test.DiffMessage(nil, "panic", "a dynamic module factory whose argument has no global provider must panic during bootstrap"))
@@ -186,8 +149,12 @@ func TestNewModule_DynamicModule_MissingGlobalDependencyPanics(t *testing.T) {
 	}()
 
 	root := ModuleBuilder().Imports(mtDynamicModuleNeedingProvider).Build()
-	root.NewModule()
+	New().Create(root)
 }
+
+type mtLocalProvider struct{ Source string }
+
+func (p mtLocalProvider) NewProvider() Provider { p.Source = "local"; return p }
 
 type mtUnexportedFieldProvider struct {
 	hidden mtLocalProvider //nolint:unused
@@ -195,57 +162,39 @@ type mtUnexportedFieldProvider struct {
 
 func (p mtUnexportedFieldProvider) NewProvider() Provider { return p }
 
-func TestNewModule_ProviderInjection_UnexportedFieldPanicsWithoutDeadlockingModuleGlobalMu(t *testing.T) {
-	resetModuleGlobals()
-
+func TestCreate_ProviderInjection_UnexportedFieldPanics(t *testing.T) {
 	m := ModuleBuilder().Providers(mtUnexportedFieldProvider{}).Build()
 
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error(test.DiffMessage(nil, "panic", "a provider with an unexported field should panic during injection"))
-			}
-		}()
-		m.injectProviders()
-	}()
-
-	if !moduleGlobalMu.TryLock() {
-		t.Fatal(test.DiffMessage(false, true, "moduleGlobalMu must not stay locked after injectProviders panics internally"))
+	text, panicked := createPanicText(func() { New().Create(m) })
+	if !panicked || !strings.Contains(text, "dependency injection: can't set value to unexported 'hidden' field") {
+		t.Error(test.DiffMessage(text, "can't set value to unexported 'hidden' field", "a provider with an unexported field should panic during injection"))
 	}
-	moduleGlobalMu.Unlock()
 }
 
-type mtDedupController struct{}
+type mtDedupController struct{ common.HTTP }
 
 func (c mtDedupController) NewController() Controller { return c }
+func (c mtDedupController) READ_mtdedup() string      { return "ok" }
 
-func TestNewModule_StaticModuleControllerDedup_AcrossSharedImport(t *testing.T) {
-	resetModuleGlobals()
-
-	shared := mtDedupController{}
-	child := ModuleBuilder().Controllers(shared).Build()
+func TestCreate_StaticModuleControllerDedup_AcrossSharedImport(t *testing.T) {
+	child := ModuleBuilder().Controllers(mtDedupController{}).Build()
 	parentA := ModuleBuilder().Imports(child).Build()
 	parentB := ModuleBuilder().Imports(child).Build()
 	root := ModuleBuilder().Imports(parentA, parentB).Build()
 
-	root.NewModule()
-
-	if len(root.controllers) != 1 {
-		t.Error(test.DiffMessage(len(root.controllers), 1, "a controller reachable via two static-module paths must be deduped"))
+	app := New()
+	text, panicked := createPanicText(func() { app.Create(root) })
+	if panicked {
+		t.Fatal(test.DiffMessage(text, "no panic", "a controller reachable via two static-module paths is registered once, so its routes do not conflict"))
+	}
+	if w := createGet(app, "/mtdedup"); w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "the deduped controller answers"))
 	}
 }
-
-type mtLocalProvider struct{ Source string }
-
-func (p mtLocalProvider) NewProvider() Provider { p.Source = "local"; return p }
 
 type mtGlobalOnlyProvider struct{ Source string }
 
 func (p mtGlobalOnlyProvider) NewProvider() Provider { return p }
-
-type mtInterfaceOnlyProvider struct{ Source string }
-
-func (p mtInterfaceOnlyProvider) NewProvider() Provider { return p }
 
 type mtPassthroughValue struct{ Tag string }
 
@@ -256,7 +205,8 @@ func (p mtUnresolvedProvider) NewProvider() Provider { return p }
 type mtPriorityGuard struct {
 	Local       mtLocalProvider
 	GlobalOnly  mtGlobalOnlyProvider
-	IfaceOnly   mtInterfaceOnlyProvider
+	Log         common.Logger
+	Pub         common.Publisher
 	Passthrough mtPassthroughValue
 }
 
@@ -295,34 +245,37 @@ func (ic mtSimpleInterceptor) Intercept(_ *ctx.HTTPContext, _ *aggregation.Aggre
 	return nil
 }
 
+var mtExFilterSeen createRecorder
+
 type mtExFilterOneField struct{ P mtLocalProvider }
 
-var mtExFilterOneFieldSeen mtExFilterOneField
-
 func (e mtExFilterOneField) Catch(_ *ctx.HTTPContext, _ *exception.Exception) {
-	mtExFilterOneFieldSeen = e
+	mtExFilterSeen.add(e.P.Source)
 }
 
-func seedPriorityChainGlobals() {
-
-	globalProviderByKey.Store(genFieldKey(reflect.TypeOf(mtLocalProvider{})), mtLocalProvider{Source: "stale-global"})
-	globalProviderByKey.Store(genFieldKey(reflect.TypeOf(mtGlobalOnlyProvider{})), mtGlobalOnlyProvider{Source: "global"})
-	globalInterfaceByKey.Store(genFieldKey(reflect.TypeOf(mtInterfaceOnlyProvider{})), mtInterfaceOnlyProvider{Source: "interface"})
+func mtPriorityRoot(controller Controller) (*Module, *Module) {
+	global := ModuleBuilder().Providers(mtGlobalOnlyProvider{Source: "global"}).Build()
+	global.IsGlobal = true
+	consumer := ModuleBuilder().Providers(mtLocalProvider{}).Controllers(controller).Build()
+	return ModuleBuilder().Imports(global, consumer).Build(), global
 }
 
-func assertPriorityChainSeen(t *testing.T, label string) {
+func mtAssertPriorityChain(t *testing.T, seen mtPriorityGuard, app *App, label string) {
 	t.Helper()
-	if mtPriorityGuardSeen.Local.Source != "local" {
-		t.Error(test.DiffMessage(mtPriorityGuardSeen.Local.Source, "local", label+": local module provider must win over a global provider of the same type"))
+	if seen.Local.Source != "local" {
+		t.Error(test.DiffMessage(seen.Local.Source, "local", label+": a field with a module provider is injected as constructed"))
 	}
-	if mtPriorityGuardSeen.GlobalOnly.Source != "global" {
-		t.Error(test.DiffMessage(mtPriorityGuardSeen.GlobalOnly.Source, "global", label+": field with no local provider must fall back to globalProviderByKey"))
+	if seen.GlobalOnly.Source != "global" {
+		t.Error(test.DiffMessage(seen.GlobalOnly.Source, "global", label+": a field with no local provider falls back to the global providers"))
 	}
-	if mtPriorityGuardSeen.IfaceOnly.Source != "interface" {
-		t.Error(test.DiffMessage(mtPriorityGuardSeen.IfaceOnly.Source, "interface", label+": field with no local/global provider must fall back to globalInterfaceByKey"))
+	if seen.Log != app.Logger() {
+		t.Error(test.DiffMessage(seen.Log, app.Logger(), label+": a common.Logger field falls back to the app's logger"))
 	}
-	if mtPriorityGuardSeen.Passthrough.Tag != "original" {
-		t.Error(test.DiffMessage(mtPriorityGuardSeen.Passthrough.Tag, "original", label+": non-Provider field must pass through the bound instance's original value"))
+	if seen.Pub == nil {
+		t.Error(test.DiffMessage(nil, "the app's publisher", label+": a common.Publisher field falls back to the app's publisher"))
+	}
+	if seen.Passthrough.Tag != "original" {
+		t.Error(test.DiffMessage(seen.Passthrough.Tag, "original", label+": a non-Provider field passes through the bound instance's original value"))
 	}
 }
 
@@ -331,29 +284,18 @@ type mtPrefixedController struct{ common.HTTP }
 func (c mtPrefixedController) NewController() Controller   { return c }
 func (c mtPrefixedController) READ_mtprefixtarget() string { return "ok" }
 
-func TestNewModule_HTTPMainHandler_RegisteredWithModulePrefix(t *testing.T) {
-	resetModuleGlobals()
-
+func TestCreate_HTTPMainHandler_RegisteredWithModulePrefix(t *testing.T) {
 	m := ModuleBuilder().Controllers(mtPrefixedController{}).Build()
 	m.Prefix("v1")
 
-	m.NewModule()
+	app := New()
+	mustCreate(t, app, m)
 
-	if len(m.HTTPMainHandlers) != 1 {
-		t.Fatalf("expected 1 HTTP main handler, got %d", len(m.HTTPMainHandlers))
+	if w := createGet(app, "/v1/mtprefixtarget"); w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "the route carries the module prefix and the resource name"))
 	}
-	h := m.HTTPMainHandlers[0]
-	if h.Method != "GET" {
-		t.Error(test.DiffMessage(h.Method, "GET", "HTTP main handler method"))
-	}
-	if !strings.Contains(h.Route, "v1") || !strings.Contains(h.Route, "mtprefixtarget") {
-		t.Error(test.DiffMessage(h.Route, "route containing both the module prefix and the resource name", "HTTP main handler route"))
-	}
-	if h.Handler == nil {
-		t.Error(test.DiffMessage(nil, "non-nil handler", "HTTP main handler Handler"))
-	}
-	if h.MainHandlerName != "READ_mtprefixtarget" {
-		t.Error(test.DiffMessage(h.MainHandlerName, "READ_mtprefixtarget", "HTTP main handler name"))
+	if w := createGet(app, "/mtprefixtarget"); w.Code != http.StatusNotFound {
+		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "the route is not served without the module prefix"))
 	}
 }
 
@@ -368,28 +310,17 @@ func (c mtGuardPriorityController) NewController() Controller {
 }
 func (c mtGuardPriorityController) READ_mtguardpriority() string { return "ok" }
 
-func TestNewModule_HTTPGuardInjection_PriorityChain(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_HTTPGuardInjection_PriorityChain(t *testing.T) {
 	mtPriorityGuardSeen = mtPriorityGuard{}
-	seedPriorityChainGlobals()
 
-	m := ModuleBuilder().
-		Providers(mtLocalProvider{}).
-		Controllers(mtGuardPriorityController{}).
-		Build()
+	root, _ := mtPriorityRoot(mtGuardPriorityController{})
+	app := New()
+	mustCreate(t, app, root)
 
-	m.NewModule()
-
-	if len(m.HTTPGuards) != 1 {
-		t.Fatalf("expected 1 HTTP guard, got %d", len(m.HTTPGuards))
+	if w := createGet(app, "/mtguardpriority"); w.Code != http.StatusOK {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "the guarded route answers"))
 	}
-	handler, ok := m.HTTPGuards[0].Handler.(func(*ctx.HTTPContext) bool)
-	if !ok {
-		t.Fatalf("unexpected HTTP guard handler type %T", m.HTTPGuards[0].Handler)
-	}
-	handler(nil)
-
-	assertPriorityChainSeen(t, "HTTP guard")
+	mtAssertPriorityChain(t, mtPriorityGuardSeen, app, "HTTP guard")
 }
 
 type mtGuardUnexportedController struct {
@@ -403,16 +334,13 @@ func (c mtGuardUnexportedController) NewController() Controller {
 }
 func (c mtGuardUnexportedController) READ_mtguardunexported() string { return "ok" }
 
-func TestNewModule_HTTPGuardInjection_UnexportedFieldPanics(t *testing.T) {
-	resetModuleGlobals()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "guard with an unexported field should panic during injection"))
-		}
-	}()
-
-	m := ModuleBuilder().Controllers(mtGuardUnexportedController{}).Build()
-	m.NewModule()
+func TestCreate_HTTPGuardInjection_UnexportedFieldPanics(t *testing.T) {
+	text, panicked := createPanicText(func() {
+		New().Create(ModuleBuilder().Controllers(mtGuardUnexportedController{}).Build())
+	})
+	if !panicked {
+		t.Error(test.DiffMessage(text, "panic", "guard with an unexported field should panic during injection"))
+	}
 }
 
 type mtGuardUnresolvedController struct {
@@ -426,16 +354,13 @@ func (c mtGuardUnresolvedController) NewController() Controller {
 }
 func (c mtGuardUnresolvedController) READ_mtguardunresolved() string { return "ok" }
 
-func TestNewModule_HTTPGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
-	resetModuleGlobals()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "guard field with an unresolved provider dependency should panic"))
-		}
-	}()
-
-	m := ModuleBuilder().Controllers(mtGuardUnresolvedController{}).Build()
-	m.NewModule()
+func TestCreate_HTTPGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
+	text, panicked := createPanicText(func() {
+		New().Create(ModuleBuilder().Controllers(mtGuardUnresolvedController{}).Build())
+	})
+	if !panicked {
+		t.Error(test.DiffMessage(text, "panic", "guard field with an unresolved provider dependency should panic"))
+	}
 }
 
 type mtMiddlewareController struct {
@@ -449,29 +374,19 @@ func (c mtMiddlewareController) NewController() Controller {
 }
 func (c mtMiddlewareController) READ_mtmiddleware() string { return "ok" }
 
-func TestNewModule_HTTPMiddlewareInjection_LocalProviderRegistered(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_HTTPMiddlewareInjection_LocalProviderRegistered(t *testing.T) {
 	mtSimpleMiddlewareSeen = mtSimpleMiddleware{}
 
 	m := ModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtMiddlewareController{}).
 		Build()
+	app := New()
+	mustCreate(t, app, m)
 
-	m.NewModule()
-
-	if len(m.HTTPMiddlewares) != 1 {
-		t.Fatalf("expected 1 HTTP middleware, got %d", len(m.HTTPMiddlewares))
-	}
-	handler, ok := m.HTTPMiddlewares[0].Handler.(func(*http.Request, http.ResponseWriter, ctx.Next))
-	if !ok {
-		t.Fatalf("unexpected HTTP middleware handler type %T", m.HTTPMiddlewares[0].Handler)
-	}
-	called := false
-	handler(nil, nil, func() { called = true })
-
-	if !called {
-		t.Error(test.DiffMessage(false, true, "HTTP middleware should call next()"))
+	w := createGet(app, "/mtmiddleware")
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "HTTP middleware should call next()"))
 	}
 	if mtSimpleMiddlewareSeen.P.Source != "local" {
 		t.Error(test.DiffMessage(mtSimpleMiddlewareSeen.P.Source, "local", "HTTP middleware field should resolve from local module providers"))
@@ -489,25 +404,16 @@ func (c mtInterceptorController) NewController() Controller {
 }
 func (c mtInterceptorController) READ_mtinterceptor() string { return "ok" }
 
-func TestNewModule_HTTPInterceptorInjection_LocalProviderRegistered(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_HTTPInterceptorInjection_LocalProviderRegistered(t *testing.T) {
 	mtSimpleInterceptorSeen = mtSimpleInterceptor{}
 
 	m := ModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtInterceptorController{}).
 		Build()
-
-	m.NewModule()
-
-	if len(m.HTTPInterceptors) != 1 {
-		t.Fatalf("expected 1 HTTP interceptor, got %d", len(m.HTTPInterceptors))
-	}
-	handler, ok := m.HTTPInterceptors[0].Handler.(func(*ctx.HTTPContext, *aggregation.Aggregation) any)
-	if !ok {
-		t.Fatalf("unexpected HTTP interceptor handler type %T", m.HTTPInterceptors[0].Handler)
-	}
-	handler(nil, aggregation.NewAggregation())
+	app := New()
+	mustCreate(t, app, m)
+	createGet(app, "/mtinterceptor")
 
 	if mtSimpleInterceptorSeen.P.Source != "local" {
 		t.Error(test.DiffMessage(mtSimpleInterceptorSeen.P.Source, "local", "HTTP interceptor field should resolve from local module providers"))
@@ -523,30 +429,21 @@ func (c mtExFilterSingleController) NewController() Controller {
 	c.BindExceptionFilter(mtExFilterOneField{})
 	return c
 }
-func (c mtExFilterSingleController) READ_mtexfiltersingle() string { return "ok" }
+func (c mtExFilterSingleController) READ_mtexfiltersingle() string { panic("boom") }
 
-func TestNewModule_HTTPExceptionFilter_SingleController_Registered(t *testing.T) {
-	resetModuleGlobals()
-	mtExFilterOneFieldSeen = mtExFilterOneField{}
+func TestCreate_HTTPExceptionFilter_SingleController_Registered(t *testing.T) {
+	mtExFilterSeen = createRecorder{}
 
 	m := ModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtExFilterSingleController{}).
 		Build()
+	app := New()
+	mustCreate(t, app, m)
+	createGet(app, "/mtexfiltersingle")
 
-	m.NewModule()
-
-	if len(m.HTTPExceptionFilters) != 1 {
-		t.Fatalf("expected 1 HTTP exception filter, got %d", len(m.HTTPExceptionFilters))
-	}
-	handler, ok := m.HTTPExceptionFilters[0].Handler.(func(*ctx.HTTPContext, *exception.Exception))
-	if !ok {
-		t.Fatalf("unexpected HTTP exception filter handler type %T", m.HTTPExceptionFilters[0].Handler)
-	}
-	handler(nil, nil)
-
-	if mtExFilterOneFieldSeen.P.Source != "local" {
-		t.Error(test.DiffMessage(mtExFilterOneFieldSeen.P.Source, "local", "exceptionFilter field should resolve from local module providers when the controller index happens to match the field index"))
+	if got := sprint(mtExFilterSeen.list()); got != "[local]" {
+		t.Error(test.DiffMessage(got, "[local]", "exceptionFilter field should resolve from local module providers and the filter should run"))
 	}
 }
 
@@ -559,7 +456,7 @@ func (c mtExFilterMultiController0) NewController() Controller {
 	c.BindExceptionFilter(mtExFilterOneField{})
 	return c
 }
-func (c mtExFilterMultiController0) READ_mtexfilterbugc0() string { return "ok" }
+func (c mtExFilterMultiController0) READ_mtexfilterbugc0() string { panic("boom") }
 
 type mtExFilterMultiController1 struct {
 	common.HTTP
@@ -570,28 +467,56 @@ func (c mtExFilterMultiController1) NewController() Controller {
 	c.BindExceptionFilter(mtExFilterOneField{})
 	return c
 }
-func (c mtExFilterMultiController1) READ_mtexfilterbugc1() string { return "ok" }
+func (c mtExFilterMultiController1) READ_mtexfilterbugc1() string { panic("boom") }
 
-func TestNewModule_HTTPExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_HTTPExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T) {
+	mtExFilterSeen = createRecorder{}
 
 	m := ModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtExFilterMultiController0{}, mtExFilterMultiController1{}).
 		Build()
+	app := New()
+	mustCreate(t, app, m)
+	createGet(app, "/mtexfilterbugc0")
+	createGet(app, "/mtexfilterbugc1")
 
-	m.NewModule()
+	if got := sprint(mtExFilterSeen.list()); got != "[local local]" {
+		t.Error(test.DiffMessage(got, "[local local]", "each controller's filter resolves its provider field and runs"))
+	}
+}
 
-	if len(m.HTTPExceptionFilters) != 2 {
-		t.Fatalf("expected 2 HTTP exception filters, got %d", len(m.HTTPExceptionFilters))
+func mtWSSubscribe(t *testing.T, app *App, topic string) WSPayload {
+	t.Helper()
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", server.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, ef := range m.HTTPExceptionFilters {
-		handler, ok := ef.Handler.(func(*ctx.HTTPContext, *exception.Exception))
-		if !ok {
-			t.Fatalf("unexpected HTTP exception filter handler type %T", ef.Handler)
-		}
-		handler(nil, nil)
+	defer func() { _ = conn.Close() }()
+
+	var connected WSPayload
+	if err := websocket.JSON.Receive(conn, &connected); err != nil {
+		t.Fatal(err)
 	}
+	if err := websocket.JSON.Send(conn, WSPayload{Type: TypeSubscribe, ID: "1", Topic: []string{topic}}); err != nil {
+		t.Fatal(err)
+	}
+	var reply WSPayload
+	if err := websocket.JSON.Receive(conn, &reply); err != nil {
+		t.Fatal(err)
+	}
+	return reply
+}
+
+func mtWSApp(t *testing.T, root *Module) *App {
+	t.Helper()
+	app := New()
+	app.EnableWS(&WSConfig{Path: "/ws"})
+	mustCreate(t, app, root)
+	return app
 }
 
 type mtWSMainController struct{ common.WS }
@@ -599,27 +524,22 @@ type mtWSMainController struct{ common.WS }
 func (c mtWSMainController) NewController() Controller         { return c }
 func (c mtWSMainController) SUBSCRIBE_mtwsmainhandler() string { return "ok" }
 
-func TestNewModule_WSMainHandler_Registered(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_WSMainHandler_Registered(t *testing.T) {
+	app := mtWSApp(t, ModuleBuilder().Controllers(mtWSMainController{}).Build())
 
-	m := ModuleBuilder().Controllers(mtWSMainController{}).Build()
-	m.NewModule()
-
-	if len(m.WSMainHandlers) != 1 {
-		t.Fatalf("expected 1 WS main handler, got %d", len(m.WSMainHandlers))
+	if reply := mtWSSubscribe(t, app, "mtwsmainhandler"); reply.Type != TypeAck {
+		t.Error(test.DiffMessage(reply.Type, TypeAck, "the event of the WS main handler can be subscribed"))
 	}
-	if m.WSMainHandlers[0].EventName != "mtwsmainhandler" {
-		t.Error(test.DiffMessage(m.WSMainHandlers[0].EventName, "mtwsmainhandler", "WS main handler event name"))
-	}
-	if m.WSMainHandlers[0].Handler == nil {
-		t.Error(test.DiffMessage(nil, "non-nil handler", "WS main handler Handler"))
+	if reply := mtWSSubscribe(t, app, "mtwsunknown"); reply.Type != TypeError {
+		t.Error(test.DiffMessage(reply.Type, TypeError, "an event nothing handles is refused"))
 	}
 }
 
 type mtPriorityGuardWS struct {
 	Local       mtLocalProvider
 	GlobalOnly  mtGlobalOnlyProvider
-	IfaceOnly   mtInterfaceOnlyProvider
+	Log         common.Logger
+	Pub         common.Publisher
 	Passthrough mtPassthroughValue
 }
 
@@ -628,22 +548,6 @@ var mtPriorityGuardWSSeen mtPriorityGuardWS
 func (g mtPriorityGuardWS) CanActivate(_ *ctx.WSContext) bool {
 	mtPriorityGuardWSSeen = g
 	return true
-}
-
-func assertPriorityChainSeenWS(t *testing.T, label string) {
-	t.Helper()
-	if mtPriorityGuardWSSeen.Local.Source != "local" {
-		t.Error(test.DiffMessage(mtPriorityGuardWSSeen.Local.Source, "local", label+": local module provider must win over a global provider of the same type"))
-	}
-	if mtPriorityGuardWSSeen.GlobalOnly.Source != "global" {
-		t.Error(test.DiffMessage(mtPriorityGuardWSSeen.GlobalOnly.Source, "global", label+": field with no local provider must fall back to globalProviderByKey"))
-	}
-	if mtPriorityGuardWSSeen.IfaceOnly.Source != "interface" {
-		t.Error(test.DiffMessage(mtPriorityGuardWSSeen.IfaceOnly.Source, "interface", label+": field with no local/global provider must fall back to globalInterfaceByKey"))
-	}
-	if mtPriorityGuardWSSeen.Passthrough.Tag != "original" {
-		t.Error(test.DiffMessage(mtPriorityGuardWSSeen.Passthrough.Tag, "original", label+": non-Provider field must pass through the bound instance's original value"))
-	}
 }
 
 type mtWSGuardPriorityController struct {
@@ -657,28 +561,14 @@ func (c mtWSGuardPriorityController) NewController() Controller {
 }
 func (c mtWSGuardPriorityController) SUBSCRIBE_mtwsguardpriority() string { return "ok" }
 
-func TestNewModule_WSGuardInjection_PriorityChain(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_WSGuardInjection_PriorityChain(t *testing.T) {
 	mtPriorityGuardWSSeen = mtPriorityGuardWS{}
-	seedPriorityChainGlobals()
 
-	m := ModuleBuilder().
-		Providers(mtLocalProvider{}).
-		Controllers(mtWSGuardPriorityController{}).
-		Build()
+	root, _ := mtPriorityRoot(mtWSGuardPriorityController{})
+	app := mtWSApp(t, root)
+	mtWSSubscribe(t, app, "mtwsguardpriority")
 
-	m.NewModule()
-
-	if len(m.WSGuards) != 1 {
-		t.Fatalf("expected 1 WS guard, got %d", len(m.WSGuards))
-	}
-	handler, ok := m.WSGuards[0].Handler.(func(*ctx.WSContext) bool)
-	if !ok {
-		t.Fatalf("unexpected WS guard handler type %T", m.WSGuards[0].Handler)
-	}
-	handler(nil)
-
-	assertPriorityChainSeenWS(t, "WS guard")
+	mtAssertPriorityChain(t, mtPriorityGuard(mtPriorityGuardWSSeen), app, "WS guard")
 }
 
 type mtWSGuardUnexportedController struct {
@@ -692,16 +582,15 @@ func (c mtWSGuardUnexportedController) NewController() Controller {
 }
 func (c mtWSGuardUnexportedController) SUBSCRIBE_mtwsguardunexported() string { return "ok" }
 
-func TestNewModule_WSGuardInjection_UnexportedFieldPanics(t *testing.T) {
-	resetModuleGlobals()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "WS guard with an unexported field should panic during injection"))
-		}
-	}()
-
-	m := ModuleBuilder().Controllers(mtWSGuardUnexportedController{}).Build()
-	m.NewModule()
+func TestCreate_WSGuardInjection_UnexportedFieldPanics(t *testing.T) {
+	text, panicked := createPanicText(func() {
+		app := New()
+		app.EnableWS(&WSConfig{Path: "/ws"})
+		app.Create(ModuleBuilder().Controllers(mtWSGuardUnexportedController{}).Build())
+	})
+	if !panicked {
+		t.Error(test.DiffMessage(text, "panic", "WS guard with an unexported field should panic during injection"))
+	}
 }
 
 type mtWSGuardUnresolvedController struct {
@@ -715,16 +604,15 @@ func (c mtWSGuardUnresolvedController) NewController() Controller {
 }
 func (c mtWSGuardUnresolvedController) SUBSCRIBE_mtwsguardunresolved() string { return "ok" }
 
-func TestNewModule_WSGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
-	resetModuleGlobals()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "WS guard field with an unresolved provider dependency should panic"))
-		}
-	}()
-
-	m := ModuleBuilder().Controllers(mtWSGuardUnresolvedController{}).Build()
-	m.NewModule()
+func TestCreate_WSGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
+	text, panicked := createPanicText(func() {
+		app := New()
+		app.EnableWS(&WSConfig{Path: "/ws"})
+		app.Create(ModuleBuilder().Controllers(mtWSGuardUnresolvedController{}).Build())
+	})
+	if !panicked {
+		t.Error(test.DiffMessage(text, "panic", "WS guard field with an unresolved provider dependency should panic"))
+	}
 }
 
 type mtSimpleInterceptorWS struct{ P mtLocalProvider }
@@ -747,45 +635,40 @@ func (c mtWSInterceptorController) NewController() Controller {
 }
 func (c mtWSInterceptorController) SUBSCRIBE_mtwsinterceptor() string { return "ok" }
 
-func TestNewModule_WSInterceptorInjection_LocalProviderRegistered(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_WSInterceptorInjection_LocalProviderRegistered(t *testing.T) {
 	mtSimpleInterceptorWSSeen = mtSimpleInterceptorWS{}
 
-	m := ModuleBuilder().
+	app := mtWSApp(t, ModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtWSInterceptorController{}).
-		Build()
-
-	m.NewModule()
-
-	if len(m.WSInterceptors) != 1 {
-		t.Fatalf("expected 1 WS interceptor, got %d", len(m.WSInterceptors))
-	}
-	handler, ok := m.WSInterceptors[0].Handler.(func(*ctx.WSContext, *aggregation.Aggregation) any)
-	if !ok {
-		t.Fatalf("unexpected WS interceptor handler type %T", m.WSInterceptors[0].Handler)
-	}
-	handler(nil, aggregation.NewAggregation())
+		Build())
+	mtWSSubscribe(t, app, "mtwsinterceptor")
 
 	if mtSimpleInterceptorWSSeen.P.Source != "local" {
 		t.Error(test.DiffMessage(mtSimpleInterceptorWSSeen.P.Source, "local", "WS interceptor field should resolve from local module providers"))
 	}
 }
 
+var mtWSExFilterSeen createRecorder
+
 type mtExFilterOneFieldWS struct{ P mtLocalProvider }
 
-var mtExFilterOneFieldWSSeen mtExFilterOneFieldWS
-
 func (e mtExFilterOneFieldWS) Catch(_ *ctx.WSContext, _ *exception.Exception) {
-	mtExFilterOneFieldWSSeen = e
+	mtWSExFilterSeen.add(e.P.Source)
 }
+
+type mtDenyGuardWS struct{}
+
+func (mtDenyGuardWS) CanActivate(_ *ctx.WSContext) bool { return false }
 
 type mtWSExFilterController0 struct {
 	common.WS
+	common.Guard
 	common.ExceptionFilter
 }
 
 func (c mtWSExFilterController0) NewController() Controller {
+	c.BindGuard(mtDenyGuardWS{})
 	c.BindExceptionFilter(mtExFilterOneFieldWS{})
 	return c
 }
@@ -793,34 +676,29 @@ func (c mtWSExFilterController0) SUBSCRIBE_mtwsexfilterc0() string { return "ok"
 
 type mtWSExFilterController1 struct {
 	common.WS
+	common.Guard
 	common.ExceptionFilter
 }
 
 func (c mtWSExFilterController1) NewController() Controller {
+	c.BindGuard(mtDenyGuardWS{})
 	c.BindExceptionFilter(mtExFilterOneFieldWS{})
 	return c
 }
 func (c mtWSExFilterController1) SUBSCRIBE_mtwsexfilterc1() string { return "ok" }
 
-func TestNewModule_WSExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_WSExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T) {
+	mtWSExFilterSeen = createRecorder{}
 
-	m := ModuleBuilder().
+	app := mtWSApp(t, ModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtWSExFilterController0{}, mtWSExFilterController1{}).
-		Build()
+		Build())
+	mtWSSubscribe(t, app, "mtwsexfilterc0")
+	mtWSSubscribe(t, app, "mtwsexfilterc1")
 
-	m.NewModule()
-
-	if len(m.WSExceptionFilters) != 2 {
-		t.Fatalf("expected 2 WS exception filters, got %d", len(m.WSExceptionFilters))
-	}
-	for _, ef := range m.WSExceptionFilters {
-		handler, ok := ef.Handler.(func(*ctx.WSContext, *exception.Exception))
-		if !ok {
-			t.Fatalf("unexpected WS exception filter handler type %T", ef.Handler)
-		}
-		handler(nil, nil)
+	if got := sprint(mtWSExFilterSeen.list()); got != "[local local]" {
+		t.Error(test.DiffMessage(got, "[local local]", "each controller's WS filter resolves its provider field and runs"))
 	}
 }
 
@@ -833,9 +711,7 @@ type mtConcurrentController struct{ common.HTTP }
 func (c mtConcurrentController) NewController() Controller         { return c }
 func (c mtConcurrentController) READ_mtconcurrentresource() string { return "ok" }
 
-func TestNewModule_ConcurrentInvocation_NoDataRace(t *testing.T) {
-	resetModuleGlobals()
-
+func TestCreate_ConcurrentInvocation_NoDataRace(t *testing.T) {
 	const n = 32
 	var wg sync.WaitGroup
 	wg.Add(n)
@@ -847,69 +723,42 @@ func TestNewModule_ConcurrentInvocation_NoDataRace(t *testing.T) {
 				Providers(mtConcurrentProvider{}).
 				Controllers(mtConcurrentController{}).
 				Build()
-			m.NewModule()
+			if text, panicked := createPanicText(func() { New().Create(m) }); panicked {
+				t.Error(test.DiffMessage(text, "no panic", "concurrent Create"))
+			}
 		}()
 	}
 	wg.Wait()
 }
 
-func mtCollectDynamicChild() *Module {
-	return ModuleBuilder().Build()
-}
+func TestCreate_Hooks_ReachNestedStaticAndDynamicImportsAtAnyDepth(t *testing.T) {
+	rec := &createRecorder{}
 
-func TestModule_CollectModules_IncludesNestedStaticAndDynamicImportsAtAnyDepth(t *testing.T) {
-	resetModuleGlobals()
+	grandchild := hkModule(rec, "grandchild")
+	dynamicChild := func() *Module { return hkModule(rec, "dynamic") }
+	child := hkModule(rec, "child", grandchild, dynamicChild)
+	root := hkModule(rec, "root", child)
 
-	grandchild := ModuleBuilder().Build()
-	child := ModuleBuilder().Imports(grandchild, mtCollectDynamicChild).Build()
-	root := ModuleBuilder().Imports(child).Build()
+	mustCreate(t, New(), root)
 
-	root.NewModule()
-
-	got := root.collectModules()
-	if len(got) != 4 {
-		t.Fatalf("expected 4 modules (root, child, grandchild, dynamic child), got %d", len(got))
-	}
-
-	seen := make(map[*Module]int, len(got))
-	for _, m := range got {
-		seen[m]++
-	}
-	if seen[root] != 1 {
-		t.Error(test.DiffMessage(seen[root], 1, "root should appear exactly once"))
-	}
-	if seen[child] != 1 {
-		t.Error(test.DiffMessage(seen[child], 1, "static child should appear exactly once"))
-	}
-	if seen[grandchild] != 1 {
-		t.Error(test.DiffMessage(seen[grandchild], 1, "nested grandchild (imported by child, not root) should appear exactly once"))
-	}
-
-	dynamicChild, ok := staticModuleByDynamicPtr[reflect.ValueOf(mtCollectDynamicChild).Pointer()]
-	if !ok {
-		t.Fatal(test.DiffMessage(nil, "non-nil", "dynamic child module should have been resolved during NewModule()"))
-	}
-	if seen[dynamicChild] != 1 {
-		t.Error(test.DiffMessage(seen[dynamicChild], 1, "nested dynamic child should appear exactly once"))
+	for _, name := range []string{"root", "child", "grandchild", "dynamic"} {
+		if got := rec.count("ready:" + name); got != 1 {
+			t.Error(test.DiffMessage(got, 1, name+" should be initialized and reported ready exactly once"))
+		}
 	}
 }
 
-func TestModule_CollectModules_DedupesSharedImport(t *testing.T) {
-	resetModuleGlobals()
+func TestCreate_Hooks_SharedImportRunsOnce(t *testing.T) {
+	rec := &createRecorder{}
 
-	shared := ModuleBuilder().Build()
-	childA := ModuleBuilder().Imports(shared).Build()
-	childB := ModuleBuilder().Imports(shared).Build()
-	root := ModuleBuilder().Imports(childA, childB).Build()
+	shared := hkModule(rec, "shared")
+	childA := hkModule(rec, "a", shared)
+	childB := hkModule(rec, "b", shared)
+	root := hkModule(rec, "root", childA, childB)
 
-	root.NewModule()
+	mustCreate(t, New(), root)
 
-	got := root.collectModules()
-	seen := make(map[*Module]int, len(got))
-	for _, m := range got {
-		seen[m]++
-	}
-	if seen[shared] != 1 {
-		t.Error(test.DiffMessage(seen[shared], 1, "a module imported by two different parents should only be collected once"))
+	if got := rec.count("ready:shared"); got != 1 {
+		t.Error(test.DiffMessage(got, 1, "a module imported by two different parents should only be initialized once"))
 	}
 }

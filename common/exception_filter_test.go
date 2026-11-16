@@ -30,6 +30,13 @@ func (wrongParamExFilter) Catch(_ int, _ *exception.Exception) {}
 
 var noopCB = func(_ int, _ reflect.Type, _ reflect.Value, _ reflect.Value) {}
 
+var testConstruct = func(obj any, constructor string) any {
+	if method := reflect.ValueOf(obj).MethodByName(constructor); method.IsValid() {
+		return method.Call(nil)[0].Interface()
+	}
+	return obj
+}
+
 func buildHTTP(fnToRoute map[string]string) *HTTP {
 	r := &HTTP{
 		PatternToFuncNameMap: make(map[string]string, len(fnToRoute)),

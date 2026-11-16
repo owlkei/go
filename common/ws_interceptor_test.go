@@ -18,7 +18,7 @@ func TestInjectProvidersIntoWSInterceptors_Empty(t *testing.T) {
 	ic := &Interceptor{}
 	ws := buildWS(map[string]string{"message": "ON_message"})
 
-	items := ic.InjectProvidersIntoWSInterceptors(ws, noopCB)
+	items := ic.InjectProvidersIntoWSInterceptors(ws, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound interceptors → empty result"))
 	}
@@ -33,7 +33,7 @@ func TestInjectProvidersIntoWSInterceptors_ApplyAll(t *testing.T) {
 		"status":  "ON_status",
 	})
 
-	items := ic.InjectProvidersIntoWSInterceptors(ws, noopCB)
+	items := ic.InjectProvidersIntoWSInterceptors(ws, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "interceptor with no handlers applies to all WS patterns"))
 	}
@@ -52,7 +52,7 @@ func TestInjectProvidersIntoWSInterceptors_HandlerIsCallableIntercept(t *testing
 	ic.BindInterceptor(mockWSInterceptable{})
 
 	ws := buildWS(map[string]string{"message": "ON_message"})
-	items := ic.InjectProvidersIntoWSInterceptors(ws, noopCB)
+	items := ic.InjectProvidersIntoWSInterceptors(ws, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -72,7 +72,7 @@ func TestInjectProvidersIntoWSInterceptors_NoIntercept_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "interceptor with no Intercept method must panic"))
 		}
 	}()
-	ic.InjectProvidersIntoWSInterceptors(ws, noopCB)
+	ic.InjectProvidersIntoWSInterceptors(ws, noopCB, testConstruct)
 }
 
 func TestAsWSInterceptor_Valid(t *testing.T) {

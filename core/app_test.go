@@ -39,8 +39,8 @@ func TestNew(t *testing.T) {
 	if app.http.route == nil {
 		t.Error(test.DiffMessage(nil, "router", "route not initialized"))
 	}
-	if app.Logger != nil {
-		t.Error(test.DiffMessage(app.Logger, nil, "Logger should be nil before Create"))
+	if app.Logger() == nil {
+		t.Error(test.DiffMessage(nil, "a logger", "G1: Logger is never nil, even before Create"))
 	}
 }
 
@@ -177,7 +177,6 @@ func (c bodyLimitController) CREATE(body ctx.Body) any {
 
 func newBodyLimitApp(t *testing.T, limit int64) *App {
 	t.Helper()
-	resetModuleGlobals()
 
 	app := New()
 	app.maxRequestBodyBytes.Store(limit)
@@ -187,7 +186,6 @@ func newBodyLimitApp(t *testing.T, limit int64) *App {
 }
 
 func TestNew_AppliesDefaultBodyLimit(t *testing.T) {
-	resetModuleGlobals()
 
 	app := New()
 	if app.maxRequestBodyBytes.Load() != 10<<20 {
@@ -252,15 +250,11 @@ func TestGetAfterCreate(t *testing.T) {
 	}
 }
 
-func TestUseLogger_SetsLogger(t *testing.T) {
+func TestSetLogger_ReturnsApp(t *testing.T) {
 	app := New()
-	logger := &mockLogger{}
-	result := app.UseLogger(logger)
-	if app.Logger != logger {
-		t.Error(test.DiffMessage(app.Logger, logger, "UseLogger should set Logger"))
-	}
+	result := app.SetLogger(&mockLogger{})
 	if result != app {
-		t.Error(test.DiffMessage(result, app, "UseLogger should return *App"))
+		t.Error(test.DiffMessage(result, app, "SetLogger should return *App"))
 	}
 }
 
@@ -300,7 +294,6 @@ type raceGlobalMiddleware struct{ P raceGlobalProvider }
 func (mw raceGlobalMiddleware) Use(_ *http.Request, _ http.ResponseWriter, next ctx.Next) { next() }
 
 func TestConcurrentAppCreate_NoDataRace(t *testing.T) {
-	resetModuleGlobals()
 
 	const n = 8
 	var wg sync.WaitGroup
@@ -346,7 +339,6 @@ func (c panicMiddlewareController) READ_panicmiddleware() string {
 }
 
 func TestGlobalMiddlewarePanic_CaughtByExceptionFilter(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.BindGlobalMiddlewares(panicMiddleware{})
 	app.Create(ModuleBuilder().Controllers(panicMiddlewareController{}).Build())
@@ -374,7 +366,6 @@ func (c globalGuardController) NewController() Controller { return c }
 func (c globalGuardController) READ_globalguard() string  { return "ok" }
 
 func TestGlobalGuard_DeniesHTTPRequest(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.BindGlobalGuards(denyGlobalGuard{})
 	app.Create(ModuleBuilder().Controllers(globalGuardController{}).Build())
@@ -389,7 +380,6 @@ func TestGlobalGuard_DeniesHTTPRequest(t *testing.T) {
 }
 
 func TestGlobalGuard_ShapelessGuardPanicsOnCreate(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.BindGlobalGuards(shapelessGlobalGuard{})
 
@@ -431,7 +421,6 @@ func (c tracePipelineController) NewController() Controller {
 func (c tracePipelineController) READ_tracepipeline() string { return "ok" }
 
 func TestTrace_EmitsPerStageAndComplete(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -498,7 +487,6 @@ func (c tracePipeController) NewController() Controller              { return c 
 func (c tracePipeController) READ_tracepipe(traceSlowPipeDTO) string { return "ok" }
 
 func TestTrace_PipeStageExcludedFromHandlerDuration(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -550,7 +538,6 @@ func (c tracePanicController) READ_tracepanic() string {
 }
 
 func TestTrace_ExceptionFilterStageFiresOnPanic(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -604,7 +591,6 @@ func (c tracePipePanicController) NewController() Controller                    
 func (c tracePipePanicController) READ_tracepipepanic(tracePanickingPipeDTO) string { return "ok" }
 
 func TestTrace_PipePanicStillEmitsPipeEventAndReachesExceptionFilter(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -671,7 +657,6 @@ func (c traceHandlerPanicAfterPipeController) READ_tracehandlerpanicafterpipe(tr
 }
 
 func TestTrace_HandlerPanicAfterSuccessfulPipeStillExcludesPipeDuration(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -756,7 +741,6 @@ func (c multiInterceptorController) NewController() Controller {
 func (c multiInterceptorController) READ_multiintercept() string { return "ok" }
 
 func TestTrace_InterceptorPrePostEventsMatchInCountAndOrder(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -820,7 +804,6 @@ func (c shortCircuitController) NewController() Controller {
 func (c shortCircuitController) READ_shortcircuit() string { return "ok" }
 
 func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -864,7 +847,6 @@ func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
 }
 
 func TestTrace_InterceptorNoListener_NoPostEventOverhead(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.Create(ModuleBuilder().Controllers(multiInterceptorController{}).Build())
 
@@ -878,7 +860,6 @@ func TestTrace_InterceptorNoListener_NoPostEventOverhead(t *testing.T) {
 }
 
 func TestTrace_WSHandshakeEmitsStageCompleteWithHTTPTransport(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var mu sync.Mutex
@@ -947,18 +928,6 @@ func (m *capturingMockLogger) Warn(_ string, args ...any)  { m.capture(args) }
 func (m *capturingMockLogger) Error(_ string, args ...any) { m.capture(args) }
 func (m *capturingMockLogger) Fatal(_ string, args ...any) { m.capture(args) }
 
-func TestUseLogOptions_SetsLogOptions(t *testing.T) {
-	app := New()
-	opts := &log.LogOptions{MaskFields: []string{"password"}}
-	result := app.UseLogOptions(opts)
-	if app.LogOptions != opts {
-		t.Error(test.DiffMessage(app.LogOptions, opts, "UseLogOptions should set LogOptions"))
-	}
-	if result != app {
-		t.Error(test.DiffMessage(result, app, "UseLogOptions should return *App"))
-	}
-}
-
 func TestInitLogger_CustomLoggerAutomaticallyGetsTagBehavior(t *testing.T) {
 	type secret struct {
 		Value string `log:"value"`
@@ -967,10 +936,10 @@ func TestInitLogger_CustomLoggerAutomaticallyGetsTagBehavior(t *testing.T) {
 
 	capturing := &capturingMockLogger{}
 	app := New()
-	app.UseLogger(capturing)
+	app.SetLogger(capturing)
 	app.Create(ModuleBuilder().Build())
 
-	app.Logger.Info("test", "s", secret{Value: "visible", skip: "hidden"})
+	app.Logger().Info("test", "s", secret{Value: "visible", skip: "hidden"})
 
 	got, ok := capturing.lastArgs()[1].(map[string]any)
 	if !ok {
@@ -987,14 +956,13 @@ func TestInitLogger_CustomLoggerAutomaticallyGetsTagBehavior(t *testing.T) {
 func TestInitLogger_CustomLoggerAutomaticallyGetsMaskBehavior(t *testing.T) {
 	capturing := &capturingMockLogger{}
 	app := New()
-	app.UseLogger(capturing)
-	app.UseLogOptions(&log.LogOptions{MaskFields: []string{"password"}})
+	app.SetLogger(log.WrapLogger(capturing, []string{"password"}))
 	app.Create(ModuleBuilder().Build())
 
-	app.Logger.Info("test", "password", "secret")
+	app.Logger().Info("test", "password", "secret")
 
 	if capturing.lastArgs()[1] != "[REDACTED]" {
-		t.Error(test.DiffMessage(capturing.lastArgs()[1], "[REDACTED]", "masking rules from UseLogOptions should apply to a custom Logger automatically"))
+		t.Error(test.DiffMessage(capturing.lastArgs()[1], "[REDACTED]", "masking rules of log.WrapLogger should apply to the app logger"))
 	}
 }
 
@@ -1050,7 +1018,7 @@ var testListenModule = func() *Module {
 func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
 	logger := &allCallsCapturingLogger{}
 	app := New()
-	app.UseLogger(logger)
+	app.SetLogger(logger)
 	app.Create(testListenModule())
 
 	serveOnce(t, app)
@@ -1068,7 +1036,7 @@ func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
 func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
 	logger := &allCallsCapturingLogger{}
 	app := New()
-	app.UseLogger(logger)
+	app.SetLogger(logger)
 
 	m := ModuleBuilder().Build()
 	m.Name = ""
@@ -1092,7 +1060,7 @@ var testListenParentModule = func() *Module {
 func TestListen_LogsNestedModuleNamesRecursively(t *testing.T) {
 	logger := &allCallsCapturingLogger{}
 	app := New()
-	app.UseLogger(logger)
+	app.SetLogger(logger)
 	app.Create(testListenParentModule())
 
 	serveOnce(t, app)
@@ -1115,7 +1083,6 @@ func TestListen_LogsNestedModuleNamesRecursively(t *testing.T) {
 }
 
 func TestInitDevtool_DoesNotSpawnAServerGoroutine(t *testing.T) {
-	resetModuleGlobals()
 
 	before := runtime.NumGoroutine()
 

@@ -10,7 +10,13 @@
     - [Create](#create)
     - [ServeHTTP](#servehttp)
     - [Get](#get)
+    - [SetLogger and Logger](#setlogger-and-logger)
     - [Configuration methods](#configuration-methods)
+  - [Modules and lifecycle](#modules-and-lifecycle)
+    - [Providers](#providers)
+    - [Hooks](#hooks)
+    - [Two apps in one process](#two-apps-in-one-process)
+    - [Misuse](#misuse)
   - [Server](#server)
     - [Listen, ListenTLS and Serve](#listen-listentls-and-serve)
     - [ServerOptions](#serveroptions)
@@ -111,18 +117,18 @@ func main() {
 
 ## `App`
 
-`App` holds the module tree, the HTTP router, the optional WebSocket server and the trace event bus. Configure it with the methods below, wire it once with `Create`, then serve with `Listen`, `ListenTLS` or `Serve` (see [Server](#server)).
+`App` holds everything it wires: its modules, providers, layers, routes, logger and publisher, the HTTP router, the optional WebSocket server and the trace event bus. Configure it with the methods below, wire it once with `Create`, then serve with `Listen`, `ListenTLS` or `Serve` (see [Server](#server)).
 
 ### New
 
-Returns an `App` with the default request body limit (10 MiB), the built-in exception filters and a `common.Publisher` backed by an in-memory broker.
+Returns an `App` with the default request body limit (10 MiB), the built-in exception filters, the built-in logger and a `common.Publisher` backed by the app's own in-memory broker.
 
 #### Returns
 - 1st value: `*App`
 
 ### Create
 
-Builds the module tree from the root module, creates the providers and controllers, plans every handler, and binds middlewares, guards, interceptors and exception filters. It panics (`"dependency injection: ..."`, `"route conflict: ..."`, …) when the application can't be built. Call it once.
+Builds the module tree from the root module, initializes the modules (see [Modules and lifecycle](#modules-and-lifecycle)), creates the controllers, plans every handler, binds middlewares, guards, interceptors and exception filters, then runs the `OnReady` hooks. It panics (`"dependency injection: ..."`, `"route conflict: ..."`, `"event conflict: ..."`, `"invalid app: ..."`, …) when the application can't be built. Call it once per app. `Create` never writes to the modules it is given.
 
 #### Parameters
 - 1st parameter: `*Module`
@@ -141,15 +147,38 @@ app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
 
 ### Get
 
-`Get(p Provider) any` returns the created instance of a provider type registered in the module tree, or `nil`.
+`Get(p Provider) any` returns the instance this app created for `p`'s type, or `nil` for a type the app does not have and before `Create`. It is safe to call from several goroutines after `Create`.
 
 ```go
 service := app.Get(GreetingService{}).(GreetingService)
 ```
 
+### SetLogger and Logger
+
+```go
+func (app *App) SetLogger(logger common.Logger) *App
+func (app *App) Logger() common.Logger
+```
+
+`SetLogger` is the one way to give the app a logger; it returns the app. Everything logged through `app.Logger()`, the server and access logs, and every injected `common.Logger` field reaches it. A custom logger gets the `log` struct tags and masking machinery (`log.WrapLogger(logger, nil)`); a logger that already came from `log.NewLog` or `log.WrapLogger` is used as it is.
+
+`Logger()` never returns `nil`: without `SetLogger` it is the built-in logger with default options, the same value on every call.
+
+```go
+app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
+app.SetLogger(log.WrapLogger(myLogger, []string{"password"}))
+app.Logger().Info("Started")
+```
+
+Migration: `UseLogger(l)` → `SetLogger(l)`; `UseLogOptions(o)` → `SetLogger(log.NewLog(o))`; `UseLogger(l)` with `MaskFields` → `SetLogger(log.WrapLogger(l, fields))`; `app.Logger.Info(…)` → `app.Logger().Info(…)`.
+
+#### Rules
+- `SetLogger(nil)` panics `invalid app: SetLogger needs a logger`.
+- A logger wrapped with `log.WrapLogger(l, fields)` keeps its masking rules.
+
 ### Configuration methods
 
-Each returns the `App` so calls can be chained. Call them before `Create`.
+Each returns the `App` so calls can be chained. Call them before `Create`: after it they panic `invalid app: <Method> must be called before Create`.
 
 | Method | Effect |
 |---|---|
@@ -161,8 +190,42 @@ Each returns the `App` so calls can be chained. Call them before `Create`.
 | `EnableWS(*WSConfig, ...common.MiddlewareFn)` | The WebSocket server, with handshake middlewares |
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
-| `UseLogger(common.Logger)` | A custom logger |
-| `UseLogOptions(*log.LogOptions)` | Options of the built-in logger |
+| `SetLogger(common.Logger)` | The app's logger (see [SetLogger and Logger](#setlogger-and-logger)) |
+
+## Modules and lifecycle
+
+A module groups controllers and providers and imports other modules: `*Module` values or module funcs (`func(...) *core.Module`). Module funcs are called once per app, whatever the number of modules that import them; their arguments resolve from the global providers, then `common.Logger` and `common.Publisher`.
+
+### Providers
+
+- Each provider type is constructed once per app, however many modules list it.
+- A provider is constructed after the providers its exported fields name (in its module, in the modules it imports, or global), and what is injected is always the result of `NewProvider`.
+- The providers of the root module and of every `IsGlobal` module (at any import depth) are visible to every module of the app.
+- A dependency that can't be resolved panics `dependency injection: can't resolve dependency '<type>' of the provider…`; an unexported field panics `dependency injection: can't set value to unexported '<field>' field of the <type> provider`.
+- Providers are injected by value: state that must be shared sits behind a pointer.
+
+### Hooks
+
+Modules are initialized depth first: a module after every module it imports, imports in the order of `Imports(…)`, each module once per app. Initializing a module calls its `OnInit`, then constructs its providers. With root importing A and C, both importing B, `OnInit` runs B, A, C, root.
+
+- `OnReady` runs once per app at the end of `Create`, after routes, layers and the devtool snapshot exist, in the same order. `app.Get` works inside it.
+- A panic in `OnInit` or `OnReady` stops `Create` and reaches the caller unchanged.
+- `OnShutdown` runs once per app, in the exact reverse order (root, C, A, B), when the app shuts down or `Stop()` is called. An app whose `Create` did not finish runs no `OnShutdown`.
+
+### Two apps in one process
+
+Each `core.New()` is independent: its routes, providers, layers (guards, interceptors, exception filters, middlewares), logger and publisher are its own. Two apps may declare the same route or WebSocket event, construct their own instance of every provider and layer, and can be created on two goroutines at once.
+
+You can give the same module value (a root, or a package-level `var X = some.Register(…)`) to any number of apps. A module func may be called by two apps at once: it must not write shared state without its own protection. A resource created outside the framework, such as a cache backend built in a package-level `Register` call, is shared because you created it once. Don't change a module (`Prefix`, `IsGlobal`, a hook) after giving it to `Create`.
+
+Inside one app, a guard, interceptor, exception filter or middleware is constructed once per type and configuration: equal configurations share one instance, different ones get their own.
+
+### Misuse
+
+- `Create(nil)` panics `invalid module: Create needs a root module`.
+- A second `Create` on one app panics `invalid app: Create called twice`.
+- A configuration method after `Create` panics `invalid app: <Method> must be called before Create`.
+- Two routes of one app with the same method, version and shape (parameter names don't count) panic `route conflict: <fn> method is conflicted with <fn> method`; two handlers of one event panic `event conflict: <fn> event is conflicted with <fn> event`.
 
 ## Server
 
@@ -182,7 +245,7 @@ Call one of them once, after `Create`. Each one blocks until the server has stop
 
 ```go
 if err := app.Listen(8080, nil); err != nil {
-	app.Logger.Fatal("AppError", "error", err)
+	app.Logger().Fatal("AppError", "error", err)
 }
 
 err := app.ListenTLS(443, "cert.pem", "key.pem", nil)
@@ -242,7 +305,7 @@ A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `Shut
 1. The app stops intercepting `SIGINT` and `SIGTERM`: a second signal ends the process the default way, even during the drain or a hook.
 2. The listener closes (new connections are refused) and idle keep-alive connections close at once.
 3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
-4. The modules' `OnShutdown` hooks run, after the last request returned, once each, root module first. A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
+4. The modules' `OnShutdown` hooks run, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
 5. The serving call returns `nil`, `core: shutdown timed out after <timeout>` when step 3 timed out, or `core: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
 
 After that the app is stopped: a new serving call returns `core: app is stopped`, while `ServeHTTP` still answers.
@@ -400,7 +463,7 @@ From the tests (`http_error_test.go`):
 
 ## Static files
 
-A `SERVE_…` handler returns the path to serve:
+A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`: with a handler that returns `"public"`, `GET /static/a.txt` serves `public/a.txt`, `GET /static/sub/x.txt` serves `public/sub/x.txt`, `GET /static` is the directory itself and `GET /staticzzz` answers 404.
 
 - A file is served with `http.ServeFile`.
 - A directory answers its `index.html` when it exists (with `http.ServeFile`'s redirect to the slash-terminated URL), otherwise the 404 body. No response ever contains a directory listing.
@@ -487,7 +550,7 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 
 ## Other exported types
 
-`Module` (built by `ModuleBuilder()`; `Prefix`, `ID`, `NewModule`, the `IsGlobal`, `OnInit`, `OnReady` and `OnShutdown` fields and the layer lists), `Provider`, `Controller`, `HTTP`, `WS`, `WSConfig`, `NewWS`, `WSConnmgr`, `WSConnection`, `WSPayload`, `WSPayloadType` and the WebSocket layer types are documented with the rest of the server in a later revision of this README.
+`Module` (built by `ModuleBuilder()`; `Prefix`, `ID`, the `Name`, `IsGlobal`, `OnInit`, `OnReady` and `OnShutdown` fields), `Provider`, `Controller`, `HTTP`, `WS`, `WSConfig`, `NewWS`, `WSConnmgr`, `WSConnection`, `WSPayload`, `WSPayloadType` and the WebSocket layer types are documented with the rest of the server in a later revision of this README.
 
 ## Performance notes
 

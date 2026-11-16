@@ -28,7 +28,7 @@ func AsWSInterceptor(interceptable any) (WSIntercept, bool) {
 	return layer.Intercept, true
 }
 
-func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []InterceptorItem {
+func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []InterceptorItem {
 	interceptorItemArr := make([]InterceptorItem, 0, len(ws.funcNameByEvent)*len(i.InterceptorHandlers))
 
 	for _, interceptorHandler := range i.InterceptorHandlers {
@@ -41,7 +41,7 @@ func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, ref
 		}
 
 		newInterceptable := newInterceptor.Interface()
-		newInterceptable = Construct(newInterceptable, "NewInterceptor")
+		newInterceptable = construct(newInterceptable, "NewInterceptor")
 		interceptorHandler.interceptable = newInterceptable.(Interceptable)
 
 		intercept, ok := AsWSInterceptor(interceptorHandler.interceptable)

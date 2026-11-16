@@ -28,7 +28,7 @@ func AsWSExceptionFilter(exceptionFilterable any) (WSCatch, bool) {
 	return layer.Catch, true
 }
 
-func (e *ExceptionFilter) InjectProvidersIntoWSExceptionFilters(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []ExceptionFilterItem {
+func (e *ExceptionFilter) InjectProvidersIntoWSExceptionFilters(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []ExceptionFilterItem {
 	exceptionFilterItemArr := make([]ExceptionFilterItem, 0, len(ws.funcNameByEvent)*len(e.ExceptionFilterHandlers))
 
 	for _, exceptionFilterHandler := range e.ExceptionFilterHandlers {
@@ -41,7 +41,7 @@ func (e *ExceptionFilter) InjectProvidersIntoWSExceptionFilters(ws *WS, cb func(
 		}
 
 		newExceptionFilterable := newExceptionFilter.Interface()
-		newExceptionFilterable = Construct(newExceptionFilterable, "NewExceptionFilter")
+		newExceptionFilterable = construct(newExceptionFilterable, "NewExceptionFilter")
 		exceptionFilterHandler.exceptionFilterable = newExceptionFilterable.(ExceptionFilterable)
 
 		catch, ok := AsWSExceptionFilter(exceptionFilterHandler.exceptionFilterable)

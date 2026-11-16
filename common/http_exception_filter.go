@@ -33,7 +33,7 @@ func AsHTTPExceptionFilter(exceptionFilterable any) (HTTPCatch, bool) {
 	return layer.Catch, true
 }
 
-func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []ExceptionFilterItem {
+func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []ExceptionFilterItem {
 	exceptionFilterItemArr := make([]ExceptionFilterItem, 0, len(r.PatternToFuncNameMap)*len(e.ExceptionFilterHandlers))
 
 	for _, exceptionFilterHandler := range e.ExceptionFilterHandlers {
@@ -46,7 +46,7 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 		}
 
 		newExceptionFilterable := newExceptionFilter.Interface()
-		newExceptionFilterable = Construct(newExceptionFilterable, "NewExceptionFilter")
+		newExceptionFilterable = construct(newExceptionFilterable, "NewExceptionFilter")
 		exceptionFilterHandler.exceptionFilterable = newExceptionFilterable.(ExceptionFilterable)
 
 		catch, ok := AsHTTPExceptionFilter(exceptionFilterHandler.exceptionFilterable)

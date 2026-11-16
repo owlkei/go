@@ -178,7 +178,7 @@ func (app *App) servingError() error {
 
 func (app *App) servingErrorLocked() error {
 	switch {
-	case app.module == nil:
+	case !app.isCreated:
 		return errNotCreated
 	case app.serveState == serveServing || app.serveState == serveStopping:
 		return errAlreadyServing
@@ -227,12 +227,12 @@ func (app *App) serve(l net.Listener, opts ServerOptions) error {
 	case sig := <-signals:
 		stopSignals()
 		app.markStopping()
-		app.Logger.Info("ShutdownSignal", "signal", sig.String())
+		app.logger.Info("ShutdownSignal", "signal", sig.String())
 		err = drain(server, opts.ShutdownTimeout)
 		<-served
 	case <-stopRequest:
 		stopSignals()
-		app.Logger.Info("Shutdown")
+		app.logger.Info("Shutdown")
 		err = drain(server, opts.ShutdownTimeout)
 		<-served
 	case <-served:
@@ -294,7 +294,7 @@ type serverErrorWriter struct {
 }
 
 func (w serverErrorWriter) Write(p []byte) (int, error) {
-	w.app.Logger.Warn("HTTPServer", "message", strings.TrimSuffix(string(p), "\n"))
+	w.app.logger.Warn("HTTPServer", "message", strings.TrimSuffix(string(p), "\n"))
 
 	return len(p), nil
 }
@@ -311,14 +311,14 @@ func protocolNames(p *http.Protocols) string {
 }
 
 func (app *App) logStartup(addr net.Addr, isTLS bool, protocols string) {
-	for _, m := range app.module.collectModules() {
+	for _, m := range app.container.modules {
 		if m.Name != "" {
-			app.Logger.Info("InstanceLoader", "module", m.Name+" initialized")
+			app.logger.Info("InstanceLoader", "module", m.Name+" initialized")
 		}
 	}
 
-	patterns := make([]string, 0, len(app.module.HTTPMainHandlers))
-	for _, h := range app.module.HTTPMainHandlers {
+	patterns := make([]string, 0, len(app.container.httpMainHandlers))
+	for _, h := range app.container.httpMainHandlers {
 		patterns = append(patterns, h.Pattern)
 	}
 	sort.Strings(patterns)
@@ -332,16 +332,16 @@ func (app *App) logStartup(addr net.Addr, isTLS bool, protocols string) {
 		if v != "" {
 			args = append(args, "version", v)
 		}
-		app.Logger.Info("RouteExplorer", args...)
+		app.logger.Info("RouteExplorer", args...)
 	}
 
 	if app.isWSEnabled {
-		for _, h := range app.module.WSMainHandlers {
-			app.Logger.Info("WebSocketEvent", "event", h.EventName)
+		for _, h := range app.container.wsMainHandlers {
+			app.logger.Info("WebSocketEvent", "event", h.EventName)
 		}
 	}
 
-	app.Logger.Info("ServerListening", "address", addr.String(), "tls", isTLS, "protocols", protocols)
+	app.logger.Info("ServerListening", "address", addr.String(), "tls", isTLS, "protocols", protocols)
 
 	if tcpAddr, ok := addr.(*net.TCPAddr); ok && isTerminal(os.Stdout) {
 		logBoostrap(tcpAddr.Port)
@@ -401,12 +401,14 @@ func (app *App) runShutdownHooks() {
 	app.shutdownOnce.Do(func() {
 		app.serveMu.Lock()
 		app.isRunningHooks = true
+		isCreated := app.isCreated
 		app.serveMu.Unlock()
 
-		if app.module != nil {
-			for _, m := range app.module.collectModules() {
-				if m.OnShutdown != nil {
-					app.callShutdownHook(m)
+		if isCreated {
+			modules := app.container.modules
+			for i := len(modules) - 1; i >= 0; i-- {
+				if modules[i].OnShutdown != nil {
+					app.callShutdownHook(modules[i])
 				}
 			}
 		}
@@ -422,7 +424,7 @@ func (app *App) runShutdownHooks() {
 func (app *App) callShutdownHook(m *Module) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			app.Logger.Error("OnShutdownPanic", "module", m.Name, "panic", rec)
+			app.logger.Error("OnShutdownPanic", "module", m.Name, "panic", rec)
 		}
 	}()
 

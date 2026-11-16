@@ -43,7 +43,7 @@
         "critical": true,
         "effects": [
           "callOnShutdown() runs exactly once (guarded by app.shutdownOnce), regardless of which path triggered it",
-          "Each module's OnShutdown() (if set) is called, in the SAME order as OnReady — a single pre-order walk of collectModules(), NOT reversed/LIFO",
+          "Each module's OnShutdown() (if set) is called in the exact REVERSE of the initialization order (OnInit/OnReady run imports first; OnShutdown runs the root first)",
           "stdlib http.Server.Shutdown(ctx) runs with a 30s timeout (context.WithTimeout in core/app.go)",
           "No WebSocket-specific close-frame/status-code logic exists anywhere in shutdown — do not invent a 'graceful WS shutdown (code 1000)' step; open WS connections are simply dropped when the server stops"
         ]
@@ -250,7 +250,7 @@
     "implementation": {
       "declaration": "Module has OnReady and OnShutdown fields (func())",
       "example": "module.OnReady = func() { /* ... */ }",
-      "call_order": "Both OnReady and OnShutdown are called for each module in the SAME order — a single pre-order walk of collectModules(). OnShutdown is NOT reversed/LIFO relative to OnReady; this is a common but incorrect assumption to avoid documenting."
+      "call_order": "OnInit and OnReady run depth first, a module after the modules it imports (in Imports order, each once per app); OnShutdown runs in the exact reverse order. An app whose Create did not finish runs no OnShutdown."
     }
   },
   "provider_lifecycle": {

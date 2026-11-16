@@ -34,11 +34,3 @@ func BenchmarkParseWSFuncNameToEvent(b *testing.B) {
 		ParseWSFuncNameToEvent("SUBSCRIBE_chat_to_user_ANY")
 	}
 }
-
-func BenchmarkConstruct(b *testing.B) {
-	obj := &constructRole{Role: "bench"}
-	b.ReportAllocs()
-	for b.Loop() {
-		Construct(obj, "NewGuard")
-	}
-}

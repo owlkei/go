@@ -15,7 +15,7 @@ func BenchmarkInjectProvidersIntoHTTPInterceptors_ApplyAll(b *testing.B) {
 		ic.BindInterceptor(mockInterceptable{})
 		ic.BindInterceptor(mockInterceptable{})
 		ic.BindInterceptor(mockInterceptable{})
-		ic.InjectProvidersIntoHTTPInterceptors(r, benchCB)
+		ic.InjectProvidersIntoHTTPInterceptors(r, benchCB, testConstruct)
 	}
 }
 

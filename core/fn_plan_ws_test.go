@@ -66,7 +66,7 @@ func planWSContext() *ctx.WSContext {
 func planWS(t testing.TB, controller any, name string, providers map[string]Provider) *wsHandlerPlan {
 	t.Helper()
 	recv, m := planMethod(t, controller, name)
-	return newWSHandlerPlan(recv, m, providers)
+	return newWSHandlerPlan(recv, m, providers, planCtr)
 }
 
 func TestWSHandlerPlan_InjectsWSContext(t *testing.T) {
@@ -124,7 +124,7 @@ func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	planInstallPublisher(t)
 	h := &planWSCtl{}
 	recv, method := planMethod(t, h, "WAll")
-	plan := newWSHandlerPlan(recv, method, nil)
+	plan := newWSHandlerPlan(recv, method, nil, planCtr)
 	c := planWSContext()
 	c.Next = func() { planNextCalls++ }
 
@@ -132,7 +132,7 @@ func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	handler := recv.MethodByName(method.Name)
 	ft := handler.Type()
 	args := make([]reflect.Value, ft.NumIn())
-	pub, _ := globalInterfaceByKey.Load(publisherKey)
+	pub, _ := planCtr.interfaceFor(publisherKey)
 	for i := range args {
 		switch at := ft.In(i); at {
 		case reflect.TypeOf((*ctx.WSContext)(nil)):
@@ -146,7 +146,7 @@ func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 		case reflect.TypeOf((*common.Publisher)(nil)).Elem():
 			args[i] = reflect.ValueOf(pub)
 		default:
-			inst, err := injectDependencies(reflect.New(at).Elem().Interface(), "pipe", nil)
+			inst, err := injectDependencies(reflect.New(at).Elem().Interface(), "pipe", nil, planCtr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -201,7 +201,7 @@ func TestNewWSHandlerPlan_HTTPTypePanics(t *testing.T) {
 	for _, c := range cases {
 		rec := planPanicOf(func() {
 			recv, m := planMethod(t, planWSBadCtl{}, c.method)
-			newWSHandlerPlan(recv, m, nil)
+			newWSHandlerPlan(recv, m, nil, planCtr)
 		})
 		want := planUnresolved(c.want, 0)
 		if rec == nil || !strings.Contains(fmt.Sprint(rec), want) {
@@ -213,7 +213,7 @@ func TestNewWSHandlerPlan_HTTPTypePanics(t *testing.T) {
 func TestNewWSHandlerPlan_UnknownTypePanics(t *testing.T) {
 	rec := planPanicOf(func() {
 		recv, m := planMethod(t, planWSBadCtl{}, "Unknown")
-		newWSHandlerPlan(recv, m, nil)
+		newWSHandlerPlan(recv, m, nil, planCtr)
 	})
 	want := planUnresolved("func(*ctx.WSContext, int)", 1)
 	if rec == nil || !strings.Contains(fmt.Sprint(rec), want) {

@@ -183,14 +183,15 @@ Controllers embed `common.WS` (alongside or instead of `common.HTTP`). Handler n
 
 ### Bootstrap-time Error Convention
 
-Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `core/`, `common/`, `routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires during `app.Create()`'s module/controller wiring, never on the request path, so an uncaught panic there is fail-fast by design.
+Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `core/`, `common/`, `routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires during `app.Create()`'s module/controller wiring (or a configuration call made after it), never on the request path, so an uncaught panic there is fail-fast by design.
 
 Message format is `"<category>: <detail>"`:
-- `"route conflict: ..."` (`common/http.go`: the same method, version and route shape; routes that differ only in parameter names conflict)
-- `"event conflict: ..."` (`common/ws.go`)
+- `"route conflict: ..."` (`core/container.go`, per app: the same method, version and route shape; routes that differ only in parameter names conflict; `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`)
+- `"event conflict: ..."` (`core/container.go`, per app)
 - `"invalid handler: ..."` (`routing/router.go`)
 - `"invalid route: ..."` (`routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments)
-- `"invalid module: ..."` (`core/module_builder.go`)
-- `"dependency injection: ..."` (`core/fn.go`, `core/fn_plan.go`, `core/module.go`)
+- `"invalid module: ..."` (`core/module_builder.go`; `Create(nil)` in `core/app.go`)
+- `"invalid app: ..."` (`core/app.go`: `Create` called twice, a configuration method or `SetLogger` after `Create`, `SetLogger(nil)`)
+- `"dependency injection: ..."` (`core/fn.go`, `core/fn_plan.go`, `core/container.go`)
 
 These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. An unresolvable handler argument is a `Create()` panic too; the only per-request panic of injection is a pipe whose `Transform` returns a wrong value, an uncolored `exception.InternalServerErrorException` that `core/http.go`'s `recover()` turns into a 500.

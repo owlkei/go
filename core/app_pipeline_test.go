@@ -49,7 +49,6 @@ func serveWithRole(app *App, path, role string) int {
 }
 
 func TestApp_SameGuardTypeDifferentConfig(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.Create(ModuleBuilder().Controllers(roleAlphaController{}, roleBetaController{}).Build())
 
@@ -82,7 +81,6 @@ func (c nonRouteGuardController) READ_open() string { return "open" }
 func (c nonRouteGuardController) Helper() string    { return "helper" }
 
 func TestApp_GuardBoundToNonRoutePanics(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 
 	var rec any
@@ -131,7 +129,6 @@ func (c rethrowController) READ_gone() string {
 }
 
 func TestApp_FilterRethrowKeepsCode(t *testing.T) {
-	resetModuleGlobals()
 	rethrowCalls = 0
 	app := New()
 	app.Create(ModuleBuilder().Controllers(rethrowController{}).Build())

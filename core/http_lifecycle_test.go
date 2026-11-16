@@ -115,7 +115,6 @@ func lcSetHandler(h func(*ctx.HTTPContext) any) {
 
 func lcReset(t *testing.T) {
 	t.Helper()
-	resetModuleGlobals()
 	lc.mu.Lock()
 	lc.log = nil
 	lc.caught = nil
@@ -254,7 +253,7 @@ func lcNewApp(t *testing.T, cfg lcConfig) *App {
 	lcReset(t)
 	app := New()
 	if cfg.logger != nil {
-		app.UseLogger(cfg.logger)
+		app.SetLogger(cfg.logger)
 	}
 	if cfg.setup != nil {
 		cfg.setup(app)

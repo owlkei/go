@@ -70,9 +70,8 @@ type ccCase struct {
 }
 
 func TestServeHTTP_ConcurrentAllPaths_NoRace(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
-	app.UseLogger(&mockLogger{})
+	app.SetLogger(&mockLogger{})
 	app.Create(ModuleBuilder().Controllers(ccController{}).Build())
 
 	cases := []ccCase{

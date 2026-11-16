@@ -235,6 +235,7 @@ func (l *srvLogger) Fatal(msg string, args ...any) { l.record("fatal", msg, args
 type srvHarness struct {
 	t       *testing.T
 	app     *App
+	root    *Module
 	log     *srvLogger
 	sigs    chan os.Signal
 	regs    atomic.Int32
@@ -247,7 +248,6 @@ type srvHarness struct {
 
 func newSrv(t *testing.T, tweak ...func(*App)) *srvHarness {
 	t.Helper()
-	resetModuleGlobals()
 	srvReset()
 
 	h := &srvHarness{
@@ -257,7 +257,7 @@ func newSrv(t *testing.T, tweak ...func(*App)) *srvHarness {
 		done: make(chan error, 1),
 	}
 	h.app = New()
-	h.app.UseLogger(h.log)
+	h.app.SetLogger(h.log)
 	h.app.notifySignals = func() (<-chan os.Signal, func()) {
 		h.regs.Add(1)
 		return h.sigs, func() { h.stops.Add(1) }
@@ -265,7 +265,8 @@ func newSrv(t *testing.T, tweak ...func(*App)) *srvHarness {
 	for _, f := range tweak {
 		f(h.app)
 	}
-	h.app.Create(srvRootModule())
+	h.root = srvRootModule()
+	h.app.Create(h.root)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -771,7 +772,7 @@ func TestListen_BeforeCreateReturnsError(t *testing.T) {
 func TestServe_BeforeCreateReturnsError(t *testing.T) {
 	log := &srvLogger{}
 	app := New()
-	app.UseLogger(log)
+	app.SetLogger(log)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -966,8 +967,8 @@ func TestListen_LogsStartupInOrder(t *testing.T) {
 			t.Error(test.DiffMessage(names, "InstanceLoader before RouteExplorer", "S4: order of the startup lines"))
 		}
 	}
-	if got := len(h.log.named("RouteExplorer")); got != len(h.app.module.HTTPMainHandlers) {
-		t.Error(test.DiffMessage(got, len(h.app.module.HTTPMainHandlers), "S4: one RouteExplorer line per route"))
+	if got := len(h.log.named("RouteExplorer")); got != len(h.app.http.routes) {
+		t.Error(test.DiffMessage(got, len(h.app.http.routes), "S4: one RouteExplorer line per route"))
 	}
 }
 
@@ -1607,8 +1608,8 @@ func TestShutdown_HookPanicDoesNotStopOthers(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatal(test.DiffMessage(len(entries), 1, "G7: the panic is logged once"))
 	}
-	if entries[0].level != "error" || entries[0].field("panic") != "boom" || entries[0].field("module") != h.app.module.Name {
-		t.Error(test.DiffMessage(entries[0].args, []any{"module", h.app.module.Name, "panic", "boom"}, "G7: the log line names the module and the value"))
+	if entries[0].level != "error" || entries[0].field("panic") != "boom" || entries[0].field("module") != h.root.Name {
+		t.Error(test.DiffMessage(entries[0].args, []any{"module", h.root.Name, "panic", "boom"}, "G7: the log line names the module and the value"))
 	}
 }
 
@@ -1744,7 +1745,6 @@ func TestChecklist_NoGoroutineLeak(t *testing.T) {
 }
 
 func TestServeHTTP_WithoutServerUsesDefaultBodyCap(t *testing.T) {
-	resetModuleGlobals()
 	app := New()
 	app.Create(ModuleBuilder().Controllers(bodyLimitController{}).Build())
 

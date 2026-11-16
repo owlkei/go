@@ -24,7 +24,7 @@ func main() {
 	}
 
 	app.
-		UseLogger(logger).
+		SetLogger(logger).
 		BindGlobalMiddlewares(mw...).
 		BindGlobalGuards(shared.LogHTTPGuard{}, shared.LogWSGuard{}).
 		BindGlobalInterceptors(shared.LogHTTPInterceptor{}, shared.LogWSInterceptor{}).
@@ -43,6 +43,6 @@ func main() {
 	)
 
 	if err := app.Listen(confs.ENV.Port, nil); err != nil {
-		app.Logger.Fatal("AppError", "error", err)
+		app.Logger().Fatal("AppError", "error", err)
 	}
 }

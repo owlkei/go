@@ -19,24 +19,6 @@ type mockController struct{}
 
 func (m *mockController) NewController() Controller { return m }
 
-func TestGetPkgFromControllerKey(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"[123]github.com/foo/bar.Controller", "github.com/foo/bar.Controller"},
-		{"[999]pkg.Type", "pkg.Type"},
-		{"noBrackets", "noBrackets"},
-		{"[a][b]pkg.Type", "pkg.Type"},
-	}
-	for _, c := range cases {
-		got := getPkgFromControllerKey(c.in)
-		if got != c.want {
-			t.Error(test.DiffMessage(got, c.want, "getPkgFromControllerKey("+c.in+")"))
-		}
-	}
-}
-
 func TestGenFieldKey(t *testing.T) {
 	t1 := reflect.TypeOf(mockProvider{})
 	got := genFieldKey(t1)
@@ -185,7 +167,7 @@ func TestInjectDependencies_ResolvesFromLocalProviders(t *testing.T) {
 		genFieldKey(reflect.TypeOf(p)): p,
 	}
 	component := injectDepsComponent{Plain: "kept"}
-	result, err := injectDependencies(component, "provider", injectedProviders)
+	result, err := injectDependencies(component, "provider", injectedProviders, newContainer())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +186,7 @@ type unresolvableProviderType struct{}
 func (unresolvableProviderType) NewProvider() Provider { return unresolvableProviderType{} }
 
 func TestInjectDependencies_UnresolvedProviderReturnsError(t *testing.T) {
-	_, err := injectDependencies(injectDepsUnresolvable{}, "provider", map[string]Provider{})
+	_, err := injectDependencies(injectDepsUnresolvable{}, "provider", map[string]Provider{}, newContainer())
 	if err == nil {
 		t.Error(test.DiffMessage(nil, "error", "injectDependencies should error when a Provider field can't be resolved"))
 	}

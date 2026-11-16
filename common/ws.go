@@ -1,16 +1,8 @@
 package common
 
-import (
-	"errors"
-
-	"github.com/dangduoc08/ginject/internal/color"
-)
-
 var WSOperations = map[string]string{
 	"SUBSCRIBE": "SUBSCRIBE",
 }
-
-var InsertedEvents = make(map[string]string)
 
 type WSLayer struct {
 	Handler   any
@@ -38,18 +30,6 @@ func (ws *WS) AddHandlerToEventMap(fnName string, handler any) {
 	event, ok := ParseWSFuncNameToEvent(fnName)
 	if !ok {
 		return
-	}
-
-	if InsertedEvents[event] == "" {
-		InsertedEvents[event] = fnName
-	} else {
-		panic(errors.New(
-			color.FmtRed(
-				"event conflict: %v event is conflicted with %v event",
-				fnName,
-				InsertedEvents[event],
-			),
-		))
 	}
 
 	ws.addToEventMap(fnName, event, handler)

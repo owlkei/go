@@ -16,7 +16,7 @@ Module (composition root)
 ```
 
 **Invariants**:
-- Every Module is a singleton created at `app.Create()` via `NewModule()`
+- Every Module is wired once per app at `app.Create()` (`(*container).wire`); a module value can be given to any number of apps
 - Controllers are instantiated per-request (temporary, pooled)
 - Providers are registered once, referenced repeatedly
 - Module tree is immutable after `app.Create()`
@@ -565,7 +565,7 @@ type ExceptionFilterable any // matched by its method:
    - Exceeding the cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw panic (ctx/http_body.go)
 
 9. **Cross-Cutting Concern Instances** (Guard/Middleware/Interceptor/ExceptionFilter):
-   - See [package-reference.md](package-reference.md), package `common`, section "`common.Construct` — One Instance Per Configuration" for full detail
+   - See [package-reference.md](package-reference.md), package `common`, section "One Instance Per Configuration (per app)" for full detail
    - Bound instances are shared per configuration: same `reflect.Type`, same constructor name, `reflect.DeepEqual` value
    - Binding the same struct type twice with different configuration gives two instances; equal configurations share one
 

@@ -55,7 +55,7 @@ func benchPlanContext() *ctx.HTTPContext {
 func benchHTTPPlan(b *testing.B, name string) *httpHandlerPlan {
 	b.Helper()
 	recv, m := planMethod(b, benchPlanCtl{}, name)
-	return newHTTPHandlerPlan(recv, m, planProviders())
+	return newHTTPHandlerPlan(recv, m, planProviders(), newContainer())
 }
 
 func BenchmarkHTTPHandlerPlan_Invoke_NoArgs(b *testing.B) {
@@ -122,7 +122,7 @@ func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe_Traced(b *testing.B) {
 func benchWSPlan(b *testing.B, name string) *wsHandlerPlan {
 	b.Helper()
 	recv, m := planMethod(b, benchPlanCtl{}, name)
-	return newWSHandlerPlan(recv, m, nil)
+	return newWSHandlerPlan(recv, m, nil, newContainer())
 }
 
 func benchWSContext() *ctx.WSContext {
@@ -157,6 +157,6 @@ func BenchmarkNewHTTPHandlerPlan(b *testing.B) {
 	providers := planProviders()
 	b.ReportAllocs()
 	for b.Loop() {
-		newHTTPHandlerPlan(recv, m, providers)
+		newHTTPHandlerPlan(recv, m, providers, newContainer())
 	}
 }

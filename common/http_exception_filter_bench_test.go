@@ -15,7 +15,7 @@ func BenchmarkInjectProvidersIntoHTTPExceptionFilters_ApplyAll(b *testing.B) {
 		e.BindExceptionFilter(mockExFilter{})
 		e.BindExceptionFilter(mockExFilter{})
 		e.BindExceptionFilter(mockExFilter{})
-		e.InjectProvidersIntoHTTPExceptionFilters(r, benchCB)
+		e.InjectProvidersIntoHTTPExceptionFilters(r, benchCB, testConstruct)
 	}
 }
 

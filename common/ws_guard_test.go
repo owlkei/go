@@ -12,7 +12,7 @@ func TestInjectProvidersIntoWSGuards_Empty(t *testing.T) {
 	g := &Guard{}
 	ws := buildWS(map[string]string{"message": "ON_message"})
 
-	items := g.InjectProvidersIntoWSGuards(ws, noopCB)
+	items := g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound guards → empty result"))
 	}
@@ -27,7 +27,7 @@ func TestInjectProvidersIntoWSGuards_ApplyAll(t *testing.T) {
 		"status":  "ON_status",
 	})
 
-	items := g.InjectProvidersIntoWSGuards(ws, noopCB)
+	items := g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "guard with no handlers applies to all WS patterns"))
 	}
@@ -46,7 +46,7 @@ func TestInjectProvidersIntoWSGuards_HandlerIsCallableCanActivate(t *testing.T) 
 	g.BindGuard(denyWSGuarder{})
 
 	ws := buildWS(map[string]string{"message": "ON_message"})
-	items := g.InjectProvidersIntoWSGuards(ws, noopCB)
+	items := g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -70,7 +70,7 @@ func TestInjectProvidersIntoWSGuards_NoCanActivate_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "guard with no CanActivate method must panic"))
 		}
 	}()
-	g.InjectProvidersIntoWSGuards(ws, noopCB)
+	g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
 }
 
 func TestInjectProvidersIntoWSGuards_WrongReturnType_Panics(t *testing.T) {
@@ -83,7 +83,7 @@ func TestInjectProvidersIntoWSGuards_WrongReturnType_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "CanActivate returning non-bool must panic"))
 		}
 	}()
-	g.InjectProvidersIntoWSGuards(ws, noopCB)
+	g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
 }
 
 func TestAsWSGuard_Valid(t *testing.T) {

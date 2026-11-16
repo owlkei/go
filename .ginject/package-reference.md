@@ -43,8 +43,8 @@ type App struct {
 | `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
 | `EnableVersioning(v versioning.Versioning) *App` | Enable API versioning |
-| `UseLogger(logger common.Logger) *App` | Replace the default logger |
-| `UseLogOptions(opts *log.LogOptions) *App` | Configure the default logger |
+| `SetLogger(logger common.Logger) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
+| `Logger() common.Logger` | The app's logger; never `nil` (the built-in logger by default) |
 
 **There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `ServerOptions.MaxRequestBodyBytes` of the serving call (0 = 10 MiB, negative = no cap), stored in the unexported `atomic.Int64` `maxRequestBodyBytes` (10 MiB from `New()`) — see "HTTP Server Defaults" below.
 
@@ -70,6 +70,7 @@ type Module struct {
     Name     string
     prefixes []string
 
+    imports        []any
     staticModules  []*Module
     dynamicModules []any
     providers      []Provider
@@ -79,22 +80,12 @@ type Module struct {
     OnInit     func()
     OnReady    func()
     OnShutdown func()
-
-    HTTPExceptionFilters []common.HTTPLayer
-    HTTPMiddlewares      []common.HTTPLayer
-    HTTPGuards           []common.HTTPLayer
-    HTTPInterceptors     []common.HTTPLayer
-    HTTPMainHandlers     []common.HTTPLayer
-    WSGuards             []common.WSLayer
-    WSInterceptors       []common.WSLayer
-    WSExceptionFilters   []common.WSLayer
-    WSMainHandlers       []common.WSLayer
 }
 ```
 
 **Methods**: `Prefix(prefix string) *Module`, `ID() string`.
 
-**Lifecycle hooks**: `OnInit` runs during `app.Create()`'s module walk. `OnReady` and `OnShutdown` are both called once per module, in the **same** order (a single pre-order walk of `collectModules()`) — `OnShutdown` is NOT reversed/LIFO relative to `OnReady`, despite that being the intuitive assumption. `OnShutdown` fires on SIGINT/SIGTERM or `app.Stop()`, guarded so it runs exactly once even if both paths fire.
+**Lifecycle hooks** (once per app, `core/container.go`): modules are initialized depth first, imports before the module, in `Imports(…)` order, each once (root → A, C; A, C → B gives B, A, C, root). Initializing a module calls `OnInit`, then constructs its providers. `OnReady` runs at the end of `Create` in the same order; `OnShutdown` runs in the exact reverse (root, C, A, B) on SIGINT/SIGTERM or `app.Stop()`, guarded so it runs exactly once, and never for an app whose `Create` did not finish. Configuration methods after `Create`, a second `Create` and `Create(nil)` panic (`invalid app: …` / `invalid module: …`).
 
 ### ModuleBuilder
 
@@ -262,11 +253,11 @@ type UserController struct {
 
 `common.HTTP` itself only carries routing bookkeeping (`PatternToFuncNameMap`, `RouterMap`, etc.) — it has no `Middleware`/`Guard`/`Interceptor`/`ExceptionFilter` fields; those are separate embeds. `common.WS` follows the same pattern for WebSocket controllers (`funcNameByEvent`, `EventMap`).
 
-### `common.Construct` — One Instance Per Configuration
+### One Instance Per Configuration (per app)
 
-`Construct(obj any, constructor string) any` (common/fn.go) backs **every** bind of a Middleware/Guard/Interceptor/ExceptionFilter (global or per-controller, HTTP and WS). Its cache key is the bound value's `reflect.Type` plus the constructor name (`NewMiddleware`, `NewGuard`, `NewInterceptor`, `NewExceptionFilter`); under one key, values are compared with `reflect.DeepEqual` (a pointer is compared by a shallow snapshot of its pointee taken before the constructor runs).
+`core`'s container (`(*container).construct`, `core/container.go`, passed to the `common.InjectProvidersInto…` methods as their `construct` argument) backs **every** bind of a Middleware/Guard/Interceptor/ExceptionFilter (global or per-controller, HTTP and WS). Instances are kept per app: two apps never share one. Its cache key is the bound value's `reflect.Type` plus the constructor name (`NewMiddleware`, `NewGuard`, `NewInterceptor`, `NewExceptionFilter`); under one key, values are compared with `reflect.DeepEqual` (a pointer is compared by a shallow snapshot of its pointee taken before the constructor runs).
 
-- Equal configurations share: the constructor runs once (per-entry `sync.Once`, also under concurrent calls) and every equal bind gets the identical result. A rate limiter bound with the same options on two controllers stays one limiter.
+- Equal configurations share: the constructor runs once per app and every equal bind gets the identical result. A rate limiter bound with the same options on two controllers stays one limiter.
 - Different configurations get their own instance:
 ```go
 // Controller A and B each get their own cors.CORS instance.

@@ -156,8 +156,8 @@ func (s handlerSignature) unresolved(i int) error {
 	))
 }
 
-func (s handlerSignature) publisher(i int) reflect.Value {
-	p, ok := globalInterfaceByKey.Load(publisherKey)
+func (s handlerSignature) publisher(i int, c *container) reflect.Value {
+	p, ok := c.interfaceFor(publisherKey)
 	if !ok {
 		panic(s.unresolved(i))
 	}
@@ -167,7 +167,7 @@ func (s handlerSignature) publisher(i int) reflect.Value {
 	return reflect.ValueOf(p)
 }
 
-func newHandlerArg[C ctx.Context](s handlerSignature, i int, kindByType map[reflect.Type]handlerArgKind, pipeKinds []pipeKind[C], contextType string, injectedProviders map[string]Provider) handlerArg[C] {
+func newHandlerArg[C ctx.Context](s handlerSignature, i int, kindByType map[reflect.Type]handlerArgKind, pipeKinds []pipeKind[C], contextType string, injectedProviders map[string]Provider, c *container) handlerArg[C] {
 	t := s.method.Type.In(i + 1)
 	if s.method.Type.IsVariadic() && i == s.numIn()-1 {
 		panic(s.unresolved(i))
@@ -176,7 +176,7 @@ func newHandlerArg[C ctx.Context](s handlerSignature, i int, kindByType map[refl
 		return handlerArg[C]{kind: kind}
 	}
 	if t == publisherType {
-		return handlerArg[C]{kind: handlerArgFixed, fixed: s.publisher(i)}
+		return handlerArg[C]{kind: handlerArgFixed, fixed: s.publisher(i, c)}
 	}
 	if t.Kind() == reflect.Interface {
 		panic(s.unresolved(i))
@@ -195,18 +195,18 @@ func newHandlerArg[C ctx.Context](s handlerSignature, i int, kindByType map[refl
 		meta := common.ArgumentMetadata{ContextType: contextType, ParamType: pk.key}
 		return handlerArg[C]{
 			kind: handlerArgPipe,
-			pipe: handlerPipe[C]{typ: t, name: t.String(), transform: pk.bind(newPipePrototype(t, injectedProviders), meta)},
+			pipe: handlerPipe[C]{typ: t, name: t.String(), transform: pk.bind(newPipePrototype(t, injectedProviders, c), meta)},
 		}
 	}
 	panic(s.unresolved(i))
 }
 
-func newPipePrototype(t reflect.Type, injectedProviders map[string]Provider) any {
+func newPipePrototype(t reflect.Type, injectedProviders map[string]Provider, c *container) any {
 	if t.Kind() != reflect.Struct {
 		return reflect.Zero(t).Interface()
 	}
 	_, _ = ctx.BinderOf(t)
-	prototype, err := injectDependencies(reflect.Zero(t).Interface(), "pipe", injectedProviders)
+	prototype, err := injectDependencies(reflect.Zero(t).Interface(), "pipe", injectedProviders, c)
 	if err != nil {
 		panic(err)
 	}
@@ -251,11 +251,11 @@ type httpHandlerPlan struct {
 	args []handlerArg[*ctx.HTTPContext]
 }
 
-func newHTTPHandlerPlan(recv reflect.Value, method reflect.Method, injectedProviders map[string]Provider) *httpHandlerPlan {
+func newHTTPHandlerPlan(recv reflect.Value, method reflect.Method, injectedProviders map[string]Provider, c *container) *httpHandlerPlan {
 	s := newHandlerSignature(recv, method)
 	p := &httpHandlerPlan{fn: method.Func, recv: recv, name: method.Name, args: make([]handlerArg[*ctx.HTTPContext], s.numIn())}
 	for i := range p.args {
-		p.args[i] = newHandlerArg(s, i, httpArgKindByType, httpPipeKinds, common.ContextTypeHTTP, injectedProviders)
+		p.args[i] = newHandlerArg(s, i, httpArgKindByType, httpPipeKinds, common.ContextTypeHTTP, injectedProviders, c)
 	}
 	return p
 }
@@ -332,11 +332,11 @@ type wsHandlerPlan struct {
 	args []handlerArg[*ctx.WSContext]
 }
 
-func newWSHandlerPlan(recv reflect.Value, method reflect.Method, injectedProviders map[string]Provider) *wsHandlerPlan {
+func newWSHandlerPlan(recv reflect.Value, method reflect.Method, injectedProviders map[string]Provider, c *container) *wsHandlerPlan {
 	s := newHandlerSignature(recv, method)
 	p := &wsHandlerPlan{fn: method.Func, recv: recv, args: make([]handlerArg[*ctx.WSContext], s.numIn())}
 	for i := range p.args {
-		p.args[i] = newHandlerArg(s, i, wsArgKindByType, wsPipeKinds, common.ContextTypeWS, injectedProviders)
+		p.args[i] = newHandlerArg(s, i, wsArgKindByType, wsPipeKinds, common.ContextTypeWS, injectedProviders, c)
 	}
 	return p
 }

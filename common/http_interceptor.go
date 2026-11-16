@@ -33,7 +33,7 @@ func AsHTTPInterceptor(interceptable any) (HTTPIntercept, bool) {
 	return layer.Intercept, true
 }
 
-func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value)) []InterceptorItem {
+func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []InterceptorItem {
 	interceptorItemArr := make([]InterceptorItem, 0, len(r.PatternToFuncNameMap)*len(i.InterceptorHandlers))
 
 	for _, interceptorHandler := range i.InterceptorHandlers {
@@ -46,7 +46,7 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 		}
 
 		newInterceptable := newInterceptor.Interface()
-		newInterceptable = Construct(newInterceptable, "NewInterceptor")
+		newInterceptable = construct(newInterceptable, "NewInterceptor")
 		interceptorHandler.interceptable = newInterceptable.(Interceptable)
 
 		intercept, ok := AsHTTPInterceptor(interceptorHandler.interceptable)

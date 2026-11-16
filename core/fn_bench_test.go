@@ -61,14 +61,6 @@ func BenchmarkReturnHTTP_InterfaceString(b *testing.B) {
 	}
 }
 
-func BenchmarkGetPkgFromControllerKey(b *testing.B) {
-	key := "[123456789]github.com/dangduoc08/ginject/sample/modules/user.UserController"
-	b.ReportAllocs()
-	for b.Loop() {
-		getPkgFromControllerKey(key)
-	}
-}
-
 func BenchmarkGenFieldKey(b *testing.B) {
 	t := reflect.TypeOf(&mockProvider{})
 	b.ReportAllocs()

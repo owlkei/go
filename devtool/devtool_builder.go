@@ -214,12 +214,8 @@ func (devtoolBuilder *devtoolBuilder) Build() *Devtool {
 			Middlewares:      append(globalMiddlewares, moduleMiddlewares...),
 			Guards:           append(globalGuards, moduleGuards...),
 			Interceptors:     append(globalInterceptors, moduleInterceptors...),
-			Versioning: &HTTPVersioning{
-				Value: moduleHandler.Version,
-				Key:   devtoolBuilder.versioning.Key,
-				Type:  int32(devtoolBuilder.versioning.Type),
-			},
-			Request: &HTTPRequest{},
+			Versioning:       devtoolBuilder.httpVersioning(moduleHandler.Version),
+			Request:          &HTTPRequest{},
 		}
 
 		funcType := reflect.TypeOf(moduleHandler.Handler)
@@ -250,4 +246,14 @@ func (devtoolBuilder *devtoolBuilder) Build() *Devtool {
 	}
 
 	return devtool
+}
+
+func (devtoolBuilder *devtoolBuilder) httpVersioning(version string) *HTTPVersioning {
+	v := &HTTPVersioning{Value: version}
+	if devtoolBuilder.versioning != nil {
+		v.Key = devtoolBuilder.versioning.Key
+		v.Type = int32(devtoolBuilder.versioning.Type)
+	}
+
+	return v
 }

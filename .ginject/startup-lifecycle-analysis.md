@@ -184,7 +184,7 @@ moduleTree := core.ModuleBuilder().
 
 `core.Module.OnShutdown func()` fires on SIGINT/SIGTERM or `app.Stop()` while serving, **after** the server has drained its running requests (or after `ShutdownTimeout`), or on a direct `app.Stop()` of an app that is not serving — all paths funnel into `runShutdownHooks()`, guarded by `app.shutdownOnce` so it runs exactly once (`core/server.go`). A hook that panics is logged as `OnShutdownPanic` and the others still run.
 
-**Common misconception to avoid generating**: `OnShutdown` is called in the **same** module-tree order as `OnReady` — a single pre-order walk of `collectModules()`. It is **NOT** reversed/LIFO relative to `OnReady`, even though that would be the intuitive symmetric-teardown assumption.
+**Order** (design 0009 K1-K4): `OnInit` and `OnReady` run depth first, a module after every module it imports; `OnShutdown` runs in the exact reverse, so a module stops before the modules it imports. An app whose `Create` did not finish runs no `OnShutdown`. The wiring walk described above (`NewModule`, `initProviders`) is replaced by `(*container).wire` in `core/container.go`; this file's walkthrough is refreshed in roadmap 0003 step 5.
 
 After all modules' `OnShutdown()` return, the stdlib `http.Server.Shutdown(ctx)` runs with a 30-second timeout. There is no WebSocket-specific shutdown handling (no close-frame/status-code logic) — open WS connections are simply dropped when the server stops.
 
