@@ -61,6 +61,11 @@ Ginject is for vibecoders and small teams building with AI, not for enterprises 
 - **Hide by default.** A new identifier is unexported (or under `internal/`) unless users need it.
   Designs list every exported addition and justify it; the reviewer flags exported names users don't
   need.
+- **Small machines first** (2026-11-16). Users run on modest servers and containers (small VPS,
+  shared CI/CD runners and deploy targets Ginject will support later): CPU and memory are scarce.
+  Every feature has a bounded, measured memory footprint and costs nothing when unused; background
+  goroutines, buffers and caches are few, small and fixed-size; defaults are sized for a small box,
+  not a large one. Designs state the idle and per-request memory and CPU cost of what they add.
 
 ## Workflow
 

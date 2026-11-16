@@ -47,6 +47,10 @@ bounded amount of memory, and a panic flood can't flood the log.
   bounded in bytes, one writer per output, no user option.
 - **Panic stacks:** 10 per second per app; rate limiting stays an opt-in middleware
   (`guards/throttler`).
+- **Small machines first** (CLAUDE.md › Product principles): every queue, buffer and goroutine this
+  roadmap adds is fixed-size and sized for a small server (one or two vCPUs, a few hundred MiB);
+  idle cost (memory, goroutines, wakeups) is stated and kept near zero; nothing runs or allocates
+  when unused (no listener, no log call).
 - **Numbering:** the roadmap planned as 0004 (middlewares, guards, built-in modules, security audit)
   becomes 0005; WebSocket becomes 0006.
 - Designs: one architect pass, two design files (0011 trace context: steps 1-3; 0012 log pipeline:
