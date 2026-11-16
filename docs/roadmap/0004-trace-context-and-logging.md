@@ -1,6 +1,6 @@
 # 0004: Trace context and logging
 
-Status: Running
+Status: Done
 
 ## Goal
 Every log line written while Ginject serves something can be tied to the request (or WebSocket
@@ -29,7 +29,7 @@ bounded amount of memory, and a panic flood can't flood the log.
 | 5 | Asynchronous log pipeline: encode on the caller, one bounded writer per output, batched writes, drop by level under overload (Warn and above kept, a bounded wait when full), drops counted and reported, flush after the shutdown hooks and before `Fatal` exits; the access log writes through it | tdd | docs/design/0012-log-pipeline.md | 4 | a stuck stdout never blocks a request; memory stays under the design's bound under load; parallel logging scales across cores | done |
 | 6 | Panic stack sampling: at most 10 stacks per second per app, the rest logged without a stack, a `stacks_suppressed` line per second | tdd | docs/design/0012-log-pipeline.md | 5 | a panic flood costs a bounded amount of log and CPU | done |
 | 7 | READMEs (`log`, `accesslog`, `trace`, `core`, `ctx`, `modules/httpclient`) and the knowledge base (`/kb update`) | light | - | 1-6 | every new name documented; KB matches the code | done |
-| 8 | Measure: request cost with and without a listener, log call cost (1 and 12 goroutines, fast and slow reader), pipeline memory bound, panic flood; `docs/review/http-0004.md` | light | - | 1-7 | the review file, compared with `http-0003.md` | todo |
+| 8 | Measure: request cost with and without a listener, log call cost (1 and 12 goroutines, fast and slow reader), pipeline memory bound, panic flood; `docs/review/http-0004.md` | light | - | 1-7 | the review file, compared with `http-0003.md` | done |
 
 ## Decisions
 - **W3C Trace Context, no OpenTelemetry dependency:** Ginject follows the format (trace ID, span ID,
@@ -129,3 +129,4 @@ wrote them (debugging from an `X-Request-Id`, and the devtools timeline of a req
 - 2026-11-16: steps 4-6 done (design 0012). Access line (6 stages, JSON) 39.7 µs / 105 allocs → 3.8 µs / 4 allocs (target ≤ 10); a 2 ms-per-write output costs a request 1.3 µs instead of 2.2 ms; idle: no goroutine. Deviations: `logpipe.FlushTimeout` exported (internal package), the access line goes through an internal `logpipe.AccessLine` seam, duration thresholds moved to `color.ForDuration`. Five lint issues in the new tests fixed by the orchestrator (test-only). Open: about +100 ns per line at 12 goroutines on a free output (contention), buffer churn after bursts (release policy), an adapter access line costs 16 allocs on the request goroutine.
 - 2026-11-16: step 7 done: the builders of steps 1-6 updated every touched README and the KB; checked by grep (no removed name left, `From` and `traceparent` documented in log, core, common, ctx, trace, httpclient and the KB).
 - 2026-11-16: review: no critical or high; fixed M1-M4, L1, L4, L5, L7, the WS half of L8, L9 (backlog). Kept: L2 (NewTraceID is not on the request path), L3 (adapter access line 16 allocs), L6 (Fatal tests wait 2 s), L10 (contention), the HTTP half of L8 (about 2 ns; a fix would widen the public API). Idle sink keeps one buffer as designed: bursts now allocate the second buffer again (+25-50 B per call in the async benchmarks), accepted for the smaller idle footprint.
+- 2026-11-17: step 8 done (`docs/review/http-0004.md`). The access log looked 8-10× slower than at `6de9f6f`; approved by the user: the sink keeps both batch buffers up to 64 KiB (9.0 → 1.9 KiB per request), Pretty draws stages as a tree again (0012 A2 amended; Pretty only). Re-measured in production settings (JSON, file and pipe, GOMAXPROCS 1 and 2, process CPU per request, lines counted): the old worker wrote only 8-21 % of the lines; per written line the access log is 3-5× cheaper now. The 0010 targets are retired; batching delay for multi-core wake-ups is in the backlog.
