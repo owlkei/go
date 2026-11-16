@@ -16,7 +16,7 @@ func BenchmarkGet(b *testing.B) {
 	c := newHTTPClient(&HTTPClientModuleOptions{BaseURL: srv.URL})
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = c.Get("/").Send()
 	}
 }
@@ -31,7 +31,7 @@ func BenchmarkPost_JSON(b *testing.B) {
 	payload := map[string]string{"name": "ginject", "email": "test@example.com"}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = c.Post("/").JSON(payload).Send()
 	}
 }
@@ -50,7 +50,7 @@ func BenchmarkMiddlewareChain_3(b *testing.B) {
 	c.Use(noop, noop, noop)
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = c.Get("/").Send()
 	}
 }
@@ -64,7 +64,7 @@ func BenchmarkQueryParams_5(b *testing.B) {
 	c := newHTTPClient(&HTTPClientModuleOptions{BaseURL: srv.URL})
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = c.Get("/").
 			Query("page", 1).
 			Query("limit", 20).
@@ -78,7 +78,7 @@ func BenchmarkQueryParams_5(b *testing.B) {
 func BenchmarkSSEReader(b *testing.B) {
 	const raw = "id:1\nevent:update\ndata:hello\ndata:world\n\nid:2\ndata:bye\n\n"
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sr := NewSSEReader(newRepeatReader(raw, 1))
 		for {
 			_, ok := sr.Next()

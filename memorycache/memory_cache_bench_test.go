@@ -40,8 +40,7 @@ func BenchmarkSet_NoTTL(b *testing.B) {
 	defer mc.Stop()
 	ctx := context.Background()
 	val := []byte("benchmark-value-data-here")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = mc.Set(ctx, fmt.Sprintf("key-%d", i), val, 0)
 	}
 }
@@ -51,8 +50,7 @@ func BenchmarkSet_WithTTL(b *testing.B) {
 	defer mc.Stop()
 	ctx := context.Background()
 	val := []byte("benchmark-value-data-here")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = mc.Set(ctx, fmt.Sprintf("key-%d", i), val, time.Minute)
 	}
 }
@@ -62,8 +60,7 @@ func BenchmarkSetNX_New(b *testing.B) {
 	defer mc.Stop()
 	ctx := context.Background()
 	val := []byte("benchmark-value-data-here")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_, _ = mc.SetNX(ctx, fmt.Sprintf("key-%d", i), val, 0)
 	}
 }
@@ -89,12 +86,12 @@ func BenchmarkDelete(b *testing.B) {
 	defer mc.Stop()
 	ctx := context.Background()
 	val := []byte("v")
-	for i := 0; i < b.N; i++ {
-		_ = mc.Set(ctx, fmt.Sprintf("key-%d", i), val, 0)
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = mc.Delete(ctx, fmt.Sprintf("key-%d", i))
+	for i := 0; b.Loop(); i++ {
+		key := fmt.Sprintf("key-%d", i)
+		b.StopTimer()
+		_ = mc.Set(ctx, key, val, 0)
+		b.StartTimer()
+		_ = mc.Delete(ctx, key)
 	}
 }
 
@@ -107,8 +104,7 @@ func BenchmarkKeys_1000(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mc.Keys(ctx)
 	}
 }
@@ -130,8 +126,7 @@ func BenchmarkTTL_Hit(b *testing.B) {
 
 func BenchmarkHashKey(b *testing.B) {
 	key := "some-realistic-cache-key-value"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		hashKey(key)
 	}
 }

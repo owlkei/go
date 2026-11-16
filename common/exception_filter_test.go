@@ -117,7 +117,7 @@ func TestNormalizeRecovered_UnknownTypeUsesGenericMessage(t *testing.T) {
 
 type customError struct{ text string }
 
-func (e customError) Error() string { return e.text }
+func (e *customError) Error() string { return e.text }
 
 func TestNormalizeRecovered_PointerIsReturnedAsIs(t *testing.T) {
 	original := exception.NotFoundException("nope")
@@ -188,7 +188,7 @@ func TestNormalizeRecovered_ErrorBecomes500(t *testing.T) {
 }
 
 func TestNormalizeRecovered_CustomErrorBecomes500(t *testing.T) {
-	got := NormalizeRecovered(customError{text: "driver: connection refused"})
+	got := NormalizeRecovered(&customError{text: "driver: connection refused"})
 
 	if got.GetCode() != http.StatusInternalServerError {
 		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "B23: code"))

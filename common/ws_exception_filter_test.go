@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/dangduoc08/ginject/ctx"
@@ -212,7 +213,7 @@ func TestRunWSCatchChain_NilPanicGoesToNextFilter(t *testing.T) {
 	var got *exception.Exception
 
 	RunWSCatchChain(c, []WSCatch{
-		func(*ctx.WSContext, *exception.Exception) { panic(nil) },
+		func(*ctx.WSContext, *exception.Exception) { panic(new(runtime.PanicNilError)) },
 		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
 	}, "boom")
 

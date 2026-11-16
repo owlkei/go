@@ -235,7 +235,7 @@ func TestLog_BelowLevelCallsNoMethod(t *testing.T) {
 	var calls atomicCounter
 	args := []any{
 		"s", countingStringer{&calls},
-		"e", countingError{&calls},
+		"e", &countingError{&calls},
 		"v", countingValuer{&calls},
 		"ps", &ptrCountingStringer{&calls},
 		"st", countingHolder{Inner: countingStringer{&calls}},

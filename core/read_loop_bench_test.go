@@ -16,8 +16,7 @@ func BenchmarkHandlePublish_DeliversAfterSubscribe(b *testing.B) {
 	recvWSPayload(b, clientConn)
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		handlePublish(conn, ws, WSPayload{ID: "req-2", Type: TypePublish, Topic: []string{"chat.to.user2"}, Message: "hi"})
 
 		recvWSPayload(b, clientConn)

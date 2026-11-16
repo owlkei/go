@@ -24,7 +24,7 @@ func TestMap_ReturnsMappedInOrder(t *testing.T) {
 }
 
 func TestMap_NilInputReturnsNonNilEmpty(t *testing.T) {
-	got := Map[string, int](nil, func(string, int) int { return 1 })
+	got := Map(nil, func(string, int) int { return 1 })
 	if got == nil || len(got) != 0 {
 		t.Error(test.DiffMessage(got, "non-nil empty slice", "L1: Map of nil"))
 	}
@@ -54,7 +54,7 @@ func TestFilter_PassesIndex(t *testing.T) {
 }
 
 func TestFilter_NilAndNoMatchAreEmpty(t *testing.T) {
-	if got := Filter[int](nil, func(int, int) bool { return true }); len(got) != 0 {
+	if got := Filter(nil, func(int, int) bool { return true }); len(got) != 0 {
 		t.Error(test.DiffMessage(len(got), 0, "L1: Filter of nil"))
 	}
 	if got := Filter([]int{1, 2}, func(int, int) bool { return false }); len(got) != 0 {

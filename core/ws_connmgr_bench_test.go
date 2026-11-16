@@ -12,8 +12,7 @@ func BenchmarkWSConnmgr_Get(b *testing.B) {
 	connmgr.conns["conn-1"] = &WSConnection{ID: "conn-1"}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		connmgr.Get("conn-1")
 	}
 }
@@ -23,8 +22,7 @@ func BenchmarkWSConnmgr_Touch(b *testing.B) {
 	connmgr.conns["conn-1"] = &WSConnection{ID: "conn-1"}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		connmgr.touch("conn-1")
 	}
 }
@@ -39,8 +37,7 @@ func BenchmarkWSConnmgr_IsSubscribed(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		connmgr.isSubscribed("conn-1", "c")
 	}
 }

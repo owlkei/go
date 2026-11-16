@@ -33,8 +33,7 @@ func benchCtx() *ctx.HTTPContext {
 func BenchmarkFixedWindow(b *testing.B) {
 	g := benchGuard(FixedWindow)
 	bg := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		g.fixedWindow(bg, "ip")
 	}
 }
@@ -42,8 +41,7 @@ func BenchmarkFixedWindow(b *testing.B) {
 func BenchmarkSlidingWindow(b *testing.B) {
 	g := benchGuard(SlidingWindow)
 	bg := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		g.slidingWindow(bg, "ip")
 	}
 }
@@ -51,16 +49,14 @@ func BenchmarkSlidingWindow(b *testing.B) {
 func BenchmarkTokenBucket(b *testing.B) {
 	g := benchGuard(TokenBucket)
 	bg := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		g.tokenBucket(bg, "ip")
 	}
 }
 
 func BenchmarkDefaultKeyFunc_RemoteAddr(b *testing.B) {
 	c := benchCtx()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		defaultThrottlerKeyFunc(c)
 	}
 }
@@ -68,22 +64,20 @@ func BenchmarkDefaultKeyFunc_RemoteAddr(b *testing.B) {
 func BenchmarkDefaultKeyFunc_XForwardedFor(b *testing.B) {
 	c := benchCtx()
 	c.Request.Header.Set("X-Forwarded-For", "203.0.113.1, 10.0.0.1")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		defaultThrottlerKeyFunc(c)
 	}
 }
 
 func BenchmarkGuard_Allow(b *testing.B) {
 	g := Throttler{
-		Limit:    int64(b.N) + 1,
+		Limit:    1 << 62,
 		TTL:      time.Minute,
 		Strategy: FixedWindow,
 		KeyFunc:  func(*ctx.HTTPContext) string { return "benchkey" },
 		Backend:  memorycache.NewMemoryCache(),
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		c := benchCtx()
 		g.CanActivate(c)
 	}

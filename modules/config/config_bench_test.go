@@ -6,27 +6,27 @@ import (
 )
 
 func BenchmarkIsValidKey_Valid(b *testing.B) {
-	for range b.N {
+	for b.Loop() {
 		isValidKey("DATABASE_URL")
 	}
 }
 
 func BenchmarkIsValidKey_Invalid(b *testing.B) {
-	for range b.N {
+	for b.Loop() {
 		isValidKey("2INVALID_KEY")
 	}
 }
 
 func BenchmarkMatchParams_Found(b *testing.B) {
 	v := "prefix_${KEY1}_middle_${KEY2}_suffix_${KEY3}"
-	for range b.N {
+	for b.Loop() {
 		matchParams(v)
 	}
 }
 
 func BenchmarkMatchParams_None(b *testing.B) {
 	v := "no_params_here_at_all"
-	for range b.N {
+	for b.Loop() {
 		matchParams(v)
 	}
 }
@@ -39,8 +39,7 @@ KEY_5=666666
 KEY_6="#999=99 10"
 KEY_8=88888888
 `), newline)
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		dotENV := &DotENV{
 			data:           data,
 			valuesByEnvKey: make(map[string]any, 8),
@@ -50,8 +49,7 @@ KEY_8=88888888
 }
 
 func BenchmarkFlatten(b *testing.B) {
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		org := map[string]any{
 			"key1": "value1",
 			"nested": map[string]any{
@@ -64,7 +62,7 @@ func BenchmarkFlatten(b *testing.B) {
 }
 
 func BenchmarkLoadOSEnv(b *testing.B) {
-	for range b.N {
+	for b.Loop() {
 		loadOSEnv()
 	}
 }
@@ -72,8 +70,7 @@ func BenchmarkLoadOSEnv(b *testing.B) {
 func BenchmarkLoadDotENV(b *testing.B) {
 	envFilePath, _ := findRootDir(".env.test")
 	path := filepath.Join(envFilePath, ".env.test")
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		loadDotENV(path, false)
 	}
 }

@@ -21,8 +21,7 @@ func newBenchWSEvent(exactPatterns, wildcardPatterns int) *wsevent.WSEvent {
 func BenchmarkWSEvent_Add(b *testing.B) {
 	m := wsevent.NewWSEvent()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		m.Add(fmt.Sprintf("chat.room%d.message", i%2000), wsevent.WSEventItem{Handler: i})
 	}
 }
@@ -30,8 +29,7 @@ func BenchmarkWSEvent_Add(b *testing.B) {
 func BenchmarkWSEvent_MatchExact(b *testing.B) {
 	m := newBenchWSEvent(1000, 1000)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.Match("chat.room500.message")
 	}
 }
@@ -39,8 +37,7 @@ func BenchmarkWSEvent_MatchExact(b *testing.B) {
 func BenchmarkWSEvent_MatchWildcard(b *testing.B) {
 	m := newBenchWSEvent(1000, 1000)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.Match("chat.room1500.anything")
 	}
 }
@@ -48,8 +45,7 @@ func BenchmarkWSEvent_MatchWildcard(b *testing.B) {
 func BenchmarkWSEvent_MatchNoMatch(b *testing.B) {
 	m := newBenchWSEvent(1000, 1000)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.Match("unregistered.topic.here")
 	}
 }

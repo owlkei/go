@@ -19,8 +19,7 @@ func BenchmarkCreate(b *testing.B) {
 	db, cleanup := benchDB(b)
 	defer cleanup()
 	m := db.Model("users")
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = m.Create(map[string]any{"name": "Alice", "role": "user"})
 	}
 }
@@ -31,8 +30,7 @@ func BenchmarkFindByID(b *testing.B) {
 	m := db.Model("users")
 	doc, _ := m.Create(map[string]any{"name": "Bob"})
 	id := doc.ID
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = m.FindByID(id)
 	}
 }
@@ -43,8 +41,7 @@ func BenchmarkUpdateByID(b *testing.B) {
 	m := db.Model("users")
 	doc, _ := m.Create(map[string]any{"name": "Bob"})
 	id := doc.ID
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_ = m.UpdateByID(id, map[string]any{"name": "Bob2"})
 	}
 }
@@ -56,8 +53,7 @@ func BenchmarkFind_NoIndex_100Docs(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		_, _ = m.Create(map[string]any{"n": i, "role": "user"})
 	}
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = m.Find().Where("role", OpEq, "user").Exec()
 	}
 }
@@ -75,8 +71,7 @@ func BenchmarkFind_SecondaryIndex_1000Docs(b *testing.B) {
 		}
 		_, _ = m.Create(map[string]any{"n": i, "role": role})
 	}
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = m.Find().Where("role", OpEq, "admin").Exec()
 	}
 }
@@ -92,8 +87,7 @@ func BenchmarkSearch_1000Docs(b *testing.B) {
 		w := words[i%len(words)]
 		_, _ = m.Create(map[string]any{"content": fmt.Sprintf("%s article number %d", w, i)})
 	}
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = m.Search("golang")
 	}
 }
@@ -101,8 +95,7 @@ func BenchmarkSearch_1000Docs(b *testing.B) {
 func BenchmarkTx_2Inserts(b *testing.B) {
 	db, cleanup := benchDB(b)
 	defer cleanup()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_ = db.Tx(func(tx *Tx) error {
 			_, err := tx.Model("users").Create(map[string]any{"name": "Alice"})
 			if err != nil {
@@ -122,8 +115,7 @@ func BenchmarkEncodeRecord(b *testing.B) {
 		timestamp: 1234567890,
 		payload:   []byte(`{"name":"Alice","role":"admin","age":30}`),
 	}
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_ = encodeRecord(r)
 	}
 }
@@ -137,16 +129,14 @@ func BenchmarkDecodeRecord(b *testing.B) {
 		payload:   []byte(`{"name":"Alice","role":"admin","age":30}`),
 	}
 	data := encodeRecord(r)
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _, _ = decodeRecord(data)
 	}
 }
 
 func BenchmarkTokenize(b *testing.B) {
 	s := "the quick brown fox jumps over the lazy dog and the embedded golang database"
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_ = tokenize(s)
 	}
 }

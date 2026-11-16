@@ -214,15 +214,15 @@ func TestPretty_ColoredInsideAStageList(t *testing.T) {
 }
 
 func TestPretty_ErrorValue(t *testing.T) {
-	out := plain(prettyOnce("msg", "error", errString("boom")))
+	out := plain(prettyOnce("msg", "error", &errString{"boom"}))
 	if !strings.Contains(out, "boom") {
 		t.Error(test.DiffMessage(out, "contains boom", "V2: an error is shown in Pretty"))
 	}
 }
 
-type errString string
+type errString struct{ text string }
 
-func (e errString) Error() string { return string(e) }
+func (e *errString) Error() string { return e.text }
 
 func TestPretty_MessageControlCharsEscaped(t *testing.T) {
 	out := prettyOnce("GET /a\n\x1b[2K FAKE [admin login ok]\r\tend\x7f")
@@ -305,7 +305,7 @@ func TestPretty_ValueNewlineThenCarriageReturn(t *testing.T) {
 }
 
 func TestPretty_ErrorTextEscaped(t *testing.T) {
-	out := prettyOnce("msg", "error", errString("boom\x1b[2K\nERROR forged"))
+	out := prettyOnce("msg", "error", &errString{"boom\x1b[2K\nERROR forged"})
 	if strings.ContainsAny(plain(out), "\x1b") {
 		t.Error(test.DiffMessage(plain(out), "no raw ESC", "F3: the text of an error is escaped"))
 	}

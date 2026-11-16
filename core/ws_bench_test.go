@@ -28,8 +28,7 @@ func BenchmarkHandshake_NoListener(b *testing.B) {
 	})
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		c := benchHandshakeContext()
 		_ = ws.handshake(c)
 	}
@@ -48,8 +47,7 @@ func BenchmarkHandshake_WithListener(b *testing.B) {
 	})
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		c := benchHandshakeContext()
 		_ = ws.handshake(c)
 	}

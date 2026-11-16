@@ -16,7 +16,7 @@ func BenchmarkPublish(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = br.Publish("bench.topic", i)
 	}
 }
@@ -32,7 +32,7 @@ func BenchmarkPublishWildcard(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = br.Publish("any.topic", i)
 	}
 }
@@ -50,7 +50,7 @@ func BenchmarkPublishMixed(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = br.Publish("mixed.topic", i)
 	}
 }
@@ -62,7 +62,7 @@ func BenchmarkSubscribe(b *testing.B) {
 	noop := func(_ *Message) {}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sub, _ := br.Subscribe("bench.sub", noop)
 		_ = br.Unsubscribe(sub)
 	}
@@ -100,7 +100,7 @@ func BenchmarkPublishComplex(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = br.Publish("tenant.abc.user.created", i)
 	}
 }
@@ -114,7 +114,7 @@ func BenchmarkPublishNoSubscribers(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = br.Publish("nobody.listens", i)
 	}
 }
@@ -126,7 +126,7 @@ func BenchmarkSubscribe_OnClosedBroker(b *testing.B) {
 	noop := func(_ *Message) {}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = br.Subscribe("bench.sub", noop)
 	}
 }
@@ -137,7 +137,7 @@ func BenchmarkUnsubscribe_Nil(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = br.Unsubscribe(nil)
 	}
 }
@@ -166,7 +166,7 @@ func BenchmarkPublishManyTopics(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_ = br.Publish(fmt.Sprintf("topic.%d", i%1000), i)
 	}
 }

@@ -24,7 +24,7 @@ func (c *ptrCountingStringer) String() string { c.calls.add(); return "ps" }
 
 type countingError struct{ calls *atomicCounter }
 
-func (c countingError) Error() string { c.calls.add(); return "e" }
+func (c *countingError) Error() string { c.calls.add(); return "e" }
 
 type countingValuer struct{ calls *atomicCounter }
 
@@ -38,7 +38,7 @@ func (panicStringer) String() string { panic("kaboom") }
 
 type panicError struct{}
 
-func (panicError) Error() string { panic("kaboom") }
+func (*panicError) Error() string { panic("kaboom") }
 
 type panicValuer struct{}
 
@@ -379,7 +379,7 @@ func TestLog_NodeLimitKeepsTheFirstValues(t *testing.T) {
 }
 
 func panicProbes() map[string]any {
-	return map[string]any{"Stringer": panicStringer{}, "Error": panicError{}, "LogValuer": panicValuer{}}
+	return map[string]any{"Stringer": panicStringer{}, "Error": &panicError{}, "LogValuer": panicValuer{}}
 }
 
 func TestLog_PanickingMethodRecovered(t *testing.T) {

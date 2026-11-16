@@ -24,8 +24,7 @@ func newBenchContext(method, origin string) *ctx.HTTPContext {
 func benchUseCORS(b *testing.B, cors CORS, method string) {
 	mw := cors.NewMiddleware()
 	c := newBenchContext(method, "https://example.com")
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		c.ResponseWriter = httptest.NewRecorder()
 		mw.Use(c.Request, c.ResponseWriter, noop)
 	}
@@ -49,32 +48,28 @@ func BenchmarkCORS_Use_Preflight(b *testing.B) {
 
 func BenchmarkMatchOrigin_Wildcard(b *testing.B) {
 	opts := loadCORSOptions(&CORS{})
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = matchOrigin(opts.allowOrigin, "https://example.com")
 	}
 }
 
 func BenchmarkMatchOrigin_Map(b *testing.B) {
 	opts := loadCORSOptions(&CORS{AllowOrigin: []string{"https://example.com", "https://foo.com"}})
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = matchOrigin(opts.allowOrigin, "https://example.com")
 	}
 }
 
 func BenchmarkMatchOrigin_Regexp(b *testing.B) {
 	opts := loadCORSOptions(&CORS{AllowOrigin: regexp.MustCompile(`^https://.*\.example\.com$`)})
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, _ = matchOrigin(opts.allowOrigin, "https://sub.example.com")
 	}
 }
 
 func BenchmarkLoadCORSOptions(b *testing.B) {
 	cors := &CORS{AllowOrigin: []string{"https://example.com", "https://foo.com"}}
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		loadCORSOptions(cors)
 	}
 }

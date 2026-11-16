@@ -23,8 +23,7 @@ func newBenchContext(method, origin string) *ctx.HTTPContext {
 func BenchmarkHelmet_Use_Defaults(b *testing.B) {
 	mw := Helmet{}.NewMiddleware()
 	c := newBenchContext(http.MethodGet, "")
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		mw.Use(c.Request, c.ResponseWriter, noop)
 	}
 }
@@ -32,8 +31,7 @@ func BenchmarkHelmet_Use_Defaults(b *testing.B) {
 func BenchmarkHelmet_Use_CustomCSP(b *testing.B) {
 	mw := Helmet{ContentSecurityPolicy: "default-src 'none'; img-src 'self'"}.NewMiddleware()
 	c := newBenchContext(http.MethodGet, "")
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		mw.Use(c.Request, c.ResponseWriter, noop)
 	}
 }
@@ -41,8 +39,7 @@ func BenchmarkHelmet_Use_CustomCSP(b *testing.B) {
 func BenchmarkHelmet_Use_DisableHSTS(b *testing.B) {
 	mw := Helmet{DisableHSTS: true}.NewMiddleware()
 	c := newBenchContext(http.MethodGet, "")
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		mw.Use(c.Request, c.ResponseWriter, noop)
 	}
 }
@@ -53,8 +50,7 @@ func BenchmarkLoadHelmetOptions(b *testing.B) {
 		HSTSMaxAge:            86400,
 		HSTSPreload:           true,
 	}
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		loadHelmetOptions(h)
 	}
 }

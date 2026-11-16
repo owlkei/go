@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,7 +75,7 @@ func lcText(v any) string {
 }
 
 func lcRuntimeErrorPanic(*ctx.HTTPContext) any {
-	var items []int
+	items := []int{}
 	i := len(os.Args) + 10
 	return items[i]
 }
@@ -84,13 +85,11 @@ func lcRuntimeErrorMiddleware(http.ResponseWriter, *http.Request, ctx.Next) {
 }
 
 func lcNilPanic(*ctx.HTTPContext) any {
-	var v any
-	panic(v)
+	panic(new(runtime.PanicNilError))
 }
 
 func lcNilPanicMiddleware(http.ResponseWriter, *http.Request, ctx.Next) {
-	var v any
-	panic(v)
+	panic(new(runtime.PanicNilError))
 }
 
 func lcErrorResponses(t *testing.T, value any) (fromMiddleware, fromHandler *httptest.ResponseRecorder) {
