@@ -1,0 +1,45 @@
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/go.sum"
+    - "!docs/review/**"
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Ginject is a NestJS-style dependency injection web framework for Go. Review against CLAUDE.md
+        and .ginject/conventions.md:
+        - Correctness, concurrency (shared state needs a lock or atomic and a -race test) and security
+          (limits on client-controlled input; no internal error text, stacks or secrets in responses).
+        - The request path is hot: per-request fmt, reflection, regexp or defer, and avoidable
+          allocations, are findings. unsafe, a new sync.Pool or hand-managed buffers need an approved
+          design in docs/design/.
+        - Small public surface: flag exported names that users don't need.
+        - No comments in Go code. Exported API in topic-named files, unexported helpers shared by two
+          or more files in fn.go.
+        - Bootstrap failures panic as "<category>: <detail>"; the request path never panics on purpose
+          except with exceptions.
+    - path: "**/*_test.go"
+      instructions: |
+        One test function per behavior named Test<Subject>_<Behavior>; assertions use
+        t.Error(test.DiffMessage(actual, expected, "desc")); benchmarks use for b.Loop() and
+        b.ReportAllocs(). Tests must be deterministic (no sleeps for synchronization, no network).
+    - path: "**/README.md"
+      instructions: |
+        Package READMEs follow the structure of modules/config/README.md. Every example must compile
+        against the current code; every name cited must exist.
+  tools:
+    golangci-lint:
+      enabled: true
+
+chat:
+  auto_reply: true
