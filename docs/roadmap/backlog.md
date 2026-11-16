@@ -122,3 +122,19 @@ courts (SaaS for court owners). Keep it small: one court type, one payment gatew
 - Storage and auth don't exist yet: use `database/sql` (SQLite or Postgres) and a simple auth; the
   pain points become the requirements of the storage and auth roadmaps.
 - Later, a light web analytics app as a real-world performance test.
+
+## Server-rendered HTML controllers (before the first release)
+
+Decided 2026-11-17: Ginject renders HTML pages on the server, so an app built with Owlky's
+framework-free HTML version needs no separate JSON API plus a React client (cheaper on small
+machines: no client bundle, no second app). Details are discussed when the roadmap starts. Known
+points to cover:
+
+- A controller route kind that renders a template with the handler's data (the route DSL, so the
+  public API review must leave room for it).
+- `html/template` (contextual autoescaping) as the engine; layouts and partials; templates from an
+  `embed.FS` in production, reloaded from disk in development; parsed once and cached.
+- Owlky's HTML snippets and CDN assets (`owlky.css`, the loader) used directly in templates; the CSP
+  from `helmet` must allow them (nonces or hashes for inline scripts).
+- Errors and 404 pages as HTML for page routes, JSON for API routes.
+- Forms: `csrf` (0005) already protects them; validation errors rendered back into the form.
