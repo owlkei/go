@@ -53,8 +53,5 @@ per use). Details and expected gains: `docs/review/http-0002.md` › What is lef
 
 | Design | Technique |
 |---|---|
-| 0002 H1 | the router appends parameter values to a caller-supplied buffer |
 | 0003 H1 | one scratch buffer and a kept JSON encoder per pooled context |
 | 0003 H2 | shared read-only header value slices |
-| 0003 H3 | `ParamValues` and the aggregation list keep their capacity across requests |
-| 0004 H1 | a hand-written encoder for the fixed error body |

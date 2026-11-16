@@ -1,6 +1,6 @@
 # 0003: Server and production
 
-Status: Approved
+Status: Running
 
 ## Goal
 Finish the HTTP core: the rest of `core` (request dispatch, the 404 path, the server, lifecycle and
@@ -90,3 +90,4 @@ README, the file rule.
 
 ## Log
 - 2026-11-16: roadmap approved by the user, with every decision above.
+- 2026-11-16: designs 0007-0010 approved by the user, every open question as recommended; heavy technique 0002 H1 approved too (with 0003 H3, 0004 H1).
