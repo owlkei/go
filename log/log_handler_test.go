@@ -359,3 +359,18 @@ func TestPretty_ConcurrentCalls_NoDataRace(t *testing.T) {
 		t.Error(test.DiffMessage(strings.Count(buf.String(), "[msg]"), goroutines, "L6: every record is written whole"))
 	}
 }
+
+func TestPretty_LineSeparatorsAndBidiEscaped(t *testing.T) {
+	spoof := "a\u2028b\u2029c\u202ad\u202ee\u2066f\u2069g"
+	out := prettyOnce(spoof, "k\u202e", spoof)
+	stripped := plain(out)
+	if strings.ContainsAny(stripped, "\u2028\u2029\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069") {
+		t.Error(test.DiffMessage(stripped, "no raw separator or bidi control", "L5: U+2028, U+2029 and bidi controls are written escaped"))
+	}
+	if !strings.Contains(stripped, "\\u2028") || !strings.Contains(stripped, "\\u202e") {
+		t.Error(test.DiffMessage(stripped, "escaped separators", "L5: escaped as a backslash-u sequence"))
+	}
+	if !strings.Contains(prettyOnce("a\u202fb", "k", "v"), "a\u202fb") {
+		t.Error(test.DiffMessage("escaped", "kept", "L5: U+202F is not a control and is kept"))
+	}
+}

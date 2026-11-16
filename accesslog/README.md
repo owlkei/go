@@ -60,7 +60,7 @@ One `Logger.Info` call per request, made on the access log's worker goroutine. T
 A JSON line:
 
 ```json
-{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","id":"a0eef3e5-b715-4c2e-9c7c-d239e24d305f","transport":"HTTP","code":200,"operation":"GET","middleware":[{"CORS":"120µs (4%)"}],"handler":[{"READ_users":"2ms (68%)"}],"total":"2.90ms"}
+{"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","id":"a0eef3e5b7154c2e","transport":"HTTP","code":200,"operation":"GET","middleware":[{"CORS":"120µs (4%)"}],"handler":[{"READ_users":"2ms (68%)"}],"total":"2.90ms"}
 ```
 
 In the pretty format each entry is printed in a color picked by its duration: gray below 10 ms, then green, blue (50 ms), yellow (100 ms), orange (300 ms) and red from 1 s. JSON and Text carry only the text.
@@ -135,6 +135,7 @@ al.Stop()
 - **64 stage events per request.** Later ones are counted and the line carries `stages_dropped`.
 - **16,384 pending requests** (64 shards of 256). A new request that finds its shard full evicts that shard's oldest pending request; an evicted request that completes later is logged without stages. A new request is always traced.
 - **1,024 queued lines.** A request that finds the queue full is dropped and counted. The worker reports the count with `Logger.Warn("AccessLog", "dropped", n)` at most once per second, and `Stop` reports what is left. Lines logged plus lines reported as dropped equal the requests seen.
+- **One worker: about 65,000 lines per second.** Formatting and logging a line takes about 15 µs on the worker (`BenchmarkAccessLog_WorkerLine`). Beyond that rate the queue fills, and the extra lines are dropped and counted as above.
 - **A broken logger cannot stop the worker.** A panic of the logger is recovered; that line counts as dropped.
 
 A team that needs a complete audit trail writes it in a middleware or an interceptor: the access log trades completeness for never slowing a request.

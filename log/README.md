@@ -210,7 +210,7 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 
 - Nesting is followed 16 levels deep; a value below that is written `[MAX_DEPTH]`. After 1,000 values inside one argument, each remaining value is written `[TRUNCATED]`. A value that contains itself ends.
 - A panic raised by a value's own `String`, `Error` or `LogValue` is recovered: the call writes one line with the original level and message and a `log_error` pair with the recovered value, and the logger keeps working.
-- In Pretty, every control character of the message and of the keys is written escaped (`\n`, `\r`, `\t`, `\x1b`, the C1 controls U+0080 to U+009F), so a value cannot forge a line or send terminal escape codes. In string values a line feed starts a new, indented line (a stack trace stays readable); everything else is escaped.
+- In Pretty, every control character of the message and of the keys is written escaped (`\n`, `\r`, `\t`, `\x1b`, the C1 controls U+0080 to U+009F; the separators U+2028 and U+2029 and the bidirectional controls U+202A to U+202E and U+2066 to U+2069 as `\u2028`), so a value cannot forge a line, reorder the text on screen or send terminal escape codes. In string values a line feed starts a new, indented line (a stack trace stays readable); everything else is escaped.
 - JSON and Text rely on slog's escaping; JSON also escapes the C1 controls.
 - A logger is immutable and safe for concurrent use; it starts no goroutine and opens no file.
 
@@ -225,7 +225,7 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 - **No copy when nothing changes.** Scalars and errors take a path without reflection; through `WrapLogger` the argument slice is passed on as it is when no value needs work.
 - **The record is built once.** The built-in logger builds the `slog.Record` itself and looks up the caller only with `AddSource`.
 - **No `ReplaceAttr` per attribute.** The four slog levels need none; only `Fatal` uses a handler that renames its level.
-- **Struct fields are read once per type** (name, index, tag) and kept in a `sync.Map`.
+- **Struct fields are read once per type** (name, index, tag) and kept in a `sync.Map`. Measured against reading them on every call: a struct logged as JSON takes 2.7 µs instead of 4.8 µs (−44 %) with 16 allocations instead of 28, and a tagged struct through `WrapLogger` 0.53 µs instead of 1.66 µs (−68 %).
 - **A recover only when a method can run.** The scalar path has no `defer`; arguments with values whose methods may be called go through one deferred `recover`.
 
 ## Benchmarks

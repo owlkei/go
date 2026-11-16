@@ -186,6 +186,8 @@ func appendEscaped(buf []byte, s string, cont string) []byte {
 			buf = appendHex(buf, c)
 		case r >= 0x80 && r <= 0x9f:
 			buf = appendHex(buf, byte(r))
+		case r == 0x2028 || r == 0x2029 || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069):
+			buf = appendUnicode(buf, r)
 		default:
 			buf = append(buf, s[i:i+size]...)
 		}
@@ -196,6 +198,10 @@ func appendEscaped(buf []byte, s string, cont string) []byte {
 
 func appendHex(buf []byte, b byte) []byte {
 	return append(buf, '\\', 'x', hexDigits[b>>4], hexDigits[b&0x0f])
+}
+
+func appendUnicode(buf []byte, r rune) []byte {
+	return append(buf, '\\', 'u', hexDigits[r>>12&0x0f], hexDigits[r>>8&0x0f], hexDigits[r>>4&0x0f], hexDigits[r&0x0f])
 }
 
 func isBranchable(rv reflect.Value) bool {
