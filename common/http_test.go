@@ -1,6 +1,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
@@ -214,5 +215,47 @@ func TestParseFnNameToURL(t *testing.T) {
 		if version != results[2] {
 			t.Error(test.DiffMessage(results[2], version, "version should be equal"))
 		}
+	}
+}
+
+func routeConflictPanic(fn func()) (message string) {
+	defer func() {
+		if r := recover(); r != nil {
+			if err, ok := r.(error); ok {
+				message = err.Error()
+			}
+		}
+	}()
+	fn()
+	return ""
+}
+
+func TestAddHandlerToRouterMap_SameShapeDifferentParamNamesConflicts(t *testing.T) {
+	orig := InsertedRoutes
+	InsertedRoutes = make(map[string]string)
+	defer func() { InsertedRoutes = orig }()
+
+	r := &HTTP{}
+	r.AddHandlerToRouterMap(nil, "READ_BY_ID", nil)
+	message := routeConflictPanic(func() { r.AddHandlerToRouterMap(nil, "READ_BY_NAME", nil) })
+	if !strings.Contains(message, "route conflict") || !strings.Contains(message, "READ_BY_NAME") || !strings.Contains(message, "READ_BY_ID") {
+		t.Error(test.DiffMessage(message, "route conflict: READ_BY_NAME ... READ_BY_ID", "two routes that differ only in parameter names must conflict at bootstrap"))
+	}
+}
+
+func TestAddHandlerToRouterMap_DifferentShapesDoNotConflict(t *testing.T) {
+	orig := InsertedRoutes
+	InsertedRoutes = make(map[string]string)
+	defer func() { InsertedRoutes = orig }()
+
+	r := &HTTP{}
+	r.AddHandlerToRouterMap(nil, "READ_users_BY_id", nil)
+	message := routeConflictPanic(func() {
+		r.AddHandlerToRouterMap(nil, "READ_users_BY_id_AND_name", nil)
+		r.AddHandlerToRouterMap(nil, "UPDATE_users_BY_id", nil)
+		r.AddHandlerToRouterMap(nil, "READ_users_all", nil)
+	})
+	if message != "" {
+		t.Error(test.DiffMessage(message, "", "routes with a different shape, method or static segment must not conflict"))
 	}
 }

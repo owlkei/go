@@ -143,20 +143,32 @@ func (r *HTTP) AddHandlerToRouterMap(modulePrefixes []string, fnName string, han
 		}
 
 		pattern := routing.MethodRouteVersionToPattern(httpMethod, route, version)
-		if InsertedRoutes[pattern] == "" {
-			InsertedRoutes[pattern] = fnName
-		} else {
+		if existing := conflictingRoute(pattern); existing != "" {
 			panic(errors.New(
 				color.FmtRed(
 					"route conflict: %v method is conflicted with %v method",
 					fnName,
-					InsertedRoutes[pattern],
+					existing,
 				),
 			))
 		}
+		InsertedRoutes[pattern] = fnName
 
 		r.addToRouters(fnName, route, version, httpMethod, handler)
 	}
+}
+
+func conflictingRoute(pattern string) string {
+	if fnName := InsertedRoutes[pattern]; fnName != "" {
+		return fnName
+	}
+	shape, _ := routing.ParseToParamKey(pattern)
+	for inserted, fnName := range InsertedRoutes {
+		if insertedShape, _ := routing.ParseToParamKey(inserted); insertedShape == shape {
+			return fnName
+		}
+	}
+	return ""
 }
 
 func (r *HTTP) GetConfigurations() []HTTPConfig {
