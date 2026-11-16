@@ -1,0 +1,247 @@
+package loadshed
+
+import (
+	"math"
+	"os"
+	"runtime"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/dangduoc08/ginject/internal/inspect"
+)
+
+const (
+	windowPerLimit   = 4
+	quietSamples     = 8
+	probeSamples     = 8
+	tolerance        = 1.5
+	smoothing        = 0.8
+	longSample       = 30 * time.Second
+	baselineMaxAge   = 30 * time.Second
+	probeMaxDuration = time.Second
+	probeSpacing     = 30 * time.Second
+	bytesPerSlot     = 4 << 20
+	lowestMax        = 64
+	highestMax       = 4096
+	slotsPerProc     = 256
+	startPerProc     = 8
+	cgroupV2Memory   = "/sys/fs/cgroup/memory.max"
+	cgroupV1Memory   = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+	unlimitedMemory  = 1 << 60
+	countShift       = 48
+	oneSample        = 1 << countShift
+	sumMask          = oneSample - 1
+)
+
+type adaptive struct {
+	min, max int64
+	now      func() time.Time
+
+	limit      atomic.Int64
+	samples    atomic.Uint64
+	quiet      atomic.Uint64
+	isPressure atomic.Bool
+
+	probes     atomic.Int64
+	probeStart atomic.Int64
+	probeSum   atomic.Int64
+	probeCount atomic.Int64
+
+	baseline atomic.Int64
+	average  atomic.Int64
+
+	mu          sync.Mutex
+	limitValue  float64
+	baselineNs  float64
+	hasBaseline bool
+	baselineAt  time.Time
+	probedAt    time.Time
+	hasProbed   bool
+	isProbeSeen bool
+}
+
+type bounds struct{ min, max, start int64 }
+
+func machineBounds() bounds {
+	procs := int64(runtime.GOMAXPROCS(0))
+	maxSlots := slotsPerProc * procs
+	if memory, ok := memoryLimit(); ok {
+		maxSlots = memory / bytesPerSlot
+	}
+	b := bounds{max: min(max(maxSlots, lowestMax), highestMax)}
+	b.min = min(procs, b.max)
+	b.start = min(max(startPerProc*procs, b.min), b.max)
+	return b
+}
+
+func memoryLimit() (int64, bool) {
+	smallest, ok := int64(math.MaxInt64), false
+	if limit := debug.SetMemoryLimit(-1); limit > 0 && limit < math.MaxInt64 {
+		smallest, ok = limit, true
+	}
+	if runtime.GOOS != "linux" {
+		return smallest, ok
+	}
+	for _, name := range []string{cgroupV2Memory, cgroupV1Memory} {
+		if limit, found := readCgroupLimit(name); found && limit < smallest {
+			smallest, ok = limit, true
+		}
+	}
+	return smallest, ok
+}
+
+func readCgroupLimit(name string) (int64, bool) {
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		return 0, false
+	}
+	limit, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+	if err != nil || limit <= 0 || limit >= unlimitedMemory {
+		return 0, false
+	}
+	return limit, true
+}
+
+func (a *adaptive) init(b bounds) {
+	a.min, a.max = b.min, b.max
+	a.now = time.Now
+	a.limitValue = float64(b.start)
+	a.limit.Store(b.start)
+}
+
+func (c *compiledLoadShed) probeAdmitLimit(v int64) int64 {
+	a := &c.adaptive
+	if a.now().UnixNano()-a.probeStart.Load() <= int64(probeMaxDuration) || !a.mu.TryLock() {
+		return v
+	}
+	if c.admit.Load() < 0 {
+		a.endProbeLocked(c)
+	}
+	a.mu.Unlock()
+	return c.admit.Load()
+}
+
+func (a *adaptive) sample(c *compiledLoadShed, elapsed time.Duration, inFlight int64, isProbe bool) {
+	if elapsed > longSample {
+		return
+	}
+	ns := int64(max(elapsed, 0))
+	if isProbe {
+		a.probeSum.Add(ns)
+		if a.probeCount.Add(1) == probeSamples {
+			a.mu.Lock()
+			if c.admit.Load() < 0 {
+				a.endProbeLocked(c)
+			}
+			a.mu.Unlock()
+		}
+	}
+	packed := oneSample | uint64(ns)
+	if inFlight <= a.min {
+		a.quiet.Add(packed)
+	}
+	if a.samples.Add(packed)>>countShift >= a.windowSize() && a.mu.TryLock() {
+		if a.samples.Load()>>countShift >= a.windowSize() {
+			a.closeWindowLocked(c)
+		}
+		a.mu.Unlock()
+	}
+}
+
+func (a *adaptive) windowSize() uint64 {
+	return uint64(windowPerLimit * a.limit.Load())
+}
+
+func (a *adaptive) closeWindowLocked(c *compiledLoadShed) {
+	samples, quiet := a.samples.Swap(0), a.quiet.Swap(0)
+	n, sum := samples>>countShift, samples&sumMask
+	quietCount, quietSum := quiet>>countShift, quiet&sumMask
+	isPressure := a.isPressure.Swap(false)
+	isProbeSeen := a.isProbeSeen
+	a.isProbeSeen = c.admit.Load() < 0
+	now := a.now()
+
+	average := float64(sum) / float64(n)
+	a.average.Store(int64(average))
+	if quietCount >= quietSamples {
+		a.learnLocked(float64(quietSum)/float64(quietCount), now)
+	}
+	if a.hasBaseline && average < a.baselineNs {
+		a.setBaselineLocked(average, now)
+	}
+	if !isPressure {
+		return
+	}
+	if a.hasBaseline && !isProbeSeen {
+		a.adjustLocked(c, average)
+	}
+	if c.admit.Load() >= 0 && a.isBaselineStale(now) && a.isProbeDue(now) {
+		a.startProbeLocked(c, now)
+	}
+}
+
+func (a *adaptive) isBaselineStale(now time.Time) bool {
+	return !a.hasBaseline || now.Sub(a.baselineAt) > baselineMaxAge
+}
+
+func (a *adaptive) isProbeDue(now time.Time) bool {
+	return !a.hasProbed || now.Sub(a.probedAt) > probeSpacing
+}
+
+func (a *adaptive) adjustLocked(c *compiledLoadShed, average float64) {
+	gradient := 1.0
+	if average > 0 {
+		gradient = min(tolerance*a.baselineNs/average, 1)
+	}
+	useful := a.limitValue * gradient
+	target := useful + math.Sqrt(useful)
+	limit := min(max(smoothing*a.limitValue+(1-smoothing)*target, float64(a.min)), float64(a.max))
+	a.limitValue = limit
+	a.limit.Store(int64(limit))
+	if c.admit.Load() >= 0 {
+		c.admit.Store(int64(limit))
+	}
+}
+
+func (a *adaptive) learnLocked(input float64, now time.Time) {
+	if a.hasBaseline {
+		input = (a.baselineNs + input) / 2
+	}
+	a.setBaselineLocked(input, now)
+}
+
+func (a *adaptive) setBaselineLocked(ns float64, now time.Time) {
+	a.baselineNs, a.hasBaseline, a.baselineAt = ns, true, now
+	a.baseline.Store(int64(ns))
+}
+
+func (a *adaptive) startProbeLocked(c *compiledLoadShed, now time.Time) {
+	a.probes.Add(1)
+	a.probeSum.Store(0)
+	a.probeCount.Store(0)
+	a.probeStart.Store(now.UnixNano())
+	a.probedAt, a.hasProbed, a.isProbeSeen = now, true, true
+	c.admit.Store(-a.min)
+}
+
+func (a *adaptive) endProbeLocked(c *compiledLoadShed) {
+	if n := a.probeCount.Load(); n > 0 {
+		a.learnLocked(float64(a.probeSum.Load())/float64(n), a.now())
+	}
+	c.admit.Store(a.limit.Load())
+}
+
+func (a *adaptive) fields(c *compiledLoadShed) []inspect.Field {
+	return []inspect.Field{
+		{Key: "min", Value: a.min},
+		{Key: "max", Value: a.max},
+		{Key: "probes", Value: a.probes.Load()},
+		{Key: "probing", Value: c.admit.Load() < 0},
+		{Key: "baseline", Value: time.Duration(a.baseline.Load())},
+		{Key: "average", Value: time.Duration(a.average.Load())},
+	}
+}

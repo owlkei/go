@@ -475,30 +475,52 @@ Adaptive mode. Constants are unexported and fixed.
   unlimited file is skipped); with no memory limit known, `max` = 256 × `GOMAXPROCS`, same clamp.
   The first limit is 16 × `GOMAXPROCS`, clamped to `min`-`max`. Examples: 1 vCPU and 512 MiB:
   1 / 16 / 128; 2 vCPU and 2 GiB: 2 / 32 / 512.
-- **L8** Samples. Every finished exchange adds its `elapsed` to the current window, except one
-  longer than 30 s (a stream or a download). A window closes at its 32nd sample. A sample that
-  finished with at most `min` requests in flight is also a *quiet* sample.
+- **L8** (revised 2026-11-17, see "Revision 2026-11-17: `loadshed`") Samples. Every finished
+  exchange adds a sample to the current window: its `elapsed` minus the time it waited in
+  `loadshed`'s own queue (L2), except a sample longer than 30 s (a stream or a download). A window
+  closes at its (4 × the current limit)th sample (Revision 2026-11-17). A sample that finished with at most `min` requests in flight is also a
+  *quiet* sample. A window is *under pressure* when, since it opened, a request found every slot
+  taken (it was queued or refused).
 - **L9** Baseline: the latency without contention. It is the average of 8 quiet samples, blended
   half and half with the previous baseline, and it is lowered to a window's average when that is
   smaller. With no baseline yet, the limit does not move.
-- **L10** At each window close, with `avg` the window's average:
-  `gradient = clamp(1.5 × baseline / avg, 0.5, 1)`;
-  `target = limit × gradient + sqrt(limit)`;
-  `limit = clamp(0.8 × limit + 0.2 × target, min, max)`, floored to an integer for admission.
-  When `gradient` is 1 and fewer than `limit / 2` requests were in flight at the window's peak, the
-  limit is left as it is (the app, not the limit, bounded the load).
-- **L11** Probe. When a window closes, a request was queued or refused during it, and the baseline
-  is unknown or older than 30 s: admission uses `min` instead of `limit` until 8 requests admitted
-  after that moment have finished, or 1 s has passed (checked at the next admission, against the
-  clock, no timer); their average is the new baseline input (L9) and admission returns to `limit`.
-  No probe ever starts while nothing is being queued or refused.
-- **L12** Stability, asserted by the tests below on real `GOMAXPROCS` 1 and 2: under a steady
-  overload of 5 × capacity, after 10 s, outside probes, the limit stays within ± 35 % of its median
-  for a CPU-bound handler and ± 20 % for an I/O-bound one; throughput is at least 95 % of the
-  capacity measured without `loadshed`; the p99 latency of admitted requests is at most 12 × the
-  no-load latency (CPU-bound) and 3 × (I/O-bound). At 70 % of capacity no request is refused.
+- **L10** (revised 2026-11-17) At the close of a window under pressure, when a baseline is known
+  and no probe ran during the window, with `avg` the window's average:
+  `gradient = min(1.5 × baseline / avg, 1)`;
+  `useful = limit × gradient`;
+  `target = useful + sqrt(useful)`;
+  `limit = clamp(0.8 × limit + 0.2 × target, min, max)`, kept as a fraction and floored to an
+  integer for admission. Every other window leaves the limit as it is: without pressure the limit
+  bounded nothing, and a window with a probe measured `min`, not `limit`. So one window never
+  takes more than 20 % off the limit, and the limit grows only while requests are held back.
+  Examples (limit 32, baseline 10 ms, under pressure): `avg` 10 ms gives 33 (33.13); `avg` 60 ms
+  gives 27 (27.77); `avg` 60 ms window after window ends at `min`; a server that shares c cores
+  evenly (`avg` = `limit` × baseline / c) settles at 1.5 c + sqrt(1.5 c): 2.72 for one core, 4.73
+  for two.
+- **L11** (revised 2026-11-17: the 30 s spacing) Probe. When a window under pressure closes, the
+  baseline is unknown or older than 30 s, and no probe started in the last 30 s: admission uses
+  `min` instead of `limit` until 8 requests admitted after that moment have finished, or 1 s has
+  passed (checked at the next admission, against the clock, no timer); their average is the new
+  baseline input (L9) and admission returns to `limit`. A probe that ends with no finished request
+  changes nothing, and the next one waits its 30 s (handlers slower than 1 s would otherwise hold
+  admission at `min` after every window). No probe ever starts while nothing is being queued or
+  refused. The clock of L9-L11 is the unexported field `now` (default `time.Now`), read only at a
+  window close and during a probe.
+- **L12** (thresholds unchanged; how they are measured is revised 2026-11-17) Stability, asserted
+  by the tests below on real `GOMAXPROCS` 1 and 2: under a steady overload of 5 × capacity, after
+  10 s, outside probes, the limit stays within ± 35 % of its median for a CPU-bound handler and
+  ± 20 % for an I/O-bound one; throughput is at least 95 % of the capacity measured without
+  `loadshed`; the p99 latency of admitted requests is at most 12 × the no-load latency (CPU-bound)
+  and 3 × (I/O-bound). At 70 % of capacity no request is refused. Measured as follows: the
+  CPU-bound handler computes 5 ms in five 1 ms steps with `runtime.Gosched()` between them (a
+  handler that reaches the scheduler, as one that waits on a socket or a lock does); the capacity
+  is the smaller of two measurements, one before and one after the run; every arrival reuses one
+  `*http.Request`. A CPU-bound handler that never reaches the scheduler is a known limit (see the
+  revision), recorded by a benchmark, not asserted.
 
-Why the gradient and not AIMD. A model of the server (processor sharing on c cores, an optional
+Why the gradient and not AIMD (the model below assumed processor sharing, which Go does not do
+for short handlers: see "Revision 2026-11-17: `loadshed`" for the measurements and the revised
+L8, L10, L11). A model of the server (processor sharing on c cores, an optional
 I/O stage with a pool, Poisson arrivals, 120 s, both rules with the same baseline and probe) gave,
 at 5 × capacity:
 
@@ -595,7 +617,7 @@ Sources: RFC 6585 § 4 (429); RFC 9110 § 10.2.3 (Retry-After); OWASP API Securi
 | `helmet` | `X-XSS-Protection: 0` | OWASP (the auditor is removed or harmful); roadmap |
 | `compress` | gzip only, `MinSize` 1024, type allowlist, skips `Range` and encoded responses | RFC 9110 § 8.4; MDN; roadmap step 7 |
 | `loadshed` | `503` + `Retry-After: 1`, queue of 64 for 100 ms | RFC 9110 § 15.6.4; SRE Book ch. 22 (short queues, fail fast) |
-| `loadshed` | adaptive limit: gradient on latency against a probed no-load baseline, tolerance 1.5, bounds from `GOMAXPROCS` and the memory limit | Netflix `concurrency-limits` Gradient2; Envoy adaptive concurrency (minRTT probe); maintainer's decision |
+| `loadshed` | adaptive limit: gradient on latency against a probed no-load baseline, tolerance 1.5, moved only while requests are held back (Revision 2026-11-17), bounds from `GOMAXPROCS` and the memory limit | Netflix `concurrency-limits` Gradient2; Envoy adaptive concurrency (minRTT probe); maintainer's decision |
 | static files | `Cache-Control: no-cache` | RFC 9111 § 4.2.2; MDN "HTTP caching" |
 | throttler | key = client IP, IPv6 by /64, `429` + `Retry-After` | RFC 6585 § 4; RFC 6177 |
 
@@ -625,7 +647,7 @@ measurements on this machine (i7-9750H, Go 1.27.4) and are measured again per st
 | `compress`, compressed 16 KiB JSON | 0 steady state | about 25 µs | reused writer measured 24.9 µs (659 MB/s); level 6 would be 76.5 µs |
 | `compress`, compressed 2 KiB | 0 steady state | about 10 µs | measured 10.2 µs: resetting the writer dominates, hence `MinSize` |
 | `loadshed`, admitted, fixed limit | 0 | under 20 ns | one atomic add in, one add and one load out; plus K2's clock read (about 45 ns) shared by all hooks |
-| `loadshed`, admitted, adaptive | 0 | under 60 ns | in: one load (limit), one add; out: one add, one load, two adds (sum, count), two more for a quiet sample: 6-8 atomics. Every 32nd request also closes the window (one `TryLock`, a `time.Now`, a square root: about 150 ns, 5 ns amortized) |
+| `loadshed`, admitted, adaptive | 0 | under 60 ns | in: one load (limit), one add; out: one add (in flight), one add (count and sum packed in one word), one more for a quiet sample, one load (waiters): 5-6 atomics, no peak tracking (Revision 2026-11-17). Every 32nd request also closes the window (one `TryLock`, a clock read, a square root: about 150 ns, 5 ns amortized). Prototype of the revision: 40-41 ns at `GOMAXPROCS` 1 and 2 |
 | any refusal (G1) | as core's exception path | about 0.7 µs over a served request | core README: `ServeHTTP_Exception` 1,645 ns against `Static` 940 ns |
 | static file `Cache-Control` | 0 | under 20 ns | a prebuilt slice, one map read |
 | throttler, default key | 1 (the key string) plus today's | measured in step 10 | `netip.Addr.AppendTo` into a stack buffer |
@@ -680,6 +702,10 @@ No `unsafe`, no manual inlining.
     swaps fall into either window; the rule tolerates it. A limit that drops below `inFlight`
     interrupts nothing: admissions stop until enough requests finish. A limit that rises wakes
     waiters through the Leave path of the next finishing request.
+  - Pressure (Revision 2026-11-17): one `atomic.Bool`, set on the queue-or-refuse path (a load, and
+    a store only when it is not set yet), swapped to false at the window close. "A probe ran
+    during this window" and "when the last probe started" are plain fields under the window mutex.
+    The window mutex and the waiters' mutex are never held together.
   - Enter: `inFlight.Add(1) <= max` admits. Otherwise `inFlight.Add(-1)`, lock; if the list holds
     `MaxQueue` waiters, unlock and refuse; else `waiting.Add(1)`, try `inFlight.Add(1) <= max` once
     more (admitted: `waiting.Add(-1)`, unlock), else undo, append the waiter, unlock, and wait on
@@ -765,8 +791,8 @@ the scope and the hooks come from `core`. Hostile cases are part of each group.
 | M1-M4 | `TestHelmet_Defaults` (the table, byte for byte), `_Disabled` (each field), `_Custom`, `_HSTSOnlyOverHTTPS` (direct TLS, forwarded https, plain), `_Allocations` (0) |
 | Z1-Z9 | `TestCompress_RoundTrip` (2 KiB, 1 MiB, written in one and in many writes), `_Vary`, `_NotCandidate` (HEAD, Range, Upgrade, no gzip, `gzip;q=0`, gzip after byte 256), `_SkipsStatus`, `_SkipsEncoded`, `_SkipsContentRange`, `_SkipsType` (image, event stream), `_NoTransform`, `_BelowMinSize_Untouched` (with `Content-Length`), `_DetectsContentType`, `_WeakensETag`, `_Flush`, `_ServeFileKeepsReadFrom`, `_NoWriterFree_Uncompressed`, `_ErrorResponseAfterBind`, `_Concurrent` (64 goroutines, `-race`, every body round-trips) |
 | L1-L6 (fixed limit) | `TestLoadShed_NeverAboveMax` (blocked handlers, 12 goroutines, `-race`), `_QueueAdmitsInOrder`, `_QueueFull_503` (`Retry-After`), `_QueueTimeout_503`, `_ContextCancelledWhileWaiting`, `_ReleasedOnPanic`, `_ReleasedOnAbort`, `_ReleasedOnNoRoute`, `_ReleasedAtWSHandshake`, `_NoQueue`, `_IdleNoGoroutine` (`runtime.NumGoroutine`), `_Burst` (50 × capacity: every response is 2xx or 503, the count in flight never exceeds the maximum, and it returns to 0) |
-| L7-L11 (adaptive, deterministic: the bounds, the clock and the samples are injected through unexported fields) | `TestAdaptive_Bounds` (table of `GOMAXPROCS`, `GOMEMLIMIT`, cgroup files: present, `max`, missing, garbage), `_NoBaseline_LimitHolds`, `_BaselineFromQuietSamples`, `_BaselineLoweredByFasterWindow`, `_ShrinksWhenSlow` (never more than half per window, never below `min`), `_GrowsWhenFast` (never above `max`), `_HoldsWhenAppLimited`, `_IgnoresLongSamples`, `_ProbeOnlyWhenSaturatedAndStale`, `_ProbeEndsAfter8OrOneSecond`, `_NeverAboveCurrentLimit` (`-race`, limit changing under load), `_IdleNoGoroutineNoTimer` |
-| L12 (acceptance, `GOMAXPROCS` 1 and 2, skipped with `-short`) | `TestAdaptive_Stable_CPUBound`, `_Stable_IOBound`, `_NoRefusalBelowCapacity`, `_RecoversWhenHandlerSlows` |
+| L7-L11 (adaptive, deterministic: the bounds, the clock (`now`) and the samples are injected through unexported fields; revised 2026-11-17, the full list is in the revision's "Tester" section) | `TestAdaptive_Bounds` (table of `GOMAXPROCS`, `GOMEMLIMIT`, cgroup files: present, `max`, missing, garbage), `_NoBaseline_LimitHolds`, `_BaselineFromQuietSamples`, `_BaselineLoweredByFasterWindow`, `_ShrinksWhenSlow` (under pressure; never more than 20 % per window, ends at `min`), `_NeverBelowMin`, `_GrowsWhenFast` (under pressure; never above `max`), `_HoldsWithoutPressure` (slow and fast windows), `_HoldsDuringProbeWindow`, `_QueueWaitNotSampled`, `_IgnoresLongSamples`, `_ProbeOnlyWhenSaturatedAndStale`, `_ProbeEndsAfter8OrOneSecond`, `_ProbeNotRepeatedWithin30s`, `_NeverAboveCurrentLimit` (`-race`, limit changing under load), `_IdleNoGoroutineNoTimer` |
+| L12 (acceptance, `GOMAXPROCS` 1 and 2, skipped with `-short`; measured as L12 says) | `TestAdaptive_Stable_CPUBound`, `_Stable_IOBound`, `_NoRefusalBelowCapacity`, `_RecoversWhenHandlerSlows`; the non-yielding CPU-bound handler only in `BenchmarkLoadShed_L12_CPUBoundNoYield_5x` |
 | I1-I4 | per package `Test<Name>_Snapshot` (effective options and counters, values after traffic); `core`: `TestDevtool_Snapshots_OnlyWhenEnabled`, `TestSnapshot_NotBuiltOnRequestPath` (0 allocations per request with devtools on) |
 | F1-F3 | `core`: `TestServe_DefaultCacheControl` (file, index, `304`, `206`, wildcard and fixed routes), `_HandlerCacheControlKept`, `_ErrorDropsCacheControl` (missing file, dotfile, path outside) |
 | T1-T7 | `TestDefaultKey_ClientIP`, `_IgnoresHeaders` (the four tests that today assert header trust are replaced), `_IPv6Slash64`, `_Unknown`, `TestThrottler_LongKeyHashed`, `TestFixedWindow_ExactUnderConcurrency`, `TestSlidingWindow_…`, `TestTokenBucket_…` (12 goroutines × 1,000 requests, `-race`, exactly `Limit` allowed), `TestThrottler_StoreBounded` (1,000,000 distinct keys), `TestThrottler_NoGoroutine`, `TestThrottler_SpoofedHeaderSameKey` |
@@ -885,7 +911,7 @@ Approved by the user. All open questions answered as recommended (Q1-Q8), with t
 
 ## Revision 2026-11-17: forwarded scheme and host (security M2)
 
-Status of this revision: Proposed (the rest of 0014 stays Approved). It replaces P8 and P9, adds P13
+Status of this revision: Approved by the orchestrator under the roadmap run's escalation rule (2026-11-17). It replaces P8 and P9, adds P13
 and one option. Source: finding M2 in `docs/review/security-0005.md`, and the failed first fix
 (roadmap 0005, step 13).
 
@@ -1059,3 +1085,177 @@ add a default-proxy case: origin `https://app.example.com` with that forwarded h
    shows on the first request rather than as a silent hole.
 3. **The scheme is not opt-in.** Recommended: keep it on. Alternative: a second boolean, at the price
    of a redirect loop in every default deployment behind a TLS-terminating proxy.
+
+## Revision 2026-11-17: `loadshed` adaptive limit (roadmap 0005, step 8)
+
+Status of this revision: Approved by the orchestrator under the roadmap run's escalation rule (2026-11-17), with the recommended answers: L12's CPU-bound handler yields and a never-yielding handler is a documented known limit with a benchmark; the first limit is 8 × `GOMAXPROCS`; the window is 4 × the current limit samples (what the passing L12 runs used). It replaces L8 and L10, amends
+L11 and the way L12 is measured. No public API change. The maintainer's decision stands: the default
+adapts, within bounds from the machine, with a fixed N as the override. Source: the builder's report
+on step 8 (L12 passed 6 of 8) and the measurements below.
+
+Measurements: a prototype of the rules in a copy of the working tree, go1.27.4 darwin/amd64, a
+shared machine with 12 logical CPUs (hyperthreads; a capacity measured twice in one process ranged
+from 84 to 223 requests per second). Each run: 10 s of warm-up, then 10 s measured at 5 × capacity.
+Limits are min / median / max; p99 is a multiple of the no-load latency.
+
+### What was wrong
+1. **The model, not the thresholds.** The table of "Why the gradient" assumed processor sharing: n
+   requests on one core each take n times longer. Go does not interleave a handler that computes
+   for 5 ms: a goroutine keeps its P for up to 10 ms. Requests overlap only when one is preempted
+   (the GC, an inherited time slice), and that one then waits behind the run queue. With fixed
+   limits, 1 CPU, the tester's 5 ms handler:
+
+   | Fixed limit | Median latency | p99 | Window average (p10 / p50 / p90 of the 32-sample windows) |
+   |---|---|---|---|
+   | 2 | 1.00 × | 2.1-4.1 × | 0.98 / 1.00 / 1.59 × |
+   | 3 | 1.00 × | 6.9 × | 1.00 / 1.00 / 4.05 × |
+   | 4 | 1.00 × | 7.4-8.9 × (the builder saw 21-23 ×) | 1.00 / 1.00 / 2.28 × |
+   | 8 | 1.06 × | 70 × | 1.03 / 1.06 / 4.73 × |
+   | 16 | 1.10 × | 170 × | 1.03 / 1.10 / 11.3 × |
+
+   More than half of the windows show no slowdown at any limit; the damage is in a few requests.
+2. **L10 could not settle low.** With the gradient floored at 0.5 and `sqrt(limit)` of headroom, the
+   fixed point is `sqrt(limit) = 1 / (1 - gradient)`: never below 4 (the builder's finding, confirmed).
+   And a window with gradient 1 grew the limit whenever half of it was in use, so the limit climbed
+   between the rare slow windows: the implemented rule gave 8 / 12 / 19 with a p99 of 1.53 s (316 ×)
+   in one run and 4 / 5 / 8 with 15 × in another.
+3. **L8 fed the limit its own effect.** A queued request's `elapsed` holds its wait in `loadshed`'s
+   queue, which grows when the limit shrinks. The builder's deviation (leave the wait out) is right
+   and is now the rule.
+4. **The fallback is not an answer.** Half of `max` is 128 on the small box; a fixed 16 already has a
+   p99 of 170 ×.
+5. **The harness, for the throughput failure.** `RecoversWhenHandlerSlows_1CPU` (60.7 against 63)
+   fails with any limit: a fixed limit of 1 served 80.6 % of the capacity, and 108.6 % with
+   `GOGC=off`. Each arrival built an `httptest.NewRequest` (about 6 KB, 1,000 per second), and the
+   GC worker took the only P. The capacity itself, measured once for 2 s, moved by a factor of two
+   between runs.
+
+### Decision
+The rule stays the gradient on latency against the baseline, with four changes (L8, L10, L11 above):
+
+1. The limit moves only at the close of a window **under pressure** (a request was queued or
+   refused in it). This replaces the "half of the limit in use" test and its peak counter. Without
+   pressure the limit bounds nothing, so there is nothing to learn; growth between slow windows is
+   gone, and an idle or lightly loaded server never loses slots.
+2. The gradient has no floor, and the headroom is `sqrt(limit × gradient)`, not `sqrt(limit)`. The
+   smoothing already bounds a window's loss to 20 %. The fixed point for c evenly shared cores is
+   1.5 c + sqrt(1.5 c) instead of "at least 4".
+3. A sample leaves out the wait in `loadshed`'s queue.
+4. A window during which a probe ran does not move the limit (it measured `min`), and probes are at
+   least 30 s apart. Without the spacing, handlers slower than 1 s end every probe empty, the
+   baseline stays unknown, and admission falls to `min` for 1 s after every window.
+
+Rejected: a limit from the completion rate (`samples × baseline / window time`, Little's law). It
+was the steadiest signal measured (useful concurrency 0.89-1.11 on one core, window after window)
+and gave 2 / 2 / 3 on 1 CPU, but an idle gap inside a window reads as a slow server, so bursts
+separated by silence erode the limit to `min`. Rejected: moving the limit without pressure when
+latency rises; a window that happens to hold the slow routes of a mixed app would shrink the limit
+on a quiet server.
+
+### Results (prototype of the revised rules, first limit 16 × `GOMAXPROCS`)
+| Run | Limit | p99 | Throughput / capacity |
+|---|---|---|---|
+| CPU-bound (L12's handler), 1 CPU | 3 / 4 / 4 | 4.5 × | 99 % |
+| CPU-bound (L12's handler), 2 CPUs | 4 / 5 / 5 | 3.0 × | 99 % |
+| I/O-bound (20 ms, pool of 50), 1 and 2 CPUs, four runs | 80-81 / 83 / 86-87 (± 5 %) | 1.8-1.9 × | 106 % |
+
+The eight L12 tests, changed as "Tester" says, passed 16 of 16 in two consecutive passes (an earlier
+variant of the rule, three passes with a second test process running beside it: 23 of 24, the miss
+being 107 against 108 requests per second). In those passes the window was 4 × limit samples; the
+I/O rows above are with the 32-sample window, which is what L8 keeps. Admitted cost:
+`BenchmarkLoadShed_Admitted_Adaptive` 40-41 ns, 0 allocations, at `GOMAXPROCS` 1 and 2 (the
+builder's code in the same run, `GOMAXPROCS` 1: 42-43 ns; its 66 ns was measured under load).
+
+### Known limit: a handler that never reaches the scheduler
+With the tester's original handler (5 ms of arithmetic, no allocation, no wait) overload can hide
+from any in-flight limit, fixed or adaptive: requests run one after another, the count in flight
+stays below the limit, and the excess waits in Go's run queue. `loadshed` sheds once enough requests
+have been preempted to fill the limit. Measured with the revised rule:
+
+| First limit | 1 CPU | 2 CPUs |
+|---|---|---|
+| 16 × `GOMAXPROCS` (L7) | 2 / 3 / 4, 3 / 3 / 5, 2 / 3 / 3; p99 2.7-9.1 × | 4 / 5 / 5 once; 7 / 8 / 33 and 7 / 8 / 32 with p99 20-28 × (the limit was still leaving 32 when the measure began) |
+| 8 × | 2 / 4 / 5, 3 / 3 / 5, 2 / 3 / 3; p99 1.1-7.1 × | 5 / 5 / 6, 4 / 5 / 5, 4 / 5 / 6; p99 5.0-5.7 × |
+| 2 × | 2 / 3 / 3, 2 / 3 / 5, 2 / 3 / 3; p99 2.8-5.0 × | 4 / 4 / 5, 4 / 4 / 5, 6 / 6 / 7; p99 4.0-6.0 × |
+
+(The 8 × row is with this rule; the 2 × row with the earlier variant.) Once pressure exists the
+limit converges; how long that takes depends on the first limit. The signal is sparse, so on 1 CPU
+the limit sometimes leaves ± 35 % (2 to 5 around 3). That is why L12 asserts the handler that
+yields, and this one is recorded by a benchmark and stated in the README with the workaround
+(`LoadShed{MaxInFlight: 2 × CPUs}`: a fixed 2 on 1 CPU refused the excess with a p99 of 2.1-4.1 ×).
+
+### Performance
+One atomic load less per finished request (no peak). No new goroutine, timer or allocation; idle
+cost unchanged. `now` is called at a window close and during a probe only.
+
+### Concurrency
+As the "Concurrency" section, with the pressure flag and the two plain fields added there.
+
+### Security
+Unchanged. A client cannot push the limit up without the server being fast (growth needs pressure
+and `avg` under 1.5 × baseline), and the limit stays within `min`-`max` (L7).
+
+### Builder: changes in `middlewares/loadshed`
+1. `adaptive.go`, L10: delete `minGradient`, `peak` and `raisePeak`. At a window close, adjust only
+   when the window was under pressure, a baseline exists and no probe ran during the window;
+   `useful = limit × min(1.5 × baseline / avg, 1)`, `target = useful + sqrt(useful)`, then the
+   smoothing and clamp that exist today.
+2. "A probe ran during this window": a field under the window mutex, set when a probe starts,
+   read at the close together with `admit < 0`, then set to whether the probe still runs.
+3. L11: remember when the last probe started; start one only when that is more than 30 s ago (or
+   never). An empty probe leaves the baseline as it was.
+4. L11: an unexported field `now func() time.Time` on `adaptive`, set to `time.Now` in `init`;
+   every clock read in `adaptive.go` goes through it. The queue wait in `loadshed.go` keeps
+   `time.Now` / `time.Since`.
+5. L8: keep `waiter.Done` as it is (`elapsed - waited`); it is now the rule.
+6. README: "How the limit adapts" (the update rule and its conditions), "Known limits" (the
+   paragraph above with the workaround), "Benchmarks" (rerun at `GOMAXPROCS` 1 and 2).
+7. No change to `loadshed.go` admission, the queue, the snapshot fields or the public API.
+
+### Tester: test changes
+1. `loadshed_bench_test.go`: `BenchmarkLoadShed_Admitted_Fixed` uses `MaxInFlight: 1_000_000`
+   (`1 << 20` is above L5's maximum and panics).
+2. Delete the nine unused declarations: `processCPU` (both `cpu_*_bench_test.go` files),
+   `(*rig).inFlight`, `outcome.noLoadMillis`, `trackWriter` with `newTrackWriter` and its three
+   methods, `raceEnabled` (both `race_*_test.go` files).
+3. `loadshed_stability_test.go`: `serveDirect` reuses one package-level `*http.Request`; `cpuWork`
+   runs five steps of `iterations / 5` with `runtime.Gosched()` after each; `stableRun` and
+   `recoversRun` measure the capacity again after the measured run (same workers, same factor) and
+   compare with the smaller value. Thresholds stay as they are.
+4. `loadshed_l12_bench_test.go`: add `BenchmarkLoadShed_L12_CPUBoundNoYield_5x` with today's
+   `cpuWork` (one uninterrupted spin), reporting the same metrics.
+5. `loadshed_adaptive_test.go`, with a rig helper that puts a window under pressure (fill to the
+   limit, then one more request that must be refused, `MaxQueue: -1`) and a fake clock set on
+   `mw.(*compiledLoadShed).adaptive.now`:
+   - `_ShrinksWhenSlow`: baseline 10 ms, one window under pressure at 60 ms gives 27; further such
+     windows never grow the limit, never go below `previous × 4 / 5`, and end at `min` (2).
+   - `_GrowsWhenFast`: baseline 10 ms, one window under pressure at 10 ms gives 33; further such
+     windows never shrink it and reach `max` (64) within 300.
+   - `_NeverBelowMin`: as today, under pressure.
+   - `_HoldsWithoutPressure` (replaces `_HoldsWhenAppLimited`): with a baseline, 20 windows at
+     100 ms and 20 at 10 ms, none with a refusal, any number in flight: the limit stays 32.
+   - `_HoldsDuringProbeWindow`: a window in which a probe started, ran or ended leaves the limit,
+     whatever its average.
+   - `_QueueWaitNotSampled`: a request that waited at least 20 ms in the queue and finishes with
+     `elapsed` = 25 ms, in a window whose 31 other samples are 5 ms: the snapshot's `average` is at
+     most 5 ms.
+   - `_ProbeNotRepeatedWithin30s`: no baseline, a window under pressure starts probe 1; the clock
+     moves 1.1 s with no probe request finished and the next admission ends it (`probing` false,
+     `baseline` 0); another window under pressure starts no probe; after 30 s more it starts probe 2.
+   - `_NoBaseline_LimitHolds`, `_BaselineFromQuietSamples`, `_BaselineLoweredByFasterWindow`,
+     `_IgnoresLongSamples`, the probe tests, `_NeverAboveMaxUnderConcurrency`,
+     `_IdleNoGoroutineNoTimer` and `_Snapshot` keep their assertions.
+
+### Open questions (this revision)
+1. **L12's CPU-bound handler.** Recommended: the handler that yields (five 1 ms steps), as L12 now
+   says, with the non-yielding one as a documented known limit and a benchmark. Alternative: keep
+   the non-yielding handler as the bar; then no in-flight limit, adaptive or fixed above about
+   2 × `GOMAXPROCS`, meets it reliably, and the only default that does is a small fixed one, which
+   refuses I/O-bound apps far below their capacity (the I/O runs need about 80).
+2. **The first limit (L7).** Recommended: 8 × `GOMAXPROCS` instead of 16 ×. It converged in 12 of
+   12 non-yielding runs (six with this rule, six with the earlier variant), where 16 × left the limit at 32 for the whole warm-up twice in three runs
+   on 2 CPUs. Price: an I/O-bound app sees its first bursts above 8 per CPU queue for up to 100 ms
+   until the limit has grown (about `0.2 × sqrt(limit)` per 32 held-back requests). L7 keeps 16 ×
+   until this is decided; nothing else depends on it.
+3. **The rule is still "the gradient"** approved on 2026-11-17 (same inputs, tolerance, smoothing,
+   baseline and probe), with the four changes of "Decision". Confirm, since the formula text changed.
