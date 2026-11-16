@@ -33,17 +33,19 @@ const (
 )
 
 type Proxy struct {
-	TrustedProxies []string
-	TrustedHops    int
-	Header         Header
+	TrustedProxies  []string
+	TrustedHops     int
+	Header          Header
+	IsHostForwarded bool
 }
 
 type compiledProxy struct {
-	prefixes  []netip.Prefix
-	hops      int
-	header    Header
-	resolved  atomic.Int64
-	untrusted atomic.Int64
+	prefixes        []netip.Prefix
+	hops            int
+	header          Header
+	isHostForwarded bool
+	resolved        atomic.Int64
+	untrusted       atomic.Int64
 }
 
 func (instance Proxy) NewMiddleware() common.MiddlewareFn {
@@ -83,7 +85,7 @@ func loadProxyOptions(p *Proxy) *compiledProxy {
 	case p.Header != XForwarded && p.Header != Forwarded:
 		panic(color.FmtRed("invalid proxy: unknown Header %d", int(p.Header)))
 	}
-	c := &compiledProxy{hops: p.TrustedHops, header: p.Header}
+	c := &compiledProxy{hops: p.TrustedHops, header: p.Header, isHostForwarded: p.IsHostForwarded}
 	for _, entry := range p.TrustedProxies {
 		c.prefixes = append(c.prefixes, parseTrusted(entry))
 	}
@@ -135,8 +137,10 @@ func (c *compiledProxy) resolve(r *http.Request, s *tracecontext.Scope) {
 	if scheme, ok := c.scheme(r.Header, &res); ok {
 		s.IsClientHTTPS = scheme
 	}
-	if host := c.host(r.Header, &res); host != "" {
-		s.ClientHost = host
+	if c.isHostForwarded {
+		if host := c.host(r.Header, &res); host != "" {
+			s.ClientHost = host
+		}
 	}
 	s.IsClientSet = true
 }
@@ -228,7 +232,7 @@ func (c *compiledProxy) parse(entry string, res *result) (netip.Addr, bool) {
 func (c *compiledProxy) scheme(h http.Header, res *result) (bool, bool) {
 	value := res.proto
 	if c.header == XForwarded {
-		value = selectValue(h[forwardedProtoHeader], res.position)
+		value = lastValue(h[forwardedProtoHeader])
 	}
 	switch {
 	case strings.EqualFold(value, "https"):
@@ -242,7 +246,7 @@ func (c *compiledProxy) scheme(h http.Header, res *result) (bool, bool) {
 func (c *compiledProxy) host(h http.Header, res *result) string {
 	value := res.host
 	if c.header == XForwarded {
-		value = selectValue(h[forwardedHostHeader], res.position)
+		value = lastValue(h[forwardedHostHeader])
 	}
 	if !tracecontext.IsValidHost(value) {
 		return ""
@@ -250,18 +254,16 @@ func (c *compiledProxy) host(h http.Header, res *result) string {
 	return value
 }
 
-func selectValue(lines []string, position int) string {
-	it := newEntryIterator(lines)
-	var value string
-	for i := 0; i < position; i++ {
-		e, ok := it.next()
-		if !ok {
-			break
-		}
-		if len(e) > maxEntryLength {
-			return ""
-		}
-		value = e
+func lastValue(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	value := lines[len(lines)-1]
+	if comma := strings.LastIndexByte(value, ','); comma >= 0 {
+		value = value[comma+1:]
+	}
+	if len(value) > maxEntryLength {
+		return ""
 	}
 	return trimSpace(value)
 }
@@ -415,6 +417,7 @@ func (c *compiledProxy) Snapshot() inspect.Snapshot {
 		{Key: "trusted", Value: trusted},
 		{Key: "hops", Value: int64(c.hops)},
 		{Key: "header", Value: header},
+		{Key: "hostForwarded", Value: c.isHostForwarded},
 		{Key: "resolved", Value: c.resolved.Load()},
 		{Key: "untrusted", Value: c.untrusted.Load()},
 	}}

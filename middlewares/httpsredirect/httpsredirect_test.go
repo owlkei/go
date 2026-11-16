@@ -166,7 +166,15 @@ func TestHTTPSRedirect_SchemeFromProxy(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "198.51.100.1")
 	r.Header.Set("X-Forwarded-Proto", "http")
 	r.Header.Set("X-Forwarded-Host", "app.example.com")
-	expectRedirect(t, serve(app, r), "https://app.example.com/ok", "http forwarded by a trusted proxy redirects to the forwarded host")
+	expectRedirect(t, serve(app, r), "https://internal.local/ok", "P9: without IsHostForwarded the redirect goes to the request's host")
+
+	hostApp := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, HTTPSRedirect{})
+	r = plainRequest(http.MethodGet, "internal.local:8080", "/ok")
+	r.RemoteAddr = "10.0.0.1:5000"
+	r.Header.Set("X-Forwarded-For", "198.51.100.1")
+	r.Header.Set("X-Forwarded-Proto", "http")
+	r.Header.Set("X-Forwarded-Host", "app.example.com")
+	expectRedirect(t, serve(hostApp, r), "https://app.example.com/ok", "P9: with IsHostForwarded the redirect goes to the forwarded host")
 
 	r = plainRequest(http.MethodGet, "example.com", "/ok")
 	r.RemoteAddr = "203.0.113.50:5000"
@@ -276,4 +284,22 @@ func TestHTTPSRedirect_Allocations(t *testing.T) {
 	}); got > 3 {
 		t.Error(test.DiffMessage(got, "<= 3", "R2: a redirect builds one string"))
 	}
+}
+
+func TestHTTPSRedirect_ForwardedHostIgnoredByDefault(t *testing.T) {
+	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"192.0.2.0/24"}}, HTTPSRedirect{})
+	r := plainRequest(http.MethodGet, "example.com", "/x")
+	r.RemoteAddr = "192.0.2.1:1234"
+	r.Header.Set("X-Forwarded-For", "9.9.9.9, 1.1.1.1")
+	r.Header.Set("X-Forwarded-Host", "evil.example")
+	expectRedirect(t, serve(app, r), "https://example.com/x", "M2: a forwarded host the proxy did not write is ignored")
+}
+
+func TestHTTPSRedirect_ClientProtoLeftOfProxyValueStillRedirects(t *testing.T) {
+	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"192.0.2.0/24"}}, HTTPSRedirect{})
+	r := plainRequest(http.MethodGet, "example.com", "/x")
+	r.RemoteAddr = "192.0.2.1:1234"
+	r.Header.Set("X-Forwarded-For", "9.9.9.9, 1.1.1.1")
+	r.Header.Set("X-Forwarded-Proto", "https, http")
+	expectRedirect(t, serve(app, r), "https://example.com/x", "M2: a client's https left of the proxy's http does not skip the redirect")
 }

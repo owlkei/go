@@ -44,9 +44,12 @@ the request lifecycle.
 `X-Forwarded-Host` / `-Proto` is accepted even when the trusted proxy never writes that header (nginx
 passes a client's `X-Forwarded-Host` through by default). `X-Forwarded-Host: evil.example` yields a
 cacheable `308 Location: https://evil.example/...` and poisoned links built from `proxy.Host(r)`; a
-spoofed `X-Forwarded-Proto: https` turns off the redirect. Fix: accept host and scheme only when
-their value count matches the walked `X-Forwarded-For` entries; document that the proxy must set or
-strip them.
+spoofed `X-Forwarded-Proto: https` turns off the redirect. Fix (design 0014, "Revision 2026-11-17"):
+the forwarded host is read only with the new option `proxy.Proxy.IsHostForwarded` (off by default);
+the scheme is the last value of `X-Forwarded-Proto` (the nearest trusted proxy's), never an earlier
+one; document that the proxy must set every header the app reads. The first fix (value count equal
+to the walked `X-Forwarded-For` entries) was withdrawn: it refused the normal one-value setup and a
+client could match the count.
 
 ### M3, medium: a non-string log key breaks masking
 `log/log_mask.go:162-163`, `log/log.go:368-370`. slog consumes one argument for a non-string key;
@@ -79,7 +82,9 @@ building, `csrf`, `cors`, `helmet`, `compress` (writer cap, `Range`, encoded res
 
 ## Decisions (orchestrator, 2026-11-17)
 
-- Fixed in roadmap 0005: M1, M2 (count-matched forwarded host and scheme, plus docs), M3, L1, L9.
+- Fixed in roadmap 0005: M1, M2 (architect, 2026-11-17: forwarded host opt-in through
+  `IsHostForwarded`, scheme from the last `X-Forwarded-Proto` value, plus docs; design 0014
+  "Revision 2026-11-17", which replaces the count-matched rule), M3, L1, L9.
 - Documented in the READMEs (step 14): L2, L3, L4, L5, L6, L7, L8.
 - Proposals for the public API review: L6 local-redirect helper, L7 escaped format arguments, L8
   host allowlist, L4 CAS hook, L3 coarser IPv6 keys.

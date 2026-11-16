@@ -17,7 +17,7 @@
 ## Key Features
 - An allowlist of exact names, `*.` patterns and IP literals, each with an optional port
 - `421 Misdirected Request` for an unknown host, `400 Bad Request` for an empty or overlong one (RFC 9110 § 15.5.20, § 7.2)
-- Reads the host from `proxy.Host`, so a forwarded host counts only behind a trusted proxy
+- Reads the host from `proxy.Host`, so a forwarded host counts only behind a trusted proxy with `IsHostForwarded` on
 - No implicit entry: `localhost` passes only when you list it
 - One map lookup per request, no allocation
 
@@ -103,8 +103,8 @@ Makes `HostCheck` a `common.MiddlewareFn`. It compiles the options on every call
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules
-- The checked value is `proxy.Host(r)`: the forwarded host behind a trusted `proxy`, else `r.Host`.
-  With no `proxy` bound, no forwarding header is read.
+- The checked value is `proxy.Host(r)`: the forwarded host behind a trusted `proxy` with
+  `IsHostForwarded` on, else `r.Host`. With no `proxy` bound, no forwarding header is read.
 - A match calls the next layer; nothing else changes.
 - No match answers `421` with message `Unknown host`. An empty host, or one longer than 255 bytes,
   answers `400` with message `Invalid host`. The response never repeats the host.

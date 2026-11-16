@@ -10,6 +10,7 @@
     - [TrustedProxies](#trustedproxies)
     - [TrustedHops](#trustedhops)
     - [Header](#header)
+    - [IsHostForwarded](#ishostforwarded)
   - [Constants](#constants)
   - [Functions](#functions)
     - [ClientIP](#clientip)
@@ -18,6 +19,9 @@
   - [`Proxy` Methods](#proxy-methods)
     - [NewMiddleware](#newmiddleware)
     - [Use](#use)
+  - [Configure your proxy](#configure-your-proxy)
+    - [nginx](#nginx)
+    - [Caddy](#caddy)
   - [How the client is chosen](#how-the-client-is-chosen)
   - [Limits](#limits)
   - [Security](#security)
@@ -27,6 +31,8 @@
 - No proxy header is ever trusted until you configure the proxies in front of the app
 - Client = the first address from the right that is not one of your proxies (MDN "Selecting an IP address")
 - `X-Forwarded-For` / `-Proto` / `-Host` or `Forwarded` (RFC 7239): one family, never both
+- The scheme is the value your nearest proxy wrote; values a client added before it never count
+- The forwarded host is off until you state that your proxies set it (`IsHostForwarded`)
 - The result is always a parsed `netip.Addr`, never header text: it cannot inject into logs or rate limit keys
 - Hostile headers are bounded: 16 entries, 512 bytes per entry, 255 bytes per host
 - No allocation per request; never refuses a request and never changes it
@@ -82,8 +88,10 @@ func main() {
 }
 ```
 
-A request from the load balancer `10.0.0.7` with `X-Forwarded-For: 198.51.100.20`,
-`X-Forwarded-Proto: https` and `X-Forwarded-Host: app.example.com` answers
+A request for `example.com` from the load balancer `10.0.0.7` with
+`X-Forwarded-For: 198.51.100.20`, `X-Forwarded-Proto: https` and
+`X-Forwarded-Host: app.example.com` answers `198.51.100.20 https example.com`. The host is
+`r.Host` because `IsHostForwarded` is off. With `IsHostForwarded: true`, the same request answers
 `198.51.100.20 https app.example.com`. The same headers from `203.0.113.5` (not a trusted proxy)
 answer `203.0.113.5 http example.com`.
 
@@ -138,6 +146,28 @@ mixing them lets a client add entries the proxy does not overwrite.
 proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: proxy.Forwarded}
 ```
 
+### IsHostForwarded
+Type: `bool`
+
+Default: `false`
+
+Required: `false`
+
+Reads the host the client asked for from `X-Forwarded-Host` (with `XForwarded`) or from `host=`
+(with `Forwarded`). Turn it on only when every trusted proxy sets that header itself and never
+passes a client's value through. Many proxy setups don't: the common nginx configuration sets
+`Host` and leaves `X-Forwarded-Host` to the client. A host the client chooses ends up in your
+redirects, links and password reset mails, so it is off by default and `proxy.Host` returns
+`r.Host`, the host your proxy routed on.
+
+You need it when your proxy rewrites `Host` to an internal name (for example nginx without
+`proxy_set_header Host $host`, or a platform router), and `hostcheck`, `csrf` or `httpsredirect`
+must see the public host. Bind `hostcheck` after `proxy` to accept only your own host names.
+
+```go
+proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}
+```
+
 ## Constants
 
 | Name | Type | Meaning |
@@ -179,9 +209,10 @@ the connection itself is TLS (`r.TLS != nil`).
 func Host(r *http.Request) string
 ```
 
-Returns the host the client asked for: the forwarded host when `proxy` resolved a valid one, else
-`r.Host`. A forwarded host is accepted only when it is at most 255 bytes of letters, digits, `.`,
-`-` and an optional `:port`, or a bracketed IPv6 literal.
+Returns the host the client asked for: `r.Host`, or the forwarded host when `IsHostForwarded` is on
+and `proxy` resolved a valid one. A forwarded host is accepted only when it is at most 255 bytes of
+letters, digits, `.`, `-` and an optional `:port`, or a bracketed IPv6 literal with an optional
+port.
 
 ## `Proxy` Methods
 
@@ -203,6 +234,54 @@ func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
 Makes `Proxy` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
+## Configure your proxy
+
+The proxy nearest to the app must set `X-Forwarded-For` (append the peer it saw) and
+`X-Forwarded-Proto` (overwrite it with the scheme it received). `proxy` reads only the last value
+of `X-Forwarded-Proto`, so a value a client sends never decides the scheme once the nearest proxy
+writes its own. Without that header, a TLS-terminating proxy makes every request look like plain
+HTTP, and `httpsredirect` redirects forever. Set `X-Forwarded-Host` only when you turn on
+`IsHostForwarded`, and then always overwrite it.
+
+### nginx
+nginx keeps the client's `X-Forwarded-Host` unless you set it, so overwrite every header you rely
+on:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+```go
+proxy.Proxy{TrustedProxies: []string{"127.0.0.1"}}
+```
+
+If nginx must send an internal `Host` to the app, also add
+`proxy_set_header X-Forwarded-Host $host;` and use `IsHostForwarded: true`.
+
+### Caddy
+Caddy's `reverse_proxy` keeps `Host` and writes `X-Forwarded-For`, `X-Forwarded-Proto` and
+`X-Forwarded-Host` itself. It replaces the values a client sends unless the client is in Caddy's
+own `trusted_proxies`:
+
+```caddy
+app.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+```go
+proxy.Proxy{TrustedProxies: []string{"127.0.0.1"}}
+```
+
+Because Caddy writes `X-Forwarded-Host` itself, you can turn on `IsHostForwarded` behind it. You
+need it only when you change the upstream host, for example with
+`header_up Host {upstream_hostport}`.
+
 ## How the client is chosen
 
 - **Peer not trusted** (`TrustedProxies` mode): the headers are ignored, the client is the peer.
@@ -213,10 +292,17 @@ only; the framework always calls `NewMiddleware`.
 - **Invalid entries** (`unknown`, `_hidden`, a host name, a zone, an empty entry, an entry over 512
   bytes) end the walk: the client is the last valid address read, or the peer. In hops mode an
   invalid entry at or right of position `n` gives the peer.
-- **Scheme and host** come from the same position as the client: for `X-Forwarded-Proto` the value
-  at the client's position from the right (or the leftmost value when there are fewer), for
-  `Forwarded` the `proto` / `host` of the client's element or of the nearest element to its right.
-  Only `http` and `https` (any case) are accepted; anything else keeps the connection's scheme.
+- **Scheme and host** are read only when the client came from a header entry. When the peer isn't
+  trusted, the header has no valid entry, or hops mode finds too few entries, the connection's
+  scheme and `r.Host` are kept.
+- **Scheme:** with `XForwarded`, the last value of `X-Forwarded-Proto` (the last header line, the
+  text after its last comma, spaces trimmed). Earlier values are never used. With `Forwarded`, the
+  `proto` of the client's element or of the nearest element to its right. Only `http` and `https`
+  (any case) are accepted; anything else (an empty last value, `ftp`, a value over 512 bytes) keeps
+  the connection's scheme.
+- **Host** (only with `IsHostForwarded`): the last value of `X-Forwarded-Host`, selected like the
+  scheme, or the `host` of the client's `Forwarded` element or of the nearest element to its
+  right. An invalid value keeps `r.Host`.
 - Entries a client writes left of the real chain never move the result.
 
 ## Limits
@@ -226,6 +312,11 @@ only; the framework always calls `NewMiddleware`.
 - The client IP is personal data in many jurisdictions: the access log prints it as `ip`.
 
 ## Security
+- Configure the nearest proxy to overwrite `X-Forwarded-Proto`. If it passes the client's header
+  through, a client can claim HTTPS on a plain connection.
+- Turn on `IsHostForwarded` only when every trusted proxy overwrites `X-Forwarded-Host` (or
+  `host=`). `proxy` can't tell a value your proxy wrote from one it passed through: only your proxy
+  configuration can.
 - Bind `proxy` before every reader. A reader bound before it sees the connection's values, which
   fails safe (for example `httpsredirect` keeps redirecting).
 - `X-Real-IP`, `True-Client-IP` and similar headers are never read.

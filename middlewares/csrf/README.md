@@ -20,7 +20,7 @@
 - Works for forms and `fetch` alike: nothing to add to your pages or your front end
 - No token to leak, no cookie to fixate, nothing stored in the request context
 - Requests from non-browser clients (curl, mobile apps, servers) pass untouched
-- Behind a trusted `proxy`, the `Origin` is compared with the forwarded host
+- Behind a trusted `proxy` with `IsHostForwarded` on, the `Origin` is compared with the forwarded host
 - No allocation on the common paths
 
 ## Usage
@@ -112,7 +112,7 @@ only; the framework always calls `NewMiddleware`.
   it equals the host.
 - The origin's host and port must both equal the request's: `http://example.com:9090` is refused
   on `example.com:8080`.
-- Behind a trusted `proxy` with a forwarded host, and without `Sec-Fetch-Site`, the origin's host
+- Behind a trusted `proxy` with `IsHostForwarded` on and a forwarded host, and without `Sec-Fetch-Site`, the origin's host
   is compared with `proxy.Host(r)`. With no `proxy` bound, `X-Forwarded-Host` and `Forwarded` are
   never read.
 - No cookie and no token header is ever set, on a pass or a refusal. The body is never read; the

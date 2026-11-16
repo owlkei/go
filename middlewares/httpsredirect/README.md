@@ -116,6 +116,11 @@ tests only; the framework always calls `NewMiddleware`.
   cannot claim HTTPS.
 - Behind a TLS-terminating proxy, bind `proxy` before `httpsredirect`, or every request looks like
   plain HTTP and redirects forever.
+- Behind `proxy`, the scheme is the last `X-Forwarded-Proto` value, the one your nearest proxy
+  wrote: a client's `https` before it doesn't turn the redirect off. Configure that proxy to
+  overwrite the header.
+- The redirect goes to the request's `Host` unless `proxy` has `IsHostForwarded` on. A
+  `X-Forwarded-Host` that a client sends can't move the redirect to another host by default.
 
 ## Benchmarks
 

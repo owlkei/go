@@ -209,7 +209,7 @@ request. Unused, it costs one length check. The lifecycle order does not change;
 
 `proxy` writes the resolved client (IP, scheme, host) into the request's `tracecontext.Scope`;
 `proxy.ClientIP` / `Scheme` / `Host` (backed by `tracecontext.ClientIP` / `IsHTTPS` / `Host`) are the
-only readers, used by `hostcheck`, `httpsredirect`, `helmet` (HSTS), `csrf` (forwarded host), the
+only readers, used by `hostcheck`, `httpsredirect`, `helmet` (HSTS), `csrf` (forwarded host, only with `proxy.IsHostForwarded`), the
 throttler and the `complete` event (`trace.Event.ClientIP`, printed as `ip` by the access log).
 No middleware of design 0014 copies the request, replaces its context or reads its body; refusals
 are `panic(&prebuiltException)` (1.2). Production order: `loadshed`, `proxy`, `hostcheck`,

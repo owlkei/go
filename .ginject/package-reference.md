@@ -153,7 +153,7 @@ type HTTPContext struct {
 | `GetID` | `GetID() string` | The scope's `Request`: 16 lowercase hex characters (`crypto/rand`), `""` before `Init` / after `Reset`; never from a header |
 | `Context` | `Context() context.Context` (promoted from `*http.Request`) | Carries the trace scope (`tracecontext.ScopeOf`); outlives the request |
 | `Body` | `Body() Body` | Lazily parses a JSON body (`application/json` or `application/*+json`, case-insensitive), never `nil`; 400 `Invalid JSON body` / `Cannot read request body`, 413 on `*http.MaxBytesError` |
-| `Form` / `File` | `Form() Form` / `File() File` | One multipart parse shared by both; never `nil`; 400 `Invalid form body`, 413 over the limit |
+| `Form` / `File` | `Form() Form` / `File() File` | One multipart parse shared by both; never `nil`; 400 `Invalid form body`, 413 over the limit; temp files removed after the request (`httpExchange.reset`) |
 | `AddAggregation` / `Aggregations` | `AddAggregation(a *aggregation.Aggregation)` / `Aggregations() []*aggregation.Aggregation` | Per-request list, cleared by `Reset` (same on `WSContext`) |
 
 Removed: the writer types `ctx.DataWriter`, `ctx.JSON`, `ctx.JSONP`, `ctx.Text` (`ctx/writer.go`).
@@ -397,7 +397,7 @@ type LogOptions struct {
     Level      slog.Level          // DebugLevel/InfoLevel/WarnLevel/ErrorLevel/FatalLevel; used as given
     LogFormat  logFormat           // TextFormat/JSONFormat/PrettyFormat; zero: Pretty on a terminal, JSON otherwise
     AddSource  bool                // the caller's file:line in all three formats
-    MaskFields []string            // case-insensitive rules; see log/README.md
+    MaskFields []string            // case-insensitive rules; see log/README.md; args pair exactly like slog (a non-string key takes one slot), LogValuer groups masked by path
 }
 ```
 
@@ -739,9 +739,10 @@ func (instance Throttler) NewGuard() common.Guarder // the compiled *guard (CanA
 type Header int
 const ( XForwarded Header = iota; Forwarded )
 type Proxy struct {
-    TrustedProxies []string // IPs or CIDRs of the proxies in front
-    TrustedHops    int      // or: how many proxies are in front (1-16)
-    Header         Header   // XForwarded (default) or Forwarded (RFC 7239); the other family is never read
+    TrustedProxies  []string // IPs or CIDRs of the proxies in front
+    TrustedHops     int      // or: how many proxies are in front (1-16)
+    Header          Header   // XForwarded (default) or Forwarded (RFC 7239); the other family is never read
+    IsHostForwarded bool     // read X-Forwarded-Host / host=; off: Host(r) is always r.Host
 }
 func (instance Proxy) NewMiddleware() common.MiddlewareFn
 func ClientIP(r *http.Request) netip.Addr // zero Addr when unknown
@@ -749,7 +750,7 @@ func Scheme(r *http.Request) string       // "https" or "http"
 func Host(r *http.Request) string
 ```
 
-Exactly one of `TrustedProxies` / `TrustedHops` (else panic `invalid proxy: set TrustedProxies or TrustedHops[, not both]`). Without `proxy` bound, nothing in Ginject reads `X-Forwarded-*`, `Forwarded` or `X-Real-IP`: the client is `r.RemoteAddr`, the scheme `r.TLS != nil`, the host `r.Host`. Trusted-proxies mode: entries right to left, client = first untrusted, at most 16 entries of 512 bytes, invalid entry ends the walk. The result is written into the request's `tracecontext.Scope` (`ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet`); the request is never changed. Bind it first.
+Exactly one of `TrustedProxies` / `TrustedHops` (else panic `invalid proxy: set TrustedProxies or TrustedHops[, not both]`). Without `proxy` bound, nothing in Ginject reads `X-Forwarded-*`, `Forwarded` or `X-Real-IP`: the client is `r.RemoteAddr`, the scheme `r.TLS != nil`, the host `r.Host`. Trusted-proxies mode: entries right to left, client = first untrusted, at most 16 entries of 512 bytes, invalid entry ends the walk. Scheme and host are read only when the client came from a header entry. `X-Forwarded-Proto`: the last value only (last line, after its last comma), whatever the counts; `Forwarded`: `proto` of the client's element or the nearest one to its right. The host (`X-Forwarded-Host` last value, or `host=`) is read only with `IsHostForwarded` (security review M2, design 0014 Revision 2026-11-17); no count rule. Snapshot field `hostForwarded`. The result is written into the request's `tracecontext.Scope` (`ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet`); the request is never changed. Bind it first.
 
 ### `middlewares/hostcheck`, `middlewares/httpsredirect`
 

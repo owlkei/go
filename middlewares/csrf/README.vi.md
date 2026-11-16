@@ -20,7 +20,7 @@
 - Hoạt động cho cả form lẫn `fetch`: không cần thêm gì vào trang hay front end
 - Không có token để lộ, không có cookie để bị cố định (fixation), không lưu gì trong request context
 - Client không phải trình duyệt (curl, ứng dụng mobile, server) đi qua nguyên vẹn
-- Sau một `proxy` tin cậy, `Origin` được so với host được chuyển tiếp (forwarded host)
+- Sau một `proxy` tin cậy bật `IsHostForwarded`, `Origin` được so với host được chuyển tiếp (forwarded host)
 - Không cấp phát bộ nhớ trên các đường đi thường gặp
 
 ## Cách Dùng
@@ -110,7 +110,7 @@ test; framework luôn gọi `NewMiddleware`.
   nó bằng host.
 - Host và port của origin phải cùng bằng của request: `http://example.com:9090` bị từ chối trên
   `example.com:8080`.
-- Sau một `proxy` tin cậy có forwarded host, và khi không có `Sec-Fetch-Site`, host của origin được
+- Sau một `proxy` tin cậy bật `IsHostForwarded` và có forwarded host, và khi không có `Sec-Fetch-Site`, host của origin được
   so với `proxy.Host(r)`. Không bind `proxy` thì `X-Forwarded-Host` và `Forwarded` không bao giờ
   được đọc.
 - Không bao giờ set cookie hay header token, dù cho qua hay từ chối. Body không bao giờ bị đọc;

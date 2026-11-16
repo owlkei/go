@@ -177,9 +177,18 @@ func TestHostCheck_TooLong_400(t *testing.T) {
 }
 
 func TestHostCheck_UsesForwardedHostOnlyBehindProxy(t *testing.T) {
-	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, HostCheck{Hosts: []string{"app.example.com"}})
+	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, HostCheck{Hosts: []string{"app.example.com"}})
+	defaultApp := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, HostCheck{Hosts: []string{"app.example.com"}})
 
 	r := hostRequest("internal.local:8080")
+	r.RemoteAddr = "10.0.0.1:5000"
+	r.Header.Set("X-Forwarded-For", "198.51.100.1")
+	r.Header.Set("X-Forwarded-Host", "app.example.com")
+	if w := serve(defaultApp, r); w.Code != http.StatusMisdirectedRequest {
+		t.Error(test.DiffMessage(w.Code, http.StatusMisdirectedRequest, "P9, H2: without IsHostForwarded r.Host is checked"))
+	}
+
+	r = hostRequest("internal.local:8080")
 	r.RemoteAddr = "10.0.0.1:5000"
 	r.Header.Set("X-Forwarded-For", "198.51.100.1")
 	r.Header.Set("X-Forwarded-Host", "app.example.com")

@@ -73,6 +73,10 @@ func TestNewProxy_ValidConfigs(t *testing.T) {
 		{TrustedHops: 16},
 		{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded},
 		{TrustedHops: 2, Header: Forwarded},
+		{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true},
+		{TrustedHops: 2, IsHostForwarded: true},
+		{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded, IsHostForwarded: true},
+		{TrustedHops: 1, Header: Forwarded, IsHostForwarded: true},
 	}
 	for i, p := range valid {
 		if text, ok := panicText(func() { p.NewMiddleware() }); ok {
@@ -294,33 +298,36 @@ func TestProxy_SpoofedPrefixCannotMoveResult(t *testing.T) {
 	}
 }
 
-func TestProxy_Scheme_AlignedWithClient(t *testing.T) {
-	r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Proto", "https, http")
-	if got := Scheme(r); got != "https" {
-		t.Error(test.DiffMessage(got, "https", "P8: the client's entry is 2nd from the right, so is the scheme"))
+func TestProxy_Scheme_LastValue(t *testing.T) {
+	cases := []struct {
+		p       Proxy
+		remote  string
+		headers []string
+		want    string
+		desc    string
+	}{
+		{trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Proto", "https, http"}, "http", "the last value, not the one at the client's position"},
+		{trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Proto", "http, https"}, "https", "the last value wins"},
+		{Proxy{TrustedHops: 2}, "198.51.100.1:80", []string{"X-Forwarded-For", "1.1.1.1, 2.2.2.2", "X-Forwarded-Proto", "https, http"}, "http", "hops mode reads the last value too"},
+		{Proxy{TrustedHops: 1}, "198.51.100.1:80", []string{"X-Forwarded-For", "1.1.1.1, 2.2.2.2", "X-Forwarded-Proto", "https, http"}, "http", "hops 1 reads the last value"},
+		{trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Proto", "http"}, "http", "the last header line"},
+		{trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "http", "X-Forwarded-Proto", "https"}, "https", "the last header line, https"},
+		{trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "http, http", "X-Forwarded-Proto", "https , \thttps"}, "https", "spaces and tabs around the last value are trimmed"},
 	}
-	r = resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Proto", "http, https")
-	if got := Scheme(r); got != "http" {
-		t.Error(test.DiffMessage(got, "http", "P8: aligned with the client's entry, not the last proxy"))
-	}
-	r = resolve(t, Proxy{TrustedHops: 2}, "198.51.100.1:80", "X-Forwarded-For", "1.1.1.1, 2.2.2.2", "X-Forwarded-Proto", "https, http")
-	if got := Scheme(r); got != "https" {
-		t.Error(test.DiffMessage(got, "https", "P8: hops mode aligns at position n"))
-	}
-	r = resolve(t, Proxy{TrustedHops: 1}, "198.51.100.1:80", "X-Forwarded-For", "1.1.1.1, 2.2.2.2", "X-Forwarded-Proto", "https, http")
-	if got := Scheme(r); got != "http" {
-		t.Error(test.DiffMessage(got, "http", "P8: hops mode n = 1 reads the last value"))
+	for _, c := range cases {
+		r := resolve(t, c.p, c.remote, c.headers...)
+		if got := Scheme(r); got != c.want {
+			t.Error(test.DiffMessage(got, c.want, "P8: "+c.desc))
+		}
 	}
 }
 
 func TestProxy_Scheme_SingleValue(t *testing.T) {
-	r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Proto", "https")
-	if got := Scheme(r); got != "https" {
-		t.Error(test.DiffMessage(got, "https", "P8: fewer values than the client's position, the leftmost value"))
-	}
-	r = resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https")
-	if got := Scheme(r); got != "https" {
-		t.Error(test.DiffMessage(got, "https", "P8: one entry, one value"))
+	for _, forwardedFor := range []string{"1.1.1.1, 10.0.0.2", "1.1.1.1", "9.9.9.9, 1.1.1.1", "9.9.9.9, 8.8.8.8, 1.1.1.1, 10.0.0.2"} {
+		r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", forwardedFor, "X-Forwarded-Proto", "https")
+		if got := Scheme(r); got != "https" {
+			t.Error(test.DiffMessage(got, "https", "P8: one value written by the proxy, whatever the number of entries: "+forwardedFor))
+		}
 	}
 }
 
@@ -332,7 +339,7 @@ func TestProxy_Scheme_CaseInsensitive(t *testing.T) {
 }
 
 func TestProxy_Scheme_Invalid(t *testing.T) {
-	for _, value := range []string{"ftp", "javascript", "", "https:", "https, ftp", "wss", "h ttps", "https\r\nX: y"} {
+	for _, value := range []string{"ftp", "javascript", "", "https:", "https, ftp", "https, ", "https,", "http, ftp", "wss", "h ttps", "https\r\nX: y"} {
 		r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", value)
 		if got := Scheme(r); got != "http" {
 			t.Error(test.DiffMessage(got, "http", fmt.Sprintf("P8: %q is not http or https, the connection's scheme is kept", value)))
@@ -347,6 +354,7 @@ func TestProxy_Scheme_Invalid(t *testing.T) {
 }
 
 func TestProxy_Host_Validated(t *testing.T) {
+	trustedPrivate := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}
 	valid := []string{"example.com", "example.com:8443", "[::1]:80", "[2001:db8::1]", "a-b.example.com.", "127.0.0.1:80", "Example.COM", strings.Repeat("a", 255)}
 	for _, host := range valid {
 		r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1", "X-Forwarded-Host", host)
@@ -368,15 +376,106 @@ func TestProxy_Host_Validated(t *testing.T) {
 	}
 }
 
-func TestProxy_Host_AlignedWithClient(t *testing.T) {
-	r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Host", "app.example.com, internal.local")
+func TestProxy_Host_LastValue(t *testing.T) {
+	p := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}
+	r := resolve(t, p, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Host", "evil.example, app.example.com")
 	if got := Host(r); got != "app.example.com" {
-		t.Error(test.DiffMessage(got, "app.example.com", "P9: the same selection as the scheme"))
+		t.Error(test.DiffMessage(got, "app.example.com", "P9: the last value is the nearest proxy's"))
+	}
+	r = resolve(t, p, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 10.0.0.2", "X-Forwarded-Host", "app.example.com, evil.example/x")
+	if got := Host(r); got != "example.com" {
+		t.Error(test.DiffMessage(got, "example.com", "P9: an invalid last value does not fall back to an earlier one"))
+	}
+}
+
+func TestProxy_Host_OffByDefault(t *testing.T) {
+	cases := []struct {
+		name    string
+		p       Proxy
+		remote  string
+		headers []string
+	}{
+		{"XForwarded trusted mode", trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Host", "app.example.com"}},
+		{"XForwarded hops mode", Proxy{TrustedHops: 1}, "198.51.100.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Host", "app.example.com"}},
+		{"Forwarded", Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded}, "10.0.0.1:80", []string{"Forwarded", "for=1.1.1.1;proto=https;host=app.example.com"}},
+		{"Forwarded hops mode", Proxy{TrustedHops: 1, Header: Forwarded}, "198.51.100.1:80", []string{"Forwarded", "for=1.1.1.1;proto=https;host=app.example.com"}},
+	}
+	for _, c := range cases {
+		r := resolve(t, c.p, c.remote, c.headers...)
+		if got := Host(r); got != "example.com" {
+			t.Error(test.DiffMessage(got, "example.com", "P9: "+c.name+": the forwarded host is not read without IsHostForwarded"))
+		}
+		if got := Scheme(r); got != "https" {
+			t.Error(test.DiffMessage(got, "https", "P8: "+c.name+": the scheme is still read"))
+		}
+	}
+}
+
+func TestProxy_XForwarded_ClientValuesLeftOfProxyValueIgnored(t *testing.T) {
+	headers := []string{"X-Forwarded-For", "9.9.9.9, 1.1.1.1", "X-Forwarded-Host", "evil.example, app.example.com", "X-Forwarded-Proto", "http, https"}
+	r := resolve(t, Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, "10.0.0.1:80", headers...)
+	if got := Host(r); got != "app.example.com" {
+		t.Error(test.DiffMessage(got, "app.example.com", "M2, P9: only the last host counts"))
+	}
+	if got := Scheme(r); got != "https" {
+		t.Error(test.DiffMessage(got, "https", "M2, P8: only the last proto counts"))
+	}
+	r = resolve(t, trustedPrivate, "10.0.0.1:80", headers...)
+	if got := Host(r); got != "example.com" {
+		t.Error(test.DiffMessage(got, "example.com", "M2, P9: without the option the client's host never counts"))
+	}
+	if got := Scheme(r); got != "https" {
+		t.Error(test.DiffMessage(got, "https", "M2, P8: the last proto counts"))
+	}
+}
+
+func TestProxy_Scheme_SpoofedClientProtoIsNotLastWhenProxyAppends(t *testing.T) {
+	r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "9.9.9.9, 1.1.1.1", "X-Forwarded-Proto", "https, http")
+	if got := Scheme(r); got != "http" {
+		t.Error(test.DiffMessage(got, "http", "M2, P8: a client's https is left of the proxy's http and never counts"))
+	}
+}
+
+func TestProxy_Host_ClientForwardedHostNeverChoosesHostByDefault(t *testing.T) {
+	for _, headers := range [][]string{
+		{"X-Forwarded-For", "9.9.9.9, 1.1.1.1", "X-Forwarded-Host", "evil.example"},
+		{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Host", "evil.example"},
+		{"X-Forwarded-Host", "evil.example"},
+		{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Host", "a.example", "X-Forwarded-Host", "evil.example"},
+	} {
+		r := resolve(t, trustedPrivate, "10.0.0.1:80", headers...)
+		if got := Host(r); got != "example.com" {
+			t.Error(test.DiffMessage(got, "example.com", fmt.Sprintf("M2, P9: %v: r.Host is kept", headers)))
+		}
+	}
+}
+
+func TestProxy_NoEntry_KeepsConnection(t *testing.T) {
+	cases := []struct {
+		name    string
+		p       Proxy
+		remote  string
+		headers []string
+	}{
+		{"no X-Forwarded-For", Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, "10.0.0.1:80", nil},
+		{"unknown entry", Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, "10.0.0.1:80", []string{"X-Forwarded-For", "unknown"}},
+		{"hops 2 with one entry", Proxy{TrustedHops: 2, IsHostForwarded: true}, "198.51.100.1:80", []string{"X-Forwarded-For", "1.1.1.1"}},
+		{"untrusted peer", Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, "198.51.100.1:80", []string{"X-Forwarded-For", "1.1.1.1"}},
+	}
+	for _, c := range cases {
+		headers := append([]string{"X-Forwarded-Proto", "https", "X-Forwarded-Host", "app.example.com"}, c.headers...)
+		r := resolve(t, c.p, c.remote, headers...)
+		if got := Scheme(r); got != "http" {
+			t.Error(test.DiffMessage(got, "http", "P13: "+c.name+": the scheme is the connection's"))
+		}
+		if got := Host(r); got != "example.com" {
+			t.Error(test.DiffMessage(got, "example.com", "P13: "+c.name+": the host is r.Host"))
+		}
 	}
 }
 
 func TestProxy_Forwarded_Parse(t *testing.T) {
-	p := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded}
+	p := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded, IsHostForwarded: true}
 	type result struct{ ip, scheme, host string }
 	cases := []struct {
 		lines []string
@@ -427,19 +526,19 @@ func TestProxy_OtherFamilyIgnored(t *testing.T) {
 	xff := []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Host", "evil.example"}
 	std := []string{"Forwarded", "for=2.2.2.2;proto=https;host=evil.example"}
 
-	r := resolve(t, Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded}, "10.0.0.1:80", xff...)
+	r := resolve(t, Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded, IsHostForwarded: true}, "10.0.0.1:80", xff...)
 	expectIP(t, ClientIP(r), "10.0.0.1", "P11: with Header Forwarded, X-Forwarded-* changes nothing")
 	if Scheme(r) != "http" || Host(r) != "example.com" {
 		t.Error(test.DiffMessage([]string{Scheme(r), Host(r)}, []string{"http", "example.com"}, "P11: scheme and host ignore X-Forwarded-*"))
 	}
 
-	r = resolve(t, trustedPrivate, "10.0.0.1:80", std...)
+	r = resolve(t, Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, "10.0.0.1:80", std...)
 	expectIP(t, ClientIP(r), "10.0.0.1", "P11: with Header XForwarded, Forwarded changes nothing")
 	if Scheme(r) != "http" || Host(r) != "example.com" {
 		t.Error(test.DiffMessage([]string{Scheme(r), Host(r)}, []string{"http", "example.com"}, "P11: scheme and host ignore Forwarded"))
 	}
 
-	r = resolve(t, Proxy{TrustedHops: 1}, "198.51.100.1:80", std...)
+	r = resolve(t, Proxy{TrustedHops: 1, IsHostForwarded: true}, "198.51.100.1:80", std...)
 	expectIP(t, ClientIP(r), "198.51.100.1", "P11: hops mode reads one family only")
 }
 
@@ -507,14 +606,14 @@ func (silentLogger) Fatal(string, ...any) {}
 func TestProxy_InApp_HandlerReadsClient(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
-	app.BindGlobalMiddlewares(Proxy{TrustedProxies: []string{"10.0.0.0/8"}})
+	app.BindGlobalMiddlewares(Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true})
 	app.Create(core.ModuleBuilder().Controllers(whoController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/who", nil)
 	r.RemoteAddr = "10.0.0.7:5000"
 	r.Header.Set("X-Forwarded-For", "198.51.100.20, 10.0.0.2")
-	r.Header.Set("X-Forwarded-Proto", "https, http")
-	r.Header.Set("X-Forwarded-Host", "app.example.com, internal")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	r.Header.Set("X-Forwarded-Host", "app.example.com")
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, r)
 	if got := w.Body.String(); got != "198.51.100.20|https|app.example.com" {
@@ -572,6 +671,13 @@ func TestProxy_Snapshot(t *testing.T) {
 	}
 	if got := field(snap, "resolved"); got != int64(0) {
 		t.Error(test.DiffMessage(got, int64(0), "I4: nothing resolved yet"))
+	}
+	if got := field(snap, "hostForwarded"); got != false {
+		t.Error(test.DiffMessage(got, false, "I4, P9: hostForwarded is false by default"))
+	}
+	on := Proxy{TrustedHops: 1, IsHostForwarded: true}.NewMiddleware().(inspect.Snapshotter).Snapshot()
+	if got := field(on, "hostForwarded"); got != true {
+		t.Error(test.DiffMessage(got, true, "I4, P9: hostForwarded is true with the option"))
 	}
 
 	counted := Proxy{TrustedProxies: []string{"10.0.0.0/8"}}.NewMiddleware()

@@ -55,6 +55,7 @@ type Proxy struct {
     TrustedProxies []string // IPs or CIDRs of the proxies in front: "10.0.0.0/8", "203.0.113.7"
     TrustedHops    int      // or: how many proxies are in front, when their addresses are unknown
     Header         Header   // which header family the proxies write; default XForwarded
+    IsHostForwarded bool    // the proxies set the forwarded host: read it (Revision 2026-11-17)
 }
 
 func (instance Proxy) NewMiddleware() common.MiddlewareFn
@@ -279,14 +280,20 @@ an IP address"; OWASP Cheat Sheet "HTTP Headers" and WSTG "Testing for Host Head
   last valid address read (the proxy that reported it), or the peer when none was read. In hops
   mode an invalid entry at or right of position n resolves to P2's values.
 - **P7** At most 16 entries are read; a seventeenth trusted entry ends the walk as in P6.
-- **P8** Scheme. `XForwarded`: with k = the position from the right of the client entry, the scheme
-  is value k from the right of `X-Forwarded-Proto`, or its leftmost value when it has fewer than k
-  values. `Forwarded`: the `proto` of the client's element, or of the nearest element to its right
-  that has one. Only `http` and `https` (any case) are accepted; anything else, or no value, keeps
-  P2's scheme.
-- **P9** Host: the same selection on `X-Forwarded-Host` / `host=`. A value is accepted when it is at
-  most 255 bytes of letters, digits, `.`, `-`, an optional `:port`, or a bracketed IPv6 literal with
-  an optional port; otherwise P2's host is kept.
+- **P8** (revised 2026-11-17, see "Revision 2026-11-17") Scheme, read only when the client IP came
+  from a header entry (P13). `XForwarded`: the last value of `X-Forwarded-Proto` (the last header
+  line, the text after its last comma, spaces and tabs trimmed), whatever the client's position and
+  however many values the header holds. No earlier value is ever used. `Forwarded`: the `proto` of
+  the client's element, or of the nearest element to its right that has one. Only `http` and
+  `https` (any case) are accepted; anything else (an empty last value, a value over 512 bytes, no
+  header) keeps P2's scheme.
+- **P9** (revised 2026-11-17) Host. With `IsHostForwarded: false` (the default), `proxy.Host(r)` is
+  `r.Host` in every case: `X-Forwarded-Host` and `host=` are not read, in either family and either
+  mode. With `IsHostForwarded: true`, and only when the client IP came from a header entry (P13):
+  `XForwarded` reads the last value of `X-Forwarded-Host` (selected as in P8); `Forwarded` reads the
+  `host` of the client's element, or of the nearest element to its right that has one. A value is
+  accepted when it is at most 255 bytes of letters, digits, `.`, `-`, an optional `:port`, or a
+  bracketed IPv6 literal with an optional port; otherwise P2's host is kept.
 - **P10** `Forwarded` elements are `;`-separated `name=value` pairs, names case-insensitive, values
   optionally quoted; unknown names are ignored; an element without `for`, or that does not parse, is
   an invalid entry (P6).
@@ -295,6 +302,11 @@ an IP address"; OWASP Cheat Sheet "HTTP Headers" and WSTG "Testing for Host Head
 - **P12** `proxy` writes its result into the request's scope and calls `next()`. It never refuses a
   request, writes no response header and does not change `r.RemoteAddr`, `r.Host`, `r.URL` or
   `r.Header`.
+- **P13** (2026-11-17, states what the code already did) Scheme and host are read from headers only
+  when P4 or P5 took the client IP from a header entry. When the peer is untrusted (P3), when the
+  walk read no valid entry (no header, or an invalid rightmost entry), or when hops mode fell back
+  (P5, P6), the request keeps P2's scheme and host whatever `X-Forwarded-Proto`,
+  `X-Forwarded-Host`, `proto=` or `host=` say.
 
 ### `hostcheck` (H)
 Sources: RFC 9110 § 7.2 (Host) and § 15.5.20 (421); OWASP WSTG-INPV-17 (Host header injection);
@@ -694,7 +706,8 @@ No `unsafe`, no manual inlining.
 | Spoofed `X-Forwarded-For` / `Forwarded` / `X-Real-IP` | read only by `proxy`, only from a trusted peer or at the configured hop (P2-P5); the leftmost (client-written) entries are never used; one header family (P11) |
 | Forged chain from inside the trusted range | 16-entry cap (P7), 512-byte entries (P6); the result is always a parsed `netip.Addr`, never header text, so it cannot inject into logs or keys |
 | IPv4-mapped IPv6 to dodge a CIDR | unmapped before matching (P2, P6) |
-| Forwarded host used for redirects, links, checks | syntax-validated (P9); `hostcheck` allowlists it; `httpsredirect` takes a fixed `Host` in production (R2) |
+| Forwarded host used for redirects, links, checks | not read unless `IsHostForwarded` (P9, Revision 2026-11-17); then the nearest proxy's value, syntax-validated; `hostcheck` allowlists it; `httpsredirect` takes a fixed `Host` in production (R2) |
+| Client-supplied `X-Forwarded-Proto` / `-Host` passed through by the proxy (security M2) | only the last value is read (P8, P9), so a value left of the proxy's own never counts; the host is off by default; the proxy must set (overwrite) every header the app reads, as it must for `X-Forwarded-For` |
 | DNS rebinding, host header injection, cache poisoning by host | `hostcheck` (H); responses never echo the host |
 | Open redirect | R2, R3: scheme and host are fixed or validated, the path cannot change them |
 | CSRF | S table; no token to leak, no cookie to fixate; `same-site` is refused, so a hijacked subdomain cannot post |
@@ -743,7 +756,7 @@ the scope and the hooks come from `core`. Hostile cases are part of each group.
 | K1-K5 | `core`: `TestResponseWriter_SetInner_ForwardsEveryMethod`, `TestHooks_RunOnceAfterLifecycle`, `_RunInReverseOrder`, `_RunOnMiddlewarePanic`, `_RunOnNoRoute`, `_RunOnAbortHandler`, `_RunAtWSHandshake`, `_ClearedForNextRequest`, `_BeforeCompleteEvent`, `TestServeHTTP_NoHook_NoAllocation` |
 | P2, P3 | `TestProxy_Unbound_UsesConnection`, `TestProxy_UntrustedPeer_IgnoresHeaders` (every header family, `X-Real-IP`, both lines repeated), `TestProxy_UnparsableRemoteAddr` |
 | P4-P7 | `TestProxy_RightmostUntrusted` (1, 2, 3 proxies), `_AllTrusted_Leftmost`, `_NoHeader_Peer`, `_MultipleHeaderLines`, `_Hops` (n = 1, 2; too few entries), `_EntryForms` (ports, brackets, mapped IPv6, zone, `unknown`, `_hidden`, empty, 513 bytes), `_InvalidEntryStops`, `_SeventeenEntries`, `_SpoofedPrefixCannotMoveResult` (client-written entries left of the real chain) |
-| P8-P11 | `TestProxy_Scheme_AlignedWithClient`, `_Scheme_SingleValue`, `_Scheme_Invalid`, `TestProxy_Host_Validated` (CR/LF cannot occur; spaces, `/`, `@`, 256 bytes), `TestProxy_Forwarded_Parse` (quoted, case, unknown pairs, IPv6), `TestProxy_OtherFamilyIgnored` |
+| P8-P11, P13 (names revised 2026-11-17: see "Revision 2026-11-17 › Tester") | `TestProxy_Scheme_LastValue`, `_Scheme_SingleValue`, `_Scheme_Invalid`, `TestProxy_Host_OffByDefault`, `_Host_LastValue`, `TestProxy_NoEntry_KeepsConnection`, `TestProxy_Host_Validated` (CR/LF cannot occur; spaces, `/`, `@`, 256 bytes), `TestProxy_Forwarded_Parse` (quoted, case, unknown pairs, IPv6), `TestProxy_OtherFamilyIgnored` |
 | P12 | `TestProxy_NeverRefuses_NeverMutatesRequest`; allocations: `TestProxy_Allocations` (0) |
 | H1-H4 | `TestHostCheck_Match` (case, trailing dot, port rules, wildcard depth, apex not matched, IP literals), `_Unknown_421`, `_Empty_400`, `_TooLong_400`, `_UsesForwardedHostOnlyBehindProxy`, `_LocalhostNotImplicit`, `_Allocations` |
 | R1-R3 | `TestHTTPSRedirect_HTTPS_Passes`, `_Redirects308_KeepsPathAndQuery`, `_FixedHost`, `_Port`, `_StripsRequestPort`, `_NoOpenRedirect` (`//evil`, `/\evil`, `@evil`, encoded CR/LF), `_InvalidHost_400`, `_SchemeFromProxy` |
@@ -869,3 +882,180 @@ not the screens:
 ## Decisions (2026-11-17)
 
 Approved by the user. All open questions answered as recommended (Q1-Q8), with the CSP note: Owlky's HTML snippets carry no inline styles, and apps should serve Owlky's assets from their own origin (`'self'`); per-request nonces for inline scripts come with the server-side rendering roadmap. Reconciled with 0015: the default store evicts by CLOCK (T4, Coordination 2) and the fixed window counts with `Incr` (T3). The user's condition: the public API stays as small and simple as the Product principles require, and every name is documented clearly (the docs will feed a website later).
+
+## Revision 2026-11-17: forwarded scheme and host (security M2)
+
+Status of this revision: Proposed (the rest of 0014 stays Approved). It replaces P8 and P9, adds P13
+and one option. Source: finding M2 in `docs/review/security-0005.md`, and the failed first fix
+(roadmap 0005, step 13).
+
+### Why the count rule is withdrawn
+The first fix accepted `X-Forwarded-Proto` / `-Host` only when they held as many values as
+`X-Forwarded-For` had entries. It is wrong in both directions:
+
+- It refuses the normal setup. Proxies overwrite the scheme and host with one value (nginx
+  `proxy_set_header X-Forwarded-Proto $scheme`, Go `ProxyRequest.SetXForwarded`, Caddy, Traefik,
+  Envoy, cloud load balancers) while `X-Forwarded-For` grows by one entry per hop, and a client can
+  add entries of its own. One value against two entries is the common case, not an attack.
+- It does not stop the attack. A client that sends as many values as there will be entries passes
+  the check.
+
+No rule can tell "the proxy wrote this value" from "the proxy passed the client's value through" by
+looking at the request: only the operator knows which headers the proxy sets. Every mature
+implementation settles it the same way, by configuration:
+
+| Implementation | Scheme | Host |
+|---|---|---|
+| Django | off until `SECURE_PROXY_SSL_HEADER` is set | off until `USE_X_FORWARDED_HOST`; `ALLOWED_HOSTS` on top |
+| ASP.NET `ForwardedHeaders` | one flag per header, none by default; values read from the right, `ForwardLimit` 1 | its own flag, plus `AllowedHosts`; `RequireHeaderSymmetry` (the count rule) is off by default since 2.1 because real proxies fail it |
+| Express `trust proxy` | read once the peer is trusted (leftmost value) | read once the peer is trusted; the documented source of host poisoning when the proxy does not overwrite |
+| Rails / Rack 3 | read from the right | read; `config.hosts` allowlist on top |
+| Caddy, Traefik (as proxies) | overwrite from an untrusted client, keep from a trusted proxy: one value reaches the app | same |
+| Go `httputil.ReverseProxy` | `SetXForwarded` overwrites with one value | same |
+
+### Decision
+1. **The host is opt-in** (`IsHostForwarded`, default false; P9). The common nginx snippet sets
+   `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` and leaves `X-Forwarded-Host` to the client;
+   the host is also the high-impact half of M2 (a cacheable `308` to another site, poisoned links
+   and reset mails). By default `proxy.Host(r)` is `r.Host`, which the proxy routed on. The option
+   is the operator's statement "my proxies set the forwarded host".
+2. **The scheme stays on, read from the last value only** (P8). Behind a TLS-terminating proxy the
+   scheme is needed for `httpsredirect` and `helmet` to work at all, so an opt-in would make the
+   first deployment of every user loop on redirects. The last value is the one the nearest trusted
+   proxy wrote or kept: a client's value left of it never counts, whatever the counts are. The
+   position alignment of the old P8 is dropped: it assumed every proxy appends to the scheme header,
+   which almost none does, and its "leftmost when fewer" fallback is what picked the client's value.
+3. **`Forwarded` keeps its element rule.** Each element is written by one proxy, so `proto` and
+   `host` are bound to the hop that wrote them. The host is still behind `IsHostForwarded`, so one
+   option means the same thing in both families.
+4. **`httpsredirect` does not change** (R1-R4). With the default it redirects to `r.Host` or to its
+   fixed `Host`.
+
+### Public API
+One addition: the field `IsHostForwarded bool` on `proxy.Proxy` (zero value: off).
+
+- Why a field: without it there is no safe way to use a forwarded host, and apps whose proxy
+  rewrites `Host` to an internal name (nginx without `proxy_set_header Host $host`, most platform
+  routers) need the public host for `hostcheck`, `csrf` (S5, S8) and redirects.
+- Why a boolean and not a set of header flags (ASP.NET): the client IP is the reason to bind
+  `proxy`, and the scheme must work by default, so only the host needs a choice.
+- Why no allowlist of hosts on `proxy`: `hostcheck` is that allowlist (one obvious way).
+- The name follows the `Is…` rule of `.ginject/conventions.md` and reads as the operator's
+  statement about the proxies.
+
+No other exported name changes. Unexported: the compiled option gains one boolean; the count helpers
+of the first fix go away.
+
+### Behavior
+P8, P9 and P13 in "Behavior › `proxy`" above are the contract. Worked cases (peer `10.0.0.1`,
+`TrustedProxies: 10.0.0.0/8`, `r.Host` `example.com`, plain connection):
+
+| `X-Forwarded-For` | `X-Forwarded-Proto` | `X-Forwarded-Host` | `IsHostForwarded` | `Scheme` | `Host` |
+|---|---|---|---|---|---|
+| `1.1.1.1` | `https` | `app.example.com` | false | `https` | `example.com` |
+| `1.1.1.1` | `https` | `app.example.com` | true | `https` | `app.example.com` |
+| `9.9.9.9, 1.1.1.1` | `https` | none | either | `https` | `example.com` |
+| `9.9.9.9, 1.1.1.1` | `http, https` | `evil.example, app.example.com` | true | `https` | `app.example.com` |
+| `9.9.9.9, 1.1.1.1` | `https, http` | `app.example.com, evil.example/x` | true | `http` | `example.com` |
+| `1.1.1.1, 10.0.0.2` | `https, http` | none | either | `http` | `example.com` |
+| `1.1.1.1` | `https, ` or `https, ftp` | none | either | `http` | `example.com` |
+| none | `https` | `app.example.com` | true | `http` | `example.com` |
+
+Two header lines `X-Forwarded-Proto: https` then `X-Forwarded-Proto: http` give `http` (the last
+line). Hops mode selects the same last value. Snapshot (I4): one more field, `hostForwarded`
+(`bool`), after `header`.
+
+### Performance
+Hot path, cheaper than before: the last value is one backward scan for a comma in the last line (at
+most 513 bytes), with no position loop and no counting; without `IsHostForwarded` the host header is
+not looked up. Still 0 allocations; the existing `BenchmarkProxy_*` must not regress.
+
+### Concurrency
+Unchanged: the new boolean is written once in `NewMiddleware` and only read afterwards.
+
+### Security
+- What the fix guarantees: a header value the nearest trusted proxy did not put last is never used;
+  a forwarded host is never used unless the operator turned it on.
+- What stays the operator's job (README, "Security"): the proxy must **set**, not pass through,
+  every header the app reads: `X-Forwarded-For` (as before), `X-Forwarded-Proto`, and
+  `X-Forwarded-Host` when `IsHostForwarded` is on. A proxy that sets none of them lets a client claim
+  `https` for its own request (no redirect, HSTS sent on plain HTTP) or `http` (a `308` to the same
+  URL, which a shared cache in front could store). The README gives the lines for nginx, Caddy and
+  Traefik.
+- With `IsHostForwarded`, bind `hostcheck` after `proxy`, and give `httpsredirect` a fixed `Host`.
+- Hops mode does not check the peer (finding L2, documented): there the same statements hold only
+  when the app is unreachable except through the proxies.
+
+### Impact
+- `middlewares/proxy/proxy.go`: the only code that changes (list below). `httpsredirect.go`,
+  `hostcheck`, `csrf`, `helmet`, `internal/tracecontext`: no code change.
+- Behavior change for users of the unreleased 0014 batch: a forwarded host needs
+  `IsHostForwarded: true`; a multi-value `X-Forwarded-Proto` is read from the right end.
+- Docs: `middlewares/proxy/README.md` (features, options table, `Host`, "Scheme and host",
+  "Security" with the proxy lines), `middlewares/httpsredirect/README.md` (drop the count
+  paragraph), `middlewares/hostcheck/README.md` lines 20 and 106, `middlewares/csrf/README.md` and
+  `README.vi.md` (forwarded host only with the option), `internal/tracecontext/README.md`,
+  `.ginject/package-reference.md`, `.ginject/request-pipeline.md`, `.ginject/anti-patterns-gotchas.md`.
+
+### Builder: changes in `middlewares/proxy/proxy.go`
+1. `Proxy` gains `IsHostForwarded bool`; `compiledProxy` gains `isHostForwarded`, set in
+   `loadProxyOptions`. No new panic.
+2. Delete `selectAligned` and `countEntries` (the uncommitted first fix).
+3. Replace `selectValue(lines, position)` with a last-value helper: the first entry the existing
+   `entryIterator` yields, `""` when there is none or it is over `maxEntryLength`, trimmed.
+4. `scheme`: for `XForwarded`, the last value of `X-Forwarded-Proto`; `Forwarded` unchanged.
+5. `host`: return `""` first when `isHostForwarded` is false (both families); for `XForwarded` the
+   last value of `X-Forwarded-Host`; `Forwarded` unchanged; then `IsValidHost` as today.
+6. `resolve` keeps its early return when `res.position == 0` (P13).
+7. `Snapshot`: add `{Key: "hostForwarded", Value: c.isHostForwarded}` after `header`.
+8. READMEs and knowledge base as listed in Impact, replacing the count-rule text now in the working
+   tree.
+
+### Tester: test changes
+`middlewares/proxy/proxy_count_test.go`: delete the file (all four tests assert the count rule).
+
+`middlewares/proxy/proxy_test.go`:
+
+| Test | Change |
+|---|---|
+| `TestProxy_Scheme_AlignedWithClient` | rename `TestProxy_Scheme_LastValue`; expectations become: `1.1.1.1, 10.0.0.2` + `https, http` → `http`; + `http, https` → `https`; hops 2 + `https, http` → `http`; hops 1 unchanged (`http`); add two header lines `https` then `http` → `http` |
+| `TestProxy_Scheme_SingleValue` | expectations unchanged (this is the nginx case); new message "P8: one value written by the proxy, whatever the number of entries"; add `9.9.9.9, 1.1.1.1` + `https` → `https` |
+| `TestProxy_Scheme_Invalid` | unchanged; add `"https, "` → `http` |
+| `TestProxy_Host_Validated` | the proxy is `Proxy{TrustedProxies: 10.0.0.0/8, IsHostForwarded: true}`; lists unchanged |
+| `TestProxy_Host_AlignedWithClient` | rename `TestProxy_Host_LastValue`, with the option: `1.1.1.1, 10.0.0.2` + `evil.example, app.example.com` → `app.example.com`; `app.example.com, evil.example/x` → `example.com` (no fallback to an earlier value) |
+| new `TestProxy_Host_OffByDefault` | without the option, `Host(r)` is `example.com` and `Scheme(r)` is still `https` for: `XForwarded` trusted mode, `XForwarded` hops mode, and `Header: Forwarded` with `for=1.1.1.1;proto=https;host=app.example.com` |
+| new `TestProxy_XForwarded_ClientValuesLeftOfProxyValueIgnored` | replaces `…ExtraClientValueCannotChooseHost`: `9.9.9.9, 1.1.1.1`, host `evil.example, app.example.com`, proto `http, https` → with the option `app.example.com` / `https`; without it `example.com` / `https` |
+| new `TestProxy_NoEntry_KeepsConnection` | P13, with the option: trusted peer, no `X-Forwarded-For`, proto `https`, host `app.example.com` → `http` / `example.com`; same for `X-Forwarded-For: unknown`; same for hops 2 with one entry |
+| `TestProxy_Forwarded_Parse`, `TestProxy_OtherFamilyIgnored` | add `IsHostForwarded: true` to the proxies; expectations unchanged |
+| `TestProxy_InApp_HandlerReadsClient` | proxy with the option; send `X-Forwarded-Proto: https` and `X-Forwarded-Host: app.example.com` (one value each); expected body unchanged |
+| `TestProxy_Snapshot` | `hostForwarded` is `false` by default and `true` with the option |
+| `TestNewProxy_ValidConfigs` | add the option with each mode |
+
+`middlewares/httpsredirect/httpsredirect_test.go`:
+
+| Test | Change |
+|---|---|
+| `TestHTTPSRedirect_SchemeFromProxy`, second case | default proxy → `https://internal.local/ok`; add the same request on an app whose proxy has `IsHostForwarded: true` → `https://app.example.com/ok` |
+| `…ProxyForwardedHostCountMismatchCannotRedirectElsewhere` | rename `TestHTTPSRedirect_ForwardedHostIgnoredByDefault`; body and expectation unchanged |
+| `…ProxyForwardedProtoCountMismatchCannotTurnOffRedirect` | delete (its request is the legitimate one-value case and now passes without a redirect); add `TestHTTPSRedirect_ClientProtoLeftOfProxyValueStillRedirects`: proto `https, http` → `308` to `https://example.com/x` |
+
+`middlewares/hostcheck/hostcheck_test.go`, `TestHostCheck_UsesForwardedHostOnlyBehindProxy`: the
+proxy gets `IsHostForwarded: true`; add a default-proxy case: `r.Host` `internal.local:8080`,
+`X-Forwarded-Host: app.example.com` from the trusted peer → `421`.
+
+`middlewares/csrf/csrf_test.go`, `TestCSRF_ForwardedHost`: the proxy gets `IsHostForwarded: true`;
+add a default-proxy case: origin `https://app.example.com` with that forwarded host → refused.
+
+`middlewares/helmet`, `guards/throttler`, the proxy benchmarks: no change.
+
+### Open questions (this revision)
+1. **`IsHostForwarded` also gates `Forwarded`'s `host=`.** Recommended: yes (one option, one
+   meaning, safe default). Alternative: gate `X-Forwarded-Host` only, since `host=` is bound to its
+   element; that makes the option's effect depend on `Header`.
+2. **Last value instead of alignment for `X-Forwarded-Proto`.** Recommended: yes. Cost: a chain in
+   which every proxy appends its own scheme (`https, http`) now reports the inner hop, and
+   `httpsredirect` would loop; the fix on that setup is to let the inner proxy keep the edge's value
+   (what Caddy and Traefik `trusted_proxies` and nginx `$http_x_forwarded_proto` do), and the loop
+   shows on the first request rather than as a silent hole.
+3. **The scheme is not opt-in.** Recommended: keep it on. Alternative: a second boolean, at the price
+   of a redirect loop in every default deployment behind a TLS-terminating proxy.

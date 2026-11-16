@@ -114,7 +114,8 @@ func TestCSRF_NullOrigin(t *testing.T) {
 }
 
 func TestCSRF_ForwardedHost(t *testing.T) {
-	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, CSRF{})
+	app := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}, CSRF{})
+	defaultApp := newApp(t, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, CSRF{})
 
 	forwarded := func(origin, host, remote string) *http.Request {
 		r := csrfRequest(http.MethodPost, "", origin)
@@ -126,6 +127,7 @@ func TestCSRF_ForwardedHost(t *testing.T) {
 		}
 		return r
 	}
+	expectRefused(t, serve(defaultApp, forwarded("https://app.example.com", "app.example.com", "10.0.0.1:80")), "P9, S8: without IsHostForwarded the forwarded host is not used")
 	expectPass(t, serve(app, forwarded("https://app.example.com", "app.example.com", "10.0.0.1:80")), "S8: the origin's host equals the forwarded host")
 	expectRefused(t, serve(app, forwarded("https://other.example.com", "app.example.com", "10.0.0.1:80")), "S8: another origin than the forwarded host")
 	expectRefused(t, serve(app, forwarded("https://app.example.com", "app.example.com", "203.0.113.50:80")), "S8: an untrusted peer's forwarded host is ignored")
