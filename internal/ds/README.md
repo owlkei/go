@@ -23,7 +23,7 @@ The package is internal: only code in the Ginject module can import it.
 - Precedence static > glob > parameter > wildcard, with backtracking, independent of insert order
 - Request segments are never interpreted: a literal `$` or `*` in a path is plain text
 - Bounded: at most 64 segments per pattern or path, every node visited at most once per lookup
-- No allocation for a static match or a miss
+- No allocation for a static match or a miss; none for a parameter match when the caller passes a buffer
 
 ## Usage
 
@@ -139,11 +139,11 @@ Returns the value of the pattern that matches `path`, and `params` followed by o
 
 #### Parameters
 1. `path` `string`: the request path.
-2. `params` `[]string`: values to keep in front of the captured ones; nil is fine.
+2. `params` `[]string`: values to keep in front of the captured ones, and the buffer the captured values are appended to; nil is fine.
 
 #### Returns
 1. `*T`: the matched value, or nil.
-2. `[]string`: on a match, `params` plus the captured values in path order (a new slice when there is a value to add, `params` itself otherwise); on a miss, `params` unchanged.
+2. `[]string`: on a match, `params` plus the captured values in path order (written into `params`' backing array when its capacity is enough, otherwise a new slice); on a miss, `params` unchanged.
 
 #### Usage
 
@@ -193,7 +193,7 @@ fmt.Println(tr.Len())
 - Each node keeps the parameter child, the wildcard child and a sorted glob list in their own fields; the map holds static segments only, so a segment costs one map lookup plus the globs, parameter and wildcard tried in order.
 - `Find` walks the path by index (no splitting, no copy) and recurses to backtrack; the depth is at most 64. Each node is reached at most once per call, so a lookup costs at most the size of the tree plus one glob test per glob child visited.
 - The segment count of a path is only computed when the path is longer than 128 bytes (a shorter path cannot hold 65 segments).
-- Captured values are written while the recursion unwinds into one slice allocated at the matched end, with the exact length: a parameter match allocates once, a static match or a miss never.
+- Captured values are written while the recursion unwinds into one slice taken at the matched end: the caller's buffer when its capacity is enough (`core` passes `c.ParamValues[:0]`, whose capacity the pooled context keeps), otherwise a new slice of the exact length. With a buffer a parameter match allocates nothing (about 80 ns against 130 ns before); a static match or a miss never allocates. The returned slice shares the buffer: it is valid until the owner reuses it.
 
 ## Benchmarks
 
@@ -205,11 +205,11 @@ goarch: amd64
 pkg: github.com/dangduoc08/ginject/internal/ds
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkMatchGlob-12                     	38214238	        31.31 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTrieFind_Static-12               	20467326	        58.69 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTrieFind_WithParam-12            	14275996	        80.33 ns/op	      16 B/op	       1 allocs/op
-BenchmarkTrieFind_DeepParam-12            	 9315248	       129.0 ns/op	      32 B/op	       1 allocs/op
-BenchmarkTrieFind_ParamReusedBuffer-12    	 9175647	       129.7 ns/op	      32 B/op	       1 allocs/op
-BenchmarkTrieFind_NoMatch-12              	20410244	        59.06 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTrieFind_Backtrack-12            	13237326	        90.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrieFind_Static-12               	26811342	        45.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrieFind_WithParam-12            	18982029	        62.22 ns/op	      16 B/op	       1 allocs/op
+BenchmarkTrieFind_DeepParam-12            	12026916	       101.3 ns/op	      32 B/op	       1 allocs/op
+BenchmarkTrieFind_ParamReusedBuffer-12    	15223388	        80.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrieFind_NoMatch-12              	25850860	        45.64 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTrieFind_Backtrack-12            	17222401	        71.18 ns/op	       0 B/op	       0 allocs/op
 BenchmarkTrieInsert-12                    	 1201609	       998.3 ns/op	    1312 B/op	      15 allocs/op
 ```

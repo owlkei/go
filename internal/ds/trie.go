@@ -191,8 +191,8 @@ func matchGlob(str, route string) bool {
 }
 
 func collect(params []string, captured int) []string {
-	if captured == len(params) {
-		return params
+	if captured <= cap(params) {
+		return params[:captured]
 	}
 	out := make([]string, captured)
 	copy(out, params)

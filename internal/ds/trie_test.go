@@ -446,3 +446,21 @@ func TestTrie_Insert_ReplacesValue(t *testing.T) {
 	}
 	checkFind(t, tr, "/", "second", nil, "T14")
 }
+
+func TestTrie_Find_BufferEqualsNilBuffer(t *testing.T) {
+	tr := newTrie(t, "/a/$/b/$/c", "/a/$/b/*", "/x/$", "/y/*/z/$", "/g/a*")
+	paths := []string{"/a/1/b/2/c", "/a/1/b/2/d", "/x/9", "/y/q/z/7", "/g/abc", "/none", "/x/9/extra"}
+	for _, size := range []int{0, 1, 2, 8} {
+		buf := make([]string, 0, size)
+		for _, path := range paths {
+			wantValue, wantParams := tr.Find(path, nil)
+			gotValue, gotParams := tr.Find(path, buf[:0])
+			if wantValue != gotValue {
+				t.Error(test.DiffMessage(gotValue, wantValue, "H1: same value with a buffer for "+path))
+			}
+			if !slices.Equal(wantParams, gotParams) {
+				t.Error(test.DiffMessage(gotParams, wantParams, "H1: same params with a buffer for "+path))
+			}
+		}
+	}
+}
