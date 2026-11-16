@@ -84,6 +84,15 @@ injected crashes, and the API surface (one obvious way).
 timeouts, response size limits, retries only for idempotent requests, redirect bounds, SSRF guards
 for user-supplied URLs). Until then apps use `net/http` with `trace.Transport` (0005 step 2).
 
+Circuit breaker (decided 2026-11-17): part of the new HTTP client, after its default timeouts and
+bounded retries (idempotent requests only). Opt-in, per host, as an `http.RoundTripper` so any
+client built on `net/http` can use it; closed / open / half-open with a failure-rate threshold over
+a window; fails at once while open. A few atomics per call, nothing while idle, state readable by
+the devtools (state, failure rate, next probe). Not urgent: timeouts prevent most cascading
+failures, and `loadshed`'s adaptive limit (0005) already protects the server when a dependency
+slows down; the breaker adds failing fast and giving the dependency time to recover. A storage
+module over an external database may reuse it for its connections.
+
 ## Timeout interceptor (with the interceptor review)
 
 Decided 2026-11-17 (roadmap 0005 discussion): a timeout per route or controller is a built-in
