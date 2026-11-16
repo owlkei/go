@@ -51,6 +51,11 @@ and race-freedom first.
 
 Ginject is for vibecoders and small teams building with AI, not for enterprises tuning every knob.
 
+**Two first-class outputs** (2026-11-17): REST APIs and server-side rendered HTML pages. SSR uses Go's
+`html/template` with Owlky's framework-free HTML version (the reason Owlky ships HTML alongside
+React): one Go binary serves finished pages, with no JSON API plus a client app to build and run.
+Designs consider both outputs (errors, security headers such as CSP, forms, the route DSL).
+
 - **Powerful inside, small outside.** Build everything a production backend needs, but in the
   framework's lower layers. The surface users see is as small as possible: they learn only what they
   must, and use only what they should.

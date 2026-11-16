@@ -125,6 +125,10 @@ courts (SaaS for court owners). Keep it small: one court type, one payment gatew
 
 ## Server-rendered HTML controllers (before the first release)
 
+Priority: one of the two focuses of Ginject (CLAUDE.md › Product principles). Planned right after
+the public API review (which must design the render route kind), before the 0.x alpha; the court
+booking app (real app phase) is built with it.
+
 Decided 2026-11-17: Ginject renders HTML pages on the server, so an app built with Owlky's
 framework-free HTML version needs no separate JSON API plus a React client (cheaper on small
 machines: no client bundle, no second app). Details are discussed when the roadmap starts. Known
