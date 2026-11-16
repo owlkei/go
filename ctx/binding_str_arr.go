@@ -69,7 +69,7 @@ func setStrArr(f *bindField, values []string, dst reflect.Value) bool {
 	switch f.strArr {
 	case strArrScalar:
 		if s, ok := slice.Get(values, f.tagIndex); ok {
-			parseStr(f.kind, s, dst, keepOnParseError(f.kind))
+			parseStr(f.kind, s, dst)
 		}
 		return true
 
@@ -95,7 +95,7 @@ func setStrArr(f *bindField, values []string, dst reflect.Value) bool {
 		} else {
 			kind := elem.Kind()
 			for i, s := range values {
-				parseStr(kind, s, out.Index(i), false)
+				parseStr(kind, s, out.Index(i))
 			}
 		}
 		dst.Set(out)
@@ -104,15 +104,7 @@ func setStrArr(f *bindField, values []string, dst reflect.Value) bool {
 	return false
 }
 
-func keepOnParseError(kind reflect.Kind) bool {
-	switch kind {
-	case reflect.Int, reflect.Int64, reflect.Uint64, reflect.Float64, reflect.Complex128:
-		return true
-	}
-	return false
-}
-
-func parseStr(kind reflect.Kind, s string, dst reflect.Value, keep bool) {
+func parseStr(kind reflect.Kind, s string, dst reflect.Value) {
 	switch kind {
 	case reflect.String:
 		dst.SetString(s)
@@ -122,32 +114,32 @@ func parseStr(kind reflect.Kind, s string, dst reflect.Value, keep bool) {
 		dst.SetBool(v)
 
 	case reflect.Int:
-		if v, err := strconv.Atoi(s); err == nil || keep {
+		if v, err := strconv.Atoi(s); err == nil {
 			dst.SetInt(int64(v))
 		}
 
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if v, err := strconv.ParseInt(s, 10, dst.Type().Bits()); err == nil || keep {
+		if v, err := strconv.ParseInt(s, 10, dst.Type().Bits()); err == nil {
 			dst.SetInt(v)
 		}
 
 	case reflect.Uint:
-		if v, err := strconv.ParseUint(s, 10, 0); err == nil || keep {
+		if v, err := strconv.ParseUint(s, 10, 0); err == nil {
 			dst.SetUint(v)
 		}
 
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if v, err := strconv.ParseUint(s, 10, dst.Type().Bits()); err == nil || keep {
+		if v, err := strconv.ParseUint(s, 10, dst.Type().Bits()); err == nil {
 			dst.SetUint(v)
 		}
 
 	case reflect.Float32, reflect.Float64:
-		if v, err := strconv.ParseFloat(s, dst.Type().Bits()); err == nil || keep {
+		if v, err := strconv.ParseFloat(s, dst.Type().Bits()); err == nil {
 			dst.SetFloat(v)
 		}
 
 	case reflect.Complex64, reflect.Complex128:
-		if v, err := strconv.ParseComplex(strings.ReplaceAll(s, " ", ""), dst.Type().Bits()); err == nil || keep {
+		if v, err := strconv.ParseComplex(strings.ReplaceAll(s, " ", ""), dst.Type().Bits()); err == nil {
 			dst.SetComplex(v)
 		}
 	}

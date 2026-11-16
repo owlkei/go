@@ -79,3 +79,45 @@ func TestQuery_Bind(t *testing.T) {
 		t.Error(test.DiffMessage(len(fls), 2, "Bind should report a FieldLevel per bound field"))
 	}
 }
+
+type queryRangeDTO struct {
+	Int     int       `bind:"int"`
+	Int64   int64     `bind:"int64"`
+	Uint64  uint64    `bind:"uint64"`
+	Float64 float64   `bind:"float64"`
+	Ints    []int     `bind:"ints"`
+	Floats  []float64 `bind:"floats"`
+}
+
+func TestQuery_Bind_OutOfRangeNumberIsZero(t *testing.T) {
+	q := Query{
+		"int":     {"99999999999999999999"},
+		"int64":   {"-99999999999999999999"},
+		"uint64":  {"99999999999999999999"},
+		"float64": {"1e400"},
+		"ints":    {"99999999999999999999", "7"},
+		"floats":  {"1e400", "2.5"},
+	}
+	result, _ := q.Bind(queryRangeDTO{})
+	dto := result.(queryRangeDTO)
+
+	expected := queryRangeDTO{Ints: []int{0, 7}, Floats: []float64{0, 2.5}}
+	if dto.Int != 0 || dto.Int64 != 0 || dto.Uint64 != 0 || dto.Float64 != 0 {
+		t.Error(test.DiffMessage(dto, expected, "an out-of-range number must leave the field zero, never a saturated value"))
+	}
+	if len(dto.Ints) != 2 || dto.Ints[0] != 0 || dto.Ints[1] != 7 {
+		t.Error(test.DiffMessage(dto.Ints, expected.Ints, "an out-of-range element must be zero and the others bound"))
+	}
+	if len(dto.Floats) != 2 || dto.Floats[0] != 0 || dto.Floats[1] != 2.5 {
+		t.Error(test.DiffMessage(dto.Floats, expected.Floats, "an out-of-range float element must be zero, not +Inf"))
+	}
+}
+
+func TestQuery_Bind_MalformedNumberIsZero(t *testing.T) {
+	q := Query{"int": {"12abc"}, "float64": {"x"}}
+	result, _ := q.Bind(queryRangeDTO{})
+	dto := result.(queryRangeDTO)
+	if dto.Int != 0 || dto.Float64 != 0 {
+		t.Error(test.DiffMessage(dto, queryRangeDTO{}, "a malformed number must leave the field zero"))
+	}
+}
