@@ -40,7 +40,7 @@ HTTP work before WebSocket.
 | 12 | Remove `modules/storage` and `modules/httpclient`: the packages, their mentions in CLAUDE.md, `.ginject/` and the agents; `sample/shop` on in-memory repositories in the sample, `sample/benchmarks` on `net/http` with `trace.Transport` | light | - | 2 | no import or mention of either package left; the samples build and serve the same routes; `make check` green | todo |
 | 13 | Security audit of the HTTP side (`ginject-security`: govulncheck, gosec, request handling, every middleware, guard and module above); fixes: dependency updates and small patches directly, behavior changes through the tester | light | - | 1-12 | no critical or high finding left open; the audit report in `docs/review/security-0005.md` | todo |
 | 14 | READMEs of every touched or new package, a "Production checklist" in the main README (which middlewares to turn on, in which order), and the knowledge base (`/kb update`) | light | - | 1-13 | every new or changed name documented; KB matches the code | todo |
-| 15 | Final HTTP report: the 0004 measurements again in production settings (JSON log, real output, GOMAXPROCS 1, 2 and all, process CPU per request), plus each middleware and module; `docs/review/http-0005.md` | light | - | 1-14 | the review file, compared with `http-0004.md` | todo |
+| 15 | Final HTTP report: the 0004 measurements again in production settings (JSON log, real output, GOMAXPROCS 1, 2 and all, process CPU per request), plus each middleware and module; `bench/` load test on the release build with logging on, against the other frameworks with their production loggers (Decisions); `docs/review/http-0005.md` | light | - | 1-14 | the review file, compared with `http-0004.md`; headline numbers with logging on | todo |
 
 ## Decisions
 - **Merged from the 0004 review:** the request scope cost (step 1) is part of this roadmap.
@@ -69,6 +69,13 @@ HTTP work before WebSocket.
 - **Measurements in production settings** (decided 2026-11-17): JSON log to a real output, process
   CPU per request, GOMAXPROCS 1 and 2 as well as all cores, and lines or work actually done counted
   (a component that drops work must not look cheap).
+- **Speed is measured on the most optimized build, with production logging** (decided 2026-11-17):
+  a release binary (no `-race`, no coverage, `-trimpath`, PGO when a profile exists) served over a
+  real socket under load, besides the micro benchmarks. Ginject logs as in production (built-in
+  logger, JSON, access log on, to a real output). Against another framework: each one runs with its
+  own production request logger when it has one (Gin's Logger, Echo's RequestLogger, Chi's Logger,
+  Fiber's logger); against one without a logger (`net/http`), Ginject's log is off for that
+  comparison. Results with logging on are the headline: nobody runs production without logs.
 - **`memorycache` is kept and fixed, not rewritten** (decided 2026-11-17): the sharded map stays;
   the always-on sweeper and the missing size bound go.
 - **Rate limiting stays an opt-in guard** (`guards/throttler`), decided in 0004.
