@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -1224,3 +1225,59 @@ func TestAccessLog_CorrelatesByEventIDNotSpanID(t *testing.T) {
 		t.Error(test.DiffMessage(got, []string{"G1 …"}, "E7: stages are joined by Event.ID, so span IDs don't matter"))
 	}
 }
+
+func TestAccessLog_PrettyStagesAsTree(t *testing.T) {
+	tr, out := builtinAccessLog(t, 2)
+	tr.Emit(stageEvent("r1", trace.StageMiddleware, "cors.CORS", 5*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageMiddleware, "helmet.LongHelmetName", 20*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageHandler, "h.READ_ping", 75*time.Millisecond))
+	tr.Emit(completeEvent("r1", 200, "/ping", 100*time.Millisecond))
+	got := out.String()
+	plain := ansiPattern.ReplaceAllString(got, "")
+	lines := strings.Split(plain, "\n")
+	find := func(sub string) string {
+		for _, l := range lines {
+			if strings.Contains(l, sub) {
+				return l
+			}
+		}
+		return ""
+	}
+	if l := find("── middleware"); strings.TrimSpace(strings.SplitN(l, "middleware", 2)[1]) != "" {
+		t.Error(test.DiffMessage(l, "middleware with no value on its row", "A2 (2026-11-17): a stage is a branch in Pretty"))
+	}
+	cors, helmet, ping := find("├── CORS"), find("└── LongHelmetName"), find("└── READ_ping")
+	if !strings.HasPrefix(cors, "  │   ├── CORS ") || !strings.HasSuffix(cors, "5ms (5%)") {
+		t.Error(test.DiffMessage(cors, "  │   ├── CORS … 5ms (5%)", "A2 (2026-11-17): one child per stage event"))
+	}
+	if !strings.HasSuffix(helmet, "20ms (20%)") || !strings.HasSuffix(ping, "75ms (75%)") {
+		t.Error(test.DiffMessage(plain, "LongHelmetName 20ms (20%), READ_ping 75ms (75%)", "A2 (2026-11-17): children carry duration and percent"))
+	}
+	column := func(line, sub string) int {
+		i := strings.Index(line, sub)
+		if i < 0 {
+			return -1
+		}
+		return utf8.RuneCountInString(line[:i])
+	}
+	col := column(cors, "5ms")
+	if col < 0 || column(helmet, "20ms") != col || column(ping, "75ms") != col || column(find("── total"), "100ms") != col {
+		t.Error(test.DiffMessage(plain, "durations in one column", "A2 (2026-11-17): children align with the other values"))
+	}
+	if !strings.Contains(got, string(color.Gray)+"5ms (5%)") || !strings.Contains(got, string(color.Blue)+"75ms (75%)") {
+		t.Error(test.DiffMessage(got, "children colored by duration", "A2: Pretty colors each duration by its threshold"))
+	}
+}
+
+func TestAccessLog_PrettyUserStageLikeValueStaysString(t *testing.T) {
+	out := &outBuf{}
+	restore := logpipe.SetStdout(out)
+	defer restore()
+	logger := log.NewLog(&log.LogOptions{LogFormat: log.PrettyFormat})
+	logger.Info("GET /forged", "middleware", "CORS 5ms (4%), CSRF 2s (96%)")
+	if !strings.Contains(out.String(), "CORS 5ms (4%), CSRF 2s (96%)") {
+		t.Error(test.DiffMessage(out.String(), "one string", "A2 (2026-11-17): user records are never drawn as a stage tree"))
+	}
+}
+
+var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")

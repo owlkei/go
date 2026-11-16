@@ -309,7 +309,7 @@ real handlers yield.
 | Part | Idle | Worst case |
 |---|---|---|
 | Sink, never used | about 200 B, 0 goroutines, 0 timers | - |
-| Sink, after use, queue empty | one buffer of at most 64 KiB, 0 goroutines, 0 timers, 0 wakeups | 2 buffers of at most `queueLimit` each: 2 MiB, 1 goroutine |
+| Sink, after use, queue empty | two buffers of at most 64 KiB each, 0 goroutines, 0 timers, 0 wakeups | 2 buffers of at most `queueLimit` each: 2 MiB, 1 goroutine |
 | Encoders (H1) | freed by the GC | one per log call in progress, 512 B to 4 KiB kept each |
 | `From` | nothing | 2 allocs per scope, freed with the scope |
 | Access log | the shards of 0010 A7; no goroutine, no ticker, no queue (about 120 KiB and 1 wakeup per second less than today) | 0010 A7 unchanged |
@@ -487,6 +487,21 @@ sleeping, no polling. Concurrent tests run under `-race`.
   - The sink keeps one buffer of at most 64 KiB once the queue is empty (the spare is always
     dropped) and regrows a released queue straight to 64 KiB. A truncated record gets the color
     reset only when its kept part holds an escape sequence.
+- 2026-11-17 (step 8 measurements, approved by the user):
+  - **Both buffers kept, up to 64 KiB each.** Dropping the spare made every burst allocate it
+    again (Static with the access log: 8.8 KiB of garbage a request). The sink now keeps both
+    buffers when the queue empties, releases only a buffer grown past 64 KiB, and grows an empty
+    buffer from 4 KiB by doubling. Idle: at most 128 KiB, still no goroutine and no timer. Static
+    with the access log: 1.9 KiB a request.
+  - **Pretty draws stages as a tree again.** In an access line rendered by Pretty, a stage value
+    whose every item is `<name> <duration> (<percent>%)` is drawn as a branch with one child per
+    item (name as the key, `<duration> (<percent>%)` colored by `color.ForDuration`), as before
+    0012. JSON, Text and adapters keep the one string of A2; nothing changes on the request path
+    outside Pretty. Values that don't match (a masked stage) stay one string.
+  - The +1 µs target of 0010 compared a worker that dropped lines it could not keep up with
+    (`select … default`, about 16 µs a line, so at most one line in ten in the benchmark) with a
+    pipeline that writes every line; the comparison is per request CPU at GOMAXPROCS 1 and 2,
+    every line written.
 
 ## Decisions (2026-11-16)
 

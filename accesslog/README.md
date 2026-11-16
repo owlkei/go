@@ -67,7 +67,7 @@ A JSON line:
 {"time":"2026-11-16T10:00:00+07:00","level":"INFO","msg":"/api/v1/users","trace_id":"019a8b3c4d5e7f3a9c1e2b4d6f8a0c2e","request":"a0eef3e5b7154c2e","transport":"HTTP","code":200,"operation":"GET","middleware":"CORS 120µs (4%)","handler":"READ_users 2ms (68%)","total":"2.9ms"}
 ```
 
-In the pretty format of the built-in logger each duration, `total` included, is printed in a color picked by its value: gray below 10 ms, then green (10 ms), blue (50 ms), yellow (100 ms), orange (300 ms) and red from 1 s. JSON, Text and a logger you bring get the plain string, and the logger you bring receives exactly the pairs above. Your own lines are never colored this way, even when a value looks like a duration.
+In the pretty format of the built-in logger each stage is a branch of the tree with one row per event (the name as the key, `<duration> (<percent>%)` as the value), and each duration, `total` included, is printed in a color picked by its value: gray below 10 ms, then green (10 ms), blue (50 ms), yellow (100 ms), orange (300 ms) and red from 1 s. JSON, Text and a logger you bring get the plain string, and the logger you bring receives exactly the pairs above. Your own lines are never colored this way, even when a value looks like a duration.
 
 - Durations have two decimals of their unit (`1.23µs`, `1.23ms`, `1.23s`) and are written as they are below 1 µs (`500ns`).
 - A percentage is the share of the sum of the stage durations, not of `total`. The largest remainders receive the extra points (ties go to the earlier entry), so the shares sum to exactly 100; they are all 0 when the sum is 0.
@@ -152,7 +152,7 @@ Measured with `BenchmarkAccessLog_Line_6Stages` (6 stage events and `complete`, 
 | Logger | Time | Allocations |
 |---|---|---|
 | Built-in, JSON | about 4 µs | 4 (the request's record, the line's text, its attributes, slog's record) |
-| Built-in, Pretty | about 6 µs | 21 |
+| Built-in, Pretty | about 8 µs | 39 |
 | A logger you bring | about 1.5 µs plus its own cost | 16 (the arguments are boxed into `[]any`) |
 
 All of it runs on the request goroutine. The worker goroutine of earlier versions took about 16 µs and 102 allocations per line on another goroutine and capped the access log at about 65,000 lines per second.
@@ -162,7 +162,7 @@ All of it runs on the request goroutine. The worker goroutine of earlier version
 - Pending requests live in 64 shards picked from two bytes of the ID, each a mutex, a map and an eviction list; a stage is kept as `stage, name, duration`, the first 8 inline in the request's record.
 - The `complete` event takes the record out of its shard; the line is formatted and logged after the shard's lock is released.
 - The texts of every stage and of `total` are written into one buffer (durations appended without `time.Duration.String`'s allocation) and turned into one string; each value is a slice of it.
-- With the built-in logger the line is passed as `slog` attributes (no boxing) through an internal method that also marks it as an access line, which the Pretty format colors. Any other logger gets `Info(msg, args...)`.
+- With the built-in logger the line is passed as `slog` attributes (no boxing) through an internal method that also marks it as an access line, which the Pretty format colors and draws as a tree (it splits each stage string into its entries; nothing changes for other formats). Any other logger gets `Info(msg, args...)`.
 - An atomic flag, read first by the listener, ignores events after `Stop`.
 
 ## Benchmarks
@@ -181,7 +181,7 @@ BenchmarkAccessLog_Request_1Stage-12              	 1506247	       777.7 ns/op	 
 BenchmarkAccessLog_Request_6Stages-12             	  653250	      1992 ns/op	    1072 B/op	      16 allocs/op
 BenchmarkAccessLog_Request_6Stages_Parallel-12    	 1000000	      1452 ns/op	    2240 B/op	      18 allocs/op
 BenchmarkAccessLog_Line_6Stages-12                	  319255	      4516 ns/op	    1426 B/op	       4 allocs/op
-BenchmarkAccessLog_Line_6Stages_Pretty-12         	  179842	      5903 ns/op	    2858 B/op	      21 allocs/op
+BenchmarkAccessLog_Line_6Stages_Pretty-12         	  143613	      8317 ns/op	    3770 B/op	      39 allocs/op
 BenchmarkFormatDuration-12                        	26621779	        46.36 ns/op	       8 B/op	       1 allocs/op
 BenchmarkColorForDuration-12                      	401468427	         2.875 ns/op	       0 B/op	       0 allocs/op
 BenchmarkShortName-12                             	162431871	         7.422 ns/op	       0 B/op	       0 allocs/op

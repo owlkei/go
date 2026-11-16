@@ -119,6 +119,12 @@ func (h *prettyHandler) appendRecord(buf []byte, r slog.Record, access bool) []b
 
 	nodes := make([]node, len(items))
 	for i, item := range items {
+		if access {
+			if kids, ok := stageChildren(item.val); ok {
+				nodes[i] = p.buildStageNode(rowPrefix, item.key, kids)
+				continue
+			}
+		}
 		nodes[i] = p.buildNode(rowPrefix, item, 0)
 	}
 	for i, n := range nodes {
@@ -277,6 +283,61 @@ func (p *prettyBuffer) buildNode(prefix string, item kv, depth int) node {
 		}
 	}
 	return n
+}
+
+func (p *prettyBuffer) buildStageNode(prefix, key string, kids []kv) node {
+	if w := utf8.RuneCountInString(prefix) + branchWidth + utf8.RuneCountInString(key); w > p.width {
+		p.width = w
+	}
+	childPrefix := indent(prefix, false)
+	n := node{kv: kv{key, reflect.ValueOf(key)}, children: make([]node, len(kids))}
+	for i, c := range kids {
+		if w := utf8.RuneCountInString(childPrefix) + branchWidth + utf8.RuneCountInString(c.key); w > p.width {
+			p.width = w
+		}
+		n.children[i] = node{kv: c}
+	}
+	return n
+}
+
+func stageChildren(rv reflect.Value) ([]kv, bool) {
+	if rv.Kind() != reflect.String || rv.Type() != reflect.TypeFor[string]() {
+		return nil, false
+	}
+	s := rv.String()
+	if !strings.HasSuffix(s, "%)") {
+		return nil, false
+	}
+	kids := make([]kv, 0, strings.Count(s, ", ")+1)
+	for item := range strings.SplitSeq(s, ", ") {
+		name, rest, ok := strings.Cut(item, " ")
+		if !ok || name == "" {
+			return nil, false
+		}
+		dur, pct, ok := strings.Cut(rest, " (")
+		if !ok || !isPercent(pct) {
+			return nil, false
+		}
+		d, ok := parseDuration(dur)
+		if !ok {
+			return nil, false
+		}
+		kids = append(kids, kv{escapeKey(name), reflect.ValueOf(color.Colored{Text: rest, Color: color.ForDuration(d)})})
+	}
+	return kids, true
+}
+
+func isPercent(s string) bool {
+	digits, ok := strings.CutSuffix(s, "%)")
+	if !ok || digits == "" {
+		return false
+	}
+	for i := range len(digits) {
+		if digits[i] < '0' || digits[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *prettyBuffer) writeKey(prefix, key string) {
