@@ -310,7 +310,9 @@ c.Status(ex.GetCode()).JSON(ex)
 ```
 
 #### Rules
-- The bytes equal `json.Marshal(map[string]any{"code": …, "error": …, "message": …})`: same key order and the same escaping, checked on hostile and random strings.
+- The bytes equal `json.Marshal` of the struct `{Code int "code"; Error string "error"; Message string "message"}` (and of the map with the same keys): same key order and the same escaping, checked on hostile, random and fuzzed strings.
+- `AppendJSON(dst)` equals `append(dst, body...)`, with or without spare capacity in `dst`.
+- A body whose strings are plain printable ASCII is written with one allocation, the body itself (none when `dst` has room).
 - `<`, `>`, `&`, U+2028 and U+2029 are escaped; quotes, backslashes and control characters can't break out of the string; invalid UTF-8 becomes U+FFFD. The result is always valid JSON.
 - What `dst` already holds is kept.
 - The fields are written as they are: the zero value gives `{"code":0,"error":"","message":""}`. Defaults for an empty field are the filter's job.
@@ -345,7 +347,7 @@ body, _ := json.Marshal(ex)
 ## Performance notes
 
 - An `Exception` stores its message, description, cause and code. It builds no error value at construction, and `Error()` derives the text on each call.
-- `AppendJSON` encodes a fixed three-field struct with `encoding/json`, through a pointer so the encoder needs no copy of the value: about four times faster than the map it replaces, with 2 allocations instead of 16.
+- `AppendJSON` writes the body by hand when both strings are printable ASCII without `"`, `\`, `<`, `>` or `&`: it grows `dst` once to the exact size, appends the keys as literals and the code with `strconv.AppendInt`. That is about 50 ns and 0 allocations into a buffer with room, 75 ns and 1 allocation into `nil` (before: about 450 ns and 2 allocations). Any other string sends the whole body through `encoding/json` (about 480 ns, 2 allocations), so escaping is `encoding/json`'s by construction. A new field in the body means changing this function.
 - An `ExceptionOptions` with a non-constant field passed as an option is boxed into `any`, and the box escapes when the exception does: one allocation at the call site.
 - An `Exception` is immutable, so a package-level exception can be shared between goroutines.
 
@@ -363,8 +365,10 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz), Go 1.27.4, me
 | BenchmarkException_GetStatusText | 3.363 | 0 | 0 |
 | BenchmarkException_Error | 11.75 | 0 | 0 |
 | BenchmarkException_ErrorsIs | 45.91 | 64 | 1 |
-| BenchmarkException_AppendJSON | 447.8 | 112 | 2 |
-| BenchmarkException_AppendJSON_Escaped | 587.4 | 176 | 2 |
+| BenchmarkException_AppendJSON (into a buffer with room) | 50.9 | 0 | 0 |
+| BenchmarkException_AppendJSON_Escaped | 481 | 176 | 2 |
+| BenchmarkAppendJSON_Plain (into `nil`) | 74.8 | 80 | 1 |
+| BenchmarkAppendJSON_Escaped (into `nil`) | 505 | 272 | 3 |
 | BenchmarkException_MarshalMap (the previous map body, for reference) | 1891 | 576 | 16 |
 | BenchmarkBadRequestException | 19.17 | 0 | 0 |
 | BenchmarkNotFoundException | 19.16 | 0 | 0 |

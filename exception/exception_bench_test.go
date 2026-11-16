@@ -95,3 +95,19 @@ func BenchmarkException_MarshalMap(b *testing.B) {
 		_, _ = json.Marshal(map[string]any{"code": e.GetCode(), "error": e.Error(), "message": e.GetMessage()})
 	}
 }
+
+func BenchmarkAppendJSON_Plain(b *testing.B) {
+	e := NewException("invalid input", http.StatusBadRequest)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = e.AppendJSON(nil)
+	}
+}
+
+func BenchmarkAppendJSON_Escaped(b *testing.B) {
+	e := NewException("</script> \"quoted\" &   line\nbreak", http.StatusBadRequest, "bad \\ input")
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = e.AppendJSON(nil)
+	}
+}

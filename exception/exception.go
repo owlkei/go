@@ -3,6 +3,7 @@ package exception
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 var wsCloseStatusText = map[int]string{
@@ -30,12 +31,6 @@ type Exception struct {
 type ExceptionOptions struct {
 	Description string
 	Cause       error
-}
-
-type exceptionBody struct {
-	Code    int    `json:"code"`
-	Error   string `json:"error"`
-	Message string `json:"message"`
 }
 
 func (e Exception) Error() string {
@@ -78,14 +73,43 @@ func (e Exception) GetStatusText() string {
 }
 
 func (e Exception) AppendJSON(dst []byte) []byte {
-	body, err := json.Marshal(&exceptionBody{Code: e.code, Error: e.Error(), Message: e.message})
-	if err != nil {
-		return dst
+	errorText := e.Error()
+	if needsJSONEscape(errorText) || needsJSONEscape(e.message) {
+		body, err := json.Marshal(&exceptionBody{Code: e.code, Error: errorText, Message: e.message})
+		if err != nil {
+			return dst
+		}
+		return append(dst, body...)
 	}
-	if len(dst) == 0 {
-		return body
+
+	size := len(`{"code":,"error":"","message":""}`) + 20 + len(errorText) + len(e.message)
+	if cap(dst)-len(dst) < size {
+		grown := make([]byte, len(dst), len(dst)+size)
+		copy(grown, dst)
+		dst = grown
 	}
-	return append(dst, body...)
+	dst = append(dst, `{"code":`...)
+	dst = strconv.AppendInt(dst, int64(e.code), 10)
+	dst = append(dst, `,"error":"`...)
+	dst = append(dst, errorText...)
+	dst = append(dst, `","message":"`...)
+	dst = append(dst, e.message...)
+	return append(dst, `"}`...)
+}
+
+type exceptionBody struct {
+	Code    int    `json:"code"`
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
+func needsJSONEscape(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if b := s[i]; b < 0x20 || b > 0x7e || b == '"' || b == '\\' || b == '<' || b == '>' || b == '&' {
+			return true
+		}
+	}
+	return false
 }
 
 func (e Exception) MarshalJSON() ([]byte, error) {

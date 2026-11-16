@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -172,4 +173,96 @@ func TestException_MarshalJSON_InsideMap(t *testing.T) {
 	if want := `{"e":` + body + `,"p":` + body + `}`; string(got) != want {
 		t.Error(test.DiffMessage(string(got), want, "E7: exception nested in a map"))
 	}
+}
+
+type bodyForEncodingJSON struct {
+	Code    int    `json:"code"`
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
+func encodingJSONBody(t testing.TB, e Exception) []byte {
+	t.Helper()
+	b, err := json.Marshal(bodyForEncodingJSON{Code: e.GetCode(), Error: e.Error(), Message: e.GetMessage()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestAppendJSON_EqualsEncodingJSON_Random(t *testing.T) {
+	r := rand.New(rand.NewPCG(7, 11))
+	codes := []int{0, 7, 200, 400, 404, 500, 599, 600, 1008, 4001, -1, 65536}
+	for range 10000 {
+		code := codes[r.IntN(len(codes))]
+		msg, desc := randomString(r), randomString(r)
+		ex := NewException(msg, code, desc)
+		got, want := ex.AppendJSON(nil), encodingJSONBody(t, ex)
+		if !bytes.Equal(got, want) {
+			t.Fatal(test.DiffMessage(string(got), string(want), "H1-eq: AppendJSON(nil) equals json.Marshal of the body struct for message "+msg+" and error "+desc))
+		}
+	}
+}
+
+func TestAppendJSON_EqualsEncodingJSON_Hostile(t *testing.T) {
+	hostile := []string{
+		"", `"`, `\`, "line\nbreak", "nul\x00byte", "</script>", "a&b", "  ",
+		"bad\xff\xfeutf8", "\x7f\x1f", "\x1f", "\x7f", "'single'", "~", " ", "\xe2\x80",
+		strings.Repeat("a\"\\<", 16*1024), strings.Repeat("x", 64*1024), strings.Repeat("\xff", 1024),
+	}
+	for _, s := range hostile {
+		for _, code := range []int{0, 400, 500, 1008} {
+			ex := NewException(s, code, s)
+			got, want := ex.AppendJSON(nil), encodingJSONBody(t, ex)
+			if !bytes.Equal(got, want) {
+				t.Error(test.DiffMessage(string(got[:min(len(got), 120)]), string(want[:min(len(want), 120)]), "H1-eq: hostile string must equal json.Marshal"))
+			}
+		}
+	}
+}
+
+func TestAppendJSON_AppendsToDst(t *testing.T) {
+	ex := NewException("m</b>", http.StatusBadRequest, "d\"")
+	body := encodingJSONBody(t, ex)
+	for _, prefix := range []string{"", "x", "prefix:", strings.Repeat("p", 4096)} {
+		got := ex.AppendJSON([]byte(prefix))
+		want := append([]byte(prefix), body...)
+		if !bytes.Equal(got, want) {
+			t.Error(test.DiffMessage(string(got[:min(len(got), 80)]), string(want[:min(len(want), 80)]), "H1-eq: AppendJSON(dst) equals append(dst, body...) for a prefix of "+strconv.Itoa(len(prefix))))
+		}
+	}
+}
+
+func TestAppendJSON_AppendsToDstWithSpareCapacity(t *testing.T) {
+	ex := NewException("m", http.StatusBadRequest)
+	dst := append(make([]byte, 0, 512), "head"...)
+	got := ex.AppendJSON(dst)
+	want := append([]byte("head"), encodingJSONBody(t, ex)...)
+	if !bytes.Equal(got, want) {
+		t.Error(test.DiffMessage(string(got), string(want), "H1-eq: AppendJSON writes after the existing bytes of a dst with spare capacity"))
+	}
+}
+
+func TestAppendJSON_PlainBodyAllocatesOnce(t *testing.T) {
+	ex := NewException("invalid input", http.StatusBadRequest)
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = ex.AppendJSON(nil)
+	})
+	if allocs > 1 {
+		t.Error(test.DiffMessage(allocs, 1.0, "P8: a plain body is written with one allocation, the body itself"))
+	}
+}
+
+func FuzzAppendJSON(f *testing.F) {
+	f.Add(400, "Bad Request", "invalid input")
+	f.Add(0, "", "")
+	f.Add(500, "\"\\", "<script>& ")
+	f.Add(1008, "bad\xff", "\x00\x1f\x7f")
+	f.Fuzz(func(t *testing.T, code int, desc, message string) {
+		ex := NewException(message, code, desc)
+		got, want := ex.AppendJSON(nil), encodingJSONBody(t, ex)
+		if !bytes.Equal(got, want) {
+			t.Fatal(test.DiffMessage(string(got), string(want), "H1-eq: fuzz"))
+		}
+	})
 }
