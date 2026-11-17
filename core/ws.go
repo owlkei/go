@@ -177,6 +177,9 @@ func (ws *WS) handleRequest(wsConn *websocket.Conn) {
 	}()
 
 	connID := connectionID(wsConn)
+	conn := ws.connmgr.Register(connID, wsConn)
+	defer ws.connmgr.Unregister(connID)
+
 	if err := websocket.JSON.Send(wsConn, WSPayload{
 		ID:   connID,
 		Type: TypeConnected,
@@ -184,9 +187,6 @@ func (ws *WS) handleRequest(wsConn *websocket.Conn) {
 		ws.logger.Error("WSHandshakeSendFailed", "error", err)
 		return
 	}
-
-	conn := ws.connmgr.Register(connID, wsConn)
-	defer ws.connmgr.Unregister(connID)
 
 	done := make(chan struct{})
 	go pingLoop(wsConn, conn, done, ws.logger)
