@@ -2053,3 +2053,118 @@ rig's helpers never finish them.
    passes in the same session, and the roadmap's final `make check` (which runs them without the
    race detector) is green. Alternative: also run them on a CI runner once (CI runs only
    `go test -race`, which skips them).
+
+### Amendment 2026-11-17 (after the builder's report): B1 dropped, L2 corrected, L14 (c) and (d) widened
+Status of this amendment: Approved (orchestrator, 2026-11-17; no exported name, L2 now states the one-slot exception). It changes only what is listed here; the rest of Revision (3)
+stands as written. Source: the builder's escalation (implementation in the working tree) and the
+diagnostic runs below, all under the heavy lock, load average 6-7.
+
+**What the builder found.** `NoRefusalBelowCapacity_1CPU`, I/O sub-case (70 % of capacity,
+Poisson): refusals in 0 of 4 runs at HEAD, 3 of 4 with the change (22, 41, 45), 0 of 4 with B1
+(the fast path's `waiting` check) turned off; over the session 1 of 7 at HEAD against 5 of 8.
+L14: 18 of 20 runs pass; `TwoStreams_1CPU` missed (c) once (baseline 13.1 ms against a bar of
+7.5 ms) and `ThreeStreams_2CPU` missed (d) once (332.3 against 333 req/s).
+
+**Diagnosis** (the implemented code in a scratch copy, counters added; "steal" = a fast-path
+admission while `waiting > 0`, "hand-off" = an admission by the hand-off loop):
+
+| Run | B1 | Fast path | Steals | Hand-offs | Refused (timeout / full) |
+|---|---|---|---|---|---|
+| 5 × capacity, CPU, 1 CPU | off | 2 | 0 | 1,827 | 4,188 / 3,167 |
+| 5 × capacity, CPU, 2 CPUs | off | 5 | 1 | 4,116 | 2,152 / 18,194 |
+| 5 × capacity, I/O, 2 CPUs | off | 148 | 65 | 24,700 | 0 / 90,889 |
+| same three | on | 3 / 5 / 91 | 0 | 2,838 / 4,693 / 23,877 | comparable |
+| 70 %, I/O, 1 CPU, five runs each | on | | | 62-64 | 124, 14, 0, 0, 0 refused (all "queue full") |
+| same | off | | | 121-238 | 0, 0, 0, 0, 79 refused (all "queue full") |
+
+1. **B1 buys nothing under overload.** With B2 (the hand-off loop first in `enqueue`, no retry
+   ahead of a non-empty list), the fast path admits almost nothing while a queue exists: at most
+   65 steals among about 25,000 admissions (0.3 %), none of them a waiter's timeout, since the
+   queue times out by the hundred either way. B2 is what made the queue ordered.
+2. **The 70 % refusals are bursts after stalls.** Every refusal is "queue full", none is a
+   timeout; hand-offs normally take 3-11 µs, with one of 62 ms in the run that refused 79. A
+   process stall lets the open-loop harness release a burst of overdue arrivals at once, and the
+   queue (64) overflows. Both variants fail that way; B1 makes it more likely (the builder's 1/7
+   against 5/8), because after a stall every arrival that finds `waiting > 0` parks, allocates a
+   waiter and a timer and needs a wake-up, instead of taking a free slot in line. The
+   builder's hypothesis is right in direction; the per-hand-off latency is small, the cost is
+   paid only in bursts.
+3. **A direct hand-off or a bounded barging window** were considered. A direct hand-off (the
+   finishing request gives its slot to the head instead of releasing it) is what the hand-off loop
+   already does in effect (`inFlight` never drops); it does not remove the park and wake-up that
+   bursts pay. A barging window (barge until the oldest waiter has waited T, as `sync.Mutex`'s
+   starvation mode) would restore HEAD's behavior in bursts, but it needs a clock read and a flag
+   for a gain that point 1 shows is about 0.3 % of admissions. Neither pays for itself.
+
+**Decision (replaces B1 and L2).** Drop B1: the fast path admits on `inFlight.Add(1) <= limit`
+as at HEAD, without loading `waiting`. Keep B2 unchanged. L2 is corrected to what the code
+guarantees:
+
+- **L2** (amended) A request waits in `loadshed`'s queue when, on arrival, every slot is taken and
+  fewer than `MaxQueue` requests wait; it waits at most 100 ms. Waiting requests are admitted in
+  the order they started waiting: a slot freed by a finishing request, and every slot a request
+  finds free once it is inside the queue's lock, goes to the longest waiter first, and a request
+  never joins the queue ahead of one already in it. A request that arrives at the instant a slot
+  frees, before the finishing request has handed that slot to a waiter, may take it at once. A
+  request finds the queue full only after every free slot has gone to the requests waiting before
+  it. With `MaxQueue` < 0 nothing waits.
+
+Measured share of that exception under 5 × overload: at most 0.3 % of admissions (table above).
+The README says it in one sentence ("A request that arrives at the instant a slot frees may take
+it before a waiter does; this is rare and keeps bursts fast."). Under overload this ordering is
+also the better one for clients: strict FIFO makes every admitted request wait the full queue.
+
+**L14 (amended).** (c) becomes "at the end, `baseline` is positive and at most 3 × the no-load
+latency"; (d) becomes "at least 85 % of the capacity". Why: with held requests no sample is
+quiet, so the baseline is one probe of 8 samples, refreshed at most every 30 s, and a stall of the
+process during those 30-50 ms inflates it until the next probe (the 13.1 ms run: 2.6 ×). That is
+a real property, stated in the README's known limits (below), not a defect of the rule; the
+overlap filter's accuracy is asserted exactly by the unit test `_ProbeSampleOverlappingOutsideFinishIgnored`
+(fake clock), which is where it belongs. The new bars still fail at HEAD in every case: (c) finds no
+baseline at all in the four cases, and (d) measured 14 % and 83 % in two of them. (a),
+(b) and (e) are unchanged.
+
+Known limits (README), added to the list of Revision (3): "While long-held requests are in
+flight, one probe of 8 requests sets the baseline for up to 30 s; a pause of the whole process
+during that probe (a long garbage collection, a busy host) makes the limit looser until the next
+probe."
+
+Superseded parts of Revision (3): Decision B1, the L2 text, the "Enter (fast path)" `waiting`
+check and the first sentences of "Ordering of B" in Concurrency (B2's ordering and the
+lost-wakeup argument stay), the Performance note on the `waiting` load, Rejected's first bullet
+(the doc correction is now the decision for the fast path), open question 2, Tester 8 and 9,
+L14 (c) and (d).
+
+**Builder deltas**
+1. `loadshed.go`, `Use`: remove the `if c.waiting.Load() == 0 {` wrapper; the fast path is
+   `if v >= 0 { if inFlight.Add(1) <= v { register; next; return }; inFlight.Add(-1) } else if
+   acquireProbe() ok { register; next; return }`, then `enqueue`. Nothing else changes in
+   `loadshed.go` (`enqueue` keeps the hand-off loop first, the full check, the count, the retry only
+   on an empty list).
+2. `middlewares/loadshed/README.md`: "What happens to a request" step 2 back to "No free slot and
+   fewer than `MaxQueue` requests waiting: it waits. The first slot that frees goes to the request
+   that has waited longest; a request that arrives at the instant a slot frees may take it before
+   a waiter does." Rules: replace the queue-order rule with amended L2's wording; the L14 rule's
+   numbers (3 ×, 85 %); the known limit above.
+3. `.ginject/package-reference.md` › `middlewares/loadshed`: "FIFO queue" with the same one-line
+   exception; drop "the fast path checks `waiting`" if it was written.
+4. `loadshed_stability_test.go`: in `longHeldRun`, (c) bound `3 * noLoad`, (d) bound
+   `0.85 * capacity`; messages as today.
+
+**Tester deltas**
+1. Replace 8 by `TestLoadShed_QueuedNewcomerYieldsToWaiter` (L2): `MaxInFlight: 1, MaxQueue: 4`;
+   one admitted request (never finished); one waiter (`waiting` 1); `inFlight.Add(-1)` on the
+   compiled instance; then call the compiled instance's `enqueue` directly for a newcomer (a
+   request whose fast path had failed just before the slot freed): the waiter is admitted, the
+   newcomer is not (still waiting after 20 ms); `wake()` admits nobody more; the waiter finishes;
+   the newcomer is admitted. At HEAD (retry before append) the newcomer is admitted and the waiter
+   refused.
+2. Replace 9 by `TestLoadShed_FreeSlotsGoToWaitersBeforeQueueFull` driven the same way:
+   `MaxInFlight: 1, MaxQueue: 1`, one admitted, one waiter, `inFlight.Add(-1)`, `enqueue` called
+   for the newcomer: the waiter is admitted and the newcomer waits (not refused).
+3. New `TestLoadShed_ArrivalAtFreedSlotMayTakeIt` (L2's exception, pins the documented
+   behavior): same setup; after `inFlight.Add(-1)` a newcomer through `Use` is admitted at once;
+   `wake()` then admits nobody and the waiter is still waiting; one finish later the waiter is
+   admitted.
+4. L14 tests: assertions (c) and (d) with the amended bounds.
+5. Everything else in Revision (3)'s Tester list stands, including 1-7 and `TestLoadShed_QueueAdmitsInOrder`.

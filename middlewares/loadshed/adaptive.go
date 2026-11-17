@@ -50,8 +50,7 @@ type adaptive struct {
 
 	probes     atomic.Int64
 	probeStart atomic.Int64
-	probeSum   atomic.Int64
-	probeCount atomic.Int64
+	current    atomic.Pointer[probe]
 
 	baseline atomic.Int64
 	average  atomic.Int64
@@ -130,7 +129,15 @@ func (c *compiledLoadShed) probeAdmitLimit(v int64) int64 {
 	return c.admit.Load()
 }
 
-func (a *adaptive) sample(c *compiledLoadShed, elapsed time.Duration, inFlight int64, isProbe bool) {
+func (a *adaptive) sample(c *compiledLoadShed, elapsed time.Duration, inFlight int64, p *probe, mark int64) {
+	var clean *probe
+	if c.admit.Load() < 0 {
+		if current := a.current.Load(); current != p {
+			current.finished.Add(1)
+		} else if current.finished.Load() == mark {
+			clean = current
+		}
+	}
 	if elapsed > longSample {
 		return
 	}
@@ -138,11 +145,11 @@ func (a *adaptive) sample(c *compiledLoadShed, elapsed time.Duration, inFlight i
 	if baseline := a.baseline.Load(); baseline > 0 {
 		ns = min(ns, sampleCap*baseline)
 	}
-	if isProbe {
-		a.probeSum.Add(ns)
-		if a.probeCount.Add(1) == probeSamples {
+	if clean != nil {
+		clean.sum.Add(ns)
+		if clean.count.Add(1) == probeSamples {
 			a.mu.Lock()
-			if c.admit.Load() < 0 {
+			if c.admit.Load() < 0 && a.current.Load() == clean {
 				a.endProbeLocked(c)
 			}
 			a.mu.Unlock()
@@ -240,16 +247,16 @@ func (a *adaptive) storeBaselineLocked(ns float64) {
 
 func (a *adaptive) startProbeLocked(c *compiledLoadShed, now time.Time) {
 	a.probes.Add(1)
-	a.probeSum.Store(0)
-	a.probeCount.Store(0)
+	a.current.Store(&probe{c: c})
 	a.probeStart.Store(now.UnixNano())
 	a.probedAt, a.hasProbed, a.isProbeSeen = now, true, true
 	c.admit.Store(-a.min)
 }
 
 func (a *adaptive) endProbeLocked(c *compiledLoadShed) {
-	if n := a.probeCount.Load(); n > 0 {
-		a.learnLocked(float64(a.probeSum.Load())/float64(n), a.now())
+	p := a.current.Load()
+	if n := p.count.Load(); n > 0 {
+		a.learnLocked(float64(p.sum.Load())/float64(n), a.now())
 		a.earned = min(a.earned, a.limit.Load())
 		a.isFloorHeld = false
 	}

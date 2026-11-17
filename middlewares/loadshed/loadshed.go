@@ -42,7 +42,6 @@ type compiledLoadShed struct {
 	head       *waiter
 	tail       *waiter
 	listed     int
-	probeDone  probeHook
 	adaptive   adaptive
 
 	refusedFull      atomic.Int64
@@ -56,19 +55,32 @@ type waiter struct {
 	prev      *waiter
 	next      *waiter
 	isListed  bool
-	isProbe   bool
+	probe     *probe
+	mark      int64
 	waited    time.Duration
 	startedAt time.Time
 }
 
-type probeHook struct{ c *compiledLoadShed }
+type probe struct {
+	c        *compiledLoadShed
+	held     atomic.Int64
+	sum      atomic.Int64
+	count    atomic.Int64
+	finished atomic.Int64
+}
+
+type probeTicket struct {
+	probe *probe
+	mark  int64
+}
 
 type timedBody struct {
 	inner    io.ReadCloser
 	c        *compiledLoadShed
 	readTime atomic.Int64
 	waited   time.Duration
-	isProbe  bool
+	probe    *probe
+	mark     int64
 }
 
 func (instance LoadShed) NewMiddleware() common.MiddlewareFn {
@@ -87,7 +99,6 @@ func loadLoadShedOptions(l *LoadShed) *compiledLoadShed {
 		panic(color.FmtRed("invalid loadshed: MaxQueue is %d, at most %d are allowed", l.MaxQueue, maxQueueLimit))
 	}
 	c := &compiledLoadShed{queue: l.MaxQueue}
-	c.probeDone.c = c
 	switch {
 	case l.MaxQueue == 0:
 		c.queue = defaultQueue
@@ -114,29 +125,55 @@ func (c *compiledLoadShed) Use(r *http.Request, w http.ResponseWriter, next ctx.
 	if v < 0 {
 		v = c.probeAdmitLimit(v)
 	}
-	if c.inFlight.Add(1) <= abs(v) {
-		c.register(r, hw, v < 0)
+	// An arrival at the instant a slot frees may take it (L2); once the fast path fails, enqueue
+	// serves the waiting requests first.
+	if v >= 0 {
+		if c.inFlight.Add(1) <= v {
+			c.register(r, hw, nil, 0)
+			next()
+			return
+		}
+		c.inFlight.Add(-1)
+	} else if p, mark, ok := c.acquireProbe(); ok {
+		c.register(r, hw, p, mark)
 		next()
 		return
 	}
-	c.inFlight.Add(-1)
 	c.enqueue(r, w, hw, next)
 }
 
-func abs(v int64) int64 {
+func (c *compiledLoadShed) acquire(v int64) (*probe, int64, bool) {
 	if v < 0 {
-		return -v
+		return c.acquireProbe()
 	}
-	return v
+	if c.inFlight.Add(1) <= v {
+		return nil, 0, true
+	}
+	c.inFlight.Add(-1)
+	return nil, 0, false
 }
 
-func (c *compiledLoadShed) register(r *http.Request, hw httphook.Writer, isProbe bool) {
+func (c *compiledLoadShed) acquireProbe() (*probe, int64, bool) {
+	p := c.adaptive.current.Load()
+	if p.held.Add(1) > c.adaptive.min {
+		p.held.Add(-1)
+		return nil, 0, false
+	}
+	if c.inFlight.Add(1) > c.adaptive.limit.Load() {
+		c.inFlight.Add(-1)
+		p.held.Add(-1)
+		return nil, 0, false
+	}
+	return p, p.finished.Load(), true
+}
+
+func (c *compiledLoadShed) register(r *http.Request, hw httphook.Writer, p *probe, mark int64) {
 	if c.hasBody(r) {
-		c.attachBody(r, hw, 0, isProbe)
+		c.attachBody(r, hw, 0, p, mark)
 		return
 	}
-	if isProbe {
-		hw.OnDone(&c.probeDone)
+	if p != nil {
+		hw.OnDone(&probeTicket{probe: p, mark: mark})
 		return
 	}
 	hw.OnDone(c)
@@ -148,20 +185,23 @@ func (c *compiledLoadShed) enqueue(r *http.Request, w http.ResponseWriter, hw ht
 		c.refuse(w, &c.refusedFull)
 	}
 	c.mu.Lock()
+	if c.head != nil {
+		c.wakeLocked()
+	}
 	if c.listed >= c.queue {
 		c.mu.Unlock()
 		c.refuse(w, &c.refusedFull)
 	}
 	c.waiting.Add(1)
-	v := c.admit.Load()
-	if c.inFlight.Add(1) <= abs(v) {
-		c.waiting.Add(-1)
-		c.mu.Unlock()
-		c.register(r, hw, v < 0)
-		next()
-		return
+	if c.head == nil {
+		if p, mark, ok := c.acquire(c.admit.Load()); ok {
+			c.waiting.Add(-1)
+			c.mu.Unlock()
+			c.register(r, hw, p, mark)
+			next()
+			return
+		}
 	}
-	c.inFlight.Add(-1)
 	wt := &waiter{c: c, ch: make(chan struct{}, 1), startedAt: time.Now()}
 	c.pushLocked(wt)
 	c.mu.Unlock()
@@ -179,7 +219,7 @@ func (c *compiledLoadShed) enqueue(r *http.Request, w http.ResponseWriter, hw ht
 	case <-r.Context().Done():
 		timer.Stop()
 		if !c.leaveQueue(wt) {
-			c.release()
+			c.release(wt.probe)
 		}
 		c.refusedCancelled.Add(1)
 	}
@@ -187,7 +227,7 @@ func (c *compiledLoadShed) enqueue(r *http.Request, w http.ResponseWriter, hw ht
 
 func (c *compiledLoadShed) admitWaiter(wt *waiter, r *http.Request, hw httphook.Writer, next ctx.Next) {
 	if c.hasBody(r) {
-		c.attachBody(r, hw, wt.waited, wt.isProbe)
+		c.attachBody(r, hw, wt.waited, wt.probe, wt.mark)
 	} else {
 		hw.OnDone(wt)
 	}
@@ -198,8 +238,8 @@ func (c *compiledLoadShed) hasBody(r *http.Request) bool {
 	return c.isAdaptive && r.Body != nil && r.Body != http.NoBody
 }
 
-func (c *compiledLoadShed) attachBody(r *http.Request, hw httphook.Writer, waited time.Duration, isProbe bool) {
-	b := &timedBody{inner: r.Body, c: c, waited: waited, isProbe: isProbe}
+func (c *compiledLoadShed) attachBody(r *http.Request, hw httphook.Writer, waited time.Duration, p *probe, mark int64) {
+	b := &timedBody{inner: r.Body, c: c, waited: waited, probe: p, mark: mark}
 	r.Body = b
 	hw.OnDone(b)
 }
@@ -216,7 +256,7 @@ func (b *timedBody) Close() error {
 }
 
 func (b *timedBody) Done(elapsed time.Duration) {
-	b.c.finish(max(elapsed-b.waited-time.Duration(b.readTime.Load()), 0), b.isProbe)
+	b.c.finish(max(elapsed-b.waited-time.Duration(b.readTime.Load()), 0), b.probe, b.mark)
 }
 
 func (c *compiledLoadShed) refuse(w http.ResponseWriter, counter *atomic.Int64) {
@@ -270,28 +310,34 @@ func (c *compiledLoadShed) leaveQueue(wt *waiter) bool {
 }
 
 func (c *compiledLoadShed) Done(elapsed time.Duration) {
-	c.finish(elapsed, false)
+	c.finish(elapsed, nil, 0)
 }
 
-func (p *probeHook) Done(elapsed time.Duration) {
-	p.c.finish(elapsed, true)
+func (t *probeTicket) Done(elapsed time.Duration) {
+	t.probe.c.finish(elapsed, t.probe, t.mark)
 }
 
 func (wt *waiter) Done(elapsed time.Duration) {
-	wt.c.finish(max(elapsed-wt.waited, 0), wt.isProbe)
+	wt.c.finish(max(elapsed-wt.waited, 0), wt.probe, wt.mark)
 }
 
-func (c *compiledLoadShed) finish(elapsed time.Duration, isProbe bool) {
+func (c *compiledLoadShed) finish(elapsed time.Duration, p *probe, mark int64) {
+	if p != nil {
+		p.held.Add(-1)
+	}
 	n := c.inFlight.Add(-1)
 	if c.isAdaptive {
-		c.adaptive.sample(c, elapsed, n+1, isProbe)
+		c.adaptive.sample(c, elapsed, n+1, p, mark)
 	}
 	if c.waiting.Load() > 0 {
 		c.wake()
 	}
 }
 
-func (c *compiledLoadShed) release() {
+func (c *compiledLoadShed) release(p *probe) {
+	if p != nil {
+		p.held.Add(-1)
+	}
 	c.inFlight.Add(-1)
 	if c.waiting.Load() > 0 {
 		c.wake()
@@ -300,20 +346,23 @@ func (c *compiledLoadShed) release() {
 
 func (c *compiledLoadShed) wake() {
 	c.mu.Lock()
+	c.wakeLocked()
+	c.mu.Unlock()
+}
+
+func (c *compiledLoadShed) wakeLocked() {
 	for c.head != nil {
-		v := c.admit.Load()
-		if c.inFlight.Add(1) > abs(v) {
-			c.inFlight.Add(-1)
-			break
+		p, mark, ok := c.acquire(c.admit.Load())
+		if !ok {
+			return
 		}
 		wt := c.head
 		c.removeLocked(wt)
 		c.waiting.Add(-1)
-		wt.isProbe = v < 0
+		wt.probe, wt.mark = p, mark
 		wt.waited = time.Since(wt.startedAt)
 		wt.ch <- struct{}{}
 	}
-	c.mu.Unlock()
 }
 
 func (c *compiledLoadShed) Snapshot() inspect.Snapshot {

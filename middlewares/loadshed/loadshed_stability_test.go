@@ -605,3 +605,219 @@ func BenchmarkLoadShed_L13_SlowRouteTuned(b *testing.B) {
 		b.ReportMetric(s.servedShare(), "served/capacity")
 	}
 }
+
+const (
+	heldLength   = 45 * time.Second
+	heldWarmup   = 10 * time.Second
+	heldStart    = 2 * time.Second
+	heldBucket   = 50 * time.Millisecond
+	heldGap      = 500 * time.Millisecond
+	heldInterval = 10 * time.Millisecond
+)
+
+type heldSnapshot struct {
+	at       time.Duration
+	probing  bool
+	limit    int64
+	baseline time.Duration
+}
+
+type heldRun struct {
+	buckets   []int64
+	snapshots []heldSnapshot
+	latencies []time.Duration
+	served    int64
+}
+
+func holdRequests(t *testing.T, mw common.MiddlewareFn, k int) []*exchange {
+	t.Helper()
+	held := make([]*exchange, 0, k)
+	for i := 0; i < k; i++ {
+		ex := newExchange(&discardWriter{header: http.Header{}})
+		admitted := false
+		func() {
+			defer func() { _ = recover() }()
+			mw.Use(directRequest, ex, func() { admitted = true })
+		}()
+		if !admitted {
+			t.Fatal(test.DiffMessage(false, true, "fixture: a long-held request is admitted before the load"))
+		}
+		held = append(held, ex)
+	}
+	return held
+}
+
+func runHeld(t testing.TB, mw common.MiddlewareFn, w workload) heldRun {
+	t.Helper()
+	s := snapshotter(t, mw)
+	counts := make([]atomic.Int64, int(heldLength/heldBucket))
+	var served atomic.Int64
+	var mu sync.Mutex
+	var snapshots []heldSnapshot
+	var latencies []time.Duration
+	start := time.Now()
+
+	stopSampling := make(chan struct{})
+	var sampler sync.WaitGroup
+	sampler.Add(1)
+	go func() {
+		defer sampler.Done()
+		ticker := time.NewTicker(heldInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopSampling:
+				return
+			case <-ticker.C:
+				snap := s.Snapshot()
+				at := time.Since(start)
+				mu.Lock()
+				snapshots = append(snapshots, heldSnapshot{at: at, probing: field(snap, "probing") == true, limit: intOf(snap, "limit"), baseline: durationOf(snap, "baseline")})
+				mu.Unlock()
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	rate := 5 * w.capacity
+	due := 0.0
+	for {
+		elapsed := time.Since(start)
+		if elapsed >= heldLength {
+			break
+		}
+		for due <= elapsed.Seconds() {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				var work time.Duration
+				if !throughMiddleware(mw, directRequest, func(*http.Request) {
+					begin := time.Now()
+					w.work()
+					work = time.Since(begin)
+				}) {
+					return
+				}
+				at := time.Since(start)
+				if bucket := int(at / heldBucket); bucket < len(counts) {
+					counts[bucket].Add(1)
+				}
+				if at >= heldWarmup && at < heldLength {
+					served.Add(1)
+					mu.Lock()
+					latencies = append(latencies, work)
+					mu.Unlock()
+				}
+			}()
+			due += 1 / rate
+		}
+		time.Sleep(time.Millisecond)
+	}
+	wg.Wait()
+	close(stopSampling)
+	sampler.Wait()
+
+	run := heldRun{snapshots: snapshots, latencies: latencies, served: served.Load()}
+	for i := range counts {
+		run.buckets = append(run.buckets, counts[i].Load())
+	}
+	return run
+}
+
+func (r heldRun) longestProbe() time.Duration {
+	var longest time.Duration
+	var begin time.Duration
+	probing := false
+	for _, s := range r.snapshots {
+		switch {
+		case s.probing && !probing:
+			begin, probing = s.at, true
+		case !s.probing && probing:
+			probing = false
+		}
+		if probing {
+			longest = max(longest, s.at-begin+heldInterval)
+		}
+	}
+	return longest
+}
+
+func (r heldRun) longestGap() time.Duration {
+	var longest, current int
+	for i := int(heldStart / heldBucket); i < len(r.buckets); i++ {
+		if r.buckets[i] == 0 {
+			current++
+			longest = max(longest, current)
+		} else {
+			current = 0
+		}
+	}
+	return time.Duration(longest) * heldBucket
+}
+
+func (r heldRun) limitsOutsideProbes() []int64 {
+	var out []int64
+	for _, s := range r.snapshots {
+		if !s.probing && s.at >= heldWarmup {
+			out = append(out, s.limit)
+		}
+	}
+	return out
+}
+
+func longHeldRun(t *testing.T, procs int, kind string, k int) {
+	t.Helper()
+	if testing.Short() || raceEnabled {
+		t.Skip("L14 runs about 50 s")
+	}
+	withMachine(t, procs, math.MaxInt64)
+	var factor atomic.Int64
+	factor.Store(1)
+	w := newWorkload(kind, procs, &factor)
+	mw := LoadShed{}.NewMiddleware()
+	s := snapshotter(t, mw)
+	firstLimit := intOf(s.Snapshot(), "limit")
+	held := holdRequests(t, mw, k)
+	run := runHeld(t, mw, w)
+	w.capacity = min(w.capacity, measureCapacity(w.work, w.workers, 2*time.Second))
+	for _, ex := range held {
+		ex.finish(heldLength)
+	}
+	label := kind + " GOMAXPROCS " + strconv.Itoa(procs) + " held " + strconv.Itoa(k)
+
+	if got := run.longestProbe(); got >= heldGap {
+		t.Error(test.DiffMessage(got, "< "+heldGap.String(), "L14 (a): "+label+": the longest probe"))
+	}
+	if got := run.longestGap(); got >= heldGap {
+		t.Error(test.DiffMessage(got, "< "+heldGap.String(), "L14 (b): "+label+": the longest time without a served request after second 2"))
+	}
+	last := run.snapshots[len(run.snapshots)-1]
+	if limit := 3 * w.noLoad; last.baseline <= 0 || last.baseline > limit {
+		t.Error(test.DiffMessage(last.baseline, "0 < baseline <= "+limit.String(), "L14 (c): "+label+": the baseline at the end"))
+	}
+	window := (heldLength - heldWarmup).Seconds()
+	if got, want := float64(run.served)/window, 0.85*w.capacity; got < want {
+		t.Error(test.DiffMessage(got, ">= "+formatRate(want), "L14 (d): "+label+": throughput between seconds 10 and 45"))
+	}
+	if kind == "io" {
+		median := outcome{limits: run.limitsOutsideProbes()}.median()
+		if want := 4 * float64(firstLimit); median < want {
+			t.Error(test.DiffMessage(median, fmt.Sprintf(">= %.0f", want), "L14 (e): "+label+": the median limit after second 10 outside probes"))
+		}
+	} else {
+		got, want := outcome{latencies: run.latencies}.p99(), time.Duration(float64(w.noLoad)*w.p99Factor)
+		if got > want {
+			t.Error(test.DiffMessage(got, "<= "+want.String(), "L14 (e): "+label+": p99 latency of admitted requests"))
+		}
+	}
+	if got := intOf(s.Snapshot(), "in_flight"); got != 0 {
+		t.Error(test.DiffMessage(got, int64(0), "L14: "+label+": every slot is free after the held requests are released"))
+	}
+}
+
+func TestAdaptive_LongHeld_OneStream_1CPU(t *testing.T)    { longHeldRun(t, 1, "cpu", 1) }
+func TestAdaptive_LongHeld_TwoStreams_1CPU(t *testing.T)   { longHeldRun(t, 1, "cpu", 2) }
+func TestAdaptive_LongHeld_ThreeStreams_2CPU(t *testing.T) { longHeldRun(t, 2, "cpu", 3) }
+func TestAdaptive_LongHeld_OneStream_IOBound_1CPU(t *testing.T) {
+	longHeldRun(t, 1, "io", 1)
+}
