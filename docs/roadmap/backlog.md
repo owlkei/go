@@ -164,6 +164,10 @@ Found 2026-11-17 while rewriting the main README (not fixed; the WebSocket roadm
 - `EnableWS` writes into the caller's `*WSConfig`: two apps sharing one config overwrite each other.
 - The goroutine that drops dead WebSocket connections never stops, even after `Stop()`.
 - `Publisher.Publish` silently drops every payload after the first.
+- Found 2026-11-18: acks and errors go through `TrySend` on the 32-slot send buffer, so a client that
+  receives many events loses its acks silently (`TestWS_ConcurrentConnectionsIsolated` times out under
+  load: 8 clients × 20 publishes fan out 1 280 events). Control frames need their own path or a
+  blocking send with a deadline.
 
 ## Glob topic syntax in the WebSocket layer (for the WebSocket roadmap)
 

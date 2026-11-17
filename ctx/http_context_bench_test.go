@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dangduoc08/ginject/aggregation"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 )
 
 type benchJSONStruct struct {

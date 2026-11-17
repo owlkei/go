@@ -52,7 +52,7 @@ A controller embeds `common.HTTP` for its routes and one embed per layer it bind
 package main
 
 import (
-	"github.com/dangduoc08/ginject/aggregation"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"

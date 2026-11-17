@@ -10,7 +10,7 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"golang.org/x/net/websocket"
 )
 

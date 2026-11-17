@@ -19,8 +19,8 @@ import (
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/trace"
 )
 
 type recordedLog struct {

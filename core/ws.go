@@ -10,9 +10,9 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/memorybroker"
 	"github.com/dangduoc08/ginject/internal/str"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/internal/wsevent"
-	"github.com/dangduoc08/ginject/trace"
 	"golang.org/x/net/websocket"
 )
 

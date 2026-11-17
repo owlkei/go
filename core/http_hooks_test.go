@@ -17,7 +17,7 @@ import (
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/httphook"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 type hookFunc func(time.Duration)

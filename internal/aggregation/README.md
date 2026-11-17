@@ -36,7 +36,7 @@ An interceptor receives a fresh `*aggregation.Aggregation` before the handler ru
 package main
 
 import (
-	"github.com/dangduoc08/ginject/aggregation"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"

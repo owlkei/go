@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/internal/trace"
+	"github.com/dangduoc08/ginject/internal/versioning"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/trace"
-	"github.com/dangduoc08/ginject/versioning"
 	"golang.org/x/net/websocket"
 )
 

@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/aggregation"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 

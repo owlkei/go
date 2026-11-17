@@ -25,7 +25,7 @@ package main
 
 import (
 	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/versioning"
+	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 func main() {
@@ -166,7 +166,7 @@ Results depend on the machine. They were captured when this README was generated
 ```console
 goos: darwin
 goarch: amd64
-pkg: github.com/dangduoc08/ginject/versioning
+pkg: github.com/dangduoc08/ginject/internal/versioning
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkGetVersion_Query-12        	57787495	        20.96 ns/op	       0 B/op	       0 allocs/op
 BenchmarkGetVersion_Header-12       	22535310	        53.95 ns/op	       0 B/op	       0 allocs/op

@@ -16,7 +16,7 @@ import (
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/memorycache"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 	"github.com/dangduoc08/ginject/modules/cache"
 )

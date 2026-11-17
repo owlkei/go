@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
-	"github.com/dangduoc08/ginject/trace"
 )
 
 type clientIPEvents struct {

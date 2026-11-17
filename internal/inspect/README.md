@@ -32,7 +32,7 @@ import (
 	"fmt"
 
 	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/memorycache"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 )
 
 func main() {

@@ -17,8 +17,8 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/memorycache"
 )
 
 type activator interface {

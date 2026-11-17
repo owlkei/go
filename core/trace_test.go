@@ -10,12 +10,12 @@ import (
 
 	"golang.org/x/net/websocket"
 
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 type traceRecorder struct {

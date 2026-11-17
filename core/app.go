@@ -16,10 +16,10 @@ import (
 	"github.com/dangduoc08/ginject/internal/devtool"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/memorybroker"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"github.com/dangduoc08/ginject/internal/versioning"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/trace"
-	"github.com/dangduoc08/ginject/versioning"
 	"golang.org/x/net/websocket"
 )
 

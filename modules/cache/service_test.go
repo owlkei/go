@@ -12,8 +12,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/dangduoc08/ginject/internal/memorycache"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/memorycache"
 )
 
 var background = context.Background()

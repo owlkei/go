@@ -13,7 +13,7 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/test"
 	ctxlookalike "github.com/dangduoc08/ginject/internal/test/lookalike/ctx"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 type appLookalikeController struct {

@@ -12,7 +12,7 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 const (

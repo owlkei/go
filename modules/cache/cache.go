@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dangduoc08/ginject/memorycache"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 )
 
 type Cache interface {
@@ -23,3 +23,9 @@ var (
 	ErrEntryTooLarge = memorycache.ErrEntryTooLarge
 	ErrNotCounter    = memorycache.ErrNotCounter
 )
+
+type MemoryCacheOptions = memorycache.MemoryCacheOptions
+
+func NewMemoryCache(opts *MemoryCacheOptions) Cache {
+	return memorycache.NewMemoryCache(opts)
+}

@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
 

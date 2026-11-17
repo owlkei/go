@@ -2,7 +2,7 @@ package cache
 
 import (
 	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/memorycache"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 )
 
 type CacheOnInitFn = func()

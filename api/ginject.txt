@@ -1,3 +1,4 @@
+pkg ginject, func TraceTransport(http.RoundTripper) http.RoundTripper
 pkg ginject, type Aggregation = *aggregation.Aggregation
 pkg ginject, type App = *core.App
 pkg ginject, type Body = ctx.Body
@@ -19,18 +20,6 @@ pkg ginject, type Router = *routing.Router
 pkg ginject, type Versioning = versioning.Versioning
 pkg ginject, type WSContext = *ctx.WSContext
 pkg ginject, type WSPayload = ctx.WSPayload
-pkg ginject/aggregation, func NewAggregation() *aggregation.Aggregation
-pkg ginject/aggregation, method (*aggregation.Aggregation) Aggregate() any
-pkg ginject/aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
-pkg ginject/aggregation, method (*aggregation.Aggregation) Pipe(...aggregation.Operator) any
-pkg ginject/aggregation, method (*aggregation.Aggregation) SetMainData(any) *aggregation.Aggregation
-pkg ginject/aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
-pkg ginject/aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
-pkg ginject/aggregation, type Aggregation struct
-pkg ginject/aggregation, type Aggregation struct, InterceptorData any
-pkg ginject/aggregation, type Aggregation struct, IsMainHandlerCalled bool
-pkg ginject/aggregation, type Aggregation struct, Name string
-pkg ginject/aggregation, type Operator struct
 pkg ginject/common, const BodyPipeableKey untyped string = "body"
 pkg ginject/common, const ContextPipeableKey untyped string = "context"
 pkg ginject/common, const ContextTypeHTTP untyped string = "http"
@@ -479,22 +468,6 @@ pkg ginject/log, type LogOptions struct, AddSource bool
 pkg ginject/log, type LogOptions struct, Level slog.Level
 pkg ginject/log, type LogOptions struct, LogFormat log.logFormat
 pkg ginject/log, type LogOptions struct, MaskFields []string
-pkg ginject/memorycache, func NewMemoryCache(*memorycache.MemoryCacheOptions) *memorycache.MemoryCache
-pkg ginject/memorycache, method (*memorycache.MemoryCache) Delete(context.Context, string) error
-pkg ginject/memorycache, method (*memorycache.MemoryCache) Get(context.Context, string) ([]byte, bool)
-pkg ginject/memorycache, method (*memorycache.MemoryCache) Incr(context.Context, string, int64, time.Duration) (int64, error)
-pkg ginject/memorycache, method (*memorycache.MemoryCache) Keys(context.Context) []string
-pkg ginject/memorycache, method (*memorycache.MemoryCache) Set(context.Context, string, []byte, time.Duration) error
-pkg ginject/memorycache, method (*memorycache.MemoryCache) SetNX(context.Context, string, []byte, time.Duration) (bool, error)
-pkg ginject/memorycache, method (*memorycache.MemoryCache) TTL(context.Context, string) (time.Duration, bool)
-pkg ginject/memorycache, type MemoryCache struct
-pkg ginject/memorycache, type MemoryCacheOptions struct
-pkg ginject/memorycache, type MemoryCacheOptions struct, MaxBytes int64
-pkg ginject/memorycache, type MemoryCacheOptions struct, MaxEntries int
-pkg ginject/memorycache, var ErrEmptyKey error
-pkg ginject/memorycache, var ErrEntryTooLarge error
-pkg ginject/memorycache, var ErrNegativeTTL error
-pkg ginject/memorycache, var ErrNotCounter error
 pkg ginject/middlewares/compress, method (compress.Compress) NewMiddleware() common.MiddlewareFn
 pkg ginject/middlewares/compress, method (compress.Compress) Use(*http.Request, http.ResponseWriter, ctx.Next)
 pkg ginject/middlewares/compress, type Compress struct
@@ -552,6 +525,7 @@ pkg ginject/middlewares/proxy, type Proxy struct, Header proxy.Header
 pkg ginject/middlewares/proxy, type Proxy struct, IsHostForwarded bool
 pkg ginject/middlewares/proxy, type Proxy struct, TrustedHops int
 pkg ginject/middlewares/proxy, type Proxy struct, TrustedProxies []string
+pkg ginject/modules/cache, func NewMemoryCache(*cache.MemoryCacheOptions) cache.Cache
 pkg ginject/modules/cache, func Register(*cache.CacheModuleOptions) *core.Module
 pkg ginject/modules/cache, method (*cache.CacheService) Delete(context.Context, string) error
 pkg ginject/modules/cache, method (*cache.CacheService) Get(context.Context, string) ([]byte, bool)
@@ -576,6 +550,7 @@ pkg ginject/modules/cache, type CacheModuleOptions struct, OnInit cache.CacheOnI
 pkg ginject/modules/cache, type CacheOnInitFn = func()
 pkg ginject/modules/cache, type CacheService struct
 pkg ginject/modules/cache, type CacheService struct, Backend cache.Cache
+pkg ginject/modules/cache, type MemoryCacheOptions = memorycache.MemoryCacheOptions
 pkg ginject/modules/cache, var ErrEmptyKey error
 pkg ginject/modules/cache, var ErrEntryTooLarge error
 pkg ginject/modules/cache, var ErrNegativeTTL error
@@ -599,47 +574,15 @@ pkg ginject/modules/config, type ConfigModuleOptions struct, OnInit config.Confi
 pkg ginject/modules/config, type ConfigOnInitFn = func()
 pkg ginject/modules/config, type ConfigService struct
 pkg ginject/modules/config, type ConfigService struct, State *config.configState
-pkg ginject/trace, const StageComplete untyped string = "complete"
-pkg ginject/trace, const StageExceptionFilter untyped string = "exception_filter"
-pkg ginject/trace, const StageGuard untyped string = "guard"
-pkg ginject/trace, const StageHandler untyped string = "handler"
-pkg ginject/trace, const StageMiddleware untyped string = "middleware"
-pkg ginject/trace, const StagePipe untyped string = "pipe"
-pkg ginject/trace, const StagePostInterceptor untyped string = "post_interceptor"
-pkg ginject/trace, const StagePreInterceptor untyped string = "pre_interceptor"
-pkg ginject/trace, const TransportHTTP untyped string = "HTTP"
-pkg ginject/trace, const TransportWS untyped string = "WS"
-pkg ginject/trace, func Transport(http.RoundTripper) http.RoundTripper
-pkg ginject/trace, method (*trace.Tracer) Emit(trace.Event)
-pkg ginject/trace, method (*trace.Tracer) Enabled() bool
-pkg ginject/trace, method (*trace.Tracer) Listen(func(trace.Event)) func()
-pkg ginject/trace, type Event struct
-pkg ginject/trace, type Event struct, ClientIP netip.Addr
-pkg ginject/trace, type Event struct, Code int
-pkg ginject/trace, type Event struct, Duration time.Duration
-pkg ginject/trace, type Event struct, ID string
-pkg ginject/trace, type Event struct, Name string
-pkg ginject/trace, type Event struct, Operation string
-pkg ginject/trace, type Event struct, ParentID string
-pkg ginject/trace, type Event struct, SpanID string
-pkg ginject/trace, type Event struct, Stage string
-pkg ginject/trace, type Event struct, Target string
-pkg ginject/trace, type Event struct, TraceID string
-pkg ginject/trace, type Event struct, Transport string
-pkg ginject/trace, type Tracer struct
-pkg ginject/versioning, const CustomVersion untyped int = 3
-pkg ginject/versioning, const HeaderVersion untyped int = 2
-pkg ginject/versioning, const MediaType untyped int = 4
-pkg ginject/versioning, const NeutralVersion untyped string = "NEUTRAL"
-pkg ginject/versioning, const QueryVersion untyped int = 1
-pkg ginject/versioning, method (*versioning.Versioning) GetTypeString() string
-pkg ginject/versioning, method (*versioning.Versioning) GetVersion(*ctx.HTTPContext) string
-pkg ginject/versioning, type ExtractorHandler = func(*ctx.HTTPContext) string
-pkg ginject/versioning, type Versioning struct
-pkg ginject/versioning, type Versioning struct, DefaultVersion string
-pkg ginject/versioning, type Versioning struct, Extractor versioning.ExtractorHandler
-pkg ginject/versioning, type Versioning struct, Key string
-pkg ginject/versioning, type Versioning struct, Type int
+reach aggregation.Aggregation, field InterceptorData any
+reach aggregation.Aggregation, field IsMainHandlerCalled bool
+reach aggregation.Aggregation, field Name string
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Aggregate() any
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Pipe(...aggregation.Operator) any
+reach aggregation.Aggregation, method (*aggregation.Aggregation) SetMainData(any) *aggregation.Aggregation
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
 reach core.moduleBuilder, method (*core.moduleBuilder) Build() *core.Module
 reach core.moduleBuilder, method (*core.moduleBuilder) Controllers(...core.Controller) *core.moduleBuilder
 reach core.moduleBuilder, method (*core.moduleBuilder) Imports(...any) *core.moduleBuilder
@@ -657,6 +600,8 @@ reach memorybroker.MessageHandler, type func(*memorybroker.Message)
 reach memorybroker.Subscription, method (memorybroker.Subscription) ID() string
 reach memorybroker.Subscription, method (memorybroker.Subscription) Topic() string
 reach memorybroker.Subscription, method (memorybroker.Subscription) Unsubscribe() error
+reach memorycache.MemoryCacheOptions, field MaxBytes int64
+reach memorycache.MemoryCacheOptions, field MaxEntries int
 reach routing.Router, field GlobalMiddlewares []ctx.HTTPHandler
 reach routing.Router, field InjectableHandlers map[string]any
 reach routing.Router, method (*routing.Router) Add(string, string, string, ctx.HTTPHandler) *routing.Router
@@ -673,3 +618,9 @@ reach routing.RouterItem, field ParamKeys map[string][]int
 reach routing.RouterItem, field ParamNames []string
 reach routing.RouterItem, field Pattern string
 reach routing.RouterItem, field Version string
+reach versioning.Versioning, field DefaultVersion string
+reach versioning.Versioning, field Extractor versioning.ExtractorHandler
+reach versioning.Versioning, field Key string
+reach versioning.Versioning, field Type int
+reach versioning.Versioning, method (*versioning.Versioning) GetTypeString() string
+reach versioning.Versioning, method (*versioning.Versioning) GetVersion(*ctx.HTTPContext) string

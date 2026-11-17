@@ -7,8 +7,8 @@ import (
 
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/internal/inspect"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/memorycache"
 )
 
 type consumerA struct {

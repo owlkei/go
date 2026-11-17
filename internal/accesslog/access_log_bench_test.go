@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/internal/logpipe"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/trace"
 )
 
 type discardLogger struct {

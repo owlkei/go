@@ -26,7 +26,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/memorycache"
+	"github.com/dangduoc08/ginject/internal/memorycache"
 )
 
 func benchGuard(b *testing.B, strategy Strategy) activator {

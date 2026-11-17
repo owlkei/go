@@ -5,7 +5,7 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/versioning"
+	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 type dvController struct{ common.HTTP }

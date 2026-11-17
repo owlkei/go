@@ -7,7 +7,7 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/versioning"
+	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 func msExpectPanic(t *testing.T, rule, want string, fn func()) {

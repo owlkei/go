@@ -16,7 +16,7 @@ import (
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/test"
 	ctxlookalike "github.com/dangduoc08/ginject/internal/test/lookalike/ctx"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 var (

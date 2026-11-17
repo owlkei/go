@@ -795,7 +795,7 @@ An interceptor runs code before and after the handler. Write
 package main
 
 import (
-	"github.com/dangduoc08/ginject/aggregation"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"
@@ -1133,7 +1133,7 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/versioning"
+	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 type UserController struct {
@@ -1186,7 +1186,7 @@ func main() {
   answers: requests get `404`, or `410 Gone` for a request without a version when
   `DefaultVersion` is empty.
 
-See [versioning](versioning/README.md).
+See [versioning](internal/versioning/README.md).
 
 ---
 
@@ -1378,7 +1378,7 @@ func main() {
 
 Ginject ships no HTTP client module. Call other services with `net/http`, and wrap the transport
 with `trace.Transport` so the outgoing request continues the incoming request's trace
-(`Traceparent`). See the [trace documentation](trace/README.md#outbound-calls).
+(`Traceparent`). See the [trace documentation](internal/trace/README.md#outbound-calls).
 
 ```go
 package main
@@ -1391,7 +1391,7 @@ import (
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/trace"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
 
 var client = &http.Client{Transport: trace.Transport(nil), Timeout: 10 * time.Second}
@@ -1585,7 +1585,7 @@ the handshake needs to `EnableWS`, in the same order, for example
 - `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
   instead ([ctx › JSON](ctx/README.md#json)).
 - `trace.Transport` sends your trace ID and request ID to every host you call
-  ([trace › Outbound calls](trace/README.md#outbound-calls)).
+  ([trace › Outbound calls](internal/trace/README.md#outbound-calls)).
 - Change response headers with `Header().Set`, `Add` or `Del`, never by writing into a value slice
   in place ([core › Response writer](core/README.md#response-writer)).
 

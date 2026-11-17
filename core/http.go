@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
-	"github.com/dangduoc08/ginject/trace"
-	"github.com/dangduoc08/ginject/versioning"
+	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 const cacheControlHeader = "Cache-Control"

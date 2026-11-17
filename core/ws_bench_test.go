@@ -7,8 +7,8 @@ import (
 
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/trace"
 )
 
 func benchHandshakeContext() *ctx.HTTPContext {
