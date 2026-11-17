@@ -388,7 +388,7 @@ RAW='${NOT_EXPANDED} \n stays as written'
 - **Single-quoted values:** run to the next `'`, may span lines, and are taken literally: no escape, no expansion.
 - After a closing quote, only blanks and a comment may follow.
 - **Repeated keys:** the last value in a file wins.
-- **Limits:** a file is at most 1 MiB and must be a regular file (a FIFO or a device is refused without being read); a value is at most 64 KiB after expansion; a NUL byte is refused.
+- **Limits:** a file is at most 1 MiB and must be a regular file (a FIFO or a device is refused without being read); a value is at most 64 KiB after expansion, and all values of a file together at most 16 MiB after expansion; a NUL byte is refused.
 
 ## Precedence
 
@@ -411,6 +411,7 @@ Every failure happens in `Register`, at startup, as a panic `invalid config: <de
 | `<path>:<line>: ${NAME} is not defined` | Expansion found no `NAME` in the file or the process environment. |
 | `<path>:<line>: ${NAME} refers to itself` | Expansion found a cycle, of any length. |
 | `<path>:<line>: value larger than 64 KiB` | A value, after expansion, is too large. |
+| `<path>:<line>: values larger than 16 MiB in total after expansion` | The values of the file add up to more than 16 MiB once expanded, for example many copies of one large value. The line is the first value past the limit. |
 | `IsIgnoreEnvFile is set with ENVFilePaths` | The two options contradict each other. |
 | `Loads[<index>]: nested deeper than 32 levels` | A loaded map is nested too deeply, or contains itself. |
 | `ConfigService was not created by Register` | `Set` was called on a zero `ConfigService{}`. |

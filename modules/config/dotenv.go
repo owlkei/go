@@ -13,6 +13,9 @@ import (
 const (
 	maxFileSize  = 1 << 20
 	maxValueSize = 64 << 10
+	// maxExpandedSize bounds all values of a file together after expansion: copies of one large
+	// value would otherwise grow far past the file size.
+	maxExpandedSize = 16 << 20
 )
 
 var byteOrderMark = []byte("\xef\xbb\xbf")
@@ -310,10 +313,14 @@ func (env *dotEnv) literalAll() (map[string]any, error) {
 func (env *dotEnv) expandAll() (map[string]any, error) {
 	ex := &expansion{env: env, doneByKey: map[string]string{}, isVisitingByKey: map[string]bool{}}
 	valuesByKey := make(map[string]any, len(env.keys))
+	total := 0
 	for _, key := range env.keys {
 		value, err := ex.expand(key)
 		if err != nil {
 			return nil, err
+		}
+		if total += len(value); total > maxExpandedSize {
+			return nil, env.lineError(env.valuesByKey[key].line, "values larger than 16 MiB in total after expansion")
 		}
 		valuesByKey[key] = value
 	}

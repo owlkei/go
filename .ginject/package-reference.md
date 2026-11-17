@@ -638,7 +638,7 @@ Provides `ConfigService{State *configState}` (`Get(k string) any`, `Set(k string
 - Precedence: process env, then `ENVFilePaths` in order, then `Loads` in order; first source wins, last with `IsOverride`. Files never reach `os.Setenv`.
 - Default file: `.env` in the nearest directory upward with a `go.mod`, else the working directory; missing default is fine, listed paths must exist. `IsIgnoreEnvFile` reads no file; with `ENVFilePaths` it panics.
 - Strict parser (`dotenv.go`, byte loops, no regexp): `[export ]KEY=value`, `#` starts a comment only after a blank, no escapes unquoted, double quotes with `\n \r \t \\ \" \$`, literal single quotes, multiline quotes, BOM, CRLF. Expansion (`IsExpandVariables`) of `${NAME}` only (same file, then process env) with cycle detection.
-- Limits: 1 MiB regular file (FIFOs / devices refused before reading), 64 KiB per value after expansion, no NUL, `Loads` nesting ≤ 32.
+- Limits: 1 MiB regular file (FIFOs / devices refused before reading), 64 KiB per value and 16 MiB for all values together after expansion, no NUL, `Loads` nesting ≤ 32.
 - Every failure is a `Register` panic `invalid config: <path>:<line>: <detail>` without any value.
 - `inspect.ConfigStateOf(service)` (internal, for devtools) returns the files read and the sorted key names, never values.
 

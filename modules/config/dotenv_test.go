@@ -268,6 +268,31 @@ func TestExpand_ValueAtLimit(t *testing.T) {
 	}
 }
 
+func TestExpand_TotalTooLarge(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("TT_BIG=" + strings.Repeat("x", 64<<10) + "\n")
+	for i := range 300 {
+		fmt.Fprintf(&b, "TT_C%d=${TT_BIG}\n", i)
+	}
+	path, text := failEnv(t, b.String(), true)
+	pattern := regexp.MustCompile("^invalid config: " + regexp.QuoteMeta(path) + `:\d+: values larger than 16 MiB in total after expansion$`)
+	if !pattern.MatchString(text) {
+		t.Error(test.DiffMessage(text, pattern.String(), "E7: copies of one large value stop at 16 MiB in total"))
+	}
+}
+
+func TestExpand_TotalAtLimit(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("TT_BIG=" + strings.Repeat("x", 64<<10) + "\n")
+	for i := range 255 {
+		fmt.Fprintf(&b, "TT_C%d=${TT_BIG}\n", i)
+	}
+	svc := loadEnv(t, b.String(), true)
+	if got, _ := svc.Get("TT_C254").(string); len(got) != 64<<10 {
+		t.Error(test.DiffMessage(len(got), 64<<10, "E7: exactly 16 MiB in total after expansion is accepted"))
+	}
+}
+
 func TestLoadDotEnv_ValueTooLarge(t *testing.T) {
 	path, text := failEnv(t, "TT_OK=1\nTT_BIG="+strings.Repeat("x", 64<<10+1)+"\n", false)
 	want := "invalid config: " + path + ":2: value larger than 64 KiB"
