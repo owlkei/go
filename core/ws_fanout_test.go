@@ -139,3 +139,28 @@ func TestWSConnmgr_ConcurrentSubscribeUnsubscribePublish_NoRace(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestHandleSubscribe_ClientWildcardStaysWithinHandlerPattern(t *testing.T) {
+	cases := []struct {
+		handler, client, outside, inside string
+	}{
+		{"*", "**", "chat.a", "chat"},
+		{"chat.*", "chat.**", "chat.a.b", "chat.a"},
+	}
+	for _, c := range cases {
+		ws := newTestWS(t, c.handler)
+		server, client, cleanup := newTestWSConnPair(t)
+		conn := ws.connmgr.Register("conn-1", server)
+		subscribeAndDrainAck(t, ws, conn, client, c.client)
+
+		_ = (*ws.connmgr.Broker).Publish(c.outside, "outside")
+		_ = (*ws.connmgr.Broker).Publish(c.inside, "inside")
+
+		got := recvWSPayload(t, client)
+		if got.Message != "inside" {
+			t.Error(test.DiffMessage(got.Message, "inside", "client "+c.client+" under handler "+c.handler+" must not receive "+c.outside))
+		}
+		ws.connmgr.Unregister("conn-1")
+		cleanup()
+	}
+}

@@ -387,9 +387,9 @@
       },
       "pattern_types": [
         "Exact: 'user.login' - O(1) map lookup, matches only that topic",
-        "Suffix: 'user.*' - O(1) map lookup by prefix; greedy, matches ANY depth below 'user.', not just one level",
-        "Global: '*' - O(1), matches all topics. '*' is the ONLY wildcard token; '>' is NOT special-cased (verified empirically) - a pattern containing '>' matches only that literal string",
-        "Complex: 'user.*.profile', '*.created' - O(n) scan; segment-wildcard matching, NOT regex"
+        "Suffix: 'user.**' - O(1) map lookup by prefix; matches one or more segments below 'user.', not 'user'",
+        "Global: '**' - O(1), matches all topics. '*' is exactly one segment ('*' alone: single-segment topics); '**' is special only as the last segment; '>' is literal",
+        "Complex: 'user.*', 'user.*.profile', '*.created' - O(n) scan; segment-wildcard matching, NOT regex. Full table: pattern/MATCHING.md"
       ],
       "key_features": [
         "Single sync.RWMutex over 4 maps (exact/prefix/global/complex) - no sharding",

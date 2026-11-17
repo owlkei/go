@@ -277,13 +277,13 @@ Topic: "users.created"
 1. Exact match: "users.created" → handler found
    NO → continue
    
-2. Suffix wildcard: "users.*" → handler found
+2. Suffix wildcard: "users.**" → handler found
    NO → continue
    
-3. Complex regex: "users\.[a-z]+" → handler found
+3. Complex (segment wildcards, not regex): "users.*", "*.created" → handler found
    NO → continue
    
-4. Global fallback: "*" → handler found
+4. Global fallback: "**" → handler found
    NO → 404 Not Found
 ```
 

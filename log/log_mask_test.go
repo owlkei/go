@@ -2,6 +2,7 @@ package log
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"net/url"
@@ -604,5 +605,32 @@ func TestLog_ScalarFastPathEqualsGeneralPath(t *testing.T) {
 		if stamp.ReplaceAllString(fast.String(), "") != stamp.ReplaceAllString(slow.String(), "") {
 			t.Error(test.DiffMessage(slow.String(), fast.String(), "M8: the scalar fast path equals the general path ("+formatName(format)+")"))
 		}
+	}
+}
+
+func TestWrapLogger_InlineGroupAddsNoSegment(t *testing.T) {
+	inline := func() slog.Attr {
+		return slog.Group("user", slog.Group("", slog.Group("card", slog.String("cvv", "SECRET"))))
+	}
+	for _, rule := range []string{"user.*.cvv", "user.card.cvv", "card.cvv", "cvv", "user.**"} {
+		cap := &capturingLogger{}
+		WrapLogger(cap, []string{rule}).Info("m", inline())
+		if strings.Contains(fmt.Sprint(cap.args()), "SECRET") {
+			t.Error(test.DiffMessage(cap.args(), "cvv masked", "rule "+rule+" through an inline group"))
+		}
+	}
+	cap := &capturingLogger{}
+	WrapLogger(cap, []string{"user.*"}).Info("m", inline())
+	user := cap.args()[0].(slog.Attr).Value.Group()
+	if user[0].Key != "" || user[0].Value.Kind() != slog.KindGroup {
+		t.Error(test.DiffMessage(user[0], "the inline group kept, its card masked", "user.* masks user.card, not the inline group"))
+	}
+}
+
+func TestWrapLogger_EmptyTopLevelKeyAddsNoDot(t *testing.T) {
+	cap := &capturingLogger{}
+	WrapLogger(cap, []string{"card.cvv"}).Info("m", slog.Group("", slog.Group("card", slog.String("cvv", "SECRET"))))
+	if strings.Contains(fmt.Sprint(cap.args()), "SECRET") {
+		t.Error(test.DiffMessage(cap.args(), "cvv masked", "an empty top-level group key adds no leading dot to the path"))
 	}
 }

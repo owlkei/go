@@ -8,6 +8,7 @@ import (
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/memorybroker"
+	ptrn "github.com/dangduoc08/ginject/pattern"
 	"github.com/dangduoc08/ginject/wsevent"
 	"golang.org/x/net/websocket"
 )
@@ -81,7 +82,11 @@ func handleSubscribe(conn *WSConnection, ws *WS, payload WSPayload) {
 			return
 		}
 
+		allowed := handlerFilter(topic, pattern)
 		err := ws.connmgr.Subscribe(conn.ID, topic, func(m *memorybroker.Message) {
+			if allowed != nil && !allowed.Match(m.Topic) {
+				return
+			}
 			conn.TrySend(WSPayload{
 				Type:    TypeEvent,
 				Topic:   []string{m.Topic},
@@ -94,6 +99,16 @@ func handleSubscribe(conn *WSConnection, ws *WS, payload WSPayload) {
 		}
 	}
 	reply(conn, TypeAck, payload.ID, "")
+}
+
+// handlerFilter keeps a subscription within its handler's pattern: a client topic such as `**`
+// matches the handler `*` as a literal segment, but subscribes the broker to every topic.
+func handlerFilter(topic, handlerPattern string) *ptrn.Pattern {
+	if topic == handlerPattern {
+		return nil
+	}
+	p := ptrn.NewPattern(handlerPattern)
+	return &p
 }
 
 func handleUnsubscribe(conn *WSConnection, connmgr *WSConnmgr, payload WSPayload) {

@@ -216,6 +216,9 @@ func (c *converter) join(path, key string) string {
 	if len(c.rules) == 0 {
 		return ""
 	}
+	if path == "" {
+		return key
+	}
 	return path + "." + key
 }
 
@@ -264,7 +267,7 @@ func (c *converter) reflectValue(path string, rv reflect.Value, depth int, nodes
 		if info.text {
 			return c.text(path, rv, depth, nodes)
 		}
-		if c.masked(path) {
+		if hops == 0 && c.masked(path) {
 			return maskPlaceholder, true
 		}
 		if k := rv.Kind(); k != reflect.Pointer && k != reflect.Interface {
@@ -460,7 +463,11 @@ func (c *converter) slogValue(path string, v slog.Value, depth int, nodes *int) 
 		attrs := v.Group()
 		var out []slog.Attr
 		for i, a := range attrs {
-			nv, changed := c.slogValue(c.join(path, lowerASCII(a.Key)), a.Value, depth+1, nodes)
+			childPath := path
+			if a.Key != "" || a.Value.Kind() != slog.KindGroup {
+				childPath = c.join(path, lowerASCII(a.Key))
+			}
+			nv, changed := c.slogValue(childPath, a.Value, depth+1, nodes)
 			if changed && out == nil {
 				out = make([]slog.Attr, len(attrs))
 				copy(out, attrs)

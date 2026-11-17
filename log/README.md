@@ -316,6 +316,7 @@ Rules use the syntax of the [`pattern`](../pattern/README.md) package: segments 
 
 - **A rule matches any end of the path.** The rule is compared with the whole path, then with the path without its first segment, and so on: `card.*` matches `user.card.cvv` through `card.cvv`. A match needs whole segments.
 - **A match replaces the value whole.** A struct, map, slice or `slog.Group` whose path matches becomes `[REDACTED]`, children included.
+- **An inline group adds no segment.** A `slog.Group` with an empty key adds nothing to the path of its attributes, as in the output: `slog.Group("user", slog.Group("", slog.String("cvv", v)))` gives the path `user.cvv`.
 
 | Rule | Path | Masked |
 |---|---|---|

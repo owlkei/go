@@ -141,7 +141,7 @@ Returned by `Subscribe()`. Use it to unsubscribe or query subscription details.
 **Methods**
 
 - `ID() string` — Returns the unique subscription ID (UUID v4)
-- `Topic() string` — Returns the pattern string passed at subscribe time; for example, `"user.*"` or `"*"`
+- `Topic() string` — Returns the pattern string passed at subscribe time; for example, `"user.*"` or `"**"`
 - `Unsubscribe() error` — Removes this subscription; subsequent publishes do not invoke its handler. Returns `ErrClosed` if the broker is closed; otherwise returns `nil`
 
 ---
@@ -331,7 +331,7 @@ b.Publish("room.42", chatMsg) // both clients receive
 ### 4. Broadcast — Global wildcard
 
 ```go
-b.Subscribe("*", func(m *memorybroker.Message) {
+b.Subscribe("**", func(m *memorybroker.Message) {
 	fmt.Printf("[audit] %s %v\n", m.Topic, m.Payload)
 })
 

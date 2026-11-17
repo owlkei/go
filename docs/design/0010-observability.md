@@ -222,6 +222,11 @@ Unchanged: `DebugLevel`, `InfoLevel`, `WarnLevel`, `ErrorLevel`, `FatalLevel`, `
   level and message and the pair `"log_error"`, the recovered value as text, and returns.
 
 ### `log`: masking
+
+> Superseded in part (2026-11-18, commit `d824361`): rules now use the glob syntax of `pattern`
+> (`*` one segment, a trailing `**` one or more), every rule matches any end of the path at every
+> node, and a match masks the node whole. M1's `*` example and M3's "keeps the structure" no longer
+> hold; `log/README.md` › Masking is the current reference.
 A value's path is its key, then the keys under it joined by `.` (`user.password`). Elements of a
 slice or array have the path of the slice.
 
