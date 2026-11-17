@@ -128,15 +128,23 @@ func (s *Sink) StartAsync() {
 }
 
 func (s *Sink) StopAsync(timeout time.Duration) bool {
+	start := s.now()
 	ok := s.Flush(timeout)
 	s.mu.Lock()
+	pending := false
 	if s.async > 0 {
 		s.async--
 		if s.async == 0 {
 			s.syncLocked()
+			// A record accepted after the flush and before the last stop has a writer now:
+			// wait for it too, so a clean shutdown loses nothing (W10).
+			pending = s.done < s.accepted
 		}
 	}
 	s.mu.Unlock()
+	if pending {
+		ok = s.Flush(max(timeout-s.now().Sub(start), 0)) && ok
+	}
 	return ok
 }
 
@@ -356,8 +364,10 @@ func (s *Sink) drainLocked() {
 				continue
 			}
 			s.writing = false
-			if s.armed {
-				s.armed = false
+			// Stop the timer even when armed is false: a stale fire that cleared armed may
+			// have raced a Reset by a new record, which left a timer pending (W1).
+			s.armed = false
+			if s.timer != nil {
 				s.timer.Stop()
 			}
 			s.releaseLocked()

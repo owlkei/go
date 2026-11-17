@@ -1204,9 +1204,8 @@ func TestSink_StopAsyncWritesRecordAcceptedDuringFlush(t *testing.T) {
 	if ok := <-result; !ok {
 		t.Fatal(test.DiffMessage(false, true, "M2: StopAsync returns true"))
 	}
-	queued, writing := snapValue(t, f.s, "queued"), snapValue(t, f.s, "writing")
-	if queued != int64(0) && writing != true {
-		t.Error(test.DiffMessage([]any{queued, writing}, []any{int64(0), true}, "W10: a queued record has a writer once StopAsync returns"))
+	if got := f.w.output(); got != string(rec(40, 'a'))+string(rec(50, 'b')) {
+		t.Error(test.DiffMessage(got, string(rec(40, 'a'))+string(rec(50, 'b')), "W10: StopAsync returns after the record accepted during its flush is written (a clean shutdown loses nothing)"))
 	}
 	within(t, "W10: Flush returns at once", func() {
 		if !f.s.Flush(5 * time.Second) {
@@ -1449,5 +1448,32 @@ func TestSink_RandomFiresNoLossNoReorder(t *testing.T) {
 			t.Fatal(test.DiffMessage(i, "> "+strconv.Itoa(last[g]), "O1: records of one goroutine stay in order"))
 		}
 		last[g] = i
+	}
+}
+
+func TestSink_StopAsyncWaitsForLeftoverWrite(t *testing.T) {
+	f := newFakedSink(t)
+	f.w.hold()
+	var once sync.Once
+	f.w.onWrite = func(int, []byte) {
+		once.Do(func() { f.s.Write(Info, rec(50, 'b'), quietReport) })
+	}
+	f.s.Write(Info, rec(40, 'a'), quietReport)
+	result := make(chan bool, 1)
+	go func() { result <- f.s.StopAsync(10 * time.Second) }()
+	<-f.w.entered
+	f.w.release() // a is written; b, accepted during that write, is held at the output
+	<-f.w.entered
+	select {
+	case <-result:
+		t.Fatal(test.DiffMessage("returned", "waiting", "W10: StopAsync waits while the record accepted during its flush is still being written"))
+	case <-time.After(50 * time.Millisecond):
+	}
+	f.w.release()
+	if ok := <-result; !ok {
+		t.Error(test.DiffMessage(false, true, "W10: StopAsync returns true once everything is written"))
+	}
+	if got := f.w.output(); got != string(rec(40, 'a'))+string(rec(50, 'b')) {
+		t.Error(test.DiffMessage(got, string(rec(40, 'a'))+string(rec(50, 'b')), "W10: both records are written before StopAsync returns"))
 	}
 }

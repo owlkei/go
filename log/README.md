@@ -349,7 +349,7 @@ Every logger from `NewLog` writes to one process-wide stdout pipeline, so lines 
 - **Errors:** a failed or panicking `Write` of stdout discards that batch, never retried; the next one is written.
 - **Shutdown:** the app flushes the pipeline (at most 2 seconds) after its `OnShutdown` hooks; `Fatal` flushes before it exits.
 - **What can be lost:** lines still queued when the process dies without shutdown or `Fatal` (an unrecovered panic in a goroutine, `os.Exit` in your code, `SIGKILL`): at most 1 MiB, in practice the last batch plus up to about 1 ms of lines still waiting for the writer (below 16 KiB). Bytes you write to `os.Stdout` yourself are not ordered with log lines while the app serves. When stdout is stuck and the shutdown flush timed out, lines logged afterwards block their caller until stdout accepts a write again; `Fatal` stays bounded (it waits at most 2 seconds, then exits).
-- **Memory:** about 300 B while unused; two buffers and one stopped timer of at most 64 KiB each once the queue is empty again; at most two 1 MiB buffers and one goroutine with stdout stuck.
+- **Memory:** about 300 B while unused; two buffers of at most 64 KiB each and one stopped timer (about 100 B) once the queue is empty again; at most two 1 MiB buffers and one goroutine with stdout stuck.
 - Loggers given to `app.SetLogger` are not part of the pipeline: they are called directly.
 
 ## Other exported names

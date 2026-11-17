@@ -194,7 +194,7 @@ Switches the sink to asynchronous. Counted: two `StartAsync` need two `StopAsync
 
 #### Rules
 - After one `StopAsync` of two `StartAsync` the sink is still asynchronous; after the second, every `Write` returns after its record was written.
-- It writes queued records without waiting for the timer. The last `StopAsync` stops the timer; a record accepted during its flush gets a writer, so a later `Flush` returns `true` at once. `SetStdout` does the same.
+- It writes queued records without waiting for the timer. The last `StopAsync` stops the timer and returns only once a record accepted during its flush is written too (within its timeout), so a clean shutdown loses nothing. `SetStdout` stops the timer the same way.
 
 ### Flush
 
