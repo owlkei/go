@@ -54,6 +54,9 @@ methods outside `sample/` and `bench/`, most of them framework internals (`commo
 every exported name, move internals to `internal/` or unexport them, collapse duplicate ways of doing
 one job, and rewrite the docs around the resulting surface.
 
+- Decided 2026-11-17: `pattern` moves to `internal/pattern` (only `wsevent`, `memorybroker` and
+  `log` use it; users write patterns as strings, never the type).
+
 ## MCP (with the devtools platform)
 
 Decided 2026-11-16: Ginject gets MCP support when development of the devtools platform starts, in
