@@ -312,7 +312,7 @@ The built-in JSON logger writes `{"time":"…","level":"INFO","msg":"SignedIn","
 
 A value's path is its key, then the keys under it joined by `.` (`user.password`). Elements of a slice or array have the path of the slice. Matching ignores ASCII case.
 
-Rules use the syntax of the [`pattern`](../pattern/README.md) package: segments separated by `.`, where `*` matches exactly one segment and a trailing `**` matches one or more.
+Rules use the syntax of the [`pattern`](../internal/pattern/README.md) package: segments separated by `.`, where `*` matches exactly one segment and a trailing `**` matches one or more.
 
 - **A rule matches any end of the path.** The rule is compared with the whole path, then with the path without its first segment, and so on: `card.*` matches `user.card.cvv` through `card.cvv`. A match needs whole segments.
 - **A match replaces the value whole.** A struct, map, slice or `slog.Group` whose path matches becomes `[REDACTED]`, children included.

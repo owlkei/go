@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dangduoc08/ginject/internal/pattern"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/pattern"
 )
 
 func TestMatch_NoAllocations(t *testing.T) {

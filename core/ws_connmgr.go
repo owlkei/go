@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/memorybroker"
+	"github.com/dangduoc08/ginject/internal/memorybroker"
 	"golang.org/x/net/websocket"
 )
 

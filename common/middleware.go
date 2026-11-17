@@ -5,8 +5,8 @@ import (
 	"reflect"
 
 	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/routing"
 )
 
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)

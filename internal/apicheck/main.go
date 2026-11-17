@@ -21,19 +21,13 @@ var targetPackages = []string{
 }
 
 var packagesStep4Moves = []string{
-	"accesslog",
 	"aggregation",
 	"common",
 	"core",
 	"ctx",
-	"devtool",
-	"memorybroker",
 	"memorycache",
-	"pattern",
-	"routing",
 	"trace",
 	"versioning",
-	"wsevent",
 }
 
 func main() {

@@ -19,12 +19,6 @@ pkg ginject, type Router = *routing.Router
 pkg ginject, type Versioning = versioning.Versioning
 pkg ginject, type WSContext = *ctx.WSContext
 pkg ginject, type WSPayload = ctx.WSPayload
-pkg ginject/accesslog, func NewAccessLog(*accesslog.AccessLogConfig) *accesslog.AccessLog
-pkg ginject/accesslog, method (*accesslog.AccessLog) Stop()
-pkg ginject/accesslog, type AccessLog struct
-pkg ginject/accesslog, type AccessLogConfig struct
-pkg ginject/accesslog, type AccessLogConfig struct, Logger common.LogAdapter
-pkg ginject/accesslog, type AccessLogConfig struct, Tracer *trace.Tracer
 pkg ginject/aggregation, func NewAggregation() *aggregation.Aggregation
 pkg ginject/aggregation, method (*aggregation.Aggregation) Aggregate() any
 pkg ginject/aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
@@ -416,54 +410,6 @@ pkg ginject/ctx, type WSContext struct, Timestamp time.Time
 pkg ginject/ctx, type WSHandler = func(*ctx.WSContext)
 pkg ginject/ctx, type WSPayload map[string]any
 pkg ginject/ctx, var ErrBindTarget error
-pkg ginject/devtool, const LayerScope_GLOBAL_SCOPE devtool.LayerScope = 2
-pkg ginject/devtool, const LayerScope_REQUEST_SCOPE devtool.LayerScope = 1
-pkg ginject/devtool, const LayerScope_UNKNOWN devtool.LayerScope = 0
-pkg ginject/devtool, func DevtoolBuilder() *devtool.devtoolBuilder
-pkg ginject/devtool, func GenerateSchema(reflect.Type, string) []*devtool.Schema
-pkg ginject/devtool, method (*devtool.Devtool) GetConfiguration(context.Context, *devtool.GetConfigurationRequest) (*devtool.GetConfigurationResponse, error)
-pkg ginject/devtool, method (devtool.LayerScope) String() string
-pkg ginject/devtool, type Controller struct
-pkg ginject/devtool, type Controller struct, Http []*devtool.HTTPComponent
-pkg ginject/devtool, type Devtool struct
-pkg ginject/devtool, type Devtool struct, GetConfigurationResponse devtool.GetConfigurationResponse embedded
-pkg ginject/devtool, type GetConfigurationRequest struct
-pkg ginject/devtool, type GetConfigurationResponse struct
-pkg ginject/devtool, type GetConfigurationResponse struct, Controller *devtool.Controller
-pkg ginject/devtool, type HTTPComponent struct
-pkg ginject/devtool, type HTTPComponent struct, ExceptionFilters []*devtool.Layer
-pkg ginject/devtool, type HTTPComponent struct, Guards []*devtool.Layer
-pkg ginject/devtool, type HTTPComponent struct, Handler string
-pkg ginject/devtool, type HTTPComponent struct, HttpMethod string
-pkg ginject/devtool, type HTTPComponent struct, Id string
-pkg ginject/devtool, type HTTPComponent struct, Interceptors []*devtool.Layer
-pkg ginject/devtool, type HTTPComponent struct, Middlewares []*devtool.Layer
-pkg ginject/devtool, type HTTPComponent struct, Request *devtool.HTTPRequest
-pkg ginject/devtool, type HTTPComponent struct, Route string
-pkg ginject/devtool, type HTTPComponent struct, Versioning *devtool.HTTPVersioning
-pkg ginject/devtool, type HTTPRequest struct
-pkg ginject/devtool, type HTTPRequest struct, Body []*devtool.Schema
-pkg ginject/devtool, type HTTPRequest struct, File []*devtool.Schema
-pkg ginject/devtool, type HTTPRequest struct, Form []*devtool.Schema
-pkg ginject/devtool, type HTTPRequest struct, Header []*devtool.Schema
-pkg ginject/devtool, type HTTPRequest struct, Param []*devtool.Schema
-pkg ginject/devtool, type HTTPRequest struct, Query []*devtool.Schema
-pkg ginject/devtool, type HTTPVersioning struct
-pkg ginject/devtool, type HTTPVersioning struct, Key string
-pkg ginject/devtool, type HTTPVersioning struct, Type int32
-pkg ginject/devtool, type HTTPVersioning struct, Value string
-pkg ginject/devtool, type Layer struct
-pkg ginject/devtool, type Layer struct, Name string
-pkg ginject/devtool, type Layer struct, Scope devtool.LayerScope
-pkg ginject/devtool, type LayerScope int32
-pkg ginject/devtool, type Schema struct
-pkg ginject/devtool, type Schema struct, Format string
-pkg ginject/devtool, type Schema struct, Item *devtool.Schema
-pkg ginject/devtool, type Schema struct, Name string
-pkg ginject/devtool, type Schema struct, Properties []*devtool.Schema
-pkg ginject/devtool, type Schema struct, Type string
-pkg ginject/devtool, var LayerScope_name map[int32]string
-pkg ginject/devtool, var LayerScope_value map[string]int32
 pkg ginject/exception, func BadGatewayException(string, ...any) exception.Exception
 pkg ginject/exception, func BadRequestException(string, ...any) exception.Exception
 pkg ginject/exception, func ConflictException(string, ...any) exception.Exception
@@ -533,32 +479,6 @@ pkg ginject/log, type LogOptions struct, AddSource bool
 pkg ginject/log, type LogOptions struct, Level slog.Level
 pkg ginject/log, type LogOptions struct, LogFormat log.logFormat
 pkg ginject/log, type LogOptions struct, MaskFields []string
-pkg ginject/memorybroker, func NewMemoryBroker() memorybroker.Broker
-pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Close() error
-pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Publish(string, any) error
-pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) PublishAsync(string, any) error
-pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Subscribe(string, memorybroker.MessageHandler) (memorybroker.Subscription, error)
-pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Unsubscribe(memorybroker.Subscription) error
-pkg ginject/memorybroker, type Broker interface
-pkg ginject/memorybroker, type Broker interface, Close() error
-pkg ginject/memorybroker, type Broker interface, Publish(string, any) error
-pkg ginject/memorybroker, type Broker interface, PublishAsync(string, any) error
-pkg ginject/memorybroker, type Broker interface, Subscribe(string, memorybroker.MessageHandler) (memorybroker.Subscription, error)
-pkg ginject/memorybroker, type Broker interface, Unsubscribe(memorybroker.Subscription) error
-pkg ginject/memorybroker, type MemoryBroker struct
-pkg ginject/memorybroker, type Message struct
-pkg ginject/memorybroker, type Message struct, Payload any
-pkg ginject/memorybroker, type Message struct, Timestamp time.Time
-pkg ginject/memorybroker, type Message struct, Topic string
-pkg ginject/memorybroker, type MessageHandler func(*memorybroker.Message)
-pkg ginject/memorybroker, type Subscription interface
-pkg ginject/memorybroker, type Subscription interface, ID() string
-pkg ginject/memorybroker, type Subscription interface, Topic() string
-pkg ginject/memorybroker, type Subscription interface, Unsubscribe() error
-pkg ginject/memorybroker, var ErrClosed error
-pkg ginject/memorybroker, var ErrEmptyTopic error
-pkg ginject/memorybroker, var ErrForeignSubscription error
-pkg ginject/memorybroker, var ErrNilHandler error
 pkg ginject/memorycache, func NewMemoryCache(*memorycache.MemoryCacheOptions) *memorycache.MemoryCache
 pkg ginject/memorycache, method (*memorycache.MemoryCache) Delete(context.Context, string) error
 pkg ginject/memorycache, method (*memorycache.MemoryCache) Get(context.Context, string) ([]byte, bool)
@@ -679,45 +599,6 @@ pkg ginject/modules/config, type ConfigModuleOptions struct, OnInit config.Confi
 pkg ginject/modules/config, type ConfigOnInitFn = func()
 pkg ginject/modules/config, type ConfigService struct
 pkg ginject/modules/config, type ConfigService struct, State *config.configState
-pkg ginject/pattern, const KindComplex pattern.Kind = 3
-pkg ginject/pattern, const KindExact pattern.Kind = 0
-pkg ginject/pattern, const KindGlobal pattern.Kind = 1
-pkg ginject/pattern, const KindSuffixWildcard pattern.Kind = 2
-pkg ginject/pattern, func NewPattern(string) pattern.Pattern
-pkg ginject/pattern, method (pattern.Pattern) IsExact() bool
-pkg ginject/pattern, method (pattern.Pattern) Kind() pattern.Kind
-pkg ginject/pattern, method (pattern.Pattern) Match(string) bool
-pkg ginject/pattern, method (pattern.Pattern) Raw() string
-pkg ginject/pattern, method (pattern.Pattern) SimplePrefix() string
-pkg ginject/pattern, type Kind uint8
-pkg ginject/pattern, type Pattern struct
-pkg ginject/routing, const MaxPathLength untyped int = 4096
-pkg ginject/routing, const MaxPathSegments untyped int = 64
-pkg ginject/routing, const SERVE untyped string = "SERVE"
-pkg ginject/routing, func MethodRouteVersionToPattern(string, string, string) string
-pkg ginject/routing, func NewRouter() *routing.Router
-pkg ginject/routing, func ParseToParamKey(string) (string, map[string][]int)
-pkg ginject/routing, func PatternToMethodRouteVersion(string) (string, string, string)
-pkg ginject/routing, method (*routing.Router) Add(string, string, string, ctx.HTTPHandler) *routing.Router
-pkg ginject/routing, method (*routing.Router) AddInjectableHandler(string, string, string, any) *routing.Router
-pkg ginject/routing, method (*routing.Router) For([]string, string, string) func(...ctx.HTTPHandler) *routing.Router
-pkg ginject/routing, method (*routing.Router) Match(string, string, string, []string) (*routing.RouterItem, []string)
-pkg ginject/routing, method (*routing.Router) Use(...ctx.HTTPHandler) *routing.Router
-pkg ginject/routing, type Router struct
-pkg ginject/routing, type Router struct, GlobalMiddlewares []ctx.HTTPHandler
-pkg ginject/routing, type Router struct, InjectableHandlers map[string]any
-pkg ginject/routing, type RouterItem struct
-pkg ginject/routing, type RouterItem struct, HandlerIndex int
-pkg ginject/routing, type RouterItem struct, Handlers []ctx.HTTPHandler
-pkg ginject/routing, type RouterItem struct, Index int
-pkg ginject/routing, type RouterItem struct, Injectable any
-pkg ginject/routing, type RouterItem struct, Method string
-pkg ginject/routing, type RouterItem struct, ParamKeys map[string][]int
-pkg ginject/routing, type RouterItem struct, ParamNames []string
-pkg ginject/routing, type RouterItem struct, Pattern string
-pkg ginject/routing, type RouterItem struct, Version string
-pkg ginject/routing, var HTTPMethods []string
-pkg ginject/routing, var OperationsMapHTTPMethods map[string]string
 pkg ginject/trace, const StageComplete untyped string = "complete"
 pkg ginject/trace, const StageExceptionFilter untyped string = "exception_filter"
 pkg ginject/trace, const StageGuard untyped string = "guard"
@@ -759,24 +640,36 @@ pkg ginject/versioning, type Versioning struct, DefaultVersion string
 pkg ginject/versioning, type Versioning struct, Extractor versioning.ExtractorHandler
 pkg ginject/versioning, type Versioning struct, Key string
 pkg ginject/versioning, type Versioning struct, Type int
-pkg ginject/wsevent, func NewWSEvent() *wsevent.WSEvent
-pkg ginject/wsevent, method (*wsevent.WSEvent) Add(string, wsevent.WSEventItem)
-pkg ginject/wsevent, method (*wsevent.WSEvent) AddInjectableHandler(string, any)
-pkg ginject/wsevent, method (*wsevent.WSEvent) AddMiddlewares(string, ...ctx.WSHandler)
-pkg ginject/wsevent, method (*wsevent.WSEvent) Match(string) (wsevent.WSEventItem, string, bool)
-pkg ginject/wsevent, type WSEvent struct
-pkg ginject/wsevent, type WSEventItem struct
-pkg ginject/wsevent, type WSEventItem struct, Handler any
-pkg ginject/wsevent, type WSEventItem struct, Middlewares []ctx.WSHandler
 reach core.moduleBuilder, method (*core.moduleBuilder) Build() *core.Module
 reach core.moduleBuilder, method (*core.moduleBuilder) Controllers(...core.Controller) *core.moduleBuilder
 reach core.moduleBuilder, method (*core.moduleBuilder) Imports(...any) *core.moduleBuilder
 reach core.moduleBuilder, method (*core.moduleBuilder) Providers(...core.Provider) *core.moduleBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddExceptionFilters([]common.ExceptionFilterable, []common.HTTPLayer) *devtool.devtoolBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddGuarders([]common.Guarder, []common.HTTPLayer) *devtool.devtoolBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddHTTPMainHandlers([]common.HTTPLayer) *devtool.devtoolBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddInterceptors([]common.Interceptable, []common.HTTPLayer) *devtool.devtoolBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddMiddlewares([]common.MiddlewareFn, []common.HTTPLayer) *devtool.devtoolBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddVersioning(*versioning.Versioning) *devtool.devtoolBuilder
-reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) Build() *devtool.Devtool
 reach log.logFormat, type int
+reach memorybroker.Broker, method (memorybroker.Broker) Close() error
+reach memorybroker.Broker, method (memorybroker.Broker) Publish(string, any) error
+reach memorybroker.Broker, method (memorybroker.Broker) PublishAsync(string, any) error
+reach memorybroker.Broker, method (memorybroker.Broker) Subscribe(string, memorybroker.MessageHandler) (memorybroker.Subscription, error)
+reach memorybroker.Broker, method (memorybroker.Broker) Unsubscribe(memorybroker.Subscription) error
+reach memorybroker.Message, field Payload any
+reach memorybroker.Message, field Timestamp time.Time
+reach memorybroker.Message, field Topic string
+reach memorybroker.MessageHandler, type func(*memorybroker.Message)
+reach memorybroker.Subscription, method (memorybroker.Subscription) ID() string
+reach memorybroker.Subscription, method (memorybroker.Subscription) Topic() string
+reach memorybroker.Subscription, method (memorybroker.Subscription) Unsubscribe() error
+reach routing.Router, field GlobalMiddlewares []ctx.HTTPHandler
+reach routing.Router, field InjectableHandlers map[string]any
+reach routing.Router, method (*routing.Router) Add(string, string, string, ctx.HTTPHandler) *routing.Router
+reach routing.Router, method (*routing.Router) AddInjectableHandler(string, string, string, any) *routing.Router
+reach routing.Router, method (*routing.Router) For([]string, string, string) func(...ctx.HTTPHandler) *routing.Router
+reach routing.Router, method (*routing.Router) Match(string, string, string, []string) (*routing.RouterItem, []string)
+reach routing.Router, method (*routing.Router) Use(...ctx.HTTPHandler) *routing.Router
+reach routing.RouterItem, field HandlerIndex int
+reach routing.RouterItem, field Handlers []ctx.HTTPHandler
+reach routing.RouterItem, field Index int
+reach routing.RouterItem, field Injectable any
+reach routing.RouterItem, field Method string
+reach routing.RouterItem, field ParamKeys map[string][]int
+reach routing.RouterItem, field ParamNames []string
+reach routing.RouterItem, field Pattern string
+reach routing.RouterItem, field Version string

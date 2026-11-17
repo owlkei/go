@@ -8,7 +8,7 @@ import (
 
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/routing"
+	"github.com/dangduoc08/ginject/internal/routing"
 )
 
 type handlerTargets struct {

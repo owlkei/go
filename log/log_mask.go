@@ -11,8 +11,8 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
+	"github.com/dangduoc08/ginject/internal/pattern"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
-	"github.com/dangduoc08/ginject/pattern"
 )
 
 type convertMode uint8

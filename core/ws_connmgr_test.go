@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/net/websocket"
 
+	"github.com/dangduoc08/ginject/internal/memorybroker"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/memorybroker"
 )
 
 func newTestWSConnPair(t testing.TB) (server *websocket.Conn, client *websocket.Conn, cleanup func()) {

@@ -49,7 +49,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/memorybroker"
+	"github.com/dangduoc08/ginject/internal/memorybroker"
 )
 
 func main() {

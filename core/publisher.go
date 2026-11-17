@@ -1,6 +1,6 @@
 package core
 
-import "github.com/dangduoc08/ginject/memorybroker"
+import "github.com/dangduoc08/ginject/internal/memorybroker"
 
 type publisher struct {
 	broker memorybroker.Broker

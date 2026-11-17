@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/pattern"
+	"github.com/dangduoc08/ginject/internal/pattern"
 )
 
 func BenchmarkNewPattern_Exact(b *testing.B) {

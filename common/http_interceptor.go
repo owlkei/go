@@ -7,8 +7,8 @@ import (
 	"github.com/dangduoc08/ginject/aggregation"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/routing"
 )
 
 type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any

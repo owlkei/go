@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dangduoc08/ginject/internal/pattern"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/pattern"
 )
 
 func TestNewPattern_Kind(t *testing.T) {

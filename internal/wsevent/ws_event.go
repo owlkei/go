@@ -6,7 +6,7 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/color"
-	ptrn "github.com/dangduoc08/ginject/pattern"
+	ptrn "github.com/dangduoc08/ginject/internal/pattern"
 )
 
 type WSEventItem struct {

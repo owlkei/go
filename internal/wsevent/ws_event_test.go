@@ -6,7 +6,7 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/wsevent"
+	"github.com/dangduoc08/ginject/internal/wsevent"
 )
 
 func TestWSEvent_MatchExactPattern(t *testing.T) {

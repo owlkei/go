@@ -1450,7 +1450,7 @@ own README with every option, its defaults and their sources.
 | [`middlewares/compress`](middlewares/compress/README.md) | gzip for text responses, with bounded memory |
 
 Rate limiting per client is a guard, not a middleware: [`guards/throttler`](guards/throttler/README.md).
-The access log is a switch on the app: `app.EnableAccessLog()` ([`accesslog`](accesslog/README.md)).
+The access log is a switch on the app: `app.EnableAccessLog()` ([`accesslog`](internal/accesslog/README.md)).
 
 ---
 
@@ -1466,7 +1466,7 @@ pieces below. Each one costs nothing until you bind it.
    `app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat, MaskFields: []string{"password"}}))`
    ([log](log/README.md)).
 2. **Access log.** `app.EnableAccessLog()` writes one line per request with its status, its total
-   time and the time of each middleware, guard and handler ([accesslog](accesslog/README.md)).
+   time and the time of each middleware, guard and handler ([accesslog](internal/accesslog/README.md)).
 3. **Log with the request's context.** Log through `Logger.From(c.Context())` in handlers and
    services, so every line carries the request's `trace_id` and `request` ID. See
    [Find the logs of a request](log/README.md#find-the-logs-of-a-request).

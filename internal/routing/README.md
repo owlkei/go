@@ -41,7 +41,7 @@ import (
 	"net/http"
 
 	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/routing"
+	"github.com/dangduoc08/ginject/internal/routing"
 )
 
 func main() {
@@ -372,7 +372,7 @@ Results depend on the machine. They were captured when this README was generated
 ```console
 goos: darwin
 goarch: amd64
-pkg: github.com/dangduoc08/ginject/routing
+pkg: github.com/dangduoc08/ginject/internal/routing
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkPatternToMethodRouteVersion-12        	36271851	        33.14 ns/op	       0 B/op	       0 allocs/op
 BenchmarkParseToParamKey-12                    	 2631632	       451.9 ns/op	     480 B/op	       7 allocs/op

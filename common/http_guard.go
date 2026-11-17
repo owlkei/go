@@ -6,8 +6,8 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/routing"
 )
 
 type HTTPCanActivate = func(*ctx.HTTPContext) bool

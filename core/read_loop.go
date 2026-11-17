@@ -7,9 +7,9 @@ import (
 	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/memorybroker"
-	ptrn "github.com/dangduoc08/ginject/pattern"
-	"github.com/dangduoc08/ginject/wsevent"
+	"github.com/dangduoc08/ginject/internal/memorybroker"
+	ptrn "github.com/dangduoc08/ginject/internal/pattern"
+	"github.com/dangduoc08/ginject/internal/wsevent"
 	"golang.org/x/net/websocket"
 )
 

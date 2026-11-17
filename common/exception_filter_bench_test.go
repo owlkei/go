@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/routing"
+	"github.com/dangduoc08/ginject/internal/routing"
 )
 
 func buildBenchHTTP(n int) *HTTP {

@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/routing"
 )
 
 var HTTPOperations = map[string]string{

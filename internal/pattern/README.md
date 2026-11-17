@@ -32,7 +32,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/pattern"
+	"github.com/dangduoc08/ginject/internal/pattern"
 )
 
 func main() {

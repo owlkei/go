@@ -7,9 +7,9 @@ import (
 
 	"golang.org/x/net/websocket"
 
+	"github.com/dangduoc08/ginject/internal/memorybroker"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/memorybroker"
 )
 
 func subscribeAndDrainAck(t testing.TB, ws *WS, conn *WSConnection, clientConn *websocket.Conn, topic string) {

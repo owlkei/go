@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dangduoc08/ginject/wsevent"
+	"github.com/dangduoc08/ginject/internal/wsevent"
 )
 
 func newBenchWSEvent(exactPatterns, wildcardPatterns int) *wsevent.WSEvent {

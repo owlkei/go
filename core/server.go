@@ -21,7 +21,7 @@ import (
 
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/routing"
+	"github.com/dangduoc08/ginject/internal/routing"
 )
 
 const (

@@ -5,8 +5,8 @@ import (
 	"sort"
 
 	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/slice"
-	"github.com/dangduoc08/ginject/routing"
 	"github.com/dangduoc08/ginject/versioning"
 )
 

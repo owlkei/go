@@ -10,8 +10,8 @@ import (
 
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/routing"
 )
 
 type mockExFilter struct{}
