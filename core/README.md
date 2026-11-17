@@ -678,7 +678,7 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
 
 ## Response writer
 
-Every layer receives the same writer as `c.ResponseWriter` (middlewares as their `http.ResponseWriter`). It records whether a response was sent, and forwards `Flush`, `Hijack`, `ReadFrom` (so `http.ServeFile` keeps `sendfile`) and `Unwrap` (so `http.ResponseController` reaches `SetWriteDeadline` and friends). Like `net/http`'s own writer, don't use it after the request returns: from the moment the response ends, a write from a goroutine the handler left running gets an error and reaches nothing, and a late write on an idle context is dropped.
+Every layer receives the same writer as `c.ResponseWriter` (middlewares as their `http.ResponseWriter`). It records whether a response was sent, and forwards `Flush`, `Hijack`, `ReadFrom` (so `http.ServeFile` keeps `sendfile`) and `Unwrap` (so `http.ResponseController` reaches `SetWriteDeadline` and friends). Like `net/http`'s own writer, never write to it after the handler returns: until the context is reused, such a write gets an error and reaches nothing; after that it can reach another request's response, and it is a data race.
 
 Some header values are slices built once and shared, so setting them costs no allocation: the `Cache-Control: no-cache` of static files, the headers of `helmet`, `cors` and `compress`, and the `X-Request-Id` and `Traceparent` values, which share their memory with the request's trace scope. Change a header only through `Header().Set`, `Add` or `Del`, or by assigning a new slice. Never write into the slice you read (`w.Header()["Cache-Control"][0] = "no-store"`): that changes the value for every other response that shares it, and is a data race.
 

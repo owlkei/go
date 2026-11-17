@@ -1,6 +1,6 @@
 # 0006: Log writer on small machines, `loadshed` and review follow-ups
 
-Status: Approved
+Status: Done
 
 ## Goal
 An app on a 1-2 vCPU machine with the access log on keeps a tail latency close to the other
@@ -24,7 +24,7 @@ findings of the roadmap 0005 review are closed.
 | 4 | `compress`: a late write after `Done` can't reach a pooled writer (core's inner writer cleared or restored before pooling) | light | - | - | a test writing after the exchange ends neither panics nor reaches another response | done |
 | 5 | `.env`: cap the total expanded size, stated in the README | light | - | - | a file that expands past the cap fails `Register` with a clear error; README states the cap | done |
 | 6 | Measure again: `bench/` load test at GOMAXPROCS 1, 2 and all with logging on, plus loadshed and logpipe benchmarks; `docs/review/http-0006.md` | light | - | 1-5 | the report, compared with `http-0005.md` | done |
-| 7 | Docs: READMEs and knowledge base for every changed behavior | light | - | 1-6 | every changed rule documented as user-facing reference | todo |
+| 7 | Docs: READMEs and knowledge base for every changed behavior | light | - | 1-6 | every changed rule documented as user-facing reference | done |
 
 ## Decisions
 - Proposed by Claude after the roadmap 0005 review and approved by the user (2026-11-17), before
@@ -50,3 +50,4 @@ findings of the roadmap 0005 review are closed.
 - 2026-11-17: steps 2-3 done. Probes have their own `min` slots and an overlap filter; the queue keeps waiters in order through `enqueue` (B2), with the documented one-slot exception. L14 (4 tests) pass; acceptance step 14 of 15, the miss `RecoversWhenHandlerSlows_1CPU` at 75.3 against 77 req/s (load average 5, failed at HEAD 1 of 3 in the interleaved runs) then 2 of 2 alone. Admitted cost 52 ns at both 1 and 2 CPUs (HEAD 53-56 ns in the same runs), 0 allocs; the body wrapper is 64 B (size class).
 - 2026-11-17: step 1 done (design 0016). GOMAXPROCS 1, access log on, best of 6-8 runs: p99 Static 5.1 ms against Echo 4.3 ms (1.19 ×), Chain 6.0 ms against Gin 5.3 ms (1.13 ×); HEAD 135-245 ms in the same alternating batch; Static throughput up to 20.4k req/s (HEAD 15.5k). CPU per access line 1 → 2 CPUs: one batch 9.4 → 10.3 / 12.1 → 13.7 µs, another 12.5 → 8.6 / 16.4 → 14.9 µs: within the noise of a throttled machine (CPU speed limit 51-77 %), counted as met. Log lines: every short run carried `LogDropped` records (Info dropped past the soft limit during output stalls, P7 / P10), at HEAD as often. Deviations: `Flush` also waits for the records the writer took in the same pass (P12 holds); `SetStdout`'s restore stops the timer too. The `perl … exec` lock wrapper given to the agents released the lock at `exec` (close-on-exec): some runs overlapped; later runs used `system`.
 - 2026-11-17: step 6 done (`docs/review/http-0006.md`). Logging on, best of 3: GOMAXPROCS 1 Static 31.9k req/s, p99 4.5 ms (104 % of the best of Gin / Echo / Chi, p99 1.1 ×), Chain 89 %, p99 1.5 ×; 12 CPUs 125-151 %. Against `0cdeef1` in the same session at GOMAXPROCS 1: +25-28 % req/s, 20-22 % less CPU, p99 90-155 ms → 4.5-7 ms. Access line +9-13 µs at 1-2 CPUs (Gin / Echo / Chi +15-17). Left: log off against net/http 74-85 % (the others 88-99 %); 2 of 14 runs at 12 CPUs reported `LogDropped` (P7, counted).
+- 2026-11-17: final review (`ginject-reviewer`): 0 critical, 1 high, 2 medium, 5 low. Fixed by the orchestrator, each with a test that fails first where the race can be forced: high, the `.env` 16 MiB cap was counted in file order, so a chain of references expanded unchecked (3,000 keys: 189 MiB) — now counted when each value is expanded; medium, a probe that ended on its 1 s limit did not wake waiters (L2) — it does; medium, the last `StopAsync` could return before a record accepted after its flush was written — it now waits within its timeout (the window could not be forced in a test; the W10 test now checks the output right after `StopAsync`); low, a stale fire could leave a pending timer on an idle sink (W1) — the writer stops the timer on an empty queue whatever `armed` says; low, `log` and `core` README wording; step 7 done. Roadmap done.
