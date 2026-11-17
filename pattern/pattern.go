@@ -1,6 +1,8 @@
 package pattern
 
-import "strings"
+import (
+	"strings"
+)
 
 type Kind uint8
 
@@ -12,50 +14,32 @@ const (
 )
 
 type Pattern struct {
-	raw          string
-	segments     []string
-	kind         Kind
-	simplePrefix string
+	raw      string
+	segments []string
+	dotted   string
+	kind     Kind
 }
 
 func NewPattern(raw string) Pattern {
 	if raw == "*" {
 		return Pattern{raw: raw, kind: KindGlobal}
 	}
+	if !hasWildSegment(raw) {
+		return Pattern{raw: raw, kind: KindExact}
+	}
+	if n := len(raw); n >= 2 && raw[n-2:] == ".*" && !hasWildSegment(raw[:n-2]) {
+		return Pattern{raw: raw, kind: KindSuffixWildcard, dotted: raw[:n-1]}
+	}
+	return Pattern{raw: raw, segments: strings.Split(raw, "."), kind: KindComplex}
+}
 
-	segs := strings.Split(raw, ".")
-
-	hasWild := false
-	for _, s := range segs {
-		if s == "*" {
-			hasWild = true
-			break
+func hasWildSegment(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '*' && (i == 0 || s[i-1] == '.') && (i == len(s)-1 || s[i+1] == '.') {
+			return true
 		}
 	}
-
-	if !hasWild {
-		return Pattern{raw: raw, segments: segs, kind: KindExact}
-	}
-
-	if len(segs) >= 2 && segs[len(segs)-1] == "*" {
-		simple := true
-		for _, s := range segs[:len(segs)-1] {
-			if s == "*" {
-				simple = false
-				break
-			}
-		}
-		if simple {
-			return Pattern{
-				raw:          raw,
-				segments:     segs,
-				kind:         KindSuffixWildcard,
-				simplePrefix: strings.Join(segs[:len(segs)-1], "."),
-			}
-		}
-	}
-
-	return Pattern{raw: raw, segments: segs, kind: KindComplex}
+	return false
 }
 
 func (p Pattern) Match(topic string) bool {
@@ -65,14 +49,10 @@ func (p Pattern) Match(topic string) bool {
 	case KindExact:
 		return p.raw == topic
 	case KindSuffixWildcard:
-		if !strings.HasPrefix(topic, p.simplePrefix+".") {
-			return false
-		}
-		return len(topic) > len(p.simplePrefix)+1
-	case KindComplex:
-		return p.matchSegments(strings.Split(topic, "."))
+		return len(topic) > len(p.dotted) && strings.HasPrefix(topic, p.dotted)
+	default:
+		return p.matchSegments(topic)
 	}
-	return false
 }
 
 func (p Pattern) Raw() string {
@@ -84,7 +64,10 @@ func (p Pattern) Kind() Kind {
 }
 
 func (p Pattern) SimplePrefix() string {
-	return p.simplePrefix
+	if p.dotted == "" {
+		return ""
+	}
+	return p.dotted[:len(p.dotted)-1]
 }
 
 func (p Pattern) IsExact() bool {
@@ -95,25 +78,25 @@ func (p Pattern) IsGlobal() bool {
 	return p.kind == KindGlobal
 }
 
-func (p Pattern) matchSegments(topic []string) bool {
-	pi, ti := 0, 0
-	for pi < len(p.segments) {
-		if p.segments[pi] == "*" {
-			if pi == len(p.segments)-1 {
-				return ti < len(topic)
-			}
-			if ti >= len(topic) {
-				return false
-			}
-			pi++
-			ti++
-			continue
-		}
-		if ti >= len(topic) || p.segments[pi] != topic[ti] {
+func (p Pattern) matchSegments(topic string) bool {
+	rest, done := topic, false
+	last := len(p.segments) - 1
+	for i, want := range p.segments {
+		if done {
 			return false
 		}
-		pi++
-		ti++
+		if want == "*" && i == last {
+			return true
+		}
+		seg := rest
+		if j := strings.IndexByte(rest, '.'); j >= 0 {
+			seg, rest = rest[:j], rest[j+1:]
+		} else {
+			done = true
+		}
+		if want != "*" && want != seg {
+			return false
+		}
 	}
-	return pi == len(p.segments) && ti == len(topic)
+	return done
 }

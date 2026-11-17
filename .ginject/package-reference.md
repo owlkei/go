@@ -455,6 +455,7 @@ Segment-based matcher (`pattern` package), **not regex** — only a bare `*` per
 - **Suffix Wildcard**: `user.*` — O(1) map lookup by prefix; greedy, matches *any depth* below `user.` (`user.a`, `user.a.b`, ...), not just one level
 - **Global**: `*` — O(1), matches every topic. `*` is the **only** wildcard token — `>` is NOT special-cased anywhere in the `pattern` package (verified empirically); a pattern containing `>` is parsed as a literal segment and matches nothing else. `memorybroker/README.md` previously claimed `>` was an alias for global — that was never true and has been corrected
 - **Complex**: `user.*.profile`, `*.created` — O(n) scan over registered complex patterns; `*` can appear mid-path or more than once
+- `Pattern.Match` never allocates (the complex kind walks the topic without splitting it); `*` inside a segment (`a*`) is literal; empty segments count as segments. Full rules and edge cases: `pattern/README.md`
 
 ### Delivery Model
 
