@@ -278,7 +278,7 @@ func formatRate(v float64) string { return fmt.Sprintf("%.0f requests per second
 
 func stableRun(t *testing.T, procs int, kind string) {
 	t.Helper()
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		t.Skip("L12 runs about 25 s")
 	}
 	withMachine(t, procs, math.MaxInt64)
@@ -300,7 +300,7 @@ func TestAdaptive_Stable_IOBound_2CPU(t *testing.T)  { stableRun(t, 2, "io") }
 
 func belowCapacityRun(t *testing.T, procs int) {
 	t.Helper()
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		t.Skip("L12 runs about 35 s")
 	}
 	withMachine(t, procs, math.MaxInt64)
@@ -326,7 +326,7 @@ func TestAdaptive_NoRefusalBelowCapacity_2CPU(t *testing.T) { belowCapacityRun(t
 
 func recoversRun(t *testing.T, procs int) {
 	t.Helper()
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		t.Skip("L12 runs about 35 s")
 	}
 	withMachine(t, procs, math.MaxInt64)
@@ -573,7 +573,7 @@ func expectSteering(t *testing.T, s steering, label string, floorShare float64, 
 
 func steeringRun(t *testing.T, attack launcher, label string, floorShare float64, wantServed, wantRecovery bool) {
 	t.Helper()
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		t.Skip("L13 runs about 45 s")
 	}
 	withMachine(t, 2, math.MaxInt64)
