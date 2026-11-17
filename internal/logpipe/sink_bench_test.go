@@ -106,3 +106,17 @@ func BenchmarkSink_Write_Async_SlowOutput_12(b *testing.B) {
 		total.Add(local)
 	})
 }
+
+func BenchmarkSink_Write_Async_Burst(b *testing.B) {
+	s := New(io.Discard)
+	s.StartAsync()
+	defer s.StopAsync(time.Minute)
+	record := benchRecord()
+	b.ReportAllocs()
+	for b.Loop() {
+		for range 20 {
+			s.Write(Info, record, quietReport)
+		}
+		s.Flush(time.Minute)
+	}
+}

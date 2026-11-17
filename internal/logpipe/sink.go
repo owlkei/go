@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/dangduoc08/ginject/internal/inspect"
 )
 
 type Level uint8
@@ -31,6 +33,16 @@ const (
 
 	FlushTimeout = 2 * time.Second
 )
+
+const (
+	wakeDelay = time.Millisecond
+	wakeSize  = 16 << 10
+)
+
+type wakeTimer interface {
+	Reset(d time.Duration) bool
+	Stop() bool
+}
 
 const (
 	truncatedMarker = "...[TRUNCATED]\n"
@@ -62,8 +74,15 @@ type Sink struct {
 	report        func(dropped [4]uint64) []byte
 	lastReport    time.Time
 
-	now   func() time.Time
-	after func(time.Duration) <-chan time.Time
+	timer    wakeTimer
+	armed    bool
+	flushing int
+	wakes    uint64
+	writes   uint64
+
+	now      func() time.Time
+	after    func(time.Duration) <-chan time.Time
+	newTimer func(d time.Duration, f func()) wakeTimer
 }
 
 var stdout = New(os.Stdout)
@@ -73,7 +92,11 @@ func Stdout() *Sink {
 }
 
 func New(w io.Writer) *Sink {
-	return &Sink{out: w, now: time.Now, after: time.After}
+	return &Sink{out: w, now: time.Now, after: time.After, newTimer: newWakeTimer}
+}
+
+func newWakeTimer(d time.Duration, f func()) wakeTimer {
+	return time.AfterFunc(d, f)
 }
 
 func SetStdout(w io.Writer) (restore func()) {
@@ -82,11 +105,15 @@ func SetStdout(w io.Writer) (restore func()) {
 	s.mu.Lock()
 	out, async := s.out, s.async
 	s.out, s.async = w, 0
+	s.syncLocked()
 	s.mu.Unlock()
 	return func() {
 		s.Flush(FlushTimeout)
 		s.mu.Lock()
 		s.out, s.async = out, async
+		if async == 0 {
+			s.syncLocked()
+		}
 		s.mu.Unlock()
 	}
 }
@@ -105,9 +132,24 @@ func (s *Sink) StopAsync(timeout time.Duration) bool {
 	s.mu.Lock()
 	if s.async > 0 {
 		s.async--
+		if s.async == 0 {
+			s.syncLocked()
+		}
 	}
 	s.mu.Unlock()
 	return ok
+}
+
+func (s *Sink) syncLocked() {
+	if s.timer != nil {
+		s.timer.Stop()
+	}
+	s.armed = false
+	if len(s.queue) > 0 && !s.writing {
+		s.writing = true
+		s.wakes++
+		go s.drain()
+	}
 }
 
 func (s *Sink) Write(level Level, record []byte, report func(dropped [4]uint64) []byte) {
@@ -140,22 +182,63 @@ func (s *Sink) Write(level Level, record []byte, report func(dropped [4]uint64) 
 		}
 	}
 	s.appendLocked(record)
-	if !s.writing {
+	switch {
+	case s.writing:
+	case level == Fatal || len(s.queue) >= wakeSize:
 		s.writing = true
+		s.wakes++
 		go s.drain()
+	default:
+		s.armLocked()
 	}
 	s.mu.Unlock()
 }
 
+func (s *Sink) armLocked() {
+	if s.armed {
+		return
+	}
+	s.armed = true
+	if s.timer == nil {
+		s.timer = s.newTimer(wakeDelay, s.fire)
+		return
+	}
+	s.timer.Reset(wakeDelay)
+}
+
+func (s *Sink) fire() {
+	s.mu.Lock()
+	s.armed = false
+	if s.writing || len(s.queue) == 0 {
+		s.mu.Unlock()
+		return
+	}
+	s.writing = true
+	s.wakes++
+	s.drainLocked()
+}
+
 func (s *Sink) Flush(timeout time.Duration) bool {
 	s.mu.Lock()
+	s.flushing++
 	target, dropTarget := s.accepted, s.dropSeq
 	if !s.writing && (len(s.queue) > 0 || s.dropSeq != s.takenSeq) {
 		s.writing = true
+		s.wakes++
 		go s.drain()
 	}
 	var expired <-chan time.Time
-	for s.done < target || s.reportedSeq < dropTarget {
+	extended := false
+	for {
+		if s.done >= target && s.reportedSeq >= dropTarget {
+			taken := s.accepted - uint64(len(s.queue))
+			if extended || taken <= target {
+				break
+			}
+			extended = true
+			target = taken
+			continue
+		}
 		ch := s.progressLocked()
 		if expired == nil {
 			expired = s.after(timeout)
@@ -164,10 +247,14 @@ func (s *Sink) Flush(timeout time.Duration) bool {
 		select {
 		case <-ch:
 		case <-expired:
+			s.mu.Lock()
+			s.flushing--
+			s.mu.Unlock()
 			return false
 		}
 		s.mu.Lock()
 	}
+	s.flushing--
 	s.mu.Unlock()
 	return true
 }
@@ -261,6 +348,7 @@ func (s *Sink) drain() {
 }
 
 func (s *Sink) drainLocked() {
+	passed := false
 	for {
 		if len(s.queue) == 0 {
 			if s.dropSeq != s.takenSeq {
@@ -268,11 +356,25 @@ func (s *Sink) drainLocked() {
 				continue
 			}
 			s.writing = false
+			if s.armed {
+				s.armed = false
+				s.timer.Stop()
+			}
 			s.releaseLocked()
 			s.signalLocked()
 			s.mu.Unlock()
 			return
 		}
+		if passed && s.async > 0 && s.flushing == 0 && len(s.queue) < wakeSize {
+			s.writing = false
+			s.armLocked()
+			if cap(s.spare) > keepCapacity {
+				s.spare, s.spareEnds = nil, nil
+			}
+			s.mu.Unlock()
+			return
+		}
+		passed = true
 		buf, ends, out := s.queue, s.ends, s.out
 		s.queue, s.ends = s.spare[:0], s.spareEnds[:0]
 		s.spare, s.spareEnds = nil, nil
@@ -286,11 +388,13 @@ func (s *Sink) drainLocked() {
 			end := ends[j-1]
 			write(out, buf[start:end])
 			s.mu.Lock()
+			s.writes++
 			s.batchDoneLocked(uint64(end - start))
-			s.mu.Unlock()
 			start, i = end, j
+			if i < len(ends) {
+				s.mu.Unlock()
+			}
 		}
-		s.mu.Lock()
 		if s.spare == nil {
 			s.spare, s.spareEnds = buf[:0], ends[:0]
 		}
@@ -341,4 +445,27 @@ func (s *Sink) releaseLocked() {
 	if cap(s.spare) > keepCapacity {
 		s.spare, s.spareEnds = nil, nil
 	}
+}
+
+func (s *Sink) Snapshot() inspect.Snapshot {
+	s.mu.Lock()
+	fields := []inspect.Field{
+		{Key: "wake_delay", Value: wakeDelay},
+		{Key: "wake_size", Value: wakeSize},
+		{Key: "batch_size", Value: batchSize},
+		{Key: "queue_limit", Value: queueLimit},
+		{Key: "soft_limit", Value: softLimit},
+		{Key: "async", Value: s.async},
+		{Key: "queued", Value: int64(s.accepted - s.done)},
+		{Key: "writing", Value: s.writing},
+		{Key: "timer_armed", Value: s.armed},
+		{Key: "wakes", Value: int64(s.wakes)},
+		{Key: "writes", Value: int64(s.writes)},
+		{Key: "dropped_debug", Value: int64(s.dropped[Debug])},
+		{Key: "dropped_info", Value: int64(s.dropped[Info])},
+		{Key: "dropped_warn", Value: int64(s.dropped[Warn])},
+		{Key: "dropped_error", Value: int64(s.dropped[Error])},
+	}
+	s.mu.Unlock()
+	return inspect.Snapshot{Name: "logpipe", Fields: fields}
 }

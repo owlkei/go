@@ -140,6 +140,11 @@
       "issue": "broker iterates all subscribers",
       "cost": "linear in subscriber count",
       "mitigation": "use topic patterns to reduce subscribers"
+    },
+    "log_output": {
+      "issue": "waking the stdout writer from a request goroutine takes the scheduler's runnext slot and delays that connection's background reader (design 0016)",
+      "cost": "one writer wake per 25-50 lines at GOMAXPROCS 1 (writer started 1 ms after a burst's first record, or at 16 KiB, Fatal, Flush); the writer goroutine lives only while it writes, idle = no goroutine and no pending timer",
+      "mitigation": "built in; do not replace the delayed wake with a per-line wake or a parked long-lived writer (goready also takes runnext)"
     }
   },
   "optimization_opportunities": {

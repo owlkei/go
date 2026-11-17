@@ -393,7 +393,7 @@ type ExceptionFilterable any // matched by its method:
 - `sync.Pool` for context pooling — handles synchronization
 - `trace.Tracer` — listeners in an immutable slice behind an `atomic.Pointer`; `Enabled` / `Emit` take no lock, `Listen` / `stop` serialize on one mutex
 - `accesslog.AccessLog` — 64 shards (mutex + map each) of pending requests; the line is logged on the request goroutine after the shard lock is released (no worker, queue or ticker)
-- `internal/logpipe.Sink` — the stdout pipeline of the built-in logger: one mutex, two swapped buffers (1 MiB bound), at most one writer goroutine that exists only while the queue is not empty
+- `internal/logpipe.Sink` — the stdout pipeline of the built-in logger: one mutex, two swapped buffers (1 MiB bound), at most one writer goroutine that exists only while it writes, woken about once per millisecond or per 16 KiB (design 0016; Fatal, `Flush` and shutdown at once)
 - Panic stack sampler (`core/panic_stack.go`) — one mutex per app around a 32-slot key table and the per-second counters; a timer only in a second with a suppressed stack
 - `memorybroker.Broker` — single sync.RWMutex over 4 maps (exact/prefix/global/complex); no sharding; PublishAsync tracked via sync.WaitGroup so Close() can drain in-flight goroutines
 

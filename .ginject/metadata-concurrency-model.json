@@ -63,9 +63,9 @@
     },
     "logpipe.Sink": {
       "description": "Output pipeline of the built-in logger (one per output; stdout is process-wide)",
-      "access": "callers append records; at most one writer goroutine, alive only while the queue is not empty",
+      "access": "callers append records; at most one writer goroutine, alive only while it writes; in async mode it starts 1 ms after the first record of a burst (one reusable time.AfterFunc timer whose goroutine becomes the writer), at once at 16 KiB queued, on Fatal or while a Flush waits; idle = no goroutine and no pending timer",
       "thread_safe": true,
-      "synchronization": "one sync.Mutex over two swapped buffers, counters and flags; waiters on a channel closed after each batch; never held during the output's Write"
+      "synchronization": "one sync.Mutex over two swapped buffers, counters, flags, the wake timer (Reset / Stop under the lock) and the waiting-Flush count; the writing flag decides who writes, a stale timer fire costs at most one early pass; waiters on a channel closed after each batch; never held during the output's Write; Snapshot() (inspect.Snapshotter) takes it once"
     },
     "memorybroker.Broker": {
       "description": "Pub/sub message broker (exact/suffix-wildcard/global/complex topic matching)",

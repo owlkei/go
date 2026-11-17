@@ -83,13 +83,13 @@ One named value of a snapshot.
 | Field | Type | Meaning |
 |---|---|---|
 | `Key` | `string` | The name, in snake case (`trusted_origins`), or the header name for `helmet` |
-| `Value` | `any` | A `string`, `bool`, `int64`, `float64`, `time.Duration` or `[]string` |
+| `Value` | `any` | A `string`, `bool`, `int` (`logpipe` only), `int64`, `float64`, `time.Duration` or `[]string` |
 
 ### Snapshot
 
 | Field | Type | Meaning |
 |---|---|---|
-| `Name` | `string` | The component: `proxy`, `hostcheck`, `httpsredirect`, `csrf`, `cors`, `helmet`, `compress` |
+| `Name` | `string` | The component: `proxy`, `hostcheck`, `httpsredirect`, `csrf`, `cors`, `helmet`, `compress`, `logpipe` |
 | `Fields` | `[]Field` | Its effective configuration, then its counters |
 
 ### Snapshotter
@@ -120,6 +120,7 @@ if s, ok := mw.(inspect.Snapshotter); ok {
 | `cors` | `allow_origins`, `allow_methods`, `allow_headers`, `expose_headers`, `max_age` (`time.Duration`), `allow_credentials`, `allow_private_network` | `preflights` (answered for a matching origin), `refused` (origins that did not match) |
 | `helmet` | one field per configurable header, keyed by header name, with the value sent or `-` when off | none |
 | `compress` | `min_size`, `level`, `writer_cap` | `writers_in_use`, `compressed`, `uncompressed_no_writer`, `bytes_in`, `bytes_out` |
+| `logpipe` (not a middleware: the stdout sink of the built-in logger, `logpipe.Stdout()`) | `wake_delay` (`time.Duration`), `wake_size`, `batch_size`, `queue_limit`, `soft_limit`, `async` (`int`), then the state `queued`, `writing`, `timer_armed` | `wakes`, `writes`, `dropped_debug`, `dropped_info`, `dropped_warn`, `dropped_error` |
 
 Only `proxy`'s two counters and `cors`'s preflight counter are updated on a request that passes
 (one atomic add each); the others count refusals or compressed responses only.

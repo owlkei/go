@@ -296,3 +296,118 @@ func (h *heldSink) startWriter() {
 }
 
 func quietReport([4]uint64) []byte { return []byte("R quiet\n") }
+
+type fakeTimer struct {
+	mu      sync.Mutex
+	f       func()
+	arms    []time.Duration
+	stops   int
+	armed   bool
+	created bool
+}
+
+func (ft *fakeTimer) new(d time.Duration, f func()) wakeTimer {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	ft.created = true
+	ft.f = f
+	ft.arms = append(ft.arms, d)
+	ft.armed = true
+	return ft
+}
+
+func (ft *fakeTimer) Reset(d time.Duration) bool {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	was := ft.armed
+	ft.arms = append(ft.arms, d)
+	ft.armed = true
+	return was
+}
+
+func (ft *fakeTimer) Stop() bool {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	was := ft.armed
+	ft.stops++
+	ft.armed = false
+	return was
+}
+
+func (ft *fakeTimer) fire() {
+	ft.mu.Lock()
+	f := ft.f
+	ft.armed = false
+	ft.mu.Unlock()
+	if f == nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	<-done
+}
+
+func (ft *fakeTimer) armCount() int {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	return len(ft.arms)
+}
+
+func (ft *fakeTimer) stopCount() int {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	return ft.stops
+}
+
+func (ft *fakeTimer) isArmed() bool {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	return ft.armed
+}
+
+func (ft *fakeTimer) wasCreated() bool {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	return ft.created
+}
+
+func (ft *fakeTimer) delays() []time.Duration {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	return append([]time.Duration(nil), ft.arms...)
+}
+
+type fakedSink struct {
+	s  *Sink
+	w  *gateWriter
+	ft *fakeTimer
+}
+
+func newFakedSink(t *testing.T) *fakedSink {
+	t.Helper()
+	w := newGateWriter()
+	s := New(w)
+	ft := &fakeTimer{}
+	s.newTimer = ft.new
+	s.StartAsync()
+	t.Cleanup(func() {
+		w.openAll()
+		s.Flush(time.Minute)
+		s.StopAsync(time.Minute)
+	})
+	return &fakedSink{s: s, w: w, ft: ft}
+}
+
+func snapValue(t *testing.T, s *Sink, key string) any {
+	t.Helper()
+	for _, f := range s.Snapshot().Fields {
+		if f.Key == key {
+			return f.Value
+		}
+	}
+	t.Fatal(test.DiffMessage(key, "a field of the snapshot", "W13: Snapshot has the key"))
+	return nil
+}
