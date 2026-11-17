@@ -94,7 +94,7 @@ cache.Register(&cache.CacheModuleOptions{IsGlobal: true})
 
 ### OnInit
 
-Type: `func()`
+Type: `CacheOnInitFn` (`func()`)
 
 Default: `nil`
 

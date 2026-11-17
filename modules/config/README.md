@@ -193,7 +193,7 @@ config.Register(&config.ConfigModuleOptions{
 ```
 
 ### OnInit
-Type: `func()`
+Type: `ConfigOnInitFn` (`func()`)
 
 Default: `nil`
 
