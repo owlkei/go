@@ -57,6 +57,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: API
+        run: make api-check
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

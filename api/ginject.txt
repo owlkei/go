@@ -1,0 +1,782 @@
+pkg ginject, type Aggregation = *aggregation.Aggregation
+pkg ginject, type App = *core.App
+pkg ginject, type Body = ctx.Body
+pkg ginject, type Exception = *exception.Exception
+pkg ginject, type FieldLevel = ctx.FieldLevel
+pkg ginject, type File = ctx.File
+pkg ginject, type Form = ctx.Form
+pkg ginject, type HTTPContext = *ctx.HTTPContext
+pkg ginject, type Header = ctx.Header
+pkg ginject, type Map = ctx.Map
+pkg ginject, type Next = ctx.Next
+pkg ginject, type Param = ctx.Param
+pkg ginject, type Publisher = common.Publisher
+pkg ginject, type Query = ctx.Query
+pkg ginject, type Redirect = ctx.Redirect
+pkg ginject, type Request = *http.Request
+pkg ginject, type Response = http.ResponseWriter
+pkg ginject, type Router = *routing.Router
+pkg ginject, type Versioning = versioning.Versioning
+pkg ginject, type WSContext = *ctx.WSContext
+pkg ginject, type WSPayload = ctx.WSPayload
+pkg ginject/accesslog, func NewAccessLog(*accesslog.AccessLogConfig) *accesslog.AccessLog
+pkg ginject/accesslog, method (*accesslog.AccessLog) Stop()
+pkg ginject/accesslog, type AccessLog struct
+pkg ginject/accesslog, type AccessLogConfig struct
+pkg ginject/accesslog, type AccessLogConfig struct, Logger common.LogAdapter
+pkg ginject/accesslog, type AccessLogConfig struct, Tracer *trace.Tracer
+pkg ginject/aggregation, func NewAggregation() *aggregation.Aggregation
+pkg ginject/aggregation, method (*aggregation.Aggregation) Aggregate() any
+pkg ginject/aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
+pkg ginject/aggregation, method (*aggregation.Aggregation) Pipe(...aggregation.Operator) any
+pkg ginject/aggregation, method (*aggregation.Aggregation) SetMainData(any) *aggregation.Aggregation
+pkg ginject/aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
+pkg ginject/aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
+pkg ginject/aggregation, type Aggregation struct
+pkg ginject/aggregation, type Aggregation struct, InterceptorData any
+pkg ginject/aggregation, type Aggregation struct, IsMainHandlerCalled bool
+pkg ginject/aggregation, type Aggregation struct, Name string
+pkg ginject/aggregation, type Operator struct
+pkg ginject/common, const BodyPipeableKey untyped string = "body"
+pkg ginject/common, const ContextPipeableKey untyped string = "context"
+pkg ginject/common, const ContextTypeHTTP untyped string = "http"
+pkg ginject/common, const ContextTypeWS untyped string = "ws"
+pkg ginject/common, const ExceptionFilterMethodName untyped string = "Catch"
+pkg ginject/common, const FilePipeableKey untyped string = "file"
+pkg ginject/common, const FormPipeableKey untyped string = "form"
+pkg ginject/common, const GuardMethodName untyped string = "CanActivate"
+pkg ginject/common, const HeaderPipeableKey untyped string = "header"
+pkg ginject/common, const InterceptorMethodName untyped string = "Intercept"
+pkg ginject/common, const ParamPipeableKey untyped string = "param"
+pkg ginject/common, const QueryPipeableKey untyped string = "query"
+pkg ginject/common, const TokenAnd untyped string = "AND"
+pkg ginject/common, const TokenAny untyped string = "ANY"
+pkg ginject/common, const TokenBy untyped string = "BY"
+pkg ginject/common, const TokenFile untyped string = "FILE"
+pkg ginject/common, const TokenOf untyped string = "OF"
+pkg ginject/common, const TokenVersion untyped string = "VERSION"
+pkg ginject/common, const WSPayloadPipeableKey untyped string = "wsPayload"
+pkg ginject/common, func AsHTTPExceptionFilter(any) (common.HTTPCatch, bool)
+pkg ginject/common, func AsHTTPGuard(any) (common.HTTPCanActivate, bool)
+pkg ginject/common, func AsHTTPInterceptor(any) (common.HTTPIntercept, bool)
+pkg ginject/common, func AsWSExceptionFilter(any) (common.WSCatch, bool)
+pkg ginject/common, func AsWSGuard(any) (common.WSCanActivate, bool)
+pkg ginject/common, func AsWSInterceptor(any) (common.WSIntercept, bool)
+pkg ginject/common, func BuildWSGuardMiddleware(common.WSCanActivate) ctx.WSHandler
+pkg ginject/common, func BuildWSInterceptMiddleware(string, common.WSIntercept) ctx.WSHandler
+pkg ginject/common, func ExceptionFilterShapeError(any) error
+pkg ginject/common, func GetFuncName(any) string
+pkg ginject/common, func GuardShapeError(any) error
+pkg ginject/common, func InterceptorShapeError(any) error
+pkg ginject/common, func NormalizeRecovered(any) *exception.Exception
+pkg ginject/common, func ParseFuncNameToURL(string) (string, string, string)
+pkg ginject/common, func ParseWSFuncNameToEvent(string) (string, bool)
+pkg ginject/common, func RunWSCatchChain(*ctx.WSContext, []common.WSCatch, any)
+pkg ginject/common, func ToWSEventName(string) string
+pkg ginject/common, method (*common.ExceptionFilter) BindExceptionFilter(common.ExceptionFilterable, ...any) *common.ExceptionFilter
+pkg ginject/common, method (*common.ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
+pkg ginject/common, method (*common.ExceptionFilter) InjectProvidersIntoWSExceptionFilters(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
+pkg ginject/common, method (*common.Guard) BindGuard(common.Guarder, ...any) *common.Guard
+pkg ginject/common, method (*common.Guard) InjectProvidersIntoHTTPGuards(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
+pkg ginject/common, method (*common.Guard) InjectProvidersIntoWSGuards(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
+pkg ginject/common, method (*common.HTTP) AddHandlerToRouterMap([]string, string, any)
+pkg ginject/common, method (*common.HTTP) GetPrefixes() []map[string]string
+pkg ginject/common, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
+pkg ginject/common, method (*common.Interceptor) BindInterceptor(common.Interceptable, ...any) *common.Interceptor
+pkg ginject/common, method (*common.Interceptor) InjectProvidersIntoHTTPInterceptors(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
+pkg ginject/common, method (*common.Interceptor) InjectProvidersIntoWSInterceptors(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
+pkg ginject/common, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
+pkg ginject/common, method (*common.Middleware) InjectProvidersIntoHTTPMiddlewares(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.MiddlewareItem
+pkg ginject/common, method (*common.WS) AddHandlerToEventMap(string, any)
+pkg ginject/common, type ArgumentMetadata struct
+pkg ginject/common, type ArgumentMetadata struct, ContextType string
+pkg ginject/common, type ArgumentMetadata struct, ParamType string
+pkg ginject/common, type BodyPipeable interface
+pkg ginject/common, type BodyPipeable interface, Transform(ctx.Body, common.ArgumentMetadata) any
+pkg ginject/common, type CommonItem struct
+pkg ginject/common, type CommonItem struct, Handler any
+pkg ginject/common, type CommonItem struct, MainHandlerName string
+pkg ginject/common, type CommonItem struct, Name string
+pkg ginject/common, type ContextPipeable interface
+pkg ginject/common, type ContextPipeable interface, Transform(*ctx.HTTPContext, common.ArgumentMetadata) any
+pkg ginject/common, type ExceptionFilter struct
+pkg ginject/common, type ExceptionFilter struct, ExceptionFilterHandlers []common.exceptionFilterHandler
+pkg ginject/common, type ExceptionFilterItem struct
+pkg ginject/common, type ExceptionFilterItem struct, HTTP common.HTTPExceptionFilterItem
+pkg ginject/common, type ExceptionFilterItem struct, WS common.WSExceptionFilterItem
+pkg ginject/common, type ExceptionFilterable interface
+pkg ginject/common, type FilePipeable interface
+pkg ginject/common, type FilePipeable interface, Transform(ctx.File, common.ArgumentMetadata) any
+pkg ginject/common, type FormPipeable interface
+pkg ginject/common, type FormPipeable interface, Transform(ctx.Form, common.ArgumentMetadata) any
+pkg ginject/common, type Guard struct
+pkg ginject/common, type Guard struct, GuardHandlers []common.guardHandler
+pkg ginject/common, type GuardItem struct
+pkg ginject/common, type GuardItem struct, HTTP common.HTTPGuardItem
+pkg ginject/common, type GuardItem struct, WS common.WSGuardItem
+pkg ginject/common, type Guarder interface
+pkg ginject/common, type HTTP struct
+pkg ginject/common, type HTTP struct, FuncNameToPatternMap map[string]string
+pkg ginject/common, type HTTP struct, PatternToFuncNameMap map[string]string
+pkg ginject/common, type HTTP struct, RouterMap map[string]any
+pkg ginject/common, type HTTPCanActivate = func(*ctx.HTTPContext) bool
+pkg ginject/common, type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
+pkg ginject/common, type HTTPExceptionFilterItem struct
+pkg ginject/common, type HTTPExceptionFilterItem struct, Common common.CommonItem
+pkg ginject/common, type HTTPExceptionFilterItem struct, Method string
+pkg ginject/common, type HTTPExceptionFilterItem struct, Pattern string
+pkg ginject/common, type HTTPExceptionFilterItem struct, Route string
+pkg ginject/common, type HTTPExceptionFilterItem struct, Version string
+pkg ginject/common, type HTTPGuardItem struct
+pkg ginject/common, type HTTPGuardItem struct, Common common.CommonItem
+pkg ginject/common, type HTTPGuardItem struct, Method string
+pkg ginject/common, type HTTPGuardItem struct, Pattern string
+pkg ginject/common, type HTTPGuardItem struct, Route string
+pkg ginject/common, type HTTPGuardItem struct, Version string
+pkg ginject/common, type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
+pkg ginject/common, type HTTPInterceptorItem struct
+pkg ginject/common, type HTTPInterceptorItem struct, Common common.CommonItem
+pkg ginject/common, type HTTPInterceptorItem struct, Method string
+pkg ginject/common, type HTTPInterceptorItem struct, Pattern string
+pkg ginject/common, type HTTPInterceptorItem struct, Route string
+pkg ginject/common, type HTTPInterceptorItem struct, Version string
+pkg ginject/common, type HTTPLayer struct
+pkg ginject/common, type HTTPLayer struct, ControllerPath string
+pkg ginject/common, type HTTPLayer struct, Handler any
+pkg ginject/common, type HTTPLayer struct, MainHandlerName string
+pkg ginject/common, type HTTPLayer struct, Method string
+pkg ginject/common, type HTTPLayer struct, Name string
+pkg ginject/common, type HTTPLayer struct, Pattern string
+pkg ginject/common, type HTTPLayer struct, Route string
+pkg ginject/common, type HTTPLayer struct, Version string
+pkg ginject/common, type HTTPMiddlewareItem struct
+pkg ginject/common, type HTTPMiddlewareItem struct, Common common.CommonItem
+pkg ginject/common, type HTTPMiddlewareItem struct, Method string
+pkg ginject/common, type HTTPMiddlewareItem struct, Pattern string
+pkg ginject/common, type HTTPMiddlewareItem struct, Route string
+pkg ginject/common, type HTTPMiddlewareItem struct, Version string
+pkg ginject/common, type HeaderPipeable interface
+pkg ginject/common, type HeaderPipeable interface, Transform(ctx.Header, common.ArgumentMetadata) any
+pkg ginject/common, type Interceptable interface
+pkg ginject/common, type Interceptor struct
+pkg ginject/common, type Interceptor struct, InterceptorHandlers []common.interceptorHandler
+pkg ginject/common, type InterceptorItem struct
+pkg ginject/common, type InterceptorItem struct, HTTP common.HTTPInterceptorItem
+pkg ginject/common, type InterceptorItem struct, WS common.WSInterceptorItem
+pkg ginject/common, type LogAdapter interface
+pkg ginject/common, type LogAdapter interface, Debug(string, ...any)
+pkg ginject/common, type LogAdapter interface, Error(string, ...any)
+pkg ginject/common, type LogAdapter interface, Fatal(string, ...any)
+pkg ginject/common, type LogAdapter interface, Info(string, ...any)
+pkg ginject/common, type LogAdapter interface, Warn(string, ...any)
+pkg ginject/common, type Logger interface
+pkg ginject/common, type Logger interface, Debug(string, ...any)
+pkg ginject/common, type Logger interface, Error(string, ...any)
+pkg ginject/common, type Logger interface, Fatal(string, ...any)
+pkg ginject/common, type Logger interface, From(context.Context) common.Logger
+pkg ginject/common, type Logger interface, Info(string, ...any)
+pkg ginject/common, type Logger interface, Warn(string, ...any)
+pkg ginject/common, type Middleware struct
+pkg ginject/common, type Middleware struct, MiddlewareHandlers []common.middlewareHandler
+pkg ginject/common, type MiddlewareFn interface
+pkg ginject/common, type MiddlewareFn interface, Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/common, type MiddlewareItem struct
+pkg ginject/common, type MiddlewareItem struct, HTTP common.HTTPMiddlewareItem
+pkg ginject/common, type ParamPipeable interface
+pkg ginject/common, type ParamPipeable interface, Transform(ctx.Param, common.ArgumentMetadata) any
+pkg ginject/common, type Prefix struct
+pkg ginject/common, type Prefix struct, Handlers []any
+pkg ginject/common, type Prefix struct, Value string
+pkg ginject/common, type Publisher interface
+pkg ginject/common, type Publisher interface, Publish(string, ...any) error
+pkg ginject/common, type QueryPipeable interface
+pkg ginject/common, type QueryPipeable interface, Transform(ctx.Query, common.ArgumentMetadata) any
+pkg ginject/common, type Use = func(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/common, type WS struct
+pkg ginject/common, type WS struct, EventMap map[string]any
+pkg ginject/common, type WSCanActivate = func(*ctx.WSContext) bool
+pkg ginject/common, type WSCatch = func(*ctx.WSContext, *exception.Exception)
+pkg ginject/common, type WSExceptionFilterItem struct
+pkg ginject/common, type WSExceptionFilterItem struct, Common common.CommonItem
+pkg ginject/common, type WSExceptionFilterItem struct, EventName string
+pkg ginject/common, type WSGuardItem struct
+pkg ginject/common, type WSGuardItem struct, Common common.CommonItem
+pkg ginject/common, type WSGuardItem struct, EventName string
+pkg ginject/common, type WSIntercept = func(*ctx.WSContext, *aggregation.Aggregation) any
+pkg ginject/common, type WSInterceptorItem struct
+pkg ginject/common, type WSInterceptorItem struct, Common common.CommonItem
+pkg ginject/common, type WSInterceptorItem struct, EventName string
+pkg ginject/common, type WSLayer struct
+pkg ginject/common, type WSLayer struct, EventName string
+pkg ginject/common, type WSLayer struct, Handler any
+pkg ginject/common, type WSLayer struct, Name string
+pkg ginject/common, type WSPayloadPipeable interface
+pkg ginject/common, type WSPayloadPipeable interface, Transform(ctx.WSPayload, common.ArgumentMetadata) any
+pkg ginject/common, var HTTPOperations map[string]string
+pkg ginject/common, var HTTPTokenMap map[string]string
+pkg ginject/common, var WSOperations map[string]string
+pkg ginject/core, const TypeAck core.WSPayloadType = "ack"
+pkg ginject/core, const TypeConnected core.WSPayloadType = "connected"
+pkg ginject/core, const TypeError core.WSPayloadType = "error"
+pkg ginject/core, const TypeEvent core.WSPayloadType = "event"
+pkg ginject/core, const TypePing core.WSPayloadType = "ping"
+pkg ginject/core, const TypePong core.WSPayloadType = "pong"
+pkg ginject/core, const TypePublish core.WSPayloadType = "publish"
+pkg ginject/core, const TypeSubscribe core.WSPayloadType = "subscribe"
+pkg ginject/core, const TypeUnsubscribe core.WSPayloadType = "unsubscribe"
+pkg ginject/core, func ModuleBuilder() *core.moduleBuilder
+pkg ginject/core, func New() *core.App
+pkg ginject/core, func NewWS(*core.WSConfig) *core.WS
+pkg ginject/core, func NewWSConnmgr(common.Logger, *memorybroker.Broker) *core.WSConnmgr
+pkg ginject/core, method (*core.App) BindGlobalExceptionFilters(...common.ExceptionFilterable) *core.App
+pkg ginject/core, method (*core.App) BindGlobalGuards(...common.Guarder) *core.App
+pkg ginject/core, method (*core.App) BindGlobalInterceptors(...common.Interceptable) *core.App
+pkg ginject/core, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
+pkg ginject/core, method (*core.App) Create(*core.Module)
+pkg ginject/core, method (*core.App) EnableAccessLog() *core.App
+pkg ginject/core, method (*core.App) EnableDevtool() *core.App
+pkg ginject/core, method (*core.App) EnableVersioning(versioning.Versioning) *core.App
+pkg ginject/core, method (*core.App) EnableWS(*core.WSConfig, ...common.MiddlewareFn) *core.App
+pkg ginject/core, method (*core.App) Get(core.Provider) any
+pkg ginject/core, method (*core.App) Listen(int, *core.ServerOptions) error
+pkg ginject/core, method (*core.App) ListenTLS(int, string, string, *core.ServerOptions) error
+pkg ginject/core, method (*core.App) Logger() common.Logger
+pkg ginject/core, method (*core.App) Serve(net.Listener, *core.ServerOptions) error
+pkg ginject/core, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
+pkg ginject/core, method (*core.App) SetLogger(common.LogAdapter) *core.App
+pkg ginject/core, method (*core.App) Stop()
+pkg ginject/core, method (*core.Module) ID() string
+pkg ginject/core, method (*core.Module) Prefix(string) *core.Module
+pkg ginject/core, method (*core.WSConnection) TrySend(core.WSPayload) bool
+pkg ginject/core, method (*core.WSConnmgr) Get(string) (*core.WSConnection, bool)
+pkg ginject/core, method (*core.WSConnmgr) Register(string, *websocket.Conn) *core.WSConnection
+pkg ginject/core, method (*core.WSConnmgr) Subscribe(string, string, memorybroker.MessageHandler) error
+pkg ginject/core, method (*core.WSConnmgr) Unregister(string)
+pkg ginject/core, method (*core.WSConnmgr) Unsubscribe(string, string) error
+pkg ginject/core, type App struct
+pkg ginject/core, type Controller interface
+pkg ginject/core, type Controller interface, NewController() core.Controller
+pkg ginject/core, type HTTP struct
+pkg ginject/core, type Module struct
+pkg ginject/core, type Module struct, IsGlobal bool
+pkg ginject/core, type Module struct, Name string
+pkg ginject/core, type Module struct, OnInit func()
+pkg ginject/core, type Module struct, OnReady func()
+pkg ginject/core, type Module struct, OnShutdown func()
+pkg ginject/core, type Provider interface
+pkg ginject/core, type Provider interface, NewProvider() core.Provider
+pkg ginject/core, type ServerOptions struct
+pkg ginject/core, type ServerOptions struct, H2C bool
+pkg ginject/core, type ServerOptions struct, MaxRequestBodyBytes int64
+pkg ginject/core, type ServerOptions struct, ShutdownTimeout time.Duration
+pkg ginject/core, type ServerOptions struct, TLSConfig *tls.Config
+pkg ginject/core, type WS struct
+pkg ginject/core, type WSConfig struct
+pkg ginject/core, type WSConfig struct, Path string
+pkg ginject/core, type WSConnection struct
+pkg ginject/core, type WSConnection struct, Conn *websocket.Conn
+pkg ginject/core, type WSConnection struct, CreatedAt time.Time
+pkg ginject/core, type WSConnection struct, ID string
+pkg ginject/core, type WSConnection struct, LastSeen time.Time
+pkg ginject/core, type WSConnmgr struct
+pkg ginject/core, type WSConnmgr struct, Broker *memorybroker.Broker
+pkg ginject/core, type WSPayload struct
+pkg ginject/core, type WSPayload struct, ID string
+pkg ginject/core, type WSPayload struct, Message any
+pkg ginject/core, type WSPayload struct, Topic []string
+pkg ginject/core, type WSPayload struct, Type core.WSPayloadType
+pkg ginject/core, type WSPayloadType string
+pkg ginject/ctx, const RequestID untyped string = "X-Request-Id"
+pkg ginject/ctx, const TagBind untyped string = "bind"
+pkg ginject/ctx, func BindFile(ctx.File, any) (map[string][]*ctx.DataFile, any)
+pkg ginject/ctx, func BindStrArr(map[string][]string, *[]ctx.FieldLevel, any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, func BindStruct(map[string]any, *[]ctx.FieldLevel, any, string, string) (any, []ctx.FieldLevel)
+pkg ginject/ctx, func BinderOf(reflect.Type) (*ctx.Binder, error)
+pkg ginject/ctx, func GetTagParamIndex(string) (int, string)
+pkg ginject/ctx, func GetTagParams(string) []string
+pkg ginject/ctx, func NewHTTPContext() *ctx.HTTPContext
+pkg ginject/ctx, func NewWSContext() *ctx.WSContext
+pkg ginject/ctx, method (*ctx.Binder) File(ctx.File) (map[string][]*ctx.DataFile, any)
+pkg ginject/ctx, method (*ctx.Binder) Header(ctx.Header) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (*ctx.Binder) StrArr(map[string][]string) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (*ctx.Binder) Struct(map[string]any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (*ctx.FieldLevel) Field() string
+pkg ginject/ctx, method (*ctx.FieldLevel) Index() int
+pkg ginject/ctx, method (*ctx.FieldLevel) IsValue() bool
+pkg ginject/ctx, method (*ctx.FieldLevel) Kind() reflect.Kind
+pkg ginject/ctx, method (*ctx.FieldLevel) Namespace() string
+pkg ginject/ctx, method (*ctx.FieldLevel) NestedTag() string
+pkg ginject/ctx, method (*ctx.FieldLevel) Tag() string
+pkg ginject/ctx, method (*ctx.FieldLevel) Type() reflect.Type
+pkg ginject/ctx, method (*ctx.FieldLevel) Value() any
+pkg ginject/ctx, method (*ctx.HTTPContext) AddAggregation(*aggregation.Aggregation)
+pkg ginject/ctx, method (*ctx.HTTPContext) Aggregations() []*aggregation.Aggregation
+pkg ginject/ctx, method (*ctx.HTTPContext) Body() ctx.Body
+pkg ginject/ctx, method (*ctx.HTTPContext) File() ctx.File
+pkg ginject/ctx, method (*ctx.HTTPContext) Form() ctx.Form
+pkg ginject/ctx, method (*ctx.HTTPContext) GetID() string
+pkg ginject/ctx, method (*ctx.HTTPContext) Header() ctx.Header
+pkg ginject/ctx, method (*ctx.HTTPContext) Init(http.ResponseWriter, *http.Request)
+pkg ginject/ctx, method (*ctx.HTTPContext) JSON(any, ...any)
+pkg ginject/ctx, method (*ctx.HTTPContext) JSONP(any, ...any)
+pkg ginject/ctx, method (*ctx.HTTPContext) Param() ctx.Param
+pkg ginject/ctx, method (*ctx.HTTPContext) Query() ctx.Query
+pkg ginject/ctx, method (*ctx.HTTPContext) Redirect(string)
+pkg ginject/ctx, method (*ctx.HTTPContext) Reset()
+pkg ginject/ctx, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
+pkg ginject/ctx, method (*ctx.HTTPContext) Text(string, ...any)
+pkg ginject/ctx, method (*ctx.WSContext) AddAggregation(*aggregation.Aggregation)
+pkg ginject/ctx, method (*ctx.WSContext) Aggregations() []*aggregation.Aggregation
+pkg ginject/ctx, method (*ctx.WSContext) Context() context.Context
+pkg ginject/ctx, method (*ctx.WSContext) GetID() string
+pkg ginject/ctx, method (*ctx.WSContext) Init(*websocket.Conn)
+pkg ginject/ctx, method (*ctx.WSContext) Reset()
+pkg ginject/ctx, method (*ctx.WSContext) Send(any)
+pkg ginject/ctx, method (*ctx.WSContext) SetContext(context.Context)
+pkg ginject/ctx, method (*ctx.WSContext) SetSend(func(any))
+pkg ginject/ctx, method (*ctx.WSContext) SetWSPayload(ctx.WSPayload)
+pkg ginject/ctx, method (*ctx.WSContext) WSPayload() ctx.WSPayload
+pkg ginject/ctx, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (ctx.Body) BindValue(any) any
+pkg ginject/ctx, method (ctx.Body) Del(string)
+pkg ginject/ctx, method (ctx.Body) Get(string) any
+pkg ginject/ctx, method (ctx.Body) Has(string) bool
+pkg ginject/ctx, method (ctx.Body) Set(string, any)
+pkg ginject/ctx, method (ctx.File) Bind(any) any
+pkg ginject/ctx, method (ctx.Form) Add(string, string)
+pkg ginject/ctx, method (ctx.Form) Bind(any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (ctx.Form) BindValue(any) any
+pkg ginject/ctx, method (ctx.Form) Del(string)
+pkg ginject/ctx, method (ctx.Form) Get(string) string
+pkg ginject/ctx, method (ctx.Form) Has(string) bool
+pkg ginject/ctx, method (ctx.Form) Set(string, string)
+pkg ginject/ctx, method (ctx.Header) Add(string, string)
+pkg ginject/ctx, method (ctx.Header) Bind(any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (ctx.Header) BindValue(any) any
+pkg ginject/ctx, method (ctx.Header) Del(string)
+pkg ginject/ctx, method (ctx.Header) Get(string) string
+pkg ginject/ctx, method (ctx.Header) Has(string) bool
+pkg ginject/ctx, method (ctx.Header) Set(string, string)
+pkg ginject/ctx, method (ctx.Param) Add(string, string)
+pkg ginject/ctx, method (ctx.Param) Bind(any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (ctx.Param) BindValue(any) any
+pkg ginject/ctx, method (ctx.Param) Del(string)
+pkg ginject/ctx, method (ctx.Param) Get(string) string
+pkg ginject/ctx, method (ctx.Param) Has(string) bool
+pkg ginject/ctx, method (ctx.Param) Set(string, string)
+pkg ginject/ctx, method (ctx.Query) Add(string, string)
+pkg ginject/ctx, method (ctx.Query) Bind(any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (ctx.Query) BindValue(any) any
+pkg ginject/ctx, method (ctx.Query) Del(string)
+pkg ginject/ctx, method (ctx.Query) Get(string) string
+pkg ginject/ctx, method (ctx.Query) Has(string) bool
+pkg ginject/ctx, method (ctx.Query) Set(string, string)
+pkg ginject/ctx, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
+pkg ginject/ctx, method (ctx.WSPayload) BindValue(any) any
+pkg ginject/ctx, type Binder struct
+pkg ginject/ctx, type Body map[string]any
+pkg ginject/ctx, type Context interface
+pkg ginject/ctx, type Context interface, Context() context.Context
+pkg ginject/ctx, type Context interface, GetID() string
+pkg ginject/ctx, type Context interface, Reset()
+pkg ginject/ctx, type DataFile struct
+pkg ginject/ctx, type DataFile struct, Dest string
+pkg ginject/ctx, type DataFile struct, FileHeader *multipart.FileHeader embedded
+pkg ginject/ctx, type DataFile struct, Filename string
+pkg ginject/ctx, type DataFile struct, Index int
+pkg ginject/ctx, type DataFile struct, Key string
+pkg ginject/ctx, type DataFile struct, Size int64
+pkg ginject/ctx, type DataFile struct, Total int
+pkg ginject/ctx, type DataFile struct, Type string
+pkg ginject/ctx, type ErrFunc func(error)
+pkg ginject/ctx, type FieldLevel struct
+pkg ginject/ctx, type File map[string][]*multipart.FileHeader
+pkg ginject/ctx, type Form map[string][]string
+pkg ginject/ctx, type HTTPContext struct
+pkg ginject/ctx, type HTTPContext struct, Code int
+pkg ginject/ctx, type HTTPContext struct, Next ctx.Next
+pkg ginject/ctx, type HTTPContext struct, ParamKeys map[string][]int
+pkg ginject/ctx, type HTTPContext struct, ParamValues []string
+pkg ginject/ctx, type HTTPContext struct, Request *http.Request embedded
+pkg ginject/ctx, type HTTPContext struct, ResponseWriter http.ResponseWriter embedded
+pkg ginject/ctx, type HTTPContext struct, Timestamp time.Time
+pkg ginject/ctx, type HTTPHandler = func(*ctx.HTTPContext)
+pkg ginject/ctx, type Header map[string][]string
+pkg ginject/ctx, type JSONAppender interface
+pkg ginject/ctx, type JSONAppender interface, AppendJSON([]byte) []byte
+pkg ginject/ctx, type Map map[string]any
+pkg ginject/ctx, type Next = func()
+pkg ginject/ctx, type Param map[string][]string
+pkg ginject/ctx, type Query map[string][]string
+pkg ginject/ctx, type Redirect = func(string)
+pkg ginject/ctx, type WSContext struct
+pkg ginject/ctx, type WSContext struct, Conn *websocket.Conn embedded
+pkg ginject/ctx, type WSContext struct, Next ctx.Next
+pkg ginject/ctx, type WSContext struct, Timestamp time.Time
+pkg ginject/ctx, type WSHandler = func(*ctx.WSContext)
+pkg ginject/ctx, type WSPayload map[string]any
+pkg ginject/ctx, var ErrBindTarget error
+pkg ginject/devtool, const LayerScope_GLOBAL_SCOPE devtool.LayerScope = 2
+pkg ginject/devtool, const LayerScope_REQUEST_SCOPE devtool.LayerScope = 1
+pkg ginject/devtool, const LayerScope_UNKNOWN devtool.LayerScope = 0
+pkg ginject/devtool, func DevtoolBuilder() *devtool.devtoolBuilder
+pkg ginject/devtool, func GenerateSchema(reflect.Type, string) []*devtool.Schema
+pkg ginject/devtool, method (*devtool.Devtool) GetConfiguration(context.Context, *devtool.GetConfigurationRequest) (*devtool.GetConfigurationResponse, error)
+pkg ginject/devtool, method (devtool.LayerScope) String() string
+pkg ginject/devtool, type Controller struct
+pkg ginject/devtool, type Controller struct, Http []*devtool.HTTPComponent
+pkg ginject/devtool, type Devtool struct
+pkg ginject/devtool, type Devtool struct, GetConfigurationResponse devtool.GetConfigurationResponse embedded
+pkg ginject/devtool, type GetConfigurationRequest struct
+pkg ginject/devtool, type GetConfigurationResponse struct
+pkg ginject/devtool, type GetConfigurationResponse struct, Controller *devtool.Controller
+pkg ginject/devtool, type HTTPComponent struct
+pkg ginject/devtool, type HTTPComponent struct, ExceptionFilters []*devtool.Layer
+pkg ginject/devtool, type HTTPComponent struct, Guards []*devtool.Layer
+pkg ginject/devtool, type HTTPComponent struct, Handler string
+pkg ginject/devtool, type HTTPComponent struct, HttpMethod string
+pkg ginject/devtool, type HTTPComponent struct, Id string
+pkg ginject/devtool, type HTTPComponent struct, Interceptors []*devtool.Layer
+pkg ginject/devtool, type HTTPComponent struct, Middlewares []*devtool.Layer
+pkg ginject/devtool, type HTTPComponent struct, Request *devtool.HTTPRequest
+pkg ginject/devtool, type HTTPComponent struct, Route string
+pkg ginject/devtool, type HTTPComponent struct, Versioning *devtool.HTTPVersioning
+pkg ginject/devtool, type HTTPRequest struct
+pkg ginject/devtool, type HTTPRequest struct, Body []*devtool.Schema
+pkg ginject/devtool, type HTTPRequest struct, File []*devtool.Schema
+pkg ginject/devtool, type HTTPRequest struct, Form []*devtool.Schema
+pkg ginject/devtool, type HTTPRequest struct, Header []*devtool.Schema
+pkg ginject/devtool, type HTTPRequest struct, Param []*devtool.Schema
+pkg ginject/devtool, type HTTPRequest struct, Query []*devtool.Schema
+pkg ginject/devtool, type HTTPVersioning struct
+pkg ginject/devtool, type HTTPVersioning struct, Key string
+pkg ginject/devtool, type HTTPVersioning struct, Type int32
+pkg ginject/devtool, type HTTPVersioning struct, Value string
+pkg ginject/devtool, type Layer struct
+pkg ginject/devtool, type Layer struct, Name string
+pkg ginject/devtool, type Layer struct, Scope devtool.LayerScope
+pkg ginject/devtool, type LayerScope int32
+pkg ginject/devtool, type Schema struct
+pkg ginject/devtool, type Schema struct, Format string
+pkg ginject/devtool, type Schema struct, Item *devtool.Schema
+pkg ginject/devtool, type Schema struct, Name string
+pkg ginject/devtool, type Schema struct, Properties []*devtool.Schema
+pkg ginject/devtool, type Schema struct, Type string
+pkg ginject/devtool, var LayerScope_name map[int32]string
+pkg ginject/devtool, var LayerScope_value map[string]int32
+pkg ginject/exception, func BadGatewayException(string, ...any) exception.Exception
+pkg ginject/exception, func BadRequestException(string, ...any) exception.Exception
+pkg ginject/exception, func ConflictException(string, ...any) exception.Exception
+pkg ginject/exception, func ForbiddenException(string, ...any) exception.Exception
+pkg ginject/exception, func GatewayTimeoutException(string, ...any) exception.Exception
+pkg ginject/exception, func GoingAwayException(string, ...any) exception.Exception
+pkg ginject/exception, func GoneException(string, ...any) exception.Exception
+pkg ginject/exception, func HTTPVersionNotSupportedException(string, ...any) exception.Exception
+pkg ginject/exception, func InternalServerErrorException(string, ...any) exception.Exception
+pkg ginject/exception, func InvalidPayloadException(string, ...any) exception.Exception
+pkg ginject/exception, func MessageTooBigException(string, ...any) exception.Exception
+pkg ginject/exception, func MethodNotAllowedException(string, ...any) exception.Exception
+pkg ginject/exception, func MisdirectedRequestException(string, ...any) exception.Exception
+pkg ginject/exception, func NewException(string, int, ...any) exception.Exception
+pkg ginject/exception, func NotAcceptableException(string, ...any) exception.Exception
+pkg ginject/exception, func NotFoundException(string, ...any) exception.Exception
+pkg ginject/exception, func NotImplementedException(string, ...any) exception.Exception
+pkg ginject/exception, func NotSubscribedException(string, ...any) exception.Exception
+pkg ginject/exception, func PolicyViolationException(string, ...any) exception.Exception
+pkg ginject/exception, func PreconditionFailedException(string, ...any) exception.Exception
+pkg ginject/exception, func ProtocolErrorException(string, ...any) exception.Exception
+pkg ginject/exception, func RequestEntityTooLargeException(string, ...any) exception.Exception
+pkg ginject/exception, func RequestTimeoutException(string, ...any) exception.Exception
+pkg ginject/exception, func ServiceUnavailableException(string, ...any) exception.Exception
+pkg ginject/exception, func TeapotException(string, ...any) exception.Exception
+pkg ginject/exception, func TooManyRequestsException(string, ...any) exception.Exception
+pkg ginject/exception, func TopicNotFoundException(string, ...any) exception.Exception
+pkg ginject/exception, func UnauthorizedException(string, ...any) exception.Exception
+pkg ginject/exception, func UnprocessableEntityException(string, ...any) exception.Exception
+pkg ginject/exception, func UnsupportedDataException(string, ...any) exception.Exception
+pkg ginject/exception, func UnsupportedMediaTypeException(string, ...any) exception.Exception
+pkg ginject/exception, func WSInternalErrorException(string, ...any) exception.Exception
+pkg ginject/exception, method (exception.Exception) AppendJSON([]byte) []byte
+pkg ginject/exception, method (exception.Exception) Error() string
+pkg ginject/exception, method (exception.Exception) GetCode() int
+pkg ginject/exception, method (exception.Exception) GetMessage() string
+pkg ginject/exception, method (exception.Exception) GetStatusText() string
+pkg ginject/exception, method (exception.Exception) MarshalJSON() ([]byte, error)
+pkg ginject/exception, method (exception.Exception) Unwrap() error
+pkg ginject/exception, type Exception struct
+pkg ginject/exception, type ExceptionOptions struct
+pkg ginject/exception, type ExceptionOptions struct, Cause error
+pkg ginject/exception, type ExceptionOptions struct, Description string
+pkg ginject/guards/throttler, const FixedWindow throttler.Strategy = 0
+pkg ginject/guards/throttler, const SlidingWindow throttler.Strategy = 1
+pkg ginject/guards/throttler, const TokenBucket throttler.Strategy = 2
+pkg ginject/guards/throttler, method (throttler.Throttler) NewGuard() common.Guarder
+pkg ginject/guards/throttler, type Strategy int
+pkg ginject/guards/throttler, type Throttler struct
+pkg ginject/guards/throttler, type Throttler struct, Backend cache.Cache
+pkg ginject/guards/throttler, type Throttler struct, KeyFunc func(*ctx.HTTPContext) string
+pkg ginject/guards/throttler, type Throttler struct, Limit int64
+pkg ginject/guards/throttler, type Throttler struct, Strategy throttler.Strategy
+pkg ginject/guards/throttler, type Throttler struct, TTL time.Duration
+pkg ginject/log, const DebugLevel slog.Level = -4
+pkg ginject/log, const ErrorLevel slog.Level = 8
+pkg ginject/log, const FatalLevel slog.Level = 12
+pkg ginject/log, const InfoLevel slog.Level = 0
+pkg ginject/log, const JSONFormat log.logFormat = 12
+pkg ginject/log, const PrettyFormat log.logFormat = 13
+pkg ginject/log, const TextFormat log.logFormat = 11
+pkg ginject/log, const WarnLevel slog.Level = 4
+pkg ginject/log, func NewLog(*log.LogOptions) common.Logger
+pkg ginject/log, func WrapLogger(common.LogAdapter, []string) common.Logger
+pkg ginject/log, type LogOptions struct
+pkg ginject/log, type LogOptions struct, AddSource bool
+pkg ginject/log, type LogOptions struct, Level slog.Level
+pkg ginject/log, type LogOptions struct, LogFormat log.logFormat
+pkg ginject/log, type LogOptions struct, MaskFields []string
+pkg ginject/memorybroker, func NewMemoryBroker() memorybroker.Broker
+pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Close() error
+pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Publish(string, any) error
+pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) PublishAsync(string, any) error
+pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Subscribe(string, memorybroker.MessageHandler) (memorybroker.Subscription, error)
+pkg ginject/memorybroker, method (*memorybroker.MemoryBroker) Unsubscribe(memorybroker.Subscription) error
+pkg ginject/memorybroker, type Broker interface
+pkg ginject/memorybroker, type Broker interface, Close() error
+pkg ginject/memorybroker, type Broker interface, Publish(string, any) error
+pkg ginject/memorybroker, type Broker interface, PublishAsync(string, any) error
+pkg ginject/memorybroker, type Broker interface, Subscribe(string, memorybroker.MessageHandler) (memorybroker.Subscription, error)
+pkg ginject/memorybroker, type Broker interface, Unsubscribe(memorybroker.Subscription) error
+pkg ginject/memorybroker, type MemoryBroker struct
+pkg ginject/memorybroker, type Message struct
+pkg ginject/memorybroker, type Message struct, Payload any
+pkg ginject/memorybroker, type Message struct, Timestamp time.Time
+pkg ginject/memorybroker, type Message struct, Topic string
+pkg ginject/memorybroker, type MessageHandler func(*memorybroker.Message)
+pkg ginject/memorybroker, type Subscription interface
+pkg ginject/memorybroker, type Subscription interface, ID() string
+pkg ginject/memorybroker, type Subscription interface, Topic() string
+pkg ginject/memorybroker, type Subscription interface, Unsubscribe() error
+pkg ginject/memorybroker, var ErrClosed error
+pkg ginject/memorybroker, var ErrEmptyTopic error
+pkg ginject/memorybroker, var ErrForeignSubscription error
+pkg ginject/memorybroker, var ErrNilHandler error
+pkg ginject/memorycache, func NewMemoryCache(*memorycache.MemoryCacheOptions) *memorycache.MemoryCache
+pkg ginject/memorycache, method (*memorycache.MemoryCache) Delete(context.Context, string) error
+pkg ginject/memorycache, method (*memorycache.MemoryCache) Get(context.Context, string) ([]byte, bool)
+pkg ginject/memorycache, method (*memorycache.MemoryCache) Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg ginject/memorycache, method (*memorycache.MemoryCache) Keys(context.Context) []string
+pkg ginject/memorycache, method (*memorycache.MemoryCache) Set(context.Context, string, []byte, time.Duration) error
+pkg ginject/memorycache, method (*memorycache.MemoryCache) SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg ginject/memorycache, method (*memorycache.MemoryCache) TTL(context.Context, string) (time.Duration, bool)
+pkg ginject/memorycache, type MemoryCache struct
+pkg ginject/memorycache, type MemoryCacheOptions struct
+pkg ginject/memorycache, type MemoryCacheOptions struct, MaxBytes int64
+pkg ginject/memorycache, type MemoryCacheOptions struct, MaxEntries int
+pkg ginject/memorycache, var ErrEmptyKey error
+pkg ginject/memorycache, var ErrEntryTooLarge error
+pkg ginject/memorycache, var ErrNegativeTTL error
+pkg ginject/memorycache, var ErrNotCounter error
+pkg ginject/middlewares/compress, method (compress.Compress) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/compress, method (compress.Compress) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/compress, type Compress struct
+pkg ginject/middlewares/compress, type Compress struct, MinSize int
+pkg ginject/middlewares/cors, method (cors.CORS) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/cors, method (cors.CORS) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/cors, type CORS struct
+pkg ginject/middlewares/cors, type CORS struct, AllowHeaders []string
+pkg ginject/middlewares/cors, type CORS struct, AllowMethods []string
+pkg ginject/middlewares/cors, type CORS struct, AllowOrigins []string
+pkg ginject/middlewares/cors, type CORS struct, ExposeHeaders []string
+pkg ginject/middlewares/cors, type CORS struct, IsAllowCredentials bool
+pkg ginject/middlewares/cors, type CORS struct, IsAllowPrivateNetwork bool
+pkg ginject/middlewares/cors, type CORS struct, MaxAge time.Duration
+pkg ginject/middlewares/csrf, method (csrf.CSRF) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/csrf, method (csrf.CSRF) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/csrf, type CSRF struct
+pkg ginject/middlewares/csrf, type CSRF struct, TrustedOrigins []string
+pkg ginject/middlewares/helmet, const Disabled untyped string = "-"
+pkg ginject/middlewares/helmet, method (helmet.Helmet) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/helmet, method (helmet.Helmet) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/helmet, type Helmet struct
+pkg ginject/middlewares/helmet, type Helmet struct, ContentSecurityPolicy string
+pkg ginject/middlewares/helmet, type Helmet struct, CrossOriginEmbedderPolicy string
+pkg ginject/middlewares/helmet, type Helmet struct, CrossOriginOpenerPolicy string
+pkg ginject/middlewares/helmet, type Helmet struct, CrossOriginResourcePolicy string
+pkg ginject/middlewares/helmet, type Helmet struct, FrameOptions string
+pkg ginject/middlewares/helmet, type Helmet struct, PermissionsPolicy string
+pkg ginject/middlewares/helmet, type Helmet struct, ReferrerPolicy string
+pkg ginject/middlewares/helmet, type Helmet struct, StrictTransportSecurity string
+pkg ginject/middlewares/hostcheck, method (hostcheck.HostCheck) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/hostcheck, method (hostcheck.HostCheck) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/hostcheck, type HostCheck struct
+pkg ginject/middlewares/hostcheck, type HostCheck struct, Hosts []string
+pkg ginject/middlewares/httpsredirect, method (httpsredirect.HTTPSRedirect) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/httpsredirect, method (httpsredirect.HTTPSRedirect) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/httpsredirect, type HTTPSRedirect struct
+pkg ginject/middlewares/httpsredirect, type HTTPSRedirect struct, Host string
+pkg ginject/middlewares/httpsredirect, type HTTPSRedirect struct, Port int
+pkg ginject/middlewares/loadshed, method (loadshed.LoadShed) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/loadshed, method (loadshed.LoadShed) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/loadshed, type LoadShed struct
+pkg ginject/middlewares/loadshed, type LoadShed struct, MaxInFlight int
+pkg ginject/middlewares/loadshed, type LoadShed struct, MaxQueue int
+pkg ginject/middlewares/proxy, const Forwarded proxy.Header = 1
+pkg ginject/middlewares/proxy, const XForwarded proxy.Header = 0
+pkg ginject/middlewares/proxy, func ClientIP(*http.Request) netip.Addr
+pkg ginject/middlewares/proxy, func Host(*http.Request) string
+pkg ginject/middlewares/proxy, func Scheme(*http.Request) string
+pkg ginject/middlewares/proxy, method (proxy.Proxy) NewMiddleware() common.MiddlewareFn
+pkg ginject/middlewares/proxy, method (proxy.Proxy) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg ginject/middlewares/proxy, type Header int
+pkg ginject/middlewares/proxy, type Proxy struct
+pkg ginject/middlewares/proxy, type Proxy struct, Header proxy.Header
+pkg ginject/middlewares/proxy, type Proxy struct, IsHostForwarded bool
+pkg ginject/middlewares/proxy, type Proxy struct, TrustedHops int
+pkg ginject/middlewares/proxy, type Proxy struct, TrustedProxies []string
+pkg ginject/modules/cache, func Register(*cache.CacheModuleOptions) *core.Module
+pkg ginject/modules/cache, method (*cache.CacheService) Delete(context.Context, string) error
+pkg ginject/modules/cache, method (*cache.CacheService) Get(context.Context, string) ([]byte, bool)
+pkg ginject/modules/cache, method (*cache.CacheService) Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg ginject/modules/cache, method (*cache.CacheService) Keys(context.Context) []string
+pkg ginject/modules/cache, method (*cache.CacheService) Set(context.Context, string, []byte, time.Duration) error
+pkg ginject/modules/cache, method (*cache.CacheService) SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg ginject/modules/cache, method (*cache.CacheService) TTL(context.Context, string) (time.Duration, bool)
+pkg ginject/modules/cache, method (cache.CacheService) NewProvider() core.Provider
+pkg ginject/modules/cache, type Cache interface
+pkg ginject/modules/cache, type Cache interface, Delete(context.Context, string) error
+pkg ginject/modules/cache, type Cache interface, Get(context.Context, string) ([]byte, bool)
+pkg ginject/modules/cache, type Cache interface, Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg ginject/modules/cache, type Cache interface, Keys(context.Context) []string
+pkg ginject/modules/cache, type Cache interface, Set(context.Context, string, []byte, time.Duration) error
+pkg ginject/modules/cache, type Cache interface, SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg ginject/modules/cache, type Cache interface, TTL(context.Context, string) (time.Duration, bool)
+pkg ginject/modules/cache, type CacheModuleOptions struct
+pkg ginject/modules/cache, type CacheModuleOptions struct, Backend cache.Cache
+pkg ginject/modules/cache, type CacheModuleOptions struct, IsGlobal bool
+pkg ginject/modules/cache, type CacheModuleOptions struct, OnInit cache.CacheOnInitFn
+pkg ginject/modules/cache, type CacheOnInitFn = func()
+pkg ginject/modules/cache, type CacheService struct
+pkg ginject/modules/cache, type CacheService struct, Backend cache.Cache
+pkg ginject/modules/cache, var ErrEmptyKey error
+pkg ginject/modules/cache, var ErrEntryTooLarge error
+pkg ginject/modules/cache, var ErrNegativeTTL error
+pkg ginject/modules/cache, var ErrNotCounter error
+pkg ginject/modules/config, func Register(*config.ConfigModuleOptions) *core.Module
+pkg ginject/modules/config, method (*config.ConfigService) Get(string) any
+pkg ginject/modules/config, method (*config.ConfigService) Set(string, any)
+pkg ginject/modules/config, method (*config.ConfigService) Transform(any) (any, []ctx.FieldLevel)
+pkg ginject/modules/config, method (config.ConfigService) NewProvider() core.Provider
+pkg ginject/modules/config, type ConfigHookFn = func(config.ConfigService)
+pkg ginject/modules/config, type ConfigLoadFn = func() map[string]any
+pkg ginject/modules/config, type ConfigModuleOptions struct
+pkg ginject/modules/config, type ConfigModuleOptions struct, ENVFilePaths []string
+pkg ginject/modules/config, type ConfigModuleOptions struct, Hooks []config.ConfigHookFn
+pkg ginject/modules/config, type ConfigModuleOptions struct, IsExpandVariables bool
+pkg ginject/modules/config, type ConfigModuleOptions struct, IsGlobal bool
+pkg ginject/modules/config, type ConfigModuleOptions struct, IsIgnoreEnvFile bool
+pkg ginject/modules/config, type ConfigModuleOptions struct, IsOverride bool
+pkg ginject/modules/config, type ConfigModuleOptions struct, Loads []config.ConfigLoadFn
+pkg ginject/modules/config, type ConfigModuleOptions struct, OnInit config.ConfigOnInitFn
+pkg ginject/modules/config, type ConfigOnInitFn = func()
+pkg ginject/modules/config, type ConfigService struct
+pkg ginject/modules/config, type ConfigService struct, State *config.configState
+pkg ginject/pattern, const KindComplex pattern.Kind = 3
+pkg ginject/pattern, const KindExact pattern.Kind = 0
+pkg ginject/pattern, const KindGlobal pattern.Kind = 1
+pkg ginject/pattern, const KindSuffixWildcard pattern.Kind = 2
+pkg ginject/pattern, func NewPattern(string) pattern.Pattern
+pkg ginject/pattern, method (pattern.Pattern) IsExact() bool
+pkg ginject/pattern, method (pattern.Pattern) Kind() pattern.Kind
+pkg ginject/pattern, method (pattern.Pattern) Match(string) bool
+pkg ginject/pattern, method (pattern.Pattern) Raw() string
+pkg ginject/pattern, method (pattern.Pattern) SimplePrefix() string
+pkg ginject/pattern, type Kind uint8
+pkg ginject/pattern, type Pattern struct
+pkg ginject/routing, const MaxPathLength untyped int = 4096
+pkg ginject/routing, const MaxPathSegments untyped int = 64
+pkg ginject/routing, const SERVE untyped string = "SERVE"
+pkg ginject/routing, func MethodRouteVersionToPattern(string, string, string) string
+pkg ginject/routing, func NewRouter() *routing.Router
+pkg ginject/routing, func ParseToParamKey(string) (string, map[string][]int)
+pkg ginject/routing, func PatternToMethodRouteVersion(string) (string, string, string)
+pkg ginject/routing, method (*routing.Router) Add(string, string, string, ctx.HTTPHandler) *routing.Router
+pkg ginject/routing, method (*routing.Router) AddInjectableHandler(string, string, string, any) *routing.Router
+pkg ginject/routing, method (*routing.Router) For([]string, string, string) func(...ctx.HTTPHandler) *routing.Router
+pkg ginject/routing, method (*routing.Router) Match(string, string, string, []string) (*routing.RouterItem, []string)
+pkg ginject/routing, method (*routing.Router) Use(...ctx.HTTPHandler) *routing.Router
+pkg ginject/routing, type Router struct
+pkg ginject/routing, type Router struct, GlobalMiddlewares []ctx.HTTPHandler
+pkg ginject/routing, type Router struct, InjectableHandlers map[string]any
+pkg ginject/routing, type RouterItem struct
+pkg ginject/routing, type RouterItem struct, HandlerIndex int
+pkg ginject/routing, type RouterItem struct, Handlers []ctx.HTTPHandler
+pkg ginject/routing, type RouterItem struct, Index int
+pkg ginject/routing, type RouterItem struct, Injectable any
+pkg ginject/routing, type RouterItem struct, Method string
+pkg ginject/routing, type RouterItem struct, ParamKeys map[string][]int
+pkg ginject/routing, type RouterItem struct, ParamNames []string
+pkg ginject/routing, type RouterItem struct, Pattern string
+pkg ginject/routing, type RouterItem struct, Version string
+pkg ginject/routing, var HTTPMethods []string
+pkg ginject/routing, var OperationsMapHTTPMethods map[string]string
+pkg ginject/trace, const StageComplete untyped string = "complete"
+pkg ginject/trace, const StageExceptionFilter untyped string = "exception_filter"
+pkg ginject/trace, const StageGuard untyped string = "guard"
+pkg ginject/trace, const StageHandler untyped string = "handler"
+pkg ginject/trace, const StageMiddleware untyped string = "middleware"
+pkg ginject/trace, const StagePipe untyped string = "pipe"
+pkg ginject/trace, const StagePostInterceptor untyped string = "post_interceptor"
+pkg ginject/trace, const StagePreInterceptor untyped string = "pre_interceptor"
+pkg ginject/trace, const TransportHTTP untyped string = "HTTP"
+pkg ginject/trace, const TransportWS untyped string = "WS"
+pkg ginject/trace, func Transport(http.RoundTripper) http.RoundTripper
+pkg ginject/trace, method (*trace.Tracer) Emit(trace.Event)
+pkg ginject/trace, method (*trace.Tracer) Enabled() bool
+pkg ginject/trace, method (*trace.Tracer) Listen(func(trace.Event)) func()
+pkg ginject/trace, type Event struct
+pkg ginject/trace, type Event struct, ClientIP netip.Addr
+pkg ginject/trace, type Event struct, Code int
+pkg ginject/trace, type Event struct, Duration time.Duration
+pkg ginject/trace, type Event struct, ID string
+pkg ginject/trace, type Event struct, Name string
+pkg ginject/trace, type Event struct, Operation string
+pkg ginject/trace, type Event struct, ParentID string
+pkg ginject/trace, type Event struct, SpanID string
+pkg ginject/trace, type Event struct, Stage string
+pkg ginject/trace, type Event struct, Target string
+pkg ginject/trace, type Event struct, TraceID string
+pkg ginject/trace, type Event struct, Transport string
+pkg ginject/trace, type Tracer struct
+pkg ginject/versioning, const CustomVersion untyped int = 3
+pkg ginject/versioning, const HeaderVersion untyped int = 2
+pkg ginject/versioning, const MediaType untyped int = 4
+pkg ginject/versioning, const NeutralVersion untyped string = "NEUTRAL"
+pkg ginject/versioning, const QueryVersion untyped int = 1
+pkg ginject/versioning, method (*versioning.Versioning) GetTypeString() string
+pkg ginject/versioning, method (*versioning.Versioning) GetVersion(*ctx.HTTPContext) string
+pkg ginject/versioning, type ExtractorHandler = func(*ctx.HTTPContext) string
+pkg ginject/versioning, type Versioning struct
+pkg ginject/versioning, type Versioning struct, DefaultVersion string
+pkg ginject/versioning, type Versioning struct, Extractor versioning.ExtractorHandler
+pkg ginject/versioning, type Versioning struct, Key string
+pkg ginject/versioning, type Versioning struct, Type int
+pkg ginject/wsevent, func NewWSEvent() *wsevent.WSEvent
+pkg ginject/wsevent, method (*wsevent.WSEvent) Add(string, wsevent.WSEventItem)
+pkg ginject/wsevent, method (*wsevent.WSEvent) AddInjectableHandler(string, any)
+pkg ginject/wsevent, method (*wsevent.WSEvent) AddMiddlewares(string, ...ctx.WSHandler)
+pkg ginject/wsevent, method (*wsevent.WSEvent) Match(string) (wsevent.WSEventItem, string, bool)
+pkg ginject/wsevent, type WSEvent struct
+pkg ginject/wsevent, type WSEventItem struct
+pkg ginject/wsevent, type WSEventItem struct, Handler any
+pkg ginject/wsevent, type WSEventItem struct, Middlewares []ctx.WSHandler
+reach core.moduleBuilder, method (*core.moduleBuilder) Build() *core.Module
+reach core.moduleBuilder, method (*core.moduleBuilder) Controllers(...core.Controller) *core.moduleBuilder
+reach core.moduleBuilder, method (*core.moduleBuilder) Imports(...any) *core.moduleBuilder
+reach core.moduleBuilder, method (*core.moduleBuilder) Providers(...core.Provider) *core.moduleBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddExceptionFilters([]common.ExceptionFilterable, []common.HTTPLayer) *devtool.devtoolBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddGuarders([]common.Guarder, []common.HTTPLayer) *devtool.devtoolBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddHTTPMainHandlers([]common.HTTPLayer) *devtool.devtoolBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddInterceptors([]common.Interceptable, []common.HTTPLayer) *devtool.devtoolBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddMiddlewares([]common.MiddlewareFn, []common.HTTPLayer) *devtool.devtoolBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) AddVersioning(*versioning.Versioning) *devtool.devtoolBuilder
+reach devtool.devtoolBuilder, method (*devtool.devtoolBuilder) Build() *devtool.Devtool
+reach log.logFormat, type int

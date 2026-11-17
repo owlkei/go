@@ -95,8 +95,10 @@ own work on the current branch (no separate roadmap branch). Claude never pushes
   `/commit`.
 - Every package that work adds or changes code in gets a `README.md` if it has none (structure of
   `modules/config/README.md`, written by `/doc`'s steps); `sample/**` is exempt.
-- `make check` runs what CI runs (gofmt, `go vet`, `golangci-lint` with `.golangci.yml`, `go test -race`);
+- `make check` runs what CI runs (gofmt, `go vet`, `make api-check`, `golangci-lint` with `.golangci.yml`, `go test -race`);
   CI (`.github/workflows/ci.yml`) also runs `govulncheck` on every push, pull request and weekly.
+  `make api-check` (`internal/apicheck`) compares the public API with `api/ginject.txt`; after an
+  intended API change, `make api` rewrites it.
 - Claude Code hooks (`.claude/settings.json`, scripts in `.claude/hooks/`): every edited `.go` file is
   gofmt-ed; before stopping, `go vet`, `golangci-lint` and `go test -race` run on the changed packages and
   a failure is sent back to Claude to fix. Pre-commit (husky + lint-staged) checks gofmt and

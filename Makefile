@@ -28,10 +28,19 @@ lint: ## Run linter
 fmt: ## Format Go sources
 	gofmt -w $$(git ls-files '*.go')
 
+.PHONY: api
+api: ## Write the public API listing api/ginject.txt
+	go run ./internal/apicheck -write
+
+.PHONY: api-check
+api-check: ## Fail when the public API differs from api/ginject.txt
+	go run ./internal/apicheck
+
 .PHONY: check
-check: ## Everything CI runs: format, vet, lint, tests
+check: ## Everything CI runs: format, vet, API, lint, tests
 	@test -z "$$(gofmt -l $$(git ls-files '*.go'))" || (gofmt -l $$(git ls-files '*.go'); echo "run make fmt"; exit 1)
 	go vet ./...
+	$(MAKE) api-check
 	golangci-lint run
 	go test ./... -cover -race
 	go test ./core -run '^TestTrace_(NoListenerGeneratesOneID|ListenerGeneratesOneIDPerStage)$$' -count 1
