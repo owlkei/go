@@ -171,8 +171,8 @@ goos: darwin
 goarch: amd64
 pkg: github.com/dangduoc08/ginject/internal/versioning
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkGetVersion_Query-12        	57787495	        20.96 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetVersion_Header-12       	22535310	        53.95 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetVersion_Custom-12       	268396484	         4.469 ns/op	       0 B/op	       0 allocs/op
-BenchmarkGetVersion_MediaType-12    	14635394	        82.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVersion_Query-12        	57787495	        20.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVersion_Header-12       	22535310	        53.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVersion_Custom-12       	268396484	         4.469 ns/op	       0 B/op	       0 allocs/op
+BenchmarkVersion_MediaType-12    	14635394	        82.52 ns/op	       0 B/op	       0 allocs/op
 ```

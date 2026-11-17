@@ -4,7 +4,7 @@
 
 ## 1. Module System Basics
 
-The user-facing reference is `core/README.md` › Modules and lifecycle (builder, fields, `Prefix`,
+The user-facing reference is `internal/core/README.md` › Modules and lifecycle (builder, fields, `Prefix`,
 hooks, rules from the tests). This page explains how the container resolves things.
 
 ### 1.1 Module Purpose
@@ -15,7 +15,7 @@ hooks, rules from the tests). This page explains how the container resolves thin
 - Lifecycle hooks: the `OnInit`, `OnReady`, `OnShutdown` fields
 - Visibility: `IsGlobal` makes its providers visible to every module
 
-### 1.2 Module Structure (`core/module.go`)
+### 1.2 Module Structure (`internal/core/module.go`)
 
 ```go
 type Module struct {
@@ -40,7 +40,7 @@ func (m *Module) ID() string
 ```
 
 `Create` never writes a `*Module`: the wiring results (routes, layers, provider instances) live in
-the app's container (`core/container.go`), so one module value can be given to any number of apps.
+the app's container (`internal/core/container.go`), so one module value can be given to any number of apps.
 
 **No `exports` field, `Export(...)` method or `IsGlobal(...)` builder method exists.** There is no
 export mechanism: a module sees its own providers, those of the modules it imports (at any depth),
@@ -144,7 +144,7 @@ type Provider interface {
 }
 ```
 
-### 4.2 Provider Lifecycle (`core/container.go`)
+### 4.2 Provider Lifecycle (`internal/core/container.go`)
 
 ```
 1. Declaration   ModuleBuilder().Providers(UserService{})
@@ -194,7 +194,7 @@ constructs `DatabasePool`), then injects and calls `UserService.NewProvider()`.
 
 ### 5.2 Field Lookup Order
 
-For each exported field (`injectDependencies`, `core/fn.go`):
+For each exported field (`injectDependencies`, `internal/core/fn.go`):
 1. a provider of the module (own or imported)
 2. a global provider
 3. an interface the container holds (`log.Logger`, `common.Publisher`)

@@ -12,7 +12,7 @@ Feature Request
   ├─ "I need an HTTP endpoint"
   │   ├─ Embed ginject.HTTP in controller
   │   ├─ Create method: READ/CREATE/UPDATE/MODIFY/DELETE_BY_params
-  │   ├─ Add parameters to method signature (built-in types and pipes, core/README.md › Handler injection)
+  │   ├─ Add parameters to method signature (built-in types and pipes, internal/core/README.md › Handler injection)
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Providers go in exported controller fields (injected at Create())
   │
@@ -253,7 +253,7 @@ Architecture Question
   │   ├─ Create Provider with injected CacheService
   │   ├─ Cache wrapper around database queries
   │   ├─ Invalidate cache on writes
-  │   └─ Use memorycache.MemoryCache or external cache
+  │   └─ Use cache.NewMemoryCache or an external cache backend
   │
   ├─ "How do I structure database access?"
   │   ├─ Create Repository Provider (data access)

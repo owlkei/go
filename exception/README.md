@@ -361,7 +361,7 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz), Go 1.27.4, me
 | BenchmarkNewException_ErrorOpt | 24.46 | 0 | 0 |
 | BenchmarkNewException_ExceptionOptions_Cause | 25.7 | 0 | 0 |
 | BenchmarkNewException_DescriptionAndCause | 25.18 | 0 | 0 |
-| BenchmarkException_GetStatusText | 3.363 | 0 | 0 |
+| BenchmarkException_StatusText | 3.363 | 0 | 0 |
 | BenchmarkException_Error | 11.75 | 0 | 0 |
 | BenchmarkException_ErrorsIs | 45.91 | 64 | 1 |
 | BenchmarkException_AppendJSON (into a buffer with room) | 50.9 | 0 | 0 |

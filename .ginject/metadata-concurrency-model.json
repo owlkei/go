@@ -19,7 +19,7 @@
     "synchronization": "channelized (readLoop → handler → memorybroker.Publish → writeLoop via channel)"
   },
   "global_shared_state": {
-    "app container (core/container.go)": {
+    "app container (internal/core/container.go)": {
       "description": "per-app providers, layers, routes, events and handler plans",
       "access": "written during app.Create() on the calling goroutine, read-only afterwards",
       "thread_safe": true,
@@ -147,8 +147,8 @@
     "prevention": "keep pipeline stages lock-free and non-blocking; never call Close() synchronously from a PublishAsync-dispatched handler"
   },
   "cancellation_handling": {
-    "http_requests": "No per-request ctx.HTTPContext.SetDeadline()/Deadline/IsDeadlineExceeded() exists; do not invent them. Timeouts are server-level internal defaults (core/server.go newServerDefaults): ReadHeaderTimeout 5s, ReadTimeout 30s, WriteTimeout 30s, IdleTimeout 75s; a handler extends its own with http.NewResponseController. During a shutdown each running request's Context() is cancelled when ShutdownTimeout passes.",
+    "http_requests": "No per-request ctx.HTTPContext.SetDeadline()/Deadline/IsDeadlineExceeded() exists; do not invent them. Timeouts are server-level internal defaults (internal/core/server.go newServerDefaults): ReadHeaderTimeout 5s, ReadTimeout 30s, WriteTimeout 30s, IdleTimeout 75s; a handler extends its own with http.NewResponseController. During a shutdown each running request's Context() is cancelled when ShutdownTimeout passes.",
     "ws_connections": "no context.Context, use heartbeat + timeout",
-    "graceful_shutdown": "Built in (core/server.go): SIGINT/SIGTERM or app.Stop() -> stop intercepting signals -> close the listener and idle connections -> drain running requests for ServerOptions.ShutdownTimeout (default 30s) -> runShutdownHooks() once per app (shutdownOnce): every Module's OnShutdown in the exact reverse of the init order, a panicking hook logged as OnShutdownPanic -> access log stopped. Stop() is safe from any goroutine; called from a handler it waits for that request (use go app.Stop()). No WebSocket-specific shutdown: open WS connections end when the process exits."
+    "graceful_shutdown": "Built in (internal/core/server.go): SIGINT/SIGTERM or app.Stop() -> stop intercepting signals -> close the listener and idle connections -> drain running requests for ServerOptions.ShutdownTimeout (default 30s) -> runShutdownHooks() once per app (shutdownOnce): every Module's OnShutdown in the exact reverse of the init order, a panicking hook logged as OnShutdownPanic -> access log stopped. Stop() is safe from any goroutine; called from a handler it waits for that request (use go app.Stop()). No WebSocket-specific shutdown: open WS connections end when the process exits."
   }
 }

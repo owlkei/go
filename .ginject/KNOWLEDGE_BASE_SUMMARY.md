@@ -336,7 +336,7 @@ Note: `ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILD
 - ✅ Type mismatches (provider vs parameter)
 - ✅ Context leaks (holding after request)
 - ✅ Expecting exception filters to catch middleware panics
-- ✅ Calling the old server and logger APIs (see `core/README.md` for the current ones)
+- ✅ Calling the old server and logger APIs (see `internal/core/README.md` for the current ones)
 - ✅ Middleware calling next() multiple times
 
 ---

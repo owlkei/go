@@ -34,7 +34,7 @@ func loadConfigOptions(opts *ConfigModuleOptions) *ConfigModuleOptions {
 		opts = &ConfigModuleOptions{}
 	}
 	if opts.IsIgnoreEnvFile && len(opts.EnvFilePaths) > 0 {
-		failConfig("IsIgnoreEnvFile is set with ENVFilePaths")
+		failConfig("IsIgnoreEnvFile is set with EnvFilePaths")
 	}
 
 	envFilePaths := opts.EnvFilePaths

@@ -26,7 +26,7 @@ Module (composition root)
 2. Handler parameters: matched against the built-in types and pipes (section 1.4); providers are not handler parameters
 3. Anything unresolvable panics `dependency injection: …` at `Create()`
 
-**Cost**: reflection runs once per handler at `Create()`; a request runs the prepared plan (`core/README.md` › Benchmarks)
+**Cost**: reflection runs once per handler at `Create()`; a request runs the prepared plan (`internal/core/README.md` › Benchmarks)
 
 ---
 
@@ -46,7 +46,7 @@ error from a guard onwards → module exception filter → global exception filt
 **Key Rules**:
 - A layer stops the request by not continuing: a middleware without `next()`, a guard returning `false` (the filters get a 403), an interceptor that returns without `Pipe`
 - The chain is linear: code after `next()` runs before the next layer starts, not after the handler
-- `HTTP.handleRequest()` (`core/http.go`) holds the request's only `recover()`
+- `HTTP.handleRequest()` (`internal/core/http.go`) holds the request's only `recover()`
 - Only exceptions reach the client with their code and message; any other panic answers a fixed 500 and is logged
 
 ---
@@ -92,7 +92,7 @@ Connection closes → readLoop exits → writeLoop exits
 
 ### 1.4 Dependency Injection via Reflection
 
-**Resolution Algorithm** (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `core/fn_plan.go`, once per handler at `Create()`):
+**Resolution Algorithm** (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `internal/core/fn_plan.go`, once per handler at `Create()`):
 ```
 For each parameter of handler(Param1, …, ParamN):
     if its type is a built-in type of the transport: a step that reads it from the context
@@ -129,7 +129,7 @@ A request runs the steps left to right, then calls the method once.
 - Parameters match by type identity; a type that only prints like a framework type is refused
 - A pointer pipe parameter is refused at `Create()`
 - An unexported field of a provider, controller or pipe panics at `Create()`
-- Unknown parameter types → `Create()` panics (fail-fast); full table in `core/README.md` › Handler injection
+- Unknown parameter types → `Create()` panics (fail-fast); full table in `internal/core/README.md` › Handler injection
 
 ---
 
@@ -137,7 +137,7 @@ A request runs the steps left to right, then calls the method once.
 
 ### 2.1 App.Create() Initialization Sequence
 
-The order is fixed (comment on `App.Create` in `core/app.go`); the walkthrough is in
+The order is fixed (comment on `App.Create` in `internal/core/app.go`); the walkthrough is in
 [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md) § Phase 2:
 
 ```
@@ -168,12 +168,12 @@ callOnReady()              then the app is marked created
    └─ no route: global middlewares, then 404 / 405 (+ Allow) from precomputed bytes
    └─ the route's httpRoute: middlewares → guards → interceptors → handler plan → operators
    └─ panics routed per request-pipeline.md § 1
-3. Result written by its kind (core/README.md › Results)
+3. Result written by its kind (internal/core/README.md › Results)
 4. With a listener: the complete event (Code = the status written)
 5. app.releaseCtx(ex): ctx.HTTPReset(c) (keeps slice capacity), back to the pool
 ```
 
-**Performance**: measured numbers are in `core/README.md` › Benchmarks (a static route is about 0.9 µs and 7 allocations).
+**Performance**: measured numbers are in `internal/core/README.md` › Benchmarks (a static route is about 0.9 µs and 7 allocations).
 
 ### 2.3 WebSocket Connection Lifecycle
 
@@ -235,7 +235,7 @@ reachable through the root alias `ginject.HTTPContext`. The same holds for `aggr
 and the `common` embeds (`common.HTTPRouterMap(h)`, `common.AddHandlerToRouterMap(h, …)`,
 `common.InjectProvidersIntoHTTPGuards(g, …)`).
 
-**No `Deadline` field, `SetDeadline()`, or `IsDeadlineExceeded()` method exist on `HTTPContext`** — verified absent from `ctx/http_context.go`. Do not generate code that calls them. There is no per-request deadline API in this framework; the only timeouts are server-level (`http.Server.ReadTimeout`/`WriteTimeout`/etc., fixed by the serving call, `core/server.go` — see invariant #8 below).
+**No `Deadline` field, `SetDeadline()`, or `IsDeadlineExceeded()` method exist on `HTTPContext`** — verified absent from `internal/ctx/http_context.go`. Do not generate code that calls them. There is no per-request deadline API in this framework; the only timeouts are server-level (`http.Server.ReadTimeout`/`WriteTimeout`/etc., fixed by the serving call, `internal/core/server.go` — see invariant #8 below).
 
 **Lifecycle**:
 1. Allocated from pool via `app.ctxPool.Get()`
@@ -276,7 +276,7 @@ type Provider interface {
 }
 ```
 
-**How It Works** (`core/container.go`):
+**How It Works** (`internal/core/container.go`):
 1. Any struct implementing `NewProvider() Provider` is a provider
 2. Register via `ModuleBuilder().Providers(MyProvider{})`
 3. At `app.Create()`, `discover` walks the module tree once: each module's visible providers (its own, its imports', the global ones of the root and `IsGlobal` modules)
@@ -291,7 +291,7 @@ type Provider interface {
 ### 4.2 Matching
 
 - A field matches a provider of exactly its type: `UserService` and `*UserService` are different keys
-- Lookup order per field (`injectDependencies`, `core/fn.go`): a provider of the module, a global provider, an interface the container holds (`log.Logger`, `common.Publisher`); otherwise a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`, and any other field keeps the value it was given (configuration)
+- Lookup order per field (`injectDependencies`, `internal/core/fn.go`): a provider of the module, a global provider, an interface the container holds (`log.Logger`, `common.Publisher`); otherwise a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`, and any other field keeps the value it was given (configuration)
 - An unexported field panics `dependency injection: can't set value to unexported '<field>' field of the <type> provider`
 
 ---
@@ -331,8 +331,8 @@ Methods:
 ### 5.2 Panic Recovery
 
 **Recovery Points**:
-1. **HTTP request**: `HTTP.handleRequest()` (`core/http.go`) holds the request's only `recover()`. A middleware's panic gets the HTTP layer's fixed error response (no user filter); a panic of a guard, interceptor, pipe, the handler or an operator goes to the route's filters (`httpHandlerPlan.invoke` itself never recovers). Full rules: [request-pipeline.md](request-pipeline.md) section 1.
-2. **WS message**: `dispatchWSEvent` (`core/read_loop.go`) recovers into the WS catch chain with `common.NormalizeRecovered`.
+1. **HTTP request**: `HTTP.handleRequest()` (`internal/core/http.go`) holds the request's only `recover()`. A middleware's panic gets the HTTP layer's fixed error response (no user filter); a panic of a guard, interceptor, pipe, the handler or an operator goes to the route's filters (`httpHandlerPlan.invoke` itself never recovers). Full rules: [request-pipeline.md](request-pipeline.md) section 1.
+2. **WS message**: `dispatchWSEvent` (`internal/core/read_loop.go`) recovers into the WS catch chain with `common.NormalizeRecovered`.
 
 **Recovery Flow**:
 ```
@@ -401,7 +401,7 @@ any // bound as any, matched by its method:
 - `trace.Tracer` — listeners in an immutable slice behind an `atomic.Pointer`; `Enabled` / `Emit` take no lock, `Listen` / `stop` serialize on one mutex
 - `accesslog.AccessLog` — 64 shards (mutex + map each) of pending requests; the line is logged on the request goroutine after the shard lock is released (no worker, queue or ticker)
 - `internal/logpipe.Sink` — the stdout pipeline of the built-in logger: one mutex, two swapped buffers (1 MiB bound), at most one writer goroutine that exists only while it writes, woken about once per millisecond or per 16 KiB (design 0016; Fatal, `Flush` and shutdown at once)
-- Panic stack sampler (`core/panic_stack.go`) — one mutex per app around a 32-slot key table and the per-second counters; a timer only in a second with a suppressed stack
+- Panic stack sampler (`internal/core/panic_stack.go`) — one mutex per app around a 32-slot key table and the per-second counters; a timer only in a second with a suppressed stack
 - `memorybroker.Broker` — single sync.RWMutex over 4 maps (exact/prefix/global/complex); no sharding; PublishAsync tracked via sync.WaitGroup so Close() can drain in-flight goroutines
 
 **Not Thread-Safe (by design)**:
@@ -459,9 +459,9 @@ any // bound as any, matched by its method:
    - App state is read-only after app.Create() (each app has its own)
 
 8. **Request Body Size**:
-   - Every request body is capped at 10 MiB by default, enforced via `http.MaxBytesReader` in `App.ServeHTTP` (core/app.go)
+   - Every request body is capped at 10 MiB by default, enforced via `http.MaxBytesReader` in `App.ServeHTTP` (internal/core/app.go)
    - The only way to change it is `ServerOptions.MaxRequestBodyBytes` of the serving call (negative = no cap); the `atomic.Int64` field `app.maxRequestBodyBytes` is written when that call starts
-   - Exceeding the cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw panic (ctx/http_body.go)
+   - Exceeding the cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw panic (internal/ctx/http_body.go)
 
 9. **Cross-Cutting Concern Instances** (Guard/Middleware/Interceptor/ExceptionFilter):
    - See [package-reference.md](package-reference.md), package `common`, section "One Instance Per Configuration (per app)" for full detail

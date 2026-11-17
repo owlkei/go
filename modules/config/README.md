@@ -122,7 +122,7 @@ Default: `false`
 
 Required: `false`
 
-If you don't want to use `.env` file, instead would like to simply access `OS` environment variables from the runtime environment. set `IsIgnoreEnvFile: true`. No file is read, the default `.env` included. Setting it together with `EnvFilePaths` panics with `invalid config: IsIgnoreEnvFile is set with ENVFilePaths`.
+If you don't want to use `.env` file, instead would like to simply access `OS` environment variables from the runtime environment. set `IsIgnoreEnvFile: true`. No file is read, the default `.env` included. Setting it together with `EnvFilePaths` panics with `invalid config: IsIgnoreEnvFile is set with EnvFilePaths`.
 
 ```go
 config.Register(&config.ConfigModuleOptions{
@@ -412,7 +412,7 @@ Every failure happens in `Register`, at startup, as a panic `invalid config: <de
 | `<path>:<line>: ${NAME} refers to itself` | Expansion found a cycle, of any length. |
 | `<path>:<line>: value larger than 64 KiB` | A value, after expansion, is too large. |
 | `<path>:<line>: values larger than 16 MiB in total after expansion` | The values of the file add up to more than 16 MiB once expanded, for example many copies of one large value. The line is the first value past the limit. |
-| `IsIgnoreEnvFile is set with ENVFilePaths` | The two options contradict each other. |
+| `IsIgnoreEnvFile is set with EnvFilePaths` | The two options contradict each other. |
 | `Loads[<index>]: nested deeper than 32 levels` | A loaded map is nested too deeply, or contains itself. |
 | `ConfigService was not created by Register` | `Set` was called on a zero `ConfigService{}`. |
 

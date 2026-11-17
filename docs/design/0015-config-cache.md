@@ -244,7 +244,7 @@ File format. A file is UTF-8 text; a leading byte-order mark is skipped; lines e
     `<path>:<line>: unexpected text after the closing quote`, `<path>:<line>: NUL byte`;
   - `<path>:<line>: ${NAME} is not defined`, `<path>:<line>: ${NAME} refers to itself` (any cycle),
     `<path>:<line>: value larger than 64 KiB`;
-  - `IsIgnoreEnvFile is set with ENVFilePaths`; `Loads[<i>]: nested deeper than 32 levels`.
+  - `IsIgnoreEnvFile is set with EnvFilePaths`; `Loads[<i>]: nested deeper than 32 levels`.
 - **E10** No secret in output: a panic message, error or log line of this package contains the
   path, the line number and, for E6, the variable **name**; never a value and never the text of a
   line. `fmt.Sprintf("%v")`, `"%+v"`, `"%#v"`, `json.Marshal` and `slog` of a `ConfigService`, or of

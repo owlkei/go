@@ -2,7 +2,7 @@
 
 **Purpose**: Application startup sequence, module initialization guarantees, shutdown, and the race
 conditions an app can still create for itself. The user-facing contract (hooks, server, shutdown) is
-`core/README.md` › Modules and lifecycle and › Server; this page explains the implementation.
+`internal/core/README.md` › Modules and lifecycle and › Server; this page explains the implementation.
 
 **Last Updated**: 2026-11-16 (roadmap 0003, designs 0008 and 0009)
 
@@ -38,7 +38,7 @@ core.New()
 Every `core.New()` is independent: there is no package-level registry of routes, events, providers or
 layers (design 0009). The app's `trace.Tracer` is a zero value (no listener).
 
-### Phase 2: App Initialization (`app.Create(m *Module)`, `core/app.go`)
+### Phase 2: App Initialization (`app.Create(m *Module)`, `internal/core/app.go`)
 
 Sequential, on the calling goroutine:
 
@@ -47,7 +47,7 @@ Create(m)
   ├─ m == nil          → panic "invalid module: Create needs a root module"
   ├─ second call       → panic "invalid app: Create called twice"
   ├─ container.addInterface(log.Logger)
-  ├─ container.wire(m)                      core/container.go
+  ├─ container.wire(m)                      internal/core/container.go
   │    ├─ addGlobals(root)                  the root's providers are global
   │    ├─ scanGlobals(root)                 walks the static *Module imports first: every IsGlobal
   │    │                                    module's providers become global, at any depth
@@ -62,7 +62,7 @@ Create(m)
   ├─ initWS()                               only when EnableWS was called
   ├─ initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(),
   │  initInterceptors(), initMainHandlers()  layers constructed once per type and configuration,
-  │                                          handler plans built (core/fn_plan.go)
+  │                                          handler plans built (internal/core/fn_plan.go)
   ├─ app.http.finishRoutes()                one immutable route struct per route, fixed 404/405 bodies
   ├─ initDevtool()                          after routes and layers exist
   ├─ initAccessLog()                        the tracer's only listener, when EnableAccessLog was called
@@ -90,7 +90,7 @@ per app. Root importing A and C, both importing B: B, A, C, root.
 - Configuration methods (`BindGlobal…`, `Enable…`, `SetLogger`) panic after `Create`:
   `invalid app: <Method> must be called before Create`.
 
-### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`; `core/server.go`)
+### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`; `internal/core/server.go`)
 
 ```
 app.Listen(port, opts)
@@ -103,7 +103,7 @@ app.Listen(port, opts)
 
 The server accepts connections as soon as `ServerListening` is logged.
 
-### Phase 4: Shutdown (`core/server.go`)
+### Phase 4: Shutdown (`internal/core/server.go`)
 
 ```
 SIGINT / SIGTERM / app.Stop()

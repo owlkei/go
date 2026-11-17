@@ -70,7 +70,7 @@ This directory (`.ginject/`) contains complete AI-friendly documentation of the 
 2. Never expect code after `next()` to run after the handler (use an interceptor)
 3. Never call configuration methods after `Create`
 4. Never call NewProvider() manually
-5. `Create()` order is fixed (`core/app.go`)
+5. `Create()` order is fixed (`internal/core/app.go`)
 
 ### Concurrency
 - HTTP: Each request is independent (thread-safe)
@@ -78,7 +78,7 @@ This directory (`.ginject/`) contains complete AI-friendly documentation of the 
 - App state: read-only after app.Create(); every `ginject.New()` is independent
 
 ### Performance
-- A static route through `ServeHTTP` is about 0.6 µs and 6 allocations (`core/README.md` › Benchmarks)
+- A static route through `ServeHTTP` is about 0.6 µs and 6 allocations (`internal/core/README.md` › Benchmarks)
 - Handler arguments are planned once at `Create()`; a request runs the plan
 
 ---
@@ -266,7 +266,7 @@ panic(exception.BadRequestException("invalid"))  // Caught → 400 response
 
 From [metadata-performance.json](metadata-performance.json):
 
-Measured numbers: `core/README.md` › Benchmarks.
+Measured numbers: `internal/core/README.md` › Benchmarks.
 
 **Optimization**:
 - Panic exceptions, not other values (a non-exception panic costs about 25 µs for its stack capture)
@@ -301,7 +301,7 @@ Measured numbers: `core/README.md` › Benchmarks.
 | "Context has wrong data" | Holding context after request | anti-patterns-gotchas.md#2.1 |
 | "Handler called twice" | Calling next() multiple times | anti-patterns-gotchas.md#3.2 |
 | "Slow client drops messages" | WS send buffer overflow | websocket-system.md#11.1 |
-| "Request takes too long" | Handler hanging (no per-handler timeout; server timeouts bound the connection) | core/README.md › Timeouts and limits |
+| "Request takes too long" | Handler hanging (no per-handler timeout; server timeouts bound the connection) | internal/core/README.md › Timeouts and limits |
 | "Messages corrupt" | Concurrent writes to WS connection | websocket-system.md#4.2 |
 | "Memory usage high" | Retaining pooled contexts | anti-patterns-gotchas.md#2.1 |
 

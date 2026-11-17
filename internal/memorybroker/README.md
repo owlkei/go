@@ -292,7 +292,7 @@ Patterns are parsed once at subscribe time by the `pattern` package. Publish use
 **Notes:**
 
 - `*` matches exactly one segment, in any position. `**` matches one or more segments, and only as the last segment; anywhere else it is literal text, like `*` inside a segment (`a*b`) and `>`
-- Every rule, with examples: [`pattern/MATCHING.md`](../pattern/MATCHING.md)
+- Every rule, with examples: [`internal/pattern/MATCHING.md`](../pattern/MATCHING.md)
 - Complex patterns require an `O(patterns)` scan; use exact or suffix when possible
 
 ---
@@ -319,7 +319,7 @@ b.Subscribe("conn."+connID, func(m *memorybroker.Message) {
 b.Publish("conn.abc123", payload) // to one client
 ```
 
-This is how the WebSocket layer wires topics to connections: `core/ws_connmgr.go` calls `Subscribe`/`Unsubscribe` per connection and topic, and `core/read_loop.go` calls `Publish` when a client publishes into a topic it's subscribed to — fan-out to every other subscriber of that topic happens for free.
+This is how the WebSocket layer wires topics to connections: `internal/core/ws_connmgr.go` calls `Subscribe`/`Unsubscribe` per connection and topic, and `internal/core/read_loop.go` calls `Publish` when a client publishes into a topic it's subscribed to — fan-out to every other subscriber of that topic happens for free.
 
 ### 3. Room / Group — Shared topic
 

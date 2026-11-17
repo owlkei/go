@@ -61,7 +61,7 @@
 
 ## 2. Route Matching Algorithm
 
-Code: `routing/router.go` (`Router.Match`), `internal/ds/trie.go` (`Trie.Find`). Design: `docs/design/0002-routing.md`.
+Code: `internal/routing/router.go` (`Router.Match`), `internal/ds/trie.go` (`Trie.Find`). Design: `docs/design/0002-routing.md`.
 There is no regexp, no `:id` syntax and no conflict detection between parameter routes.
 
 ### 2.1 Route syntax (registration)
@@ -150,7 +150,7 @@ type RouterItem struct {
 
 **Usage**:
 1. `Router.Match()` returns the shared `*RouterItem` (read-only; the pointer is stable across later `Use` / `For` / `Add`) and the parameter values, or nil.
-2. `item.Handlers` run in order (`core/http.go`); a nil entry is the injectable main handler.
+2. `item.Handlers` run in order (`internal/core/http.go`); a nil entry is the injectable main handler.
 3. `core` copies `item.ParamKeys` and the values into `HTTPContext.ParamKeys` / `ParamValues`.
 
 The root route's pattern is `/||/[GET]/` whether it was registered as `""` or `/`.
@@ -179,7 +179,7 @@ func (c UserController) READ_BY_ID(param ginject.Param) string {
 ### 4.2 Wildcards and globs
 
 `*` and globs capture nothing: there is no `param["*"]`. A file route (`SERVE`, `READ_FILE…`) reads
-the rest of the URL itself (`core/http.go` `serveContent`, from the route's `serveIndex`). A
+the rest of the URL itself (`internal/core/http.go` `serveContent`, from the route's `serveIndex`). A
 directory answers its `index.html` or 404, never a listing. `core` registers routes with
 `AddInjectableHandler` and finds them with `Match`, passing `ctx.HTTPParamValues(c)[:0]` as the buffer that
 `Find` appends to (design 0002 H1); it no longer uses `Use`, `For` or `RouterItem.Handlers`.
@@ -305,7 +305,7 @@ Static, then glob, then parameter, then wildcard, with backtracking: §2.3.
 ### 9.2 Ambiguous Routes
 
 Only an identical pattern (same method, route and version) panics at `app.Create()` with
-`route conflict: ...` (`common/http.go`, `AddHandlerToRouterMap`). Two routes that differ only in
+`route conflict: ...` (`internal/common/http.go`, `AddHandlerToRouterMap`). Two routes that differ only in
 parameter names (`/{id}` and `/{name}`) share one trie node: the one registered last answers.
 Overlapping shapes (`/{id}` beside `/all` or `/*.html`) are legal and resolved by §2.3.
 

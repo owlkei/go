@@ -7,11 +7,11 @@ don't mass-rewrite the exceptions.
 ## Source files
 
 - **No comments in Go code**, tests and benchmarks included (commit `5babd36` stripped them with
-  an AST pass). One block survives at `core/app.go:213` (the init order of `App.Create`); leave it,
+  an AST pass). One block survives at `internal/core/app.go:213` (the init order of `App.Create`); leave it,
   don't add others. Explain "why" in the commit message, the README or `.ginject/`.
 - **File names** are snake case, one concern per file, the transport in front when a concept has an
-  HTTP and a WS side: `common/http_guard.go`, `common/ws_guard.go`, `core/ws_connmgr.go`,
-  `core/read_loop.go`. The demo app uses dots (`sample/shared/log.http_guard.go`): that style stays
+  HTTP and a WS side: `internal/common/http_guard.go`, `internal/common/ws_guard.go`, `internal/core/ws_connmgr.go`,
+  `internal/core/read_loop.go`. The demo app uses dots (`sample/shared/log.http_guard.go`): that style stays
   in `sample/`.
 - **Where functions live in a package** (the maintainer's rule D-034, adopted on master 2026-11-16):
   - Exported API goes in files named after their topic: `trie.go`, `router.go`, `binding.go`.
@@ -22,26 +22,26 @@ don't mass-rewrite the exceptions.
     stay at the top of the file, after the imports. Exported functions are never reordered to fit
     this rule.
   - A package with a single code file has no `fn.go`: everything stays in that file.
-  - A file whose whole content is one unexported topic (a subsystem such as `core/read_loop.go`,
-    `core/write_loop.go`, `core/publisher.go`, `core/default.go`, `ctx/binding_typed.go`, the
+  - A file whose whole content is one unexported topic (a subsystem such as `internal/core/read_loop.go`,
+    `internal/core/write_loop.go`, `internal/core/publisher.go`, `internal/core/default.go`, `internal/ctx/binding_typed.go`, the
     handler plans) keeps its own topic-named file even when other files call into it. `fn.go` is for
     small helpers that belong to no such topic.
   - When a second file starts using a helper, move the helper and its tests to `fn.go` / `fn_test.go`.
   - Methods stay with their type, whatever calls them (`handleRequest` is a method of `*HTTP`, so it
     stays in `http.go`); the rule is about free functions, constants, variables and types.
   - A `fn.go` over about 400 lines splits by topic into `fn_<topic>.go` (and `fn_<topic>_test.go`),
-    for example `core/fn_plan.go`.
+    for example `internal/core/fn_plan.go`.
   - Moves are pure: no logic change in the same commit as a move.
 - **Tests and benchmarks sit next to the file:** `<file>_test.go`, `<file>_bench_test.go`
-  (`common/http_guard_test.go`, `common/http_guard_bench_test.go`). A test that spans files gets its
-  own name (`core/ws_fanout_test.go`).
+  (`internal/common/http_guard_test.go`, `internal/common/http_guard_bench_test.go`). A test that spans files gets its
+  own name (`internal/core/ws_fanout_test.go`).
 - **Test packages are internal** (`package core`, not `core_test`): 2 files in the repository are
   external (`wsevent`). Write internal tests unless the test is about the public API only.
 
 ## Naming
 
 - **Receivers are one to three letters** from the type (`c`, `p`, `m`, `e`, `app`, `rb`): 683 of 737
-  methods outside `sample/`. `func (s *shard) evictOneLocked` (`memorycache/memory_cache.go`).
+  methods outside `sample/`. `func (s *shard) evictOneLocked` (`internal/memorycache/memory_cache.go`).
 - **`instance` is the receiver of user-facing configuration types** whose value the user writes:
   `func (instance CORS) NewMiddleware()` (`middlewares/cors/cors.go:100`), the `csrf` and `helmet`
   middlewares, `log/log.go`, and every controller, provider, guard and filter in `sample/`. Use it
@@ -55,7 +55,7 @@ don't mass-rewrite the exceptions.
   (`evictOneLocked`).
 - **Constructors** are `New<Type>` (`NewMemoryCache`, `NewRouter`, `NewWSConnmgr`). Constants that
   name a looked-up method end in `MethodName` (`GuardMethodName = "CanActivate"`,
-  `common/guard.go:10`).
+  `internal/common/guard.go:10`).
 - Acronyms keep one case: `HTTP`, `WS`, `ID`, `JSON`, `URL` (`NewWSContext`, `ErrInvalidID`).
 
 ## Configuration and modules
@@ -66,7 +66,7 @@ don't mass-rewrite the exceptions.
   `loadConfigOptions` (`modules/config/module.go:28`). Never normalize on the request path.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once
-  through the app's container (`(*container).construct`, `core/container.go`) and which returns a private
+  through the app's container (`(*container).construct`, `internal/core/container.go`) and which returns a private
   compiled type that implements `Use` (`compiledCORS`). Every package under `middlewares/` follows
   it; the option type's own `Use` calls `instance.NewMiddleware().Use(...)` and is for tests only.
   Invalid options panic in `NewMiddleware` as `invalid <package>: <detail>` (`color.FmtRed`), and a
@@ -82,21 +82,21 @@ don't mass-rewrite the exceptions.
 - **Runtime errors are values.** Sentinels are `Err<Reason>` in a `var` block, with messages
   prefixed by the package and a colon, lower case, no final period:
   `ErrEmptyKey = errors.New("cache: key must not be empty")`
-  (`memorycache/memory_cache.go`), the `memorybroker` errors. Callers compare them with `==` or
+  (`internal/memorycache/memory_cache.go`), the `memorybroker` errors. Callers compare them with `==` or
   `errors.Is`.
 - **Wrap with `%w`** and the package prefix when adding context:
-  `fmt.Errorf("ginject: listen on %s: %w", address, err)` (`core/server.go`).
+  `fmt.Errorf("ginject: listen on %s: %w", address, err)` (`internal/core/server.go`).
 - Known inconsistency: a few `core` errors have no prefix (`"root not found: %s"`). Follow the rule in new code.
 
 ## Concurrency
 
 - Shared state sits behind `sync.Mutex` / `sync.RWMutex` fields named `mu` (10 of 12), next to the fields
-  they guard (`shard` in `memorycache/memory_cache.go`). Hot shared maps are sharded.
+  they guard (`shard` in `internal/memorycache/memory_cache.go`). Hot shared maps are sharded.
 - Prefer no background goroutine at all: work that must happen later runs on a timer armed only
   while there is work, holding its owner through a `weak.Pointer` so an unreferenced owner is
   collected and needs no stop method (`memorycache`'s sweep). Types that do own a goroutine expose a
   stop method (`AccessLog.Stop`) and tests `defer` it. Packages that touch shared state carry a `..._NoRace` / `Concurrent...` test run under `-race`
-  (`core/ws_connmgr_test.go`, `core/fn_test.go`).
+  (`internal/core/ws_connmgr_test.go`, `internal/core/fn_test.go`).
 
 ## Performance: hot path and cold path
 

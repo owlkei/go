@@ -104,7 +104,7 @@ error from a guard onwards → module exception filter → global exception filt
 ```
 
 ### 3. Dependency Injection (Reflection at `Create()` only)
-- Handler parameters are planned once at `Create()` (`core/fn_plan.go`); a request runs the plan
+- Handler parameters are planned once at `Create()` (`internal/core/fn_plan.go`); a request runs the plan
 - No tags needed: provider fields match by type identity (package path + type), handler parameters by type identity
 - An unresolvable dependency panics at `Create()` (`dependency injection: …`)
 
@@ -118,12 +118,12 @@ error from a guard onwards → module exception filter → global exception filt
 - Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack, sampled: 1 stack per stack key per second, 10 per app per second)
 
 ### 6. Server and Lifecycle
-- `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*ginject.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `H2C`)
+- `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*ginject.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`)
 - Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`, then `OnShutdown` hooks in reverse init order
 - One logger API: `app.SetLogger(l)` (any `log.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
 - Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
 - Request tracing: one internal `trace.Tracer` per app; `EnableAccessLog()` is its only listener
-- Details: `core/README.md`, [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md)
+- Details: `internal/core/README.md`, [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md)
 
 ---
 
@@ -160,7 +160,7 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md#decision-tree-how-do-i-implement-this-feature)
 
 **Steps**:
-1. Preferred: a pipe (a value type with `Transform`, see `common/pipe.go`) that binds and validates one parameter, panicking an exception on bad input
+1. Preferred: a pipe (a value type with `Transform`, see `internal/common/pipe.go`) that binds and validates one parameter, panicking an exception on bad input
 2. Or validate in the handler and panic `exception.BadRequestException(...)`
 3. Guards decide access (`true` / `false`), not input shape
 
@@ -256,10 +256,10 @@ All `metadata-*.json` files contain structured data for AI parsing:
 - Expecting code after `next()` to run after the handler
 - Accessing raw websocket.Conn
 - Manual NewProvider() calls
-- APIs remembered from older versions: check `core/README.md` and `go doc ./core` first
+- APIs remembered from older versions: check `internal/core/README.md` and `go doc ./core` first
 
 **Performance-conscious generation**:
-- Reflection runs at `Create()`, not per request; per-request costs are in `core/README.md` › Benchmarks
+- Reflection runs at `Create()`, not per request; per-request costs are in `internal/core/README.md` › Benchmarks
 - A non-exception panic costs about 25 µs (stack capture for the log): panic exceptions
 - Profile before optimizing
 
@@ -284,7 +284,7 @@ A source-verified audit found and fixed fabricated APIs (`common.REST`, `App.Set
 
 **In Repository**:
 - `CLAUDE.md` — Framework overview, commands and workflow
-- Package READMEs (`core/README.md`, `log/README.md`, `trace/README.md`, `accesslog/README.md`, `modules/*/README.md`, …) — per-package API docs not duplicated here
+- Package READMEs (`internal/core/README.md`, `log/README.md`, `internal/trace/README.md`, `internal/accesslog/README.md`, `modules/*/README.md`, …) — per-package API docs not duplicated here
 
 **`ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILDING_WITH_GINJECT.md` do not exist anywhere in this repository** — these were referenced by earlier versions of this doc but were never real files (verified 2026-09-25). Do not tell a user to consult them.
 

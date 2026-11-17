@@ -70,12 +70,12 @@
     }
   },
   "dependency_resolution_cost": {
-    "source": "docs/design/0006-injection.md; core/README.md holds the benchmark table",
+    "source": "docs/design/0006-injection.md; internal/core/README.md holds the benchmark table",
     "model": "one argument plan per handler built at Create(); a call is one reflect.Value.Call plus the accessors and pipes",
     "optimization": "no per-request type walking, key building, map lookups or argument-list construction; pipe prototypes built once"
   },
   "routing_performance": {
-    "source": "docs/design/0002-routing.md; routing/README.md and internal/ds/README.md hold the benchmark tables",
+    "source": "docs/design/0002-routing.md; internal/routing/README.md and internal/ds/README.md hold the benchmark tables",
     "static_route": {
       "mechanism": "map of fully static routes per (method, version), probed before the trie",
       "time": "about 30-40 ns, 0 allocs (1,000 routes)"
@@ -129,7 +129,7 @@
     "request_context": {
       "issue": "ctx creates the context, binds the request and writes the response on every request",
       "cost": "measured (ctx benchmarks, i7-9750H): Init + Reset 113 ns / 1 alloc; Text 55 ns; JSON of a small Map 880 ns; warm Body.Bind of 5 fields with a nested struct 962 ns (BindValue 382 ns); Query.Bind of 2 fields 311 ns (BindValue 162 ns)",
-      "mitigation": "binding plan per struct type (ctx.BinderOf, cached); BindValue when the FieldLevels are not needed; see ctx/README.md Performance notes"
+      "mitigation": "binding plan per struct type (ctx.BinderOf, cached); BindValue when the FieldLevels are not needed; see internal/ctx/README.md Performance notes"
     },
     "json_marshaling": {
       "issue": "JSON encoding/decoding",
@@ -178,7 +178,7 @@
     "throughput": {
       "http_requests_per_second": "10K-100K (depends on handler)",
       "websocket_messages_per_second": "100K-1M (depends on payload size)",
-      "broker_publishes_per_second": "not benchmarked end-to-end; memorybroker.Publish itself measured in isolation at ~18-24 microseconds/op fanning out to 1000 exact-topic subscribers, ~2 microseconds/op for 10 mixed exact+prefix+global subscribers (see memorybroker/broker_bench_test.go) — do not cite a messages/sec figure without re-measuring, this field previously stated an unverified 100K-1M"
+      "broker_publishes_per_second": "not benchmarked end-to-end; memorybroker.Publish itself measured in isolation at ~18-24 microseconds/op fanning out to 1000 exact-topic subscribers, ~2 microseconds/op for 10 mixed exact+prefix+global subscribers (see internal/memorybroker/broker_bench_test.go) — do not cite a messages/sec figure without re-measuring, this field previously stated an unverified 100K-1M"
     },
     "connections": {
       "concurrent_http_requests": "limited by goroutines (2-4MB each)",
@@ -186,7 +186,7 @@
       "limit_factor": "memory (goroutine stack + send channel buffer)"
     },
     "http_server_fixed_limits": {
-      "note": "core/server.go: internal defaults applied by Listen, ListenTLS and Serve; only the body cap and the shutdown drain are options (ServerOptions)",
+      "note": "internal/core/server.go: internal defaults applied by Listen, ListenTLS and Serve; only the body cap and the shutdown drain are options (ServerOptions)",
       "max_request_body_bytes": "10 MiB by default, ServerOptions.MaxRequestBodyBytes (negative = off); http.MaxBytesReader in ServeHTTP for a request with a body; exceeding it is a 413 exception from ctx.Body()",
       "read_header_timeout": "5s",
       "read_timeout": "30s",

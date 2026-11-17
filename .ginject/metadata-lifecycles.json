@@ -3,7 +3,7 @@
   "title": "Ginject Lifecycle State Machines",
   "purpose": "Document exact state transitions for app, requests, and connections",
   "application_lifecycle": {
-    "source": "core/app.go (New, Create), core/container.go (wire), core/server.go (Listen, ListenTLS, Serve, Stop); user contract in core/README.md",
+    "source": "internal/core/app.go (New, Create), internal/core/container.go (wire), internal/core/server.go (Listen, ListenTLS, Serve, Stop); user contract in internal/core/README.md",
     "states": [
       "CREATED",
       "INITIALIZED",
@@ -65,7 +65,7 @@
         "to": "RUNNING",
         "action": "app.Listen(port, opts) / app.ListenTLS(port, certFile, keyFile, opts) / app.Serve(listener, opts)",
         "effects": [
-          "errors returned before binding: 'core: Create must be called before serving', 'core: app is already serving', 'core: app is stopped', TLS / H2C option conflicts, 'core: listen on :<port>: <err>'",
+          "errors returned before binding: 'ginject: Create must be called before serving', 'ginject: app is already serving', 'ginject: app is stopped', TLS / IsH2C option conflicts, 'ginject: listen on :<port>: <err>'",
           "startup log: InstanceLoader, RouteExplorer, WebSocketEvent, ServerListening",
           "the call blocks until the server stopped"
         ]
@@ -81,7 +81,7 @@
           "running requests drained for ServerOptions.ShutdownTimeout (default 30 s), then their connections closed",
           "runShutdownHooks once per app (app.shutdownOnce): OnShutdown in the exact reverse of the init order; a panicking hook is logged as OnShutdownPanic and the others run",
           "access log stopped after the hooks, suppressed panic stacks reported, stdout log pipeline flushed (at most 2 s) and synchronous again",
-          "returns nil, 'core: shutdown timed out after <timeout>' or 'core: serve: <err>'",
+          "returns nil, 'ginject: shutdown timed out after <timeout>' or 'ginject: serve: <err>'",
           "WebSocket connections are not drained"
         ]
       },
@@ -91,7 +91,7 @@
         "action": "app.Stop() on an app that is not serving",
         "effects": [
           "OnShutdown hooks run once",
-          "later serving calls return 'core: app is stopped'; ServeHTTP still answers"
+          "later serving calls return 'ginject: app is stopped'; ServeHTTP still answers"
         ]
       }
     ],
@@ -150,7 +150,7 @@
       {
         "from": "ROUTED",
         "to": "PIPELINE",
-        "stage": "handleRequest() in core/http.go",
+        "stage": "handleRequest() in internal/core/http.go",
         "action": "global middleware -> module middleware -> global guard -> module guard -> global pre-interceptor -> module pre-interceptor -> handler plan (pipes, then the handler) -> module post-interceptor -> global post-interceptor",
         "effects": [
           "spec: .ginject/request-pipeline.md section 1",
@@ -163,7 +163,7 @@
       {
         "from": "PIPELINE",
         "to": "RESPONDED",
-        "stage": "core/http.go",
+        "stage": "internal/core/http.go",
         "action": "write the result by kind, or the filter's response",
         "effects": [
           "only exceptions reach the client with their code and message; any other panic answers a fixed 500 and is logged as UnhandledPanic",
@@ -182,7 +182,7 @@
       }
     ],
     "panics_handled": true,
-    "panic_handling_location": "HTTP.handleRequest() in core/http.go: the request's only recover; middleware panics get the HTTP layer's error response, later ones the route's filters",
+    "panic_handling_location": "HTTP.handleRequest() in internal/core/http.go: the request's only recover; middleware panics get the HTTP layer's error response, later ones the route's filters",
     "context_mutation_rules": {
       "safe_to_mutate_in": [
         "Middleware",
@@ -356,7 +356,7 @@
     "visibility": "a module sees its own providers, those of the modules it imports, and the global ones (root module and IsGlobal modules)"
   },
   "module_initialization_order": {
-    "critical": "Create's call order is fixed (comment on App.Create in core/app.go)",
+    "critical": "Create's call order is fixed (comment on App.Create in internal/core/app.go)",
     "sequence": [
       "container.addInterface(log.Logger)",
       "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",

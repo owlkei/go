@@ -11,7 +11,7 @@ make deps          # install go + yarn dependencies
 make tidy          # go mod tidy
 
 # run a single test
-go test ./routing/... -run TestRouter -v
+go test ./internal/routing/... -run TestRouter -v
 
 # run the sample app
 cd sample && go run main.go
@@ -121,12 +121,40 @@ Formats: `docs/roadmap/README.md`, `docs/design/README.md`.
 
 Ginject is a NestJS-inspired dependency injection web framework for Go. The core pattern is **Module → Controller → Provider**.
 
-### DI Container (`core/`)
+### Package map and import rules (design 0017)
 
-- **Provider**: any struct implementing `NewProvider() Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
-- **Controller**: any struct implementing `NewController() Controller`. Must embed `common.HTTP` (HTTP) and/or `common.WS` (WebSocket) to register routes. There is no `common.REST`.
-- **Module**: built with `core.NewModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()`. Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`core/README.md` › Modules and lifecycle).
-- **App**: created via `core.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `core.ServerOptions`, `core/README.md` › Server).
+| Path | Holds | Importable by applications |
+|---|---|---|
+| `/` (package `ginject`: `aliases.go`, `trace.go`) | `New`, `ModuleBuilder`, `TraceTransport` and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
+| `exception`, `log`, `middlewares/*`, `modules/*`, `guards/*` | exceptions, the logger and `log.Logger` / `log.LogAdapter`, built-in middlewares, modules and the throttler guard | yes |
+| `internal/core`, `internal/common`, `internal/ctx` | the container and server, the controller embeds and layers, the request contexts | no (root aliases) |
+| `internal/routing`, `pattern`, `wsevent`, `memorybroker`, `memorycache`, `aggregation`, `versioning`, `trace`, `accesslog`, `devtool` | the engine's other parts | no |
+| `internal/apicheck`, `color`, `crypto`, `ds`, `httphook`, `inspect`, `logpipe`, `num`, `slice`, `str`, `test`, `tracecontext` | tools and utilities | no |
+| `sample/`, `bench/` | the example app and the framework benchmarks | no |
+
+- Applications (and `sample/`, every README example) import only the root package plus `exception`,
+  `log`, `middlewares/*`, `modules/*`, `guards/*`. `api/ginject.txt` is the exact public API; `make api-check` fails on any
+  other importable package or an unreviewed change.
+- The public packages import the engine by its internal path (`internal/core`, `internal/ctx`…), never the
+  root package: `internal/core`'s tests import `middlewares/proxy`, so that would be a cycle.
+- Hook rule: what the framework needs from a type users see is a package function of the internal package
+  (`ctx.HTTPReset(c)`, `aggregation.SetMainData(a, d)`), never an exported method or field, which an alias
+  would expose.
+- Package names stay `core`, `ctx`, `common`…: `reflect` prints them (`*ctx.HTTPContext` in injection
+  panics, devtool, traces). User-written types in the six layer-shape panics read `ginject.HTTPContext`,
+  `ginject.WSContext`, `ginject.Aggregation`. Runtime errors start with `ginject:` (`cache:` for the memory store).
+- Naming: settings structs `XxxOptions` passed as `opts *XxxOptions` (`nil` = defaults); option booleans
+  `Is…`; accessors without `Get` (`Code()`, `ID()`); enum-like constants `<Type><Value>` (`log.LevelDebug`,
+  `log.FormatJSON`, `throttler.StrategyFixedWindow`, `proxy.HeaderXForwarded`, `ginject.VersioningHeader`).
+
+### DI Container (`internal/core/`)
+
+Written as an application writes it (root aliases):
+
+- **Provider**: any struct implementing `NewProvider() ginject.Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
+- **Controller**: any struct implementing `NewController() ginject.Controller`. Must embed `ginject.HTTP` (HTTP) and/or `ginject.WS` (WebSocket) to register routes. There is no `REST` embed.
+- **Module**: built with `ginject.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()` (inside the engine: `core.NewModuleBuilder()`). Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`internal/core/README.md` › Modules and lifecycle).
+- **App**: created via `ginject.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `ginject.ServerOptions`: `ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`; `internal/core/README.md` › Server).
 
 ### REST Route Convention
 
@@ -148,64 +176,64 @@ error from a guard on → module filters → global filters → built-in filter
 The spec, arrow by arrow: `.ginject/request-pipeline.md` § 1. Only exceptions reach the client with
 their code and message; anything else answers a fixed 500 and is logged.
 
-Each layer is bound with `BindMiddleware(fn, handlers...)`, `BindGuard(fn, handlers...)`, etc. on the `common.Middleware`, `common.Guard`, `common.Interceptor`, `common.ExceptionFilter` embedded fields of a controller.
+Each layer is bound with `BindMiddleware(fn, handlers...)`, `BindGuard(fn, handlers...)`, etc. on the `ginject.Middleware`, `ginject.Guard`, `ginject.Interceptor`, `ginject.ExceptionFilter` embedded fields of a controller.
 
 App-wide bindings: `app.BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`.
 
 Contracts:
-- Middleware is a real interface, `common.MiddlewareFn`: `Use(*http.Request, http.ResponseWriter, ctx.Next)`.
+- Middleware is a real interface, `ginject.MiddlewareFn`: `Use(*http.Request, http.ResponseWriter, ginject.Next)`.
 - Guards, interceptors and exception filters are **not** interfaces: they are bound as `any` (no named
   type stands for them). The framework matches the method by name and signature
   (`GuardMethodName = "CanActivate"`, `"Intercept"`, `"Catch"`) through an unexported interface, which
-  differs for HTTP and WS (`common/http_*.go`, `common/ws_*.go`); a wrong shape panics at startup
+  differs for HTTP and WS (`internal/common/http_*.go`, `internal/common/ws_*.go`); a wrong shape panics at startup
   (`GuardShapeError` and friends), and so does a layer bound to a method that is not a handler of the
   controller (`invalid guard: … is bound to '<name>', which is not a handler of the controller`):
-  - HTTP: `CanActivate(*ctx.HTTPContext) bool` · `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` · `Catch(*ctx.HTTPContext, *exception.Exception)`
-  - WS: the same with `*ctx.WSContext`.
+  - HTTP: `CanActivate(ginject.HTTPContext) bool` · `Intercept(ginject.HTTPContext, ginject.Aggregation) any` · `Catch(ginject.HTTPContext, *exception.Exception)`
+  - WS: the same with `ginject.WSContext`.
   - Note the `Catch` argument order: context first, exception second.
 
 ### Handler Injection
 
-Handler method parameters are injected by type (type identity, not the printed name) — declare them in the handler signature and the framework resolves them from the request context. Each handler gets an argument plan once at `Create()` (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `core/fn_plan.go`, design 0006); a request only runs it. The allowed sets (table in `core/README.md` › Handler injection):
+Handler method parameters are injected by type (type identity, not the printed name) — declare them in the handler signature and the framework resolves them from the request context. Each handler gets an argument plan once at `Create()` (`newHTTPHandlerPlan` / `newWSHandlerPlan` in `internal/core/fn_plan.go`, design 0006); a request only runs it. The allowed sets (table in `internal/core/README.md` › Handler injection):
 
-- HTTP: `*ctx.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ctx.Body`, `ctx.Form`, `ctx.Query`, `ctx.Header`, `ctx.Param`, `ctx.File`, `ctx.Next`, `ctx.Redirect`, `common.Publisher`, and value types implementing the HTTP `*Pipeable` interfaces of `common/pipe.go` (a type with `Transform`; a pointer pipe parameter is refused).
-- WS: `*ctx.WSContext`, `*websocket.Conn`, `ctx.WSPayload`, `ctx.Next`, `common.Publisher`, value types implementing `common.WSPayloadPipeable`.
+- HTTP: `ginject.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ginject.Body`, `ginject.Form`, `ginject.Query`, `ginject.Header`, `ginject.Param`, `ginject.File`, `ginject.Next`, `ginject.Redirect`, `ginject.Publisher`, and value types implementing the HTTP `*Pipeable` interfaces of `internal/common/pipe.go` (a type with `Transform(<source>, ginject.ArgumentMetadata) any`; a pointer pipe parameter is refused).
+- WS: `ginject.WSContext`, `*websocket.Conn`, `ginject.WSPayload`, `ginject.Next`, `ginject.Publisher`, value types with `Transform(ginject.WSPayload, ginject.ArgumentMetadata) any`.
 
 Anything else panics at `Create()` with `"dependency injection: ..."`.
 
-All types are re-exported from the root `ginject` package (`aliases.go`).
+These are the root aliases of `internal/ctx` and `internal/common` types (`aliases.go`); the root package is the only way applications name them.
 
 ### Modules: Static vs Dynamic
 
-- **Static modules**: `var Module = func() *core.Module { return core.NewModuleBuilder()....Build() }` — pass the func itself to `Imports(...)`; the framework builds it once.
-- **Dynamic modules**: a package-level `Register(opts *<X>ModuleOptions) *core.Module` that returns a configured module (every built-in module, e.g. `config.Register(&config.ConfigModuleOptions{...})`).
+- **Static modules**: `var Module = func() ginject.Module { return ginject.ModuleBuilder()....Build() }` — pass the func itself to `Imports(...)`; the framework builds it once.
+- **Dynamic modules**: a package-level `Register(opts *<X>ModuleOptions) *core.Module` (`ginject.Module`) that returns a configured module (every built-in module, e.g. `config.Register(&config.ConfigModuleOptions{...})`).
 
 ### Built-in Modules (`modules/`)
 
 Each has a README in its folder.
 
 - `modules/config`: strict `.env` + OS env loader with typed struct binding (`bind:"NAME"` tags); inject `ConfigService` (safe for concurrent `Get` / `Set`, never prints a value).
-- `modules/cache`: key-value cache with TTL and an atomic `Incr` (default backend `memorycache/`: bounded, 64 shards, CLOCK eviction, no goroutine while idle); inject `CacheService`.
+- `modules/cache`: key-value cache with TTL and an atomic `Incr` (default backend `cache.NewMemoryCache(nil)`, implemented by `internal/memorycache`: bounded, 64 shards, CLOCK eviction, no goroutine while idle; other bounds with `cache.NewMemoryCache(&cache.MemoryCacheOptions{…})`); inject `CacheService`.
 
-There is no HTTP client or persistence module: outbound calls use `net/http` with `trace.Transport`
-(`trace/README.md` › Outbound calls).
+There is no HTTP client or persistence module: outbound calls use `net/http` with `ginject.TraceTransport`
+(`internal/trace/README.md` › Outbound calls).
 
 ### WebSocket
 
-Controllers embed `common.WS` (alongside or instead of `common.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_PERSON_ANY`); enable the endpoint with `app.EnableWS(&core.WSOptions{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `ctx.WSPayload` for incoming events and fan out through `common.Publisher`.
+Controllers embed `ginject.WS` (alongside or instead of `ginject.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_PERSON_ANY`); enable the endpoint with `app.EnableWS(&ginject.WSOptions{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `ginject.WSPayload` for incoming events and fan out through `ginject.Publisher`.
 
 ### Bootstrap-time Error Convention
 
-Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `core/`, `common/`, `routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires during `app.Create()`'s module/controller wiring (or a configuration call made after it), never on the request path, so an uncaught panic there is fail-fast by design.
+Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `internal/core/`, `internal/common/`, `internal/routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires during `app.Create()`'s module/controller wiring (or a configuration call made after it), never on the request path, so an uncaught panic there is fail-fast by design.
 
 Message format is `"<category>: <detail>"`:
-- `"route conflict: ..."` (`core/container.go`, per app: the same method, version and route shape; routes that differ only in parameter names conflict; `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`)
-- `"event conflict: ..."` (`core/container.go`, per app)
-- `"invalid handler: ..."` (`routing/router.go`)
-- `"invalid route: ..."` (`routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments)
-- `"invalid module: ..."` (`core/module_builder.go`; `Create(nil)` in `core/app.go`)
-- `"invalid app: ..."` (`core/app.go`: `Create` called twice, a configuration method or `SetLogger` after `Create`, `SetLogger(nil)`)
-- `"dependency injection: ..."` (`core/fn.go`, `core/fn_plan.go`, `core/container.go`)
+- `"route conflict: ..."` (`internal/core/container.go`, per app: the same method, version and route shape; routes that differ only in parameter names conflict; `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`)
+- `"event conflict: ..."` (`internal/core/container.go`, per app)
+- `"invalid handler: ..."` (`internal/routing/router.go`)
+- `"invalid route: ..."` (`internal/routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments)
+- `"invalid module: ..."` (`internal/core/module_builder.go`; `Create(nil)` in `internal/core/app.go`)
+- `"invalid app: ..."` (`internal/core/app.go`: `Create` called twice, a configuration method or `SetLogger` after `Create`, `SetLogger(nil)`)
+- `"dependency injection: ..."` (`internal/core/fn.go`, `internal/core/fn_plan.go`, `internal/core/container.go`)
 - `"invalid config: ..."` (`modules/config`: a bad `.env` file or line with its path and line number, never a value; contradicting options; too deeply nested `Loads`; `Set` on a zero `ConfigService`)
 
-These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. An unresolvable handler argument is a `Create()` panic too; the only per-request panic of injection is a pipe whose `Transform` returns a wrong value, an uncolored `exception.InternalServerErrorException` that `core/http.go`'s `recover()` turns into a 500.
+These are wrapped in `color.FmtRed(...)` since they only ever surface on a developer's terminal at startup. If an `err` you're panicking already came from a function that applies `color.FmtRed`, just `panic(err)` — don't re-wrap, or the ANSI codes nest and garble the output. An unresolvable handler argument is a `Create()` panic too; the only per-request panic of injection is a pipe whose `Transform` returns a wrong value, an uncolored `exception.InternalServerErrorException` that `internal/core/http.go`'s `recover()` turns into a 500.

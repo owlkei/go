@@ -127,7 +127,7 @@ func TestRegister_IsIgnoreEnvFileWithPaths(t *testing.T) {
 	text, panicked := panicText(func() {
 		Register(&ConfigModuleOptions{IsIgnoreEnvFile: true, EnvFilePaths: []string{path}})
 	})
-	want := "invalid config: IsIgnoreEnvFile is set with ENVFilePaths"
+	want := "invalid config: IsIgnoreEnvFile is set with EnvFilePaths"
 	if !panicked || text != want {
 		t.Error(test.DiffMessage(text, want, "E8/E9: IsIgnoreEnvFile together with ENVFilePaths"))
 	}

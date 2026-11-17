@@ -1,9 +1,66 @@
 {
   "format": "ai-metadata-v1",
   "purpose": "Machine-readable API index for Ginject framework",
+  "public_surface": {
+    "source_of_truth": "api/ginject.txt (make api writes it, make api-check diffs it); design 0017",
+    "import_paths": [
+      "github.com/dangduoc08/ginject",
+      "github.com/dangduoc08/ginject/exception",
+      "github.com/dangduoc08/ginject/log",
+      "github.com/dangduoc08/ginject/middlewares/*",
+      "github.com/dangduoc08/ginject/modules/*",
+      "github.com/dangduoc08/ginject/guards/*"
+    ],
+    "root_functions": [
+      "New() App",
+      "ModuleBuilder() *core.ModuleBuilder",
+      "TraceTransport(base http.RoundTripper) http.RoundTripper"
+    ],
+    "root_aliases": {
+      "App": "*core.App",
+      "Module": "*core.Module",
+      "Controller": "core.Controller",
+      "Provider": "core.Provider",
+      "ServerOptions": "core.ServerOptions",
+      "WSOptions": "core.WSOptions",
+      "HTTP": "common.HTTP",
+      "WS": "common.WS",
+      "Guard": "common.Guard",
+      "Interceptor": "common.Interceptor",
+      "ExceptionFilter": "common.ExceptionFilter",
+      "Middleware": "common.Middleware",
+      "MiddlewareFn": "common.MiddlewareFn",
+      "ArgumentMetadata": "common.ArgumentMetadata",
+      "Publisher": "common.Publisher",
+      "HTTPContext": "*ctx.HTTPContext",
+      "WSContext": "*ctx.WSContext",
+      "Body": "ctx.Body",
+      "Form": "ctx.Form",
+      "File": "ctx.File",
+      "Query": "ctx.Query",
+      "Header": "ctx.Header",
+      "Param": "ctx.Param",
+      "WSPayload": "ctx.WSPayload",
+      "Map": "ctx.Map",
+      "Next": "ctx.Next",
+      "Redirect": "ctx.Redirect",
+      "FieldLevel": "ctx.FieldLevel",
+      "DataFile": "*ctx.DataFile",
+      "Aggregation": "*aggregation.Aggregation",
+      "VersioningOptions": "versioning.Options",
+      "VersioningType": "versioning.Type"
+    },
+    "root_constants": [
+      "VersioningQuery = 1",
+      "VersioningHeader = 2",
+      "VersioningCustom = 3",
+      "VersioningMediaType = 4"
+    ],
+    "note": "The packages below are documented by their internal name (core, ctx, common, aggregation, versioning live under internal/); applications reach them only through the root aliases. log.Logger and log.LogAdapter moved from common to log."
+  },
   "packages": {
     "core": {
-      "responsibility": "Application lifecycle, server, handler invocation, DI container (user docs: core/README.md)",
+      "responsibility": "Application lifecycle, server, handler invocation, DI container (user docs: README.md; maintainer docs: internal/core/README.md)",
       "public_types": {
         "App": {
           "description": "Main application container; every core.New() is independent (own routes, providers, layers, logger, publisher)",
@@ -21,7 +78,7 @@
             {
               "name": "Listen",
               "signature": "Listen(port int, opts *ServerOptions) error",
-              "purpose": "Serve HTTP/1.1 (and h2c with H2C) on :port; nil opts = safe defaults; blocks until shut down"
+              "purpose": "Serve HTTP/1.1 (and h2c with IsH2C) on :port; nil opts = safe defaults; blocks until shut down"
             },
             {
               "name": "ListenTLS",
@@ -80,12 +137,12 @@
             },
             {
               "name": "EnableVersioning",
-              "signature": "EnableVersioning(opts *versioning.Versioning) *App",
+              "signature": "EnableVersioning(opts *versioning.Options) *App",
               "purpose": "Route versioning"
             },
             {
               "name": "EnableWS",
-              "signature": "EnableWS(cfg *WSConfig, middlewares ...common.MiddlewareFn) *App",
+              "signature": "EnableWS(opts *WSOptions, middlewares ...common.MiddlewareFn) *App",
               "purpose": "Enable WebSocket support with handshake middlewares"
             },
             {
@@ -140,7 +197,7 @@
             "ShutdownTimeout time.Duration - drain time at shutdown (0 or negative = 30 s)",
             "MaxRequestBodyBytes int64 - body cap (0 = 10 MiB, negative = off)",
             "TLSConfig *tls.Config - ListenTLS / Serve TLS config, cloned",
-            "H2C bool - Listen / Serve without TLS also accept unencrypted HTTP/2"
+            "IsH2C bool - Listen / Serve without TLS also accept unencrypted HTTP/2"
           ]
         },
         "Controller": {
@@ -271,9 +328,9 @@
         "methods": [
           "Error() string",
           "Unwrap() error",
-          "GetCode() int",
-          "GetMessage() string",
-          "GetStatusText() string",
+          "Code() int",
+          "Message() string",
+          "StatusText() string",
           "AppendJSON(dst []byte) []byte",
           "MarshalJSON() ([]byte, error)"
         ],
@@ -386,7 +443,7 @@
         "Exact: 'user.login' - O(1) map lookup, matches only that topic",
         "Suffix: 'user.**' - O(1) map lookup by prefix; matches one or more segments below 'user.', not 'user'",
         "Global: '**' - O(1), matches all topics. '*' is exactly one segment ('*' alone: single-segment topics); '**' is special only as the last segment; '>' is literal",
-        "Complex: 'user.*', 'user.*.profile', '*.created' - O(n) scan; segment-wildcard matching, NOT regex. Full table: pattern/MATCHING.md"
+        "Complex: 'user.*', 'user.*.profile', '*.created' - O(n) scan; segment-wildcard matching, NOT regex. Full table: internal/pattern/MATCHING.md"
       ],
       "key_features": [
         "Single sync.RWMutex over 4 maps (exact/prefix/global/complex) - no sharding",

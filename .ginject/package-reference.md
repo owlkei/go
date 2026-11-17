@@ -6,7 +6,36 @@
 
 ---
 
-## Package: `core`
+## Public surface (design 0017)
+
+`api/ginject.txt` is the exact public API (`make api` writes it, `make api-check` diffs it in `make check`
+and CI). An application imports only these paths; every other package is under `internal/`:
+
+| Import path | Holds |
+|---|---|
+| `github.com/dangduoc08/ginject` | `New`, `ModuleBuilder`, `TraceTransport`; aliases `App`, `Module`, `Controller`, `Provider`, `ServerOptions`, `WSOptions`, `HTTP`, `WS`, `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher`, `HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel`, `DataFile`, `Aggregation`, `VersioningOptions`, `VersioningType`; constants `VersioningQuery`, `VersioningHeader`, `VersioningCustom`, `VersioningMediaType` |
+| `…/exception` | `Exception` (`Code`, `Message`, `StatusText`, `Error`, `Unwrap`, `AppendJSON`, `MarshalJSON`), `ExceptionOptions`, `NewException`, the 31 `<Status>Exception` constructors |
+| `…/log` | `NewLog`, `WrapLogger`, `LogOptions{Level, Format, IsAddSource, MaskFields}`, `Logger`, `LogAdapter`, `Format`, `LevelDebug`…`LevelFatal`, `FormatText`/`FormatJSON`/`FormatPretty` |
+| `…/middlewares/{compress,cors,csrf,helmet,hostcheck,httpsredirect,loadshed,proxy}` | One option struct each (`NewMiddleware`, `Use`); `helmet.Disabled`; `proxy.Header`, `HeaderXForwarded`, `HeaderForwarded`, `ClientIP`, `Host`, `Scheme` |
+| `…/modules/cache` | `Register`, `CacheModuleOptions`, `CacheService`, `Cache`, `CacheOnInitFn`, `NewMemoryCache`, `MemoryCacheOptions`, `ErrEmptyKey`, `ErrNegativeTTL`, `ErrEntryTooLarge`, `ErrNotCounter` |
+| `…/modules/config` | `Register`, `ConfigModuleOptions` (`EnvFilePaths`…), `ConfigService`, `ConfigLoadFn`, `ConfigHookFn`, `ConfigOnInitFn` |
+| `…/guards/throttler` | `Throttler`, `Strategy`, `StrategyFixedWindow`, `StrategySlidingWindow`, `StrategyTokenBucket`; `NewGuard() any` |
+
+- Root aliases point at internal types: `HTTPContext = *ctx.HTTPContext`, `Aggregation = *aggregation.Aggregation`,
+  `App = *core.App`, `Module = *core.Module`, `DataFile = *ctx.DataFile` are pointer aliases; the rest are plain.
+  `reflect` still prints the internal names (`*ctx.HTTPContext`), so injection panics show them; the six
+  layer-shape panics spell the types as users write them (`func(ginject.HTTPContext) bool`).
+- Hook rule (D3): what the framework needs from a user-visible type is a package function of its internal
+  package (`ctx.HTTPReset(c)`, `aggregation.SetMainData(a, d)`), never an exported method or field, because
+  members stay reachable through an alias.
+- Public packages (`exception`, `log`, `middlewares/*`, `modules/*`, `guards/*`) import the engine by its
+  internal path, never the root package (D6: `core`'s tests import `middlewares/proxy`).
+- Runtime errors read `ginject: …` (was `core:` / `ctx:`) and `cache: …` (was `memorycache:`).
+- The sections below are per package; the engine packages are documented by their internal name.
+
+---
+
+## Package: `core` (`internal/core`)
 
 **Responsibility**: Application lifecycle, handler invocation, DI container
 
@@ -48,7 +77,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 
 ### HTTP Server Defaults
 
-`core/server.go`; the only options are the four fields of `ServerOptions` (`ShutdownTimeout` 0 = 30 s, `MaxRequestBodyBytes` 0 = 10 MiB / negative = off, `TLSConfig`, `IsH2C`). The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
+`internal/core/server.go`; the only options are the four fields of `ServerOptions` (`ShutdownTimeout` 0 = 30 s, `MaxRequestBodyBytes` 0 = 10 MiB / negative = off, `TLSConfig`, `IsH2C`). The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
 
 | Setting | Value |
 |----------|-------|
@@ -58,7 +87,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `IdleTimeout` | 75 s |
 | `MaxHeaderBytes` | 64 KiB (431 beyond) |
 
-Exceeding the body cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw error. These timeouts bound the connection, not handler execution time — there is no per-handler deadline (see `ctx` section). Full rules: `core/README.md` › Server.
+Exceeding the body cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw error. These timeouts bound the connection, not handler execution time — there is no per-handler deadline (see `ctx` section). Full rules: `internal/core/README.md` › Server.
 
 ### Module
 
@@ -83,7 +112,7 @@ type Module struct {
 
 **Methods**: `Prefix(prefix string) *Module`, `ID() string`.
 
-**Lifecycle hooks** (once per app, `core/container.go`): modules are initialized depth first, imports before the module, in `Imports(…)` order, each once (root → A, C; A, C → B gives B, A, C, root). Initializing a module calls `OnInit`, then constructs its providers. `OnReady` runs at the end of `Create` in the same order; `OnShutdown` runs in the exact reverse (root, C, A, B) on SIGINT/SIGTERM or `app.Stop()`, guarded so it runs exactly once, and never for an app whose `Create` did not finish. Configuration methods after `Create`, a second `Create` and `Create(nil)` panic (`invalid app: …` / `invalid module: …`).
+**Lifecycle hooks** (once per app, `internal/core/container.go`): modules are initialized depth first, imports before the module, in `Imports(…)` order, each once (root → A, C; A, C → B gives B, A, C, root). Initializing a module calls `OnInit`, then constructs its providers. `OnReady` runs at the end of `Create` in the same order; `OnShutdown` runs in the exact reverse (root, C, A, B) on SIGINT/SIGTERM or `app.Stop()`, guarded so it runs exactly once, and never for an app whose `Create` did not finish. Configuration methods after `Create`, a second `Create` and `Create(nil)` panic (`invalid app: …` / `invalid module: …`).
 
 ### ModuleBuilder
 
@@ -118,7 +147,7 @@ Any struct implementing the respective method qualifies — no tags, no registra
 
 ---
 
-## Package: `ctx`
+## Package: `ctx` (`internal/ctx`)
 
 **Responsibility**: Request context objects and dependency types
 
@@ -160,7 +189,7 @@ Framework hooks (package functions, design 0017 D3): `HTTPInit(c, w, r)`, `HTTPR
 | `Form` / `File` | `Form() Form` / `File() File` | One multipart parse shared by both; never `nil`; 400 `Invalid form body`, 413 over the limit; temp files removed after the request (`httpExchange.reset`) |
 | `ctx.HTTPAddAggregation` / `HTTPAggregations` | `HTTPAddAggregation(c, a *aggregation.Aggregation)` / `HTTPAggregations(c) []*aggregation.Aggregation` | Hooks. Per-request list, cleared by `HTTPReset` (`WSAddAggregation` / `WSAggregations` on `WSContext`) |
 
-Removed: the writer types `ctx.DataWriter`, `ctx.JSON`, `ctx.JSONP`, `ctx.Text` (`ctx/writer.go`).
+Removed: the writer types `ctx.DataWriter`, `ctx.JSON`, `ctx.JSONP`, `ctx.Text` (`internal/ctx/writer.go`).
 
 ### Binding
 
@@ -203,7 +232,7 @@ Applications write them with the root aliases.
 
 ---
 
-## Package: `common`
+## Package: `common` (`internal/common`)
 
 **Responsibility**: Pipeline shape-checking, embeddable controller building blocks
 
@@ -257,7 +286,7 @@ type UserController struct {
 
 ### One Instance Per Configuration (per app)
 
-`core`'s container (`(*container).construct`, `core/container.go`, passed to the `common.InjectProvidersInto…` methods as their `construct` argument) backs **every** bind of a Middleware/Guard/Interceptor/ExceptionFilter (global or per-controller, HTTP and WS). Instances are kept per app: two apps never share one. Its cache key is the bound value's `reflect.Type` plus the constructor name (`NewMiddleware`, `NewGuard`, `NewInterceptor`, `NewExceptionFilter`); under one key, values are compared with `reflect.DeepEqual` (a pointer is compared by a shallow snapshot of its pointee taken before the constructor runs).
+`core`'s container (`(*container).construct`, `internal/core/container.go`, passed to the `common.InjectProvidersInto…` methods as their `construct` argument) backs **every** bind of a Middleware/Guard/Interceptor/ExceptionFilter (global or per-controller, HTTP and WS). Instances are kept per app: two apps never share one. Its cache key is the bound value's `reflect.Type` plus the constructor name (`NewMiddleware`, `NewGuard`, `NewInterceptor`, `NewExceptionFilter`); under one key, values are compared with `reflect.DeepEqual` (a pointer is compared by a shallow snapshot of its pointee taken before the constructor runs).
 
 - Equal configurations share: the constructor runs once per app and every equal bind gets the identical result. A rate limiter bound with the same options on two controllers stays one limiter.
 - Different configurations get their own instance:
@@ -276,7 +305,7 @@ c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
 
 ---
 
-## Package: `routing`
+## Package: `routing` (`internal/routing`)
 
 **Responsibility**: URL routing and path matching
 
@@ -408,9 +437,9 @@ type LogOptions struct {
 
 ---
 
-## Package: `memorybroker`
+## Package: `memorybroker` (`internal/memorybroker`)
 
-**Responsibility**: Lightweight in-process topic-based pub/sub broker (no queue groups, no persistence, no ack/retry — see `memorybroker/README.md` for the full spec, kept in sync with this section)
+**Responsibility**: Lightweight in-process topic-based pub/sub broker (no queue groups, no persistence, no ack/retry — see `internal/memorybroker/README.md` for the full spec, kept in sync with this section)
 
 ### Broker Interface
 
@@ -445,7 +474,7 @@ var (
 )
 ```
 
-**No `ID`/`Metadata` on `Message`, no `Once`/`SubscribeQueue`/`Off`/`Topics`/`ListenerCount`/`Clear`/`Stats` on `Broker`** — these existed in an earlier, richer design and were deliberately removed for a leaner surface. Do not regenerate them from memory; verify against `memorybroker/broker.go` before citing the API.
+**No `ID`/`Metadata` on `Message`, no `Once`/`SubscribeQueue`/`Off`/`Topics`/`ListenerCount`/`Clear`/`Stats` on `Broker`** — these existed in an earlier, richer design and were deliberately removed for a leaner surface. Do not regenerate them from memory; verify against `internal/memorybroker/broker.go` before citing the API.
 
 ### Pattern Matching
 
@@ -454,7 +483,7 @@ Segment-based glob matcher (`pattern` package), **not regex**: `*` is exactly on
 - **Suffix Wildcard**: `user.**` — O(1) map lookup by prefix; matches any depth below `user.` (`user.a`, `user.a.b`), not `user`
 - **Global**: `**` — O(1), matches every topic. `*` alone is Complex and matches single-segment topics only
 - **Complex**: `user.*`, `user.*.profile`, `*.created`, `tenant.*.user.**` — O(n) scan over registered complex patterns
-- `Pattern.Match` never allocates (the complex kind walks the topic in place). Every rule with examples: `pattern/MATCHING.md` (generated by `TestMatchingTableIsUpToDate`; regenerate with `go test ./pattern -run TestMatchingTableIsUpToDate -update-matching`)
+- `Pattern.Match` never allocates (the complex kind walks the topic in place). Every rule with examples: `internal/pattern/MATCHING.md` (generated by `TestMatchingTableIsUpToDate`; regenerate with `go test ./pattern -run TestMatchingTableIsUpToDate -update-matching`)
 - `MaskFields` uses the same syntax; a rule matches any end of the path and a matching node is masked whole (`log/README.md` › Masking)
 
 ### Delivery Model
@@ -500,7 +529,7 @@ func (instance UserController) SUBSCRIBE_users_created(pub ginject.Publisher) st
 
 ---
 
-## Package: `trace`
+## Package: `trace` (`internal/trace`)
 
 **Responsibility**: Request tracing and observability
 
@@ -544,7 +573,7 @@ func (t *Tracer) Listen(fn func(Event)) (stop func())  // stop removes exactly t
 func Transport(base http.RoundTripper) http.RoundTripper // design 0013; nil base = http.DefaultTransport at each call
 ```
 
-- `Transport` (`trace/http_transport.go`) adds `Traceparent: <Scope.Traceparent()>` (the request's or
+- `Transport` (`internal/trace/http_transport.go`) adds `Traceparent: <Scope.Traceparent()>` (the request's or
   message's own span, the scope's flags) to a shallow copy of an outbound request whose context carries a
   trace scope; without a scope, or when the caller's header map already has the canonical
   `Traceparent` key (even with no value: the opt-out), the same request passes through untouched.
@@ -557,7 +586,7 @@ func Transport(base http.RoundTripper) http.RoundTripper // design 0013; nil bas
 
 ---
 
-## Package: `aggregation`
+## Package: `aggregation` (`internal/aggregation`)
 
 **Responsibility**: Interceptor pipeline state, carried through the request context
 
@@ -589,11 +618,11 @@ func IsMainHandlerCalled(a *Aggregation) bool
 | `Filter` | `Filter(predicate func(any) bool) Operator` | Creates a filter step (predicate false → `Aggregate()` returns nil; `nil` data with a true predicate continues) |
 | `Pipe` | `Pipe(operators ...Operator) any` | Makes `IsMainHandlerCalled(a)` true, replaces the operators with exactly these (nil-function and zero operators skipped), returns nil; up to 4 operators stored inline without allocating |
 
-Used as the second parameter of an interceptor's `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` (see `common` section). The framework calls `aggregation.SetMainData(a, handlerResult)` then `aggregation.Aggregate(a)` (the piped operators over the main data in `Pipe` argument order) after the handler returns (`core/http.go`).
+Used as the second parameter of an interceptor's `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` (see `common` section). The framework calls `aggregation.SetMainData(a, handlerResult)` then `aggregation.Aggregate(a)` (the piped operators over the main data in `Pipe` argument order) after the handler returns (`internal/core/http.go`).
 
 ---
 
-## Package: `wsevent`
+## Package: `wsevent` (`internal/wsevent`)
 
 **Responsibility**: WebSocket event-name routing (mirrors `routing` for WS)
 
@@ -657,8 +686,11 @@ func Register(opts *CacheModuleOptions) *core.Module   // package name: cache
 type CacheModuleOptions struct {
     IsGlobal bool
     OnInit   CacheOnInitFn  // func()
-    Backend  Cache          // pluggable; defaults to memorycache.NewMemoryCache(nil) if nil
+    Backend  Cache          // pluggable; defaults to NewMemoryCache(nil) if nil
 }
+
+type MemoryCacheOptions = memorycache.MemoryCacheOptions // MaxEntries, MaxBytes
+func NewMemoryCache(opts *MemoryCacheOptions) Cache      // the built-in store; nil = defaults
 
 type Cache interface {
     Get(ctx context.Context, key string) ([]byte, bool)
@@ -671,15 +703,15 @@ type Cache interface {
 }
 ```
 
-`CacheService{Backend Cache}` forwards all seven methods unchanged. `cache.ErrEmptyKey`, `ErrNegativeTTL`, `ErrEntryTooLarge`, `ErrNotCounter` are the `memorycache` sentinels (same values). The backend is created once per `Register` call and shared by every injected copy and every app built from that module value; `Register` starts no goroutine. Contract for any backend: exact expiry, copies in and out, atomic `SetNX` / `Incr`, counters 8 bytes big-endian, negative ttl is `ErrNegativeTTL`. There is no size option on the module: pass `Backend: memorycache.NewMemoryCache(&memorycache.MemoryCacheOptions{…})`.
+`CacheService{Backend Cache}` forwards all seven methods unchanged. `cache.ErrEmptyKey`, `ErrNegativeTTL`, `ErrEntryTooLarge`, `ErrNotCounter` are the `memorycache` sentinels (same values, messages `cache: …`). The backend is created once per `Register` call and shared by every injected copy and every app built from that module value; `Register` starts no goroutine. Contract for any backend: exact expiry, copies in and out, atomic `SetNX` / `Incr`, counters 8 bytes big-endian, negative ttl is `ErrNegativeTTL`. There is no size option on the module: pass `Backend: cache.NewMemoryCache(&cache.MemoryCacheOptions{…})`.
 
 **There is no package-level `NewCacheModule()` function** — use `cache.Register(opts)`. No LFU eviction anywhere (see `memorycache` package below for the real CLOCK eviction).
 
-Ginject has no HTTP client or persistence module: outbound calls use `net/http` with `trace.Transport` (see `trace/README.md`).
+Ginject has no HTTP client or persistence module: outbound calls use `net/http` with `ginject.TraceTransport` (see `internal/trace/README.md`).
 
 ---
 
-## Package: `memorycache`
+## Package: `memorycache` (`internal/memorycache`)
 
 **Responsibility**: Bounded in-memory sharded byte cache with exact TTL and an atomic counter — **no persistence of any kind**
 
@@ -705,7 +737,7 @@ Errors: `ErrEmptyKey`, `ErrNegativeTTL` (a negative ttl writes nothing), `ErrEnt
 
 **`PersistenceConfig` and `NewMemoryCacheWithConfig` do not exist and never have — do not generate them.** The package has zero file I/O.
 
-**Key characteristics**: 64 shards (`hashKey(key) & 63`, `hash/maphash` with a per-process random seed), each a `sync.RWMutex` + index map + entry array + free list, padded to its own cache lines. Each shard holds `MaxEntries/64` entries and `MaxBytes/64` bytes; a write past a bound evicts in that shard by CLOCK (expired first, then entries whose reference mark — set by a `Get` hit or a rewrite — is clear). Time is the monotonic clock (`time.Since` of the cache's creation); an expired entry is absent at once for every method. No goroutine and no timer at creation: one `time.AfterFunc` sweep (every 5 s) is armed only while an entry with a ttl exists and holds the cache through a `weak.Pointer`, so an unreferenced cache is collected. Keys are `strings.Clone`d. `inspect.CacheStateOf(mc)` (internal) reports entries, bytes, bounds, hits, misses, evictions, expirations and whether the sweep is armed. Conforms to `modules/cache.Cache`. See `memorycache/README.md`.
+**Key characteristics**: 64 shards (`hashKey(key) & 63`, `hash/maphash` with a per-process random seed), each a `sync.RWMutex` + index map + entry array + free list, padded to its own cache lines. Each shard holds `MaxEntries/64` entries and `MaxBytes/64` bytes; a write past a bound evicts in that shard by CLOCK (expired first, then entries whose reference mark — set by a `Get` hit or a rewrite — is clear). Time is the monotonic clock (`time.Since` of the cache's creation); an expired entry is absent at once for every method. No goroutine and no timer at creation: one `time.AfterFunc` sweep (every 5 s) is armed only while an entry with a ttl exists and holds the cache through a `weak.Pointer`, so an unreferenced cache is collected. Keys are `strings.Clone`d. `inspect.CacheStateOf(mc)` (internal) reports entries, bytes, bounds, hits, misses, evictions, expirations and whether the sweep is armed. Conforms to `modules/cache.Cache`. See `internal/memorycache/README.md`.
 
 ---
 
@@ -717,7 +749,7 @@ Errors: `ErrEmptyKey`, `ErrNegativeTTL` (a negative ttl writes nothing), `ErrEnt
 type Throttler struct {
     Limit    int64                        // default 100
     TTL      time.Duration                // default time.Minute
-    Strategy Strategy                     // FixedWindow (default 0) | SlidingWindow | TokenBucket; unknown panics
+    Strategy Strategy                     // StrategyFixedWindow (default 0) | StrategySlidingWindow | StrategyTokenBucket; unknown panics
     KeyFunc  func(ginject.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
     Backend  cache.Cache                  // default: one memorycache per guard, MaxEntries 32,768 (CLOCK eviction)
 }
@@ -742,11 +774,11 @@ func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, in
 
 ```go
 type Header int
-const ( XForwarded Header = iota; Forwarded )
+const ( HeaderXForwarded Header = iota; HeaderForwarded )
 type Proxy struct {
     TrustedProxies  []string // IPs or CIDRs of the proxies in front
     TrustedHops     int      // or: how many proxies are in front (1-16)
-    Header          Header   // XForwarded (default) or Forwarded (RFC 7239); the other family is never read
+    Header          Header   // HeaderXForwarded (default) or HeaderForwarded (RFC 7239); the other family is never read
     IsHostForwarded bool     // read X-Forwarded-Host / host=; off: Host(r) is always r.Host
 }
 func (instance Proxy) NewMiddleware() common.MiddlewareFn
@@ -831,13 +863,13 @@ Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `htt
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
 - `accesslog` — `NewAccessLog(cfg *AccessLogOptions) *AccessLog` (`AccessLogOptions{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
-- `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
+- `versioning` (`internal/versioning`) — `Options{Type, Key, DefaultVersion, Extractor}`, `type Type int` (`TypeQuery`, `TypeHeader`, `TypeCustom`, `TypeMediaType` = 1–4), hooks `TypeString(o) string` / `Version(o, c *ctx.HTTPContext) string`; users write `app.EnableVersioning(&ginject.VersioningOptions{Type: ginject.VersioningHeader, …})`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
 - `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`: the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.
 - `internal/inspect` — besides `CacheStateOf` / `ConfigStateOf`: `Field`, `Snapshot`, `Snapshotter`; every compiled middleware of design 0014 implements `Snapshotter` (effective options + counters, snake_case keys, built only when called). All random bytes from `crypto/rand`, through a `sync.Pool` of 512-byte sources (504-byte refills, no mutex, design 0013); one 18-byte read per new trace (tail + request ID), 8 bytes for a continued trace or a message under a connection.
 - `internal/logpipe` — the output pipeline of the built-in logger (design 0012): `Level` (`Debug`…`Fatal`), `Sink` (`Write`, `StartAsync`, `StopAsync`, `Flush`, `Snapshot`: an `inspect.Snapshotter` named `logpipe`; async writes are woken 1 ms after a burst's first record or at 16 KiB, design 0016), `New`, `Stdout`, `SetStdout` (tests), `FlushTimeout` (2 s), `AccessLine` (the access log's line handed to the built-in logger).
 - `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.
 - `internal/apicheck` — the API guard (design 0017 step 3), a `main` package: `make api` writes `api/ginject.txt` (sorted `pkg` lines of every public package plus `reach` lines for members of module types those lines mention), `make api-check` diffs it and fails on a public package outside its allow list. Runs in `make check` and the CI `lint` job.
-- `internal/*` — private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe, httphook, inspect). Not importable from outside the module.
+- `internal/*` — everything else: the engine (`core`, `common`, `ctx`, `routing`, `pattern`, `wsevent`, `memorybroker`, `memorycache`, `aggregation`, `versioning`, `trace`, `accesslog`, `devtool`, moved there by design 0017) and private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe, httphook, inspect, apicheck). Not importable from outside the module.
 
 **There is no `data/` package or directory anywhere in this repository** — an earlier doc listed one; it never existed.

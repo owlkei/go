@@ -650,7 +650,7 @@ Can cause message corruption or race conditions
 
 ### 13.3 Message Throughput
 
-**Publish throughput**: not benchmarked end-to-end (JSON marshal + TCP send dominate at the WS layer, unmeasured here). `memorybroker.Publish` itself is benchmarked in isolation (`memorybroker/broker_bench_test.go`): ~18-24 µs/op fanning out to 1000 exact-topic subscribers, ~2 µs/op to 10 mixed exact+prefix+global subscribers, 0 allocs when a topic has no matching subscriber — see that package's README for current numbers before citing a figure
+**Publish throughput**: not benchmarked end-to-end (JSON marshal + TCP send dominate at the WS layer, unmeasured here). `memorybroker.Publish` itself is benchmarked in isolation (`internal/memorybroker/broker_bench_test.go`): ~18-24 µs/op fanning out to 1000 exact-topic subscribers, ~2 µs/op to 10 mixed exact+prefix+global subscribers, 0 allocs when a topic has no matching subscriber — see that package's README for current numbers before citing a figure
 
 **Per-connection throughput**: Limited by JSON marshaling/unmarshaling
 

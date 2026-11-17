@@ -36,7 +36,7 @@ func (instance UserController) READ_users() string {
 }
 ```
 
-**Rule**: Providers go in exported fields of exactly the provider's type; handler parameters are the built-in types and pipes (`core/README.md` › Handler injection)
+**Rule**: Providers go in exported fields of exactly the provider's type; handler parameters are the built-in types and pipes (`internal/core/README.md` › Handler injection)
 
 ---
 
@@ -367,7 +367,7 @@ func (instance CounterService) NewProvider() ginject.Provider {
 
 A panic in a middleware never reaches your exception filters: the HTTP layer answers it with the fixed `{"code","error","message"}` format (an exception's code and message, else a fixed 500). Panics from a guard onwards (guards, interceptors, pipes, the handler, operators) go to the filters.
 
-**Rule**: A middleware that wants its own response writes it and returns without `next()` (`core/README.md` › Errors in middleware)
+**Rule**: A middleware that wants its own response writes it and returns without `next()` (`internal/core/README.md` › Errors in middleware)
 
 ---
 
@@ -416,7 +416,7 @@ func (instance APIFilter) Catch(c ginject.HTTPContext, ex *exception.Exception) 
 
 ### 7.2 GOTCHA: Panicking Non-Exceptions
 
-An exception costs about 1.6 µs per request; any other panic value (a string, an `error`) is logged as `UnhandledPanic` and, for the first panic of its stack key in a second, captures up to 4 KiB of stack: about 25 µs and 7.6 KB. Later panics of the key in that second are logged without the stack (about 6.5 µs per request under a flood; `core/README.md` › Panic stacks).
+An exception costs about 1.6 µs per request; any other panic value (a string, an `error`) is logged as `UnhandledPanic` and, for the first panic of its stack key in a second, captures up to 4 KiB of stack: about 25 µs and 7.6 KB. Later panics of the key in that second are logged without the stack (about 6.5 µs per request under a flood; `internal/core/README.md` › Panic stacks).
 
 **Rule**: Panic exceptions (`exception.BadRequestException(…)`) for expected errors
 
@@ -429,7 +429,7 @@ An exception costs about 1.6 µs per request; any other panic value (a string, a
 - An array (`[3]int`) is JSON. A `chan`, `uintptr` or `unsafe.Pointer` writes nothing.
 - A string result is text even if it contains JSON: return a map or struct for a JSON body.
 
-**Rule**: Return a struct, map or pointer for JSON; a string (or an `any` holding one) for text. Table in `core/README.md` › Results.
+**Rule**: Return a struct, map or pointer for JSON; a string (or an `any` holding one) for text. Table in `internal/core/README.md` › Results.
 
 ### 7.4 GOTCHA: Pipe Parameters
 
@@ -499,7 +499,7 @@ func TestWSHandler(t *testing.T) {
 
 ### 9.1 GOTCHA: Calling Close() Synchronously From a PublishAsync Handler
 
-**VERIFIED** (reproduced deterministically, not speculative — see `memorybroker/broker_test.go`'s `TestClose_FromWithinPublishAsyncHandler_Deadlocks`):
+**VERIFIED** (reproduced deterministically, not speculative — see `internal/memorybroker/broker_test.go`'s `TestClose_FromWithinPublishAsyncHandler_Deadlocks`):
 
 ```go
 b.Subscribe("foo", func(*memorybroker.Message) {
@@ -558,7 +558,7 @@ c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://a.example.com"}})
 c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
 ```
 
-**The gotcha**: the app's layer cache (`(*container).construct` in `core/container.go`, behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance, inside one app, between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
+**The gotcha**: the app's layer cache (`(*container).construct` in `internal/core/container.go`, behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance, inside one app, between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
 
 **Rule**: Equal configuration → one shared instance (its fields are yours to protect across requests); give the bindings different configuration when they must keep separate state.
 
@@ -631,13 +631,13 @@ Each is documented once in the package README named; generated code must respect
 
 - **Header value slices are shared** between responses (`helmet`, `cors`, `compress`, static
   `Cache-Control`, the scope's `X-Request-Id` / `Traceparent`): change headers with `Set` / `Add` /
-  `Del` or a new slice, never `h[k][0] = …` (`core/README.md` › Response writer).
+  `Del` or a new slice, never `h[k][0] = …` (`internal/core/README.md` › Response writer).
 - **`c.Redirect` takes any URL**: validate a URL from the request (local paths only) before
-  redirecting (`ctx/README.md` › Redirect).
+  redirecting (`internal/ctx/README.md` › Redirect).
 - **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `ginject.Map` or a
-  struct, never as a format argument or the format string (`ctx/README.md` › JSON).
+  struct, never as a format argument or the format string (`internal/ctx/README.md` › JSON).
 - **`ginject.TraceTransport` sends `traceparent` to every host**, and an incoming valid `traceparent`
-  sets the trace ID and flags: never authorize by a trace ID (`trace/README.md` › Security).
+  sets the trace ID and flags: never authorize by a trace ID (`internal/trace/README.md` › Security).
 - **`proxy` hops mode (`TrustedHops`) doesn't check the peer**: only when the app is unreachable
   except through the proxies (`middlewares/proxy/README.md` › Security).
 - **Throttler**: a client with an IPv6 /48 can evict its own /64 counters from the 32,768-entry

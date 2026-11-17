@@ -4,10 +4,10 @@
 
 ## 1. Handler Plans (design 0006)
 
-Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `core/fn_plan.go`
-(`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `core/container.go`
+Every handler gets an argument plan once, at `Create()`; a request only runs it. Code: `internal/core/fn_plan.go`
+(`newHTTPHandlerPlan`, `newWSHandlerPlan`, `invoke`), call sites in `internal/core/container.go`
 (`bindHTTPController` / `bindWSController` build the plans into the app's
-`container.httpPlanByPattern` / `wsPlanByEvent`); `core/app.go` `initRoutes` stores each HTTP plan in its route (`httpRoute.plan`,
+`container.httpPlanByPattern` / `wsPlanByEvent`); `internal/core/app.go` `initRoutes` stores each HTTP plan in its route (`httpRoute.plan`,
 called with `call(c, ev, traced)`), and the WS read loop looks the plan up through `resolveAndCallHandler`.
 
 ### 1.1 Building a plan (cold, `Create()`)
@@ -86,7 +86,7 @@ selects the plan. The handler's last result is the reply message.
 ## 3. Provider Instantiation
 
 Providers are constructed at `Create()`, never per request or per injection (`provide` in
-`core/container.go`, explained in [architecture-core-concepts.md](architecture-core-concepts.md) § 4.1):
+`internal/core/container.go`, explained in [architecture-core-concepts.md](architecture-core-concepts.md) § 4.1):
 
 - each provider type once per app, after the providers its exported fields name
 - the value `NewProvider()` returns is injected, by value, into every field of its type (controllers,
@@ -111,14 +111,14 @@ func (instance EmailService) NewProvider() core.Provider {
 
 ### 4.1 Panic Recovery
 
-**Point of Recovery**: `HTTP.handleRequest()` in `core/http.go` defers `recoverRequest`, the
+**Point of Recovery**: `HTTP.handleRequest()` in `internal/core/http.go` defers `recoverRequest`, the
 request's only `recover()`: a middleware's panic gets the HTTP layer's error response, a later one
 runs the route's exception filters (`HTTP.catch`). `invoke` never recovers; on WS,
-`dispatchWSEvent` in `core/read_loop.go` recovers into `runCatchChain`.
+`dispatchWSEvent` in `internal/core/read_loop.go` recovers into `runCatchChain`.
 
 ### 4.2 No Per-Request Timeout Check
 
-There is no deadline check before handler invocation — `ctx.HTTPContext.IsDeadlineExceeded()` does not exist (verified absent from `ctx/http_context.go`), and no code in `core/fn_plan.go`'s handler-invocation path references it or `exception.RequestTimeoutException` at all. A handler runs to completion regardless of how long it takes; only the underlying `http.Server`'s connection-level timeouts (`ReadTimeout`/`WriteTimeout`, set once by the serving call, `core/server.go`) provide any time bound, and those act on the connection, not the handler goroutine.
+There is no deadline check before handler invocation — `ctx.HTTPContext.IsDeadlineExceeded()` does not exist (verified absent from `internal/ctx/http_context.go`), and no code in `internal/core/fn_plan.go`'s handler-invocation path references it or `exception.RequestTimeoutException` at all. A handler runs to completion regardless of how long it takes; only the underlying `http.Server`'s connection-level timeouts (`ReadTimeout`/`WriteTimeout`, set once by the serving call, `internal/core/server.go`) provide any time bound, and those act on the connection, not the handler goroutine.
 
 ### 4.3 Common Handler Errors
 
@@ -159,7 +159,7 @@ The last result is sent as the `event` reply's `Message` (JSON-encoded by the co
 
 ## 6. Dependency Resolution Performance
 
-Numbers: `core/README.md` › Benchmarks and design 0006 › Performance. A call costs one
+Numbers: `internal/core/README.md` › Benchmarks and design 0006 › Performance. A call costs one
 `reflect.Value.Call` (about 200 ns and one allocation for the result slice, plus one per result that
 is not pointer-shaped) plus whatever the accessors and pipes do. The plan removed per-request type
 walking, key building, map lookups, argument-list construction and pipe prototype rebuilding.
@@ -227,5 +227,5 @@ invalid recursive type and doesn't compile.
 ### 8.3 Nil From NewProvider
 
 A provider whose `NewProvider()` returns `nil` is stored as `nil`; `injectDependencies`
-(`core/fn.go`) skips nil entries, so a field of that type is unresolved and `Create()` panics
+(`internal/core/fn.go`) skips nil entries, so a field of that type is unresolved and `Create()` panics
 `dependency injection: can't resolve dependency …` (read from the code, no test pins it).

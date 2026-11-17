@@ -22,7 +22,7 @@ API and every behavior rule, and the tests must cover every rule in its test pla
    exported API (`grep` every call site).
 2. **Concurrency**: shared mutable state without synchronization, lock order, goroutines that outlive
    their owner, channels that can block forever. Run `go test -race` on the touched packages.
-3. **Framework and code conventions** (`CLAUDE.md`, `.ginject/conventions.md`): controller method naming tokens, `common.HTTP` / `common.WS`
+3. **Framework and code conventions** (`CLAUDE.md`, `.ginject/conventions.md`): controller method naming tokens, `ginject.HTTP` / `ginject.WS` (`internal/common`)
    embedding, guard / interceptor / filter method shapes (HTTP vs WS), handler injection types,
    bootstrap panics as `"<category>: <detail>"` wrapped once in `color.FmtRed`, never a panic on the
    request path.

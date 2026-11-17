@@ -5,7 +5,7 @@
 ## 1. Request lifecycle (the spec)
 
 This section is the contract (design `docs/design/0007-dispatch.md`, roadmap 0003 step 1); the code
-in `core/http.go` follows it arrow by arrow and `core/http_lifecycle_test.go` tests each rule (L1-L24).
+in `internal/core/http.go` follows it arrow by arrow and `internal/core/http_lifecycle_test.go` tests each rule (L1-L24).
 
 ```
 request
@@ -74,7 +74,7 @@ wants its own response writes it and returns without `next()`.
   `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}` and logs
   `Logger.From(c.Context()).Error("UnhandledPanic", "method", "path", "panic", "stack" ≤ 4 KiB)`: the
   scope's fields (`trace_id`, `request`, `upstream`) come first, and `stack` is sampled (one per stack
-  key per second, 10 per app per second, `PanicStacksSuppressed` per second; `core/README.md` ›
+  key per second, 10 per app per second, `PanicStacksSuppressed` per second; `internal/core/README.md` ›
   Panic stacks). Filters receive
   `exception.InternalServerErrorException("Internal Server Error")` for such values, also when a
   filter panics with one.
@@ -96,13 +96,13 @@ wants its own response writes it and returns without `next()`.
 - `SERVE` routes never list a directory: a directory answers its `index.html` (with
   `http.ServeFile`'s redirect to the slash-terminated URL) or 404; a path outside the served
   directory answers 400 `Invalid URL path`. Wildcard `SERVE` routes open files through `os.Root`
-  (`serveFromRoot` in `core/http.go`): dot segments other than `.well-known` and symbolic links
+  (`serveFromRoot` in `internal/core/http.go`): dot segments other than `.well-known` and symbolic links
   leaving the served directory answer 404.
 
 ### 1.4 Where it lives in the code
 
-- `App.ServeHTTP` (`core/app.go`): caps a request body (never `nil` / `http.NoBody`), takes a pooled
-  `httpExchange` (the `ctx.HTTPContext` plus the tracking `responseWriter` of `core/http_writer.go`),
+- `App.ServeHTTP` (`internal/core/app.go`): caps a request body (never `nil` / `http.NoBody`), takes a pooled
+  `httpExchange` (the `ctx.HTTPContext` plus the tracking `responseWriter` of `internal/core/http_writer.go`),
   reads the trace scope `Init` built (`ex.scope`), sets `X-Request-Id` and `Traceparent` from the
   scope's prebuilt header slices (every response: route, 404, 405, error), asks `tracer.Enabled()`
   once, calls `HTTP.handleRequest`, emits `complete` with the status actually written, releases the
@@ -112,9 +112,9 @@ wants its own response writes it and returns without `next()`.
 - Trace scope (design 0011, `internal/tracecontext`): the request ID is always ours; one valid
   `traceparent` continues the trace ID, anything else is ignored silently. Middleware, guards,
   interceptors, filters and the handler read the same `*Scope` (`r.Context()` / `c.Context()`).
-  Outbound calls continue the trace through `trace.Transport(base)` on an `http.Client` and a request
+  Outbound calls continue the trace through `ginject.TraceTransport(base)` on an `http.Client` and a request
   built with `c.Context()`: it sends the scope's own `traceparent` (design 0013).
-- `HTTP.handleRequest` (`core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
+- `HTTP.handleRequest` (`internal/core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
   while middlewares run (a panic there is the HTTP layer's) and the route's filter list from the
   first guard on.
 - One immutable `httpRoute` per route, built at `Create()` and indexed by `RouterItem.Index`: module
@@ -134,7 +134,7 @@ wants its own response writes it and returns without `next()`.
 
 ### 2.1 Middleware Interface
 
-`MiddlewareFn` is an **interface**, not a func type — a bare func literal does NOT satisfy it (common/middleware.go):
+`MiddlewareFn` is an **interface**, not a func type — a bare func literal does NOT satisfy it (internal/common/middleware.go):
 ```go
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)
 
@@ -182,7 +182,7 @@ func (c UserController) NewController() Controller {
 }
 ```
 
-**Optional `NewMiddleware()` constructor** — if the bound type defines `NewMiddleware() MiddlewareFn`, the app calls it once (its container's `construct`, `core/container.go`) instead of using the literal directly — the standard place to precompute/validate config once instead of per-request (e.g. `middlewares/cors.CORS.NewMiddleware()` validates and compiles its options once, and panics on a bad origin list). The container keeps one instance per configuration and app (same type, same constructor name, `reflect.DeepEqual` value): equal bindings share an instance, different ones get their own. Same applies to Guard/Interceptor/ExceptionFilter below. A layer bound to a method that is neither a route nor an event of the controller panics at `Create()` (`invalid middleware: … is bound to '<name>', which is not a handler of the controller`); a handler of the other transport binds nothing on this side. Full detail: [package-reference.md](package-reference.md), package `common`.
+**Optional `NewMiddleware()` constructor** — if the bound type defines `NewMiddleware() MiddlewareFn`, the app calls it once (its container's `construct`, `internal/core/container.go`) instead of using the literal directly — the standard place to precompute/validate config once instead of per-request (e.g. `middlewares/cors.CORS.NewMiddleware()` validates and compiles its options once, and panics on a bad origin list). The container keeps one instance per configuration and app (same type, same constructor name, `reflect.DeepEqual` value): equal bindings share an instance, different ones get their own. Same applies to Guard/Interceptor/ExceptionFilter below. A layer bound to a method that is neither a route nor an event of the controller panics at `Create()` (`invalid middleware: … is bound to '<name>', which is not a handler of the controller`); a handler of the other transport binds nothing on this side. Full detail: [package-reference.md](package-reference.md), package `common`.
 
 ### 2.3 Middleware Execution Order
 
@@ -223,7 +223,7 @@ are `panic(&prebuiltException)` (1.2). Production order: `loadshed`, `proxy`, `h
 
 ### 3.1 Guard Interface
 
-A guard is bound as `any` (common/guard.go) — there is NO compile-time interface. The framework matches the method by name and signature (a type assertion to an unexported interface, then the method value, so a guard call costs no reflection) and requires it to match this func type exactly:
+A guard is bound as `any` (internal/common/guard.go) — there is NO compile-time interface. The framework matches the method by name and signature (a type assertion to an unexported interface, then the method value, so a guard call costs no reflection) and requires it to match this func type exactly:
 ```go
 type HTTPCanActivate = func(*ctx.HTTPContext) bool
 ```
@@ -285,7 +285,7 @@ func (c UserController) NewController() Controller {
 
 ### 4.1 Interceptor Interface
 
-An interceptor is bound as `any` (common/interceptor.go) — matched by method name and signature against this func shape, not a compile-time interface:
+An interceptor is bound as `any` (internal/common/interceptor.go) — matched by method name and signature against this func shape, not a compile-time interface:
 ```go
 type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 ```
@@ -368,7 +368,7 @@ func (c UserController) NewController() Controller {
 
 ### 5.1 Exception Filter Interface
 
-An exception filter is bound as `any` (common/exception_filter.go) — matched by method name and signature against this func shape. Note the parameter order: `*ctx.HTTPContext` comes FIRST, `*exception.Exception` SECOND (common/http_exception_filter.go):
+An exception filter is bound as `any` (internal/common/exception_filter.go) — matched by method name and signature against this func shape. Note the parameter order: `*ctx.HTTPContext` comes FIRST, `*exception.Exception` SECOND (internal/common/http_exception_filter.go):
 ```go
 type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
 ```
@@ -383,7 +383,7 @@ type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
 ```
 Guard refusal, or a panic in a guard, interceptor, pipe, binding, handler or operator
     ↓
-recovered once by HTTP.recoverRequest() (core/http.go)
+recovered once by HTTP.recoverRequest() (internal/core/http.go)
     ↓
 asException(value) → the exception, or log UnhandledPanic + InternalServerErrorException("Internal Server Error")
     ↓
@@ -448,9 +448,9 @@ func (c UserController) NewController() Controller {
 
 ### 5.5 Default Exception Filter
 
-`globalHTTPExceptionFilter` (`core/default.go`) is bound by `New()` and is always the last filter.
+`globalHTTPExceptionFilter` (`internal/core/default.go`) is bound by `New()` and is always the last filter.
 It writes exactly the HTTP layer's error response (section 1.2) for the exception it receives, via
-`writeErrorResponse` (`core/fn.go`); there is no mode that returns more detail.
+`writeErrorResponse` (`internal/core/fn.go`); there is no mode that returns more detail.
 
 Note: `c.JSON`/`c.Text`/`c.JSONP` write using whatever status was last set via `c.Status(code)` — call `Status` before `JSON`; both are chainable since `Status` returns `*HTTPContext`.
 
@@ -505,7 +505,7 @@ the built-in filter answers 403 {"code":403,"error":"Forbidden","message":"Acces
 
 ### 7.3 Timeout Handling
 
-**There is no per-request deadline API.** `ctx.HTTPContext` has no `SetDeadline`/`IsDeadlineExceeded`/`Deadline` field (verified absent from `ctx/http_context.go`) — do not generate handler code that calls them. The only timeouts are set once, server-wide, by the serving call (`Listen` / `ListenTLS` / `Serve`, `core/server.go`), not configurable:
+**There is no per-request deadline API.** `ctx.HTTPContext` has no `SetDeadline`/`IsDeadlineExceeded`/`Deadline` field (verified absent from `internal/ctx/http_context.go`) — do not generate handler code that calls them. The only timeouts are set once, server-wide, by the serving call (`Listen` / `ListenTLS` / `Serve`, `internal/core/server.go`), not configurable:
 
 ```
 ReadHeaderTimeout = 5s
@@ -522,7 +522,7 @@ These apply to the underlying `http.Server` connection, not to individual handle
 
 ### 8.1 Pipeline Overhead
 
-Measured numbers live in `core/README.md` (Benchmarks): a static route through `ServeHTTP` is about
+Measured numbers live in `internal/core/README.md` (Benchmarks): a static route through `ServeHTTP` is about
 0.6 µs and 6 allocations, a route with a middleware, a guard and an interceptor about 0.8 µs, a 404
 about 0.5 µs and 3 allocations. Per layer the framework adds a direct function call (no wrapper
 closure, no reflection); a middleware chain adds one closure and one flag per request; an

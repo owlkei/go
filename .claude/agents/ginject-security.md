@@ -35,7 +35,7 @@ The caller says the mode: **audit** (default: report only, edit nothing) or **fi
   header and response splitting, redirects (open redirect), CORS / CSRF / helmet defaults
   (`middlewares/`), WebSocket origin checks, message size and backpressure (`core/ws*.go`), panics
   reachable from input (a crash is a DoS), timeouts and slow clients (server defaults), outbound
-  requests (`trace.Transport`: header injection, what it forwards), crypto and token
+  requests (`ginject.TraceTransport`, `internal/trace`: header injection, what it forwards), crypto and token
   comparison (`internal/crypto`), logs that leak secrets (`log/`, `accesslog/`).
 - Rate each finding **critical / high / medium / low** by exploitability in an app built on Ginject.
 

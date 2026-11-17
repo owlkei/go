@@ -37,7 +37,7 @@ func BenchmarkNewException_ExceptionOptions_Cause(b *testing.B) {
 	}
 }
 
-func BenchmarkException_GetStatusText(b *testing.B) {
+func BenchmarkException_StatusText(b *testing.B) {
 	e := NewException("body", http.StatusBadRequest)
 	b.ReportAllocs()
 	for b.Loop() {
