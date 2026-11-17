@@ -467,7 +467,8 @@ tune a number. A fixed limit is the explicit override.
   waiting request. The adaptive limit is recomputed inside the `Done` of a finishing request, never
   by a background task.
 
-Adaptive mode. Constants are unexported and fixed.
+Adaptive mode. Constants are unexported and fixed. A second revision of L8-L11 against steering
+(security H1, M4) replaces some rules below: see "Revision 2026-11-17 (2)" (approved).
 
 - **L7** Bounds, read once in `NewMiddleware`: `min` = `GOMAXPROCS`. `max` = memory / 4 MiB, clamped
   to 64-4,096, where memory is the smallest of `GOMEMLIMIT` (`debug.SetMemoryLimit(-1)`, when set),
@@ -1259,3 +1260,344 @@ and `avg` under 1.5 × baseline), and the limit stays within `min`-`max` (L7).
    until this is decided; nothing else depends on it.
 3. **The rule is still "the gradient"** approved on 2026-11-17 (same inputs, tolerance, smoothing,
    baseline and probe), with the four changes of "Decision". Confirm, since the formula text changed.
+
+## Revision 2026-11-17 (2): `loadshed` adaptive limit against steering (security H1, M4, L10)
+
+Status of this revision: Approved (orchestrator, 2026-11-17; no exported identifier changes; open
+questions 1-3 as recommended: wrap `r.Body`, floor at half of the earned limit, `max` bounds the
+count and the README says so). It replaces L8 and L9, amends L10 and L11, adds L13, and replaces
+the "Steering the adaptive limit" row of "Security". L7 and L12 are unchanged, and so are the
+public API, fixed mode, the queue and the snapshot fields. The maintainer's decision stands: the
+default adapts. Source: the
+addendum of `docs/review/security-0005.md` (H1, M4, L10) and the measurements below.
+
+Measurements: a prototype of each candidate rule in a copy of the working tree, go1.27.4
+darwin/amd64, the shared 12-thread machine of the first revision (load average about 3 before the
+runs). Workloads are L12's: the I/O-bound handler (20 ms, pool of 50) and the CPU-bound handler that
+yields (5 ms). Legitimate requests arrive at 1.2 × the capacity, so the limit is under pressure;
+attack clients are closed loops that start at second 6. "Served" is the legitimate requests served
+during the attack, as a share of the capacity measured without `loadshed`. Limits are min / median
+/ max. A second figure is a second run.
+
+### What the audit found, reproduced at HEAD
+| Attack | Machine, workload | Limit during the attack | Served |
+|---|---|---|---|
+| Free bursts: 64 clients send requests that do no work, for 50 ms of every second | 2 CPUs, I/O | 2 / 10 / 26, 2 / 11 / 13 (76-83 before) | 25 %, 18 %; 13 % and 9 % in the 15 s **after** the attack stopped (limit 6 and 4) |
+| Slow uploads: 40 clients, each request spends 1.1 s reading its body | 2 CPUs, I/O | 7 / 23 / 82 | 12 % |
+| Slow route: 40 clients, the handler waits 1.1 s | 2 CPUs, I/O | 6 / 19 / 82 | 12 % |
+| Slow route, tuned: 40 clients, the handler waits 0.35 s (16 baselines) | 2 CPUs, I/O | 2 / 4 / 20 | 1 % |
+| Free flood: 1,024 clients, 200 µs requests, legitimate arrivals at 0.5 × | 2 CPUs, I/O | 2 / 4 / 12 (one spike to 142) | 6 % |
+| Free bursts | 1 CPU, CPU-bound | 1 / 1 / 1 (3 before) | 98 % (one core needs one slot) |
+| Slow uploads: 3 clients, 0.25 s in the body | 1 CPU, CPU-bound | 1 / 2 / 4 | 49-55 % |
+| Slow route: 3 clients, 0.25 s in the handler | 1 CPU, CPU-bound | 1 / 3 / 4 | 58-76 % |
+
+Three causes, all in how L8-L10 trust a sample:
+
+1. **L9 follows the cheapest window.** "Lowered to a window's average when that is smaller" lets
+   one window of free requests (404s, refused logins) set the baseline to microseconds, and it
+   refreshes the baseline's age, so no probe corrects it. Every later window of real requests then
+   has a gradient near 0. This is the persistent half of H1 (the 15 s after the bursts above).
+2. **A sample holds the client's time.** `elapsed` counts the time a handler waits in `Body.Read`
+   for a client that sends slowly, and nothing bounds what one sample adds to a window or to the
+   baseline (30 s is 6,000 baselines of 5 ms).
+3. **Nothing limits how far the limit falls on unconfirmed evidence.** Once clients hold about a
+   third of the slots with slow requests, the average passes 1.5 × baseline; the limit shrinks, their
+   share grows, and the limit spirals to `min`, where two connections hold everything.
+
+M4 is confirmed by arithmetic: the sum has 48 bits of nanoseconds (281,474 s) and the largest
+window is 4 × 4,096 samples of up to 30 s (491,520 s). L10 (the low finding) is correct and stays:
+see "Security".
+
+The other direction (H1, "driven to `max`") did not reproduce in two attempts: free requests alone
+contend for the CPU at the concurrency that fills the limit (2 / 3 / 9), and next to legitimate
+traffic cause 1 collapses the limit first (the flood row). It exists in principle for cheap
+requests that wait instead of computing, and change 1 below would open it (a baseline that no
+longer follows cheap windows calls every cheap window "fast"): hence change 5.
+
+### Decision
+Six changes. The rule is still the gradient of L10 with the same tolerance, smoothing, window,
+probe and bounds.
+
+1. **The baseline is learned only from quiet samples and probes.** A faster window may lower the
+   working value, but never below two thirds of the learned one, and it does not refresh the age
+   (L9). Two thirds is 1 / tolerance: free requests can take away the 1.5 tolerance and nothing more,
+   so the worst they do is move the limit to where requests show no slowdown at all (57-60 instead
+   of 83 for the I/O workload, with nothing lost in throughput).
+2. **A sample is the server's time.** The time spent inside `Read` on the request body is left
+   out, like the queue wait (L8).
+3. **A sample counts for at most 32 × the baseline** (L8). One slow request can no longer own a
+   window or teach the baseline a value thousands of times too high. 32 keeps L12's signal: on one
+   core the slowdown is a few requests of 10-70 × (first revision), which a cap of 4 or 8 would
+   hide.
+4. **A floor under what the limit has earned.** The limit cannot fall below half of the highest
+   value it has grown to until a probe has finished with at least one request, and a limit held by
+   the floor asks for that probe (L10, L11). A probe measures the current traffic at `min` requests
+   in flight: when slowness does not come from concurrency (slow routes, slow clients, a poisoned
+   baseline) it relearns the baseline and the limit stops falling; when it does, the floor moves
+   down and the limit goes on. The first limit is not earned, so the first descent (L12's CPU-bound
+   case: 8 to 3 on one core) is as fast as today.
+5. **No growth from windows far faster than the baseline** (average under half of it, L10). Such a
+   window is not the traffic the baseline was learned from. Growth resumes once probes or quiet
+   samples have learned the new traffic.
+6. **The window sum counts units of 64 ns** (L8). 48 bits then hold 1.8 × 10^10 s; the largest
+   window with every request in flight finishing late (16,384 + 4,096 samples of 30 s) is
+   614,400 s, and the 16-bit count holds 65,535.
+
+Rules as they read after this revision:
+
+- **L8** Samples. Every finished exchange adds one sample to the current window: its `elapsed`
+  minus the time it waited in `loadshed`'s queue (L2) and minus its *body time*. Body time: in
+  adaptive mode, an admitted request whose `r.Body` is neither nil nor `http.NoBody` gets `r.Body`
+  replaced by a wrapper that forwards `Read` and `Close` unchanged (same byte counts, same errors)
+  and adds up the time spent inside `Read`. A refused request, and any request in fixed mode,
+  keeps its `r.Body`. A sample longer than 30 s after these subtractions is dropped. While a
+  baseline is known, a sample longer than 32 × the baseline counts as 32 × the baseline, in the
+  window, among the quiet samples and in a probe. Sums are kept in units of 64 ns (rounded down). A
+  window closes at its (4 × the current limit)th sample. Quiet samples and "under pressure" are as
+  before.
+- **L9** Baseline. Two values. *Learned*: the first learning input, then
+  `(learned + input) / 2` at each later one; an input is the average of a window's quiet samples
+  when it has at least 8, or a probe's average (L11). A learning sets the baseline to `learned` and
+  records the time (the baseline's age counts from the last learning). *Baseline* (the value L8,
+  L10 and the snapshot use): when a window closes with an average below the baseline, the baseline
+  becomes `max(average, learned / 1.5)`; this changes neither `learned` nor the age. At one close
+  the learning comes first, then the lowering. With no baseline yet, the limit does not move. Example: learned 10 ms; a window at 8 ms gives 8 ms; a
+  window at 3 ms gives 6.67 ms; a quiet window at 10 ms then gives 10 ms again; a quiet window at
+  4 ms after that gives 4.67 ms (learned 7 ms, lowered by its own average).
+- **L10** At the close of a window under pressure, when a baseline is known and no probe ran during
+  the window, `next = 0.8 × limit + 0.2 × (useful + sqrt(useful))` with
+  `useful = limit × min(1.5 × baseline / avg, 1)`, as before. Then, in this order:
+  (a) when `next > limit` and `avg < baseline / 2`, the limit stays;
+  (b) *earned* is 0 at start; a step that raises the admitted (integer) limit sets
+  `earned = max(earned, new limit)`. `floor = max(min, ceil(earned / 2))`. When `next < floor`, the
+  limit becomes `floor` and the window is *held by the floor* (L11);
+  (c) the result is clamped to `min`-`max`.
+  Every other window leaves the limit as it is. Examples (limit 32, baseline 10 ms, under
+  pressure): `avg` 3 ms leaves 32 (and the baseline at 6.67 ms), then `avg` 4 ms gives 33; a limit
+  grown to 40 and then fed `avg` 60 ms falls to 20 and stays there; a limit that never grew falls
+  to `min` as before.
+- **L11** Probe. A probe starts when a window under pressure closes, no probe started in the last
+  30 s, and one of: the baseline is unknown; its age is over 30 s; a window was held by the floor
+  since the last probe that finished with at least one request. During a probe, admission uses
+  `min` until 8 requests admitted after its start have finished or 1 s has passed, as before. A
+  probe that ends with at least one finished request is a learning (L9), sets
+  `earned = min(earned, limit)` and clears "held by the floor". A probe that ends with none changes
+  nothing: the floor stays where it is.
+- **L13** Steering (acceptance, real `GOMAXPROCS` 2, L12's I/O-bound workload, skipped with
+  `-short`). Legitimate requests arrive at 1.2 × the capacity for 40 s; an attack runs from second
+  6 to second 30; "before" is the median limit between seconds 3 and 6; "served" is the legitimate
+  requests served between seconds 12 and 30 over the capacity.
+  (a) 64 clients that, for the first 50 ms of every second, send requests in a loop whose handler
+  does nothing: served is at least 90 %, and the limit never falls below half of "before".
+  (b) 40 clients in a loop whose request spends 1 s in `Body.Read` and nothing else: served is at
+  least 90 %, and the limit never falls below half of "before".
+  (c) 40 clients in a loop whose handler waits 1 s: the limit never falls below 45 % of "before".
+  In (a) and (b), 10 s after the attack ends the limit is at least 60 % of "before".
+
+### Results (prototype of the six changes)
+| Attack | Machine, workload | Limit during the attack | Served |
+|---|---|---|---|
+| Free bursts | 2 CPUs, I/O | 57 / 58 / 60, 57 / 58 / 60 | 105 %, 105 %; limit back at 83-87 within 5 s of the end |
+| Slow uploads, 40 × 1.1 s in the body | 2 CPUs, I/O | 122 / 122 / 124 twice (the slots the uploads hold are not counted as slowness, so the limit makes room) | 106 %, 106 % |
+| Slow route, 40 × 1.1 s in the handler | 2 CPUs, I/O | 76 / 88 / 99, 52 / 81 / 92 | 99 %, 83 % |
+| Slow route, tuned, 40 × 0.35 s in the handler | 2 CPUs, I/O | 44 / 44 / 44 (the floor; one run) | 25 % (the 40 requests hold 40 of the 44 slots) |
+| Free flood, legitimate arrivals at 0.5 × | 2 CPUs, I/O | 31 / 31 / 31 twice (growth withheld) | 24 % (the flood takes the slots and the queue: the throttler's job, see "Security") |
+| Free bursts | 1 CPU, CPU-bound | 3 / 3 / 3 | 100 % |
+| Slow uploads, 3 × 0.25 s in the body | 1 CPU, CPU-bound | 4 / 5 / 5 | 99 % |
+| Slow route, 3 × 0.25 s in the handler | 1 CPU, CPU-bound | 3 / 3 / 4 | 84 % (the three requests hold three of the slots) |
+
+L12 with the six changes: 24 of 24 over three consecutive passes of the eight tests.
+
+| L12 run | Limit | p99 | Throughput / capacity |
+|---|---|---|---|
+| CPU-bound, 1 CPU | 3 / 3 / 4 (three passes) | 3.4-4.1 × | 100-101 % |
+| CPU-bound, 2 CPUs | 6 / 6 / 7 (three passes) | 4.0-4.1 × | 100-101 % |
+| I/O-bound, 1 and 2 CPUs | 82-83 / 83 / 83-85 | 1.8-1.9 × | 106-107 % |
+| Handler 3 × slower, 1 and 2 CPUs | | | 98-101 % of the slow capacity |
+
+A variant whose floor also covered the first limit passed L12 8 of 8 but held the CPU-bound limit at
+4 and 8 (p99 4.4 × and 5.0 ×) until the first probe after 30 s: that is why the first limit is not
+earned.
+
+### Rejected
+- **A raised `min`** (8, or 4 × `GOMAXPROCS`): L12's CPU-bound case settles at 3 on one core and 6
+  on two; a floor above that fails its p99 (a fixed 8 on one core: 70 ×, first revision), and it
+  would not help an I/O-bound app that needs 83.
+- **A small sample cap (4-8 ×), a median or a trimmed mean** for the window (not prototyped): by
+  the first revision's table, Go's overload signal on few cores *is* a few very slow requests
+  (window averages of 1.0 × at the median and 4.7 × at the 90th percentile at a limit of 8);
+  trimming them removes it. And a client that sizes its requests just under any cap needs the same
+  share of the slots (about a third) to pass the tolerance: the tuned row.
+- **Not counting samples far below the baseline** (under a quarter): prototyped, it stopped the
+  free-request attacks (bursts: 106 % served) and passed L12 8 of 8. Left out by reasoning, not by
+  a measurement: a baseline learned too high (a cold first request among 8 quiet samples) would
+  then discard every real sample, and nothing would relearn it. Change 5 withholds growth only.
+- **Growth only while the limit is busy in request-time** (sum of samples / window time): equal to
+  "under pressure" as soon as a flood keeps the slots full.
+- **Undoing a shrink that did not lower latency** (compare the averages before and after): the
+  right idea for the slow route, but on few cores the averages are too noisy (first revision: more
+  than half of the windows show no slowdown at any limit). The probe is the same experiment with
+  the concurrency held at `min`.
+- **Leaving out samples of refused or failed requests** (4xx, 5xx): a hook receives only `elapsed`
+  (K2); most apps also have a cheap route that answers 200.
+
+### Known limits (README)
+- Requests that really take long in the handler and that a client can send at will (a slow search,
+  a report) can cost half of the earned limit on top of the slots they hold, once they hold about
+  a third of them: steering saves such a client at most half of the connections that holding the
+  slots would need anyway (the tuned row: 25 % served at the floor of 44; 1 % at HEAD). The floor
+  moves down only when a probe finishes, and a probe cannot admit anything while more than `min`
+  slow requests are in flight. The fix stays the documented one: a throttler on such routes, or a
+  fixed `LoadShed` on their module.
+- After such an attack the baseline has learned the attack's traffic, so the tolerance is loose
+  until quiet samples or the next probes relearn it (measured in the tuned run: the limit rose to
+  110-207 in the 10 s after the attack, against 83 normally; `max` was 512).
+- A client that fills a whole probe with free requests (it must send most of what arrives during
+  those few tens of milliseconds) halves `learned` once per 30 s; the floor bounds what follows to
+  one halving of the limit, and the next learning without that client repairs it.
+- `max` bounds the number of requests in flight, not their memory (open question 3).
+
+### Performance
+Hot path, measured with `BenchmarkLoadShed_Admitted_Adaptive` (`-count 5`, 0 allocations
+everywhere):
+
+| | `GOMAXPROCS` 1 | `GOMAXPROCS` 2 |
+|---|---|---|
+| HEAD | 37.7-38.5 ns | 36.5-37.1 ns |
+| Prototype (it also carries the switches used to compare variants) | 44.6-46.3 ns | 43.8-46.5 ns |
+
+The addition is one atomic load (the baseline, for the cap), two comparisons and the `r.Body`
+check, within the 60 ns of "Performance". A request
+with a body costs one allocation of 48 B (the wrapper, which is also its `OnDone` hook) and two
+clock reads per `Read`: 275-325 ns for a body read in two calls, about 110 ns per further `Read`
+(darwin; a body is read in chunks of 4 KiB or more, so about 30 µs per 1 MiB). Nothing is added
+for a request without a body, in fixed mode, for a refusal, or when idle: no goroutine, no timer,
+and three more plain fields (24 B) per instance. No `unsafe`, no `sync.Pool`.
+
+### Concurrency
+`learned`, `earned` and "held by the floor" are plain fields under the window mutex, written only
+at a window close or a probe end. The baseline stays the `atomic.Int64` it is; `sample` now loads
+it once without the mutex (a sample capped against the previous baseline during a window close is
+tolerated, like a sample that lands in either window). The wrapper's body time is an
+`atomic.Int64`: a handler may read its body on another goroutine. The wrapper is created on the
+request's goroutine at admission (all three admission points: the fast path, the retry under the
+queue mutex after it is released, and a woken waiter) and read once in `Done`. Lock order is
+unchanged; the wrapper takes no lock.
+
+### Security
+Replaces the "Steering the adaptive limit" row:
+
+| Threat | Decision |
+|---|---|
+| Steering the limit down with free requests | The baseline is learned only from quiet samples and probes; a faster window lowers it by at most the tolerance (L9), which costs no throughput (measured: 105 % served under bursts that left 18-25 % at HEAD) |
+| Steering it down with slow clients | Time in `Body.Read` is not sampled (L8). Time a client takes to read the response after the handler returned was never sampled (audit L10): such a client holds a slot until the server's write timeout, like any slow client, but cannot move the limit |
+| Steering it down with slow requests | One sample counts for at most 32 baselines (L8); the limit loses at most half of what it earned until a probe confirms (L10, L11). Residual: "Known limits" |
+| Steering it up | Growth needs pressure, an average within 1.5 × the baseline and not under half of it (L10). A flood of free requests no longer collapses the limit and does not raise it (measured: held at 31). Residual: a client that keeps the slots full of cheap requests that wait (not compute) for minutes teaches the baseline its own traffic, one halving per probe, and then grows the limit up to `max` |
+| Overflow of the window sum (M4) | units of 64 ns (L8): no reachable window overflows either field |
+| The wrapper | forwards `Read` and `Close` unchanged; core's `http.MaxBytesReader` stays underneath, so the body limit and its error are untouched; one 48 B allocation per admitted request with a body, none for refused ones |
+
+### Impact
+- G2 and G3 hold as written: the request and its context are not replaced, and `loadshed` reads
+  nothing. New: in adaptive mode `r.Body` of an admitted request is a wrapper. Code that
+  type-asserts `r.Body` (nothing in this repository does) would see the wrapper, as it sees
+  `http.MaxBytesReader` today.
+- No exported identifier, option or snapshot field is added.
+- Docs: `middlewares/loadshed/README.md` ("How the limit adapts", "Defaults and where they come
+  from", "Rules", "Known limits", "Memory and CPU", "Benchmarks");
+  `.ginject/package-reference.md` › `middlewares/loadshed`.
+
+### Builder: changes in `middlewares/loadshed`
+1. `adaptive.go`, L8: store sums as `ns >> 6` in `sample` and shift back in `closeWindowLocked`
+   (window and quiet); the probe sum stays in nanoseconds. Load the baseline once in `sample`;
+   when it is positive, `ns = min(ns, 32 × baseline)` before the probe, quiet and window sums.
+2. `adaptive.go`, L9: a `learned` field. `learnLocked` blends into `learned`, then sets the
+   baseline to it and the age to now. The lowering in `closeWindowLocked` becomes
+   `baseline = max(average, learned / tolerance)` and no longer touches the age
+   (`setBaselineLocked` loses its use there).
+3. `adaptive.go`, L10: in `adjustLocked`, after `next` is computed: return when it would grow and
+   `average < baseline / 2`; keep `earned` (raised when the integer limit rises); when `next` is
+   under `max(min, ceil(earned / 2))`, use that floor and set the "held by the floor" field.
+4. `adaptive.go`, L11: the probe condition in `closeWindowLocked` also accepts "held by the
+   floor"; `endProbeLocked`, when the probe has samples, sets `earned = min(earned, limit)` and
+   clears the field.
+5. `loadshed.go`, L8: the wrapper type (the inner `io.ReadCloser`, the instance, the body time as
+   `atomic.Int64`, the queue wait, whether it is a probe request) with `Read`, and `Done` calling
+   `finish(elapsed - waited - body time, isProbe)`. Attach it instead of `register` / the waiter
+   at the three admission points when the mode is adaptive and the request has a body. It is
+   created only after admission. Body time uses `time.Now`, like the queue wait, not `now`.
+6. README and `.ginject/package-reference.md` as "Impact"; the "Known limits" above; the security
+   table's rows in "Why you need it" or "Rules" wording, not as a threat list.
+7. No change to admission, the queue, the bounds (L7), the snapshot, or fixed mode.
+
+### Tester: test changes
+`loadshed_adaptive_test.go`, with the existing rig (4 CPUs, 64 MiB: `min` 4, `max` 64, first limit
+32, window 128) and fake clock; a helper that finishes one request with its own `elapsed` inside a
+window is needed.
+
+1. `_BaselineLoweredByFasterWindow` becomes `_BaselineLoweredAtMostToTwoThirds`: learned 10 ms; a
+   non-quiet window at 8 ms gives a baseline of 8 ms; one at 3 ms gives between 6.66 and 6.67 ms;
+   the limit stays 32.
+2. `_LearningResetsLoweredBaseline`: from there, a quiet window at 10 ms gives 10 ms; a quiet
+   window at 4 ms then gives between 4.66 and 4.67 ms (learned 7 ms, lowered by its own average).
+3. `_LoweringDoesNotRefreshBaselineAge`: learn at t; 20 s later a non-quiet window at 6 ms; 11 s
+   later a window under pressure starts a probe (`probing` true).
+4. `_SampleCappedAt32Baselines`: baseline 10 ms; a window under pressure of 127 samples of 10 ms
+   and one of 20 s: `average` between 12.4 and 12.5 ms and the limit 33. `_NoCapWithoutBaseline`:
+   the same window on a fresh instance, without pressure: `average` at least 166 ms.
+   `_SlowQuietSampleBounded`: learned 10 ms, a quiet window with one 20 s sample among 127 of
+   10 ms: baseline between 11.2 and 11.3 ms.
+5. `_NoGrowthFromFarFasterWindow`: baseline 10 ms; a window under pressure at 3 ms leaves the limit
+   at 32 and the baseline between 6.66 and 6.67 ms; the next one at 4 ms gives 33.
+6. `_FloorIsHalfOfEarnedLimit`: baseline 10 ms; windows under pressure at 10 ms until the limit is
+   40; then windows at 60 ms: the limit never goes below 20, reaches 20, and the close that holds
+   it starts a probe (`probes` 1). The probe ends empty (clock + 1.1 s, next admission); 20 more
+   such windows within 30 s: the limit stays 20 and `probes` stays 1.
+7. `_ProbeRearmsFloor`: from there, 31 s later a window under pressure starts probe 2; 8 probe
+   requests finish at 10 ms; windows at 60 ms then take the limit to 10, never below.
+   `_EmptyProbeKeepsFloor`: the same with a probe that ends empty: the limit stays 20.
+8. `_ShrinksWhenSlow` keeps its assertions (a limit that never grew ends at `min`): it now also
+   proves that the first limit is not earned. `_GrowsWhenFast`, `_NeverBelowMin`,
+   `_HoldsWithoutPressure`, `_HoldsDuringProbeWindow`, `_QueueWaitNotSampled`,
+   `_IgnoresLongSamples`, the probe tests, `_NeverAboveMaxUnderConcurrency`,
+   `_IdleNoGoroutineNoTimer` and `_Snapshot` keep theirs.
+9. `_WindowSumHoldsLargestWindow` (M4): bounds for 4 CPUs and 16 GiB (`max` 4,096); the limit and
+   the admission value set to 4,096 through the unexported fields; no baseline; more than `min` in
+   flight throughout and no refusal; after 16,383 samples of 29 s `average` is still 0, after the
+   16,384th it is exactly 29 s.
+10. Body time (`loadshed_test.go`): `_BodyReadTimeNotSampled` (baseline 10 ms; a window of 127
+    samples of 10 ms and one request whose body `Read` blocks 50 ms and whose exchange finishes
+    with `elapsed` 60 ms: `average` at most 10 ms); `_QueuedBodyRequestLeavesOutWaitAndBodyTime`;
+    `_BodyWrapperForwardsReadAndClose` (bytes, `io.EOF`, a `*http.MaxBytesError` and `Close` reach
+    the caller unchanged, `Close` closes the inner body once); `_BodyNotWrappedWhenFixed`,
+    `_BodyNotWrappedWhenRefused`, `_NoBodyLeftAlone` (`nil` and `http.NoBody` stay pointer-equal).
+    The existing `_DoesNotReadBody` and `_KeepsRequestAndContext` keep passing.
+11. `loadshed_bench_test.go`: `BenchmarkLoadShed_Admitted_AdaptiveBody` (a POST whose body is read
+    in two calls; at most 1 allocation); `_Admitted_Adaptive` stays at 0 allocations.
+12. L13, `loadshed_stability_test.go`: `TestAdaptive_Steering_FreeBursts`, `_SlowUploads`,
+    `_SlowRoute`, with L12's I/O workload, an open-loop legitimate arrival process and closed-loop
+    attack clients, the limit sampled every 100 ms, thresholds as L13 says. At HEAD the first two
+    serve 12-25 % and all three see the limit under 10. `BenchmarkLoadShed_L13_SlowRouteTuned`
+    (the handler waits 16 × the no-load latency) reports the limit and the share served, without
+    asserting them.
+
+### Open questions (this revision)
+1. **Wrapping `r.Body` (change 2).** Recommended: yes. It is what makes slow uploads harmless
+   (106 % served instead of 12 %) and it gives a mobile client on a slow link an honest sample.
+   Price: 48 B and about 0.3 µs per admitted request with a body, and `loadshed` becomes the one
+   middleware here that replaces a field of the request. Without it, slow uploads behave like the
+   slow-route row: bounded by the floor, not prevented.
+2. **The floor: half of the earned limit, re-armed by a probe at most every 30 s (change 4).**
+   Recommended as written. Price: when capacity really collapses (a dependency that thrashes), the
+   limit follows by one halving at once and one more per 30 s, instead of 20 % per window all the
+   way down. Alternatives: three quarters (an attacker gains less, a real collapse is followed more
+   slowly), or no floor (HEAD's spiral for any slowness clients can cause).
+3. **What `max` promises (H1's second half).** Recommended: keep `memory / 4 MiB` and say in the
+   README that `max` bounds the count, not memory. No rule on latency can stop a burst at a limit
+   already reached, and a cap from measured heap per request in flight was considered and left
+   out: it reads the heap of whatever traffic is running, so cheap traffic raises it like it raises
+   the limit, and the default body limit (10 MiB, `core`) is above 4 MiB per slot at any limit over
+   `memory / 10 MiB` anyway. Alternatives: (a) derive the bytes per slot from the app's body limit
+   (`max` becomes 64 on any machine under 640 MiB, which holds an I/O-bound app that needs 83
+   under its capacity); (b) a ceiling that follows the heap after each garbage collection, as its
+   own design. An app whose routes can each hold megabytes should bind a fixed `LoadShed` to them
+   today.

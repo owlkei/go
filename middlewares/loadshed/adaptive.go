@@ -35,6 +35,8 @@ const (
 	countShift       = 48
 	oneSample        = 1 << countShift
 	sumMask          = oneSample - 1
+	sumShift         = 6
+	sampleCap        = 32
 )
 
 type adaptive struct {
@@ -57,7 +59,10 @@ type adaptive struct {
 	mu          sync.Mutex
 	limitValue  float64
 	baselineNs  float64
+	learned     float64
+	earned      int64
 	hasBaseline bool
+	isFloorHeld bool
 	baselineAt  time.Time
 	probedAt    time.Time
 	hasProbed   bool
@@ -130,6 +135,9 @@ func (a *adaptive) sample(c *compiledLoadShed, elapsed time.Duration, inFlight i
 		return
 	}
 	ns := int64(max(elapsed, 0))
+	if baseline := a.baseline.Load(); baseline > 0 {
+		ns = min(ns, sampleCap*baseline)
+	}
 	if isProbe {
 		a.probeSum.Add(ns)
 		if a.probeCount.Add(1) == probeSamples {
@@ -140,7 +148,7 @@ func (a *adaptive) sample(c *compiledLoadShed, elapsed time.Duration, inFlight i
 			a.mu.Unlock()
 		}
 	}
-	packed := oneSample | uint64(ns)
+	packed := oneSample | uint64(ns>>sumShift)
 	if inFlight <= a.min {
 		a.quiet.Add(packed)
 	}
@@ -158,8 +166,8 @@ func (a *adaptive) windowSize() uint64 {
 
 func (a *adaptive) closeWindowLocked(c *compiledLoadShed) {
 	samples, quiet := a.samples.Swap(0), a.quiet.Swap(0)
-	n, sum := samples>>countShift, samples&sumMask
-	quietCount, quietSum := quiet>>countShift, quiet&sumMask
+	n, sum := samples>>countShift, (samples&sumMask)<<sumShift
+	quietCount, quietSum := quiet>>countShift, (quiet&sumMask)<<sumShift
 	isPressure := a.isPressure.Swap(false)
 	isProbeSeen := a.isProbeSeen
 	a.isProbeSeen = c.admit.Load() < 0
@@ -171,7 +179,7 @@ func (a *adaptive) closeWindowLocked(c *compiledLoadShed) {
 		a.learnLocked(float64(quietSum)/float64(quietCount), now)
 	}
 	if a.hasBaseline && average < a.baselineNs {
-		a.setBaselineLocked(average, now)
+		a.storeBaselineLocked(max(average, a.learned/tolerance))
 	}
 	if !isPressure {
 		return
@@ -179,7 +187,7 @@ func (a *adaptive) closeWindowLocked(c *compiledLoadShed) {
 	if a.hasBaseline && !isProbeSeen {
 		a.adjustLocked(c, average)
 	}
-	if c.admit.Load() >= 0 && a.isBaselineStale(now) && a.isProbeDue(now) {
+	if c.admit.Load() >= 0 && (a.isBaselineStale(now) || a.isFloorHeld) && a.isProbeDue(now) {
 		a.startProbeLocked(c, now)
 	}
 }
@@ -199,8 +207,18 @@ func (a *adaptive) adjustLocked(c *compiledLoadShed, average float64) {
 	}
 	useful := a.limitValue * gradient
 	target := useful + math.Sqrt(useful)
-	limit := min(max(smoothing*a.limitValue+(1-smoothing)*target, float64(a.min)), float64(a.max))
+	next := smoothing*a.limitValue + (1-smoothing)*target
+	if next > a.limitValue && average < a.baselineNs/2 {
+		return
+	}
+	if floor := float64(max(a.min, (a.earned+1)/2)); next < floor {
+		next, a.isFloorHeld = floor, true
+	}
+	limit := min(max(next, float64(a.min)), float64(a.max))
 	a.limitValue = limit
+	if admitted := int64(limit); admitted > a.limit.Load() {
+		a.earned = max(a.earned, admitted)
+	}
 	a.limit.Store(int64(limit))
 	if c.admit.Load() >= 0 {
 		c.admit.Store(int64(limit))
@@ -209,13 +227,14 @@ func (a *adaptive) adjustLocked(c *compiledLoadShed, average float64) {
 
 func (a *adaptive) learnLocked(input float64, now time.Time) {
 	if a.hasBaseline {
-		input = (a.baselineNs + input) / 2
+		input = (a.learned + input) / 2
 	}
-	a.setBaselineLocked(input, now)
+	a.learned, a.hasBaseline, a.baselineAt = input, true, now
+	a.storeBaselineLocked(input)
 }
 
-func (a *adaptive) setBaselineLocked(ns float64, now time.Time) {
-	a.baselineNs, a.hasBaseline, a.baselineAt = ns, true, now
+func (a *adaptive) storeBaselineLocked(ns float64) {
+	a.baselineNs = ns
 	a.baseline.Store(int64(ns))
 }
 
@@ -231,6 +250,8 @@ func (a *adaptive) startProbeLocked(c *compiledLoadShed, now time.Time) {
 func (a *adaptive) endProbeLocked(c *compiledLoadShed) {
 	if n := a.probeCount.Load(); n > 0 {
 		a.learnLocked(float64(a.probeSum.Load())/float64(n), a.now())
+		a.earned = min(a.earned, a.limit.Load())
+		a.isFloorHeld = false
 	}
 	c.admit.Store(a.limit.Load())
 }

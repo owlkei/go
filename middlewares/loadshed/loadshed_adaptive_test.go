@@ -249,17 +249,280 @@ func TestAdaptive_BaselineFromQuietSamples(t *testing.T) {
 	}
 }
 
-func TestAdaptive_BaselineLoweredByFasterWindow(t *testing.T) {
+func TestAdaptive_BaselineLoweredAtMostToTwoThirds(t *testing.T) {
 	g := newRig(t)
 	g.sequential(10*time.Millisecond, g.window())
-	g.saturated(6*time.Millisecond, 1, g.steady(8))
-	if got := durationOf(g.s.Snapshot(), "baseline"); got != 6*time.Millisecond {
-		t.Error(test.DiffMessage(got, 6*time.Millisecond, "L9: the baseline is lowered to a window's average when that is smaller"))
+	g.saturated(8*time.Millisecond, 1, g.steady(8))
+	if got := durationOf(g.s.Snapshot(), "baseline"); got != 8*time.Millisecond {
+		t.Error(test.DiffMessage(got, 8*time.Millisecond, "L9: a window at 8 ms lowers the baseline to 8 ms"))
+	}
+	g.saturated(3*time.Millisecond, 1, g.steady(8))
+	got := durationOf(g.s.Snapshot(), "baseline")
+	if got < 6660*time.Microsecond || got > 6670*time.Microsecond {
+		t.Error(test.DiffMessage(got, "6.66ms..6.67ms", "L9: a window at 3 ms lowers the baseline only to learned / 1.5"))
 	}
 	if got := g.limit(); got != rigStart {
 		t.Error(test.DiffMessage(got, int64(rigStart), "L10: a fast, app-limited window leaves the limit"))
 	}
-	g.drain(6 * time.Millisecond)
+	g.drain(3 * time.Millisecond)
+}
+
+func TestAdaptive_LearningResetsLoweredBaseline(t *testing.T) {
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	g.saturated(8*time.Millisecond, 1, g.steady(8))
+	g.saturated(3*time.Millisecond, 1, g.steady(8))
+	// The 7 requests still in flight finish in the next window: drain them at 10 ms and fill
+	// the rest of that window, so it is a quiet window at 10 ms.
+	g.drain(10 * time.Millisecond)
+	g.sequential(10*time.Millisecond, g.window()-7)
+	if got := durationOf(g.s.Snapshot(), "baseline"); got != 10*time.Millisecond {
+		t.Error(test.DiffMessage(got, 10*time.Millisecond, "L9: a quiet window at 10 ms learns 10 ms again"))
+	}
+	g.sequential(4*time.Millisecond, g.window())
+	got := durationOf(g.s.Snapshot(), "baseline")
+	if got < 4660*time.Microsecond || got > 4670*time.Microsecond {
+		t.Error(test.DiffMessage(got, "4.66ms..4.67ms", "L9: learned 7 ms, lowered by its own average to learned / 1.5"))
+	}
+}
+
+func TestAdaptive_LoweringDoesNotRefreshBaselineAge(t *testing.T) {
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	g.clock.Advance(20 * time.Second)
+	g.saturated(6*time.Millisecond, 1, g.steady(8))
+	g.clock.Advance(11 * time.Second)
+	g.pressureWindow(7 * time.Millisecond)
+	if got := field(g.s.Snapshot(), "probing"); got != true {
+		t.Error(test.DiffMessage(got, true, "L9, L11: lowering the baseline leaves its age, so a baseline learned 31 s ago is probed"))
+	}
+	g.drain(7 * time.Millisecond)
+}
+
+func slowFirst(slow, base time.Duration) func(int) time.Duration {
+	return func(i int) time.Duration {
+		if i == 0 {
+			return slow
+		}
+		return base
+	}
+}
+
+func (g *rig) sequentialOf(elapsed func(int) time.Duration, samples int) {
+	g.t.Helper()
+	for i := 0; i < samples; i++ {
+		if !g.admit() {
+			g.t.Fatal("fixture: a sequential request is refused")
+		}
+		g.finishOldest(elapsed(i))
+	}
+}
+
+func (g *rig) pressureWindowOf(elapsed func(int) time.Duration) {
+	g.t.Helper()
+	size := g.window()
+	g.pressure()
+	for i := 0; i < size; i++ {
+		g.finishOldest(elapsed(i))
+		if i < size-1 {
+			g.admit()
+		}
+	}
+}
+
+func (g *rig) contended(elapsed func(int) time.Duration, samples int) {
+	g.t.Helper()
+	for i := 0; i < samples; i++ {
+		g.fill(8)
+		g.finishOldest(elapsed(i))
+	}
+}
+
+func TestAdaptive_SampleCappedAt32Baselines(t *testing.T) {
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	g.pressureWindowOf(slowFirst(20*time.Second, 10*time.Millisecond))
+	got := durationOf(g.s.Snapshot(), "average")
+	if got < 12400*time.Microsecond || got > 12500*time.Microsecond {
+		t.Error(test.DiffMessage(got, "12.4ms..12.5ms", "L8: a sample counts for at most 32 x the baseline (320 ms)"))
+	}
+	if got := g.limit(); got != 33 {
+		t.Error(test.DiffMessage(got, int64(33), "L8, L10: the window is fast, the limit grows"))
+	}
+	g.drain(10 * time.Millisecond)
+}
+
+func TestAdaptive_NoCapWithoutBaseline(t *testing.T) {
+	g := newRig(t)
+	g.contended(slowFirst(20*time.Second, 10*time.Millisecond), g.window())
+	if got := durationOf(g.s.Snapshot(), "average"); got < 166*time.Millisecond {
+		t.Error(test.DiffMessage(got, ">= 166ms", "L8: with no baseline a sample is not capped"))
+	}
+	g.drain(10 * time.Millisecond)
+}
+
+func TestAdaptive_SlowQuietSampleBounded(t *testing.T) {
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	g.sequentialOf(slowFirst(20*time.Second, 10*time.Millisecond), g.window())
+	got := durationOf(g.s.Snapshot(), "baseline")
+	if got < 11200*time.Microsecond || got > 11300*time.Microsecond {
+		t.Error(test.DiffMessage(got, "11.2ms..11.3ms", "L8, L9: one slow quiet sample teaches the baseline at most 32 baselines"))
+	}
+}
+
+func TestAdaptive_NoGrowthFromFarFasterWindow(t *testing.T) {
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	g.pressureWindow(3 * time.Millisecond)
+	if got := g.limit(); got != rigStart {
+		t.Error(test.DiffMessage(got, int64(rigStart), "L10: a window under half of the baseline does not grow the limit"))
+	}
+	got := durationOf(g.s.Snapshot(), "baseline")
+	if got < 6660*time.Microsecond || got > 6670*time.Microsecond {
+		t.Error(test.DiffMessage(got, "6.66ms..6.67ms", "L9: the baseline is lowered to two thirds"))
+	}
+	g.pressureWindow(4 * time.Millisecond)
+	if got := g.limit(); got != 33 {
+		t.Error(test.DiffMessage(got, int64(33), "L10: the next window at 4 ms grows the limit"))
+	}
+	g.drain(4 * time.Millisecond)
+}
+
+func probesOf(g *rig) int64 { return intOf(g.s.Snapshot(), "probes") }
+
+func floorRig(t *testing.T) *rig {
+	t.Helper()
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	for i := 0; i < 200 && g.limit() < 40; i++ {
+		g.pressureWindow(10 * time.Millisecond)
+	}
+	if g.limit() != 40 {
+		t.Fatal(test.DiffMessage(g.limit(), int64(40), "fixture: the limit grew to 40"))
+	}
+	for i := 0; i < 200 && probesOf(g) == 0; i++ {
+		g.pressureWindow(60 * time.Millisecond)
+		if g.limit() < 20 {
+			t.Fatal(test.DiffMessage(g.limit(), ">= 20", "L10: the limit never falls below half of the limit it earned"))
+		}
+	}
+	if got := g.limit(); got != 20 {
+		t.Fatal(test.DiffMessage(got, int64(20), "L10: the limit falls to the floor"))
+	}
+	if probesOf(g) != 1 || field(g.s.Snapshot(), "probing") != true {
+		t.Fatal(test.DiffMessage([]any{probesOf(g), field(g.s.Snapshot(), "probing")}, []any{int64(1), true}, "L11: the close that holds the floor starts a probe"))
+	}
+	g.clock.Advance(1100 * time.Millisecond)
+	g.admit()
+	if got := field(g.s.Snapshot(), "probing"); got != false {
+		t.Fatal(test.DiffMessage(got, false, "L11: a probe running for over 1 s ends at the next admission"))
+	}
+	return g
+}
+
+func TestAdaptive_FloorIsHalfOfEarnedLimit(t *testing.T) {
+	g := floorRig(t)
+	for i := 0; i < 20; i++ {
+		g.pressureWindow(60 * time.Millisecond)
+		if got := g.limit(); got != 20 {
+			t.Fatal(test.DiffMessage(got, int64(20), "L10: an empty probe leaves the floor where it is"))
+		}
+	}
+	if got := probesOf(g); got != 1 {
+		t.Error(test.DiffMessage(got, int64(1), "L11: no probe within 30 s of the last one"))
+	}
+	g.drain(60 * time.Millisecond)
+}
+
+func TestAdaptive_ProbeRearmsFloor(t *testing.T) {
+	g := floorRig(t)
+	g.clock.Advance(31 * time.Second)
+	g.pressureWindow(60 * time.Millisecond)
+	if probesOf(g) != 2 || field(g.s.Snapshot(), "probing") != true {
+		t.Fatal(test.DiffMessage([]any{probesOf(g), field(g.s.Snapshot(), "probing")}, []any{int64(2), true}, "L11: 31 s later a window under pressure starts probe 2"))
+	}
+	g.drain(60 * time.Millisecond)
+	for round := 0; round < 2; round++ {
+		for i := 0; i < rigMin; i++ {
+			if !g.admit() {
+				t.Fatal("fixture: a probe admits min requests")
+			}
+		}
+		for i := 0; i < rigMin; i++ {
+			g.finishOldest(10 * time.Millisecond)
+		}
+	}
+	if got := field(g.s.Snapshot(), "probing"); got != false {
+		t.Fatal(test.DiffMessage(got, false, "L11: the probe ends after 8 finished requests"))
+	}
+	for i := 0; i < 200 && g.limit() > 10; i++ {
+		g.pressureWindow(60 * time.Millisecond)
+		if g.limit() < 10 {
+			t.Fatal(test.DiffMessage(g.limit(), ">= 10", "L10, L11: a finished probe moves the floor to half of the limit, 10"))
+		}
+	}
+	if got := g.limit(); got != 10 {
+		t.Error(test.DiffMessage(got, int64(10), "L10, L11: the limit goes down to the new floor"))
+	}
+	for i := 0; i < 10; i++ {
+		g.pressureWindow(60 * time.Millisecond)
+		if got := g.limit(); got != 10 {
+			t.Fatal(test.DiffMessage(got, int64(10), "L10: and stays there"))
+		}
+	}
+	g.drain(60 * time.Millisecond)
+}
+
+func TestAdaptive_EmptyProbeKeepsFloor(t *testing.T) {
+	g := floorRig(t)
+	g.clock.Advance(31 * time.Second)
+	g.pressureWindow(60 * time.Millisecond)
+	if probesOf(g) != 2 || field(g.s.Snapshot(), "probing") != true {
+		t.Fatal(test.DiffMessage([]any{probesOf(g), field(g.s.Snapshot(), "probing")}, []any{int64(2), true}, "L11: 31 s later a window under pressure starts probe 2"))
+	}
+	g.clock.Advance(1100 * time.Millisecond)
+	g.admit()
+	if got := field(g.s.Snapshot(), "probing"); got != false {
+		t.Fatal(test.DiffMessage(got, false, "L11: the probe ends empty"))
+	}
+	for i := 0; i < 20; i++ {
+		g.pressureWindow(60 * time.Millisecond)
+		if got := g.limit(); got != 20 {
+			t.Fatal(test.DiffMessage(got, int64(20), "L11: a probe that ends with no request changes nothing, the floor stays"))
+		}
+	}
+	g.drain(60 * time.Millisecond)
+}
+
+func TestAdaptive_WindowSumHoldsLargestWindow(t *testing.T) {
+	withMachine(t, 4, 16<<30)
+	mw := LoadShed{MaxQueue: -1}.NewMiddleware()
+	c := mw.(*compiledLoadShed)
+	if intOf(c.Snapshot(), "max") != 4096 {
+		t.Fatal(test.DiffMessage(intOf(c.Snapshot(), "max"), int64(4096), "fixture: max for 16 GiB"))
+	}
+	c.adaptive.limit.Store(4096)
+	c.admit.Store(4096)
+	g := &rig{t: t, mw: mw, s: snapshotter(t, mw), clock: &fakeClock{t: time.Now()}}
+	const samples = 4 * 4096
+	for i := 0; i < samples; i++ {
+		for len(g.pool) < 8 {
+			if !g.admit() {
+				t.Fatal("fixture: no request is refused")
+			}
+		}
+		g.finishOldest(29 * time.Second)
+		if i == samples-2 {
+			if got := durationOf(g.s.Snapshot(), "average"); got != 0 {
+				t.Fatal(test.DiffMessage(got, time.Duration(0), "M4: the window is still open one sample before its end"))
+			}
+		}
+	}
+	if got := durationOf(g.s.Snapshot(), "average"); got != 29*time.Second {
+		t.Error(test.DiffMessage(got, 29*time.Second, "M4, L8: the sum of the largest window does not overflow"))
+	}
+	g.drain(29 * time.Second)
 }
 
 func TestAdaptive_ShrinksWhenSlow(t *testing.T) {

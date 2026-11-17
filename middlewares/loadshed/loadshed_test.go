@@ -2,6 +2,8 @@ package loadshed
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -413,6 +415,192 @@ func TestLoadShed_DoesNotReadBody(t *testing.T) {
 		r.Body = failBody{t}
 		serve(app, r)
 	}
+}
+
+type scriptedStep struct {
+	data string
+	err  error
+}
+
+type scriptedBody struct {
+	steps    []scriptedStep
+	delay    time.Duration
+	closeErr error
+	closed   int
+}
+
+func (b *scriptedBody) Read(p []byte) (int, error) {
+	if b.delay > 0 {
+		time.Sleep(b.delay)
+	}
+	if len(b.steps) == 0 {
+		return 0, io.EOF
+	}
+	step := b.steps[0]
+	b.steps = b.steps[1:]
+	return copy(p, step.data), step.err
+}
+
+func (b *scriptedBody) Close() error {
+	b.closed++
+	return b.closeErr
+}
+
+func (g *rig) admitRequest(r *http.Request) bool {
+	c := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
+	c.ex = newExchange(c.rec)
+	func() {
+		defer func() { c.refusal = recover() }()
+		g.mw.Use(r, c.ex, func() { c.admitted.Store(true) })
+	}()
+	if c.admitted.Load() {
+		g.pool = append(g.pool, c)
+	}
+	return c.admitted.Load()
+}
+
+func TestLoadShed_BodyReadTimeNotSampled(t *testing.T) {
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	r := request(http.MethodPost, "/upload")
+	r.Body = &scriptedBody{delay: 50 * time.Millisecond}
+	if !g.admitRequest(r) {
+		t.Fatal("fixture: the request is admitted")
+	}
+	if _, err := r.Body.Read(make([]byte, 8)); err != io.EOF {
+		t.Fatal(test.DiffMessage(err, io.EOF, "fixture: the body is read"))
+	}
+	g.finishOldest(60 * time.Millisecond)
+	g.sequential(10*time.Millisecond, g.window()-1)
+	if got := durationOf(g.s.Snapshot(), "average"); got > 10*time.Millisecond {
+		t.Error(test.DiffMessage(got, "<= 10ms", "L8: the time spent inside Read on the request body is not part of the sample"))
+	}
+}
+
+func TestLoadShed_QueuedBodyRequestLeavesOutWaitAndBodyTime(t *testing.T) {
+	withMachine(t, rigProcs, rigMemory)
+	mw := LoadShed{MaxQueue: 1}.NewMiddleware()
+	clock := &fakeClock{t: time.Now()}
+	mw.(*compiledLoadShed).adaptive.now = clock.Now
+	g := &rig{t: t, mw: mw, s: snapshotter(t, mw), clock: clock}
+	g.sequential(5*time.Millisecond, g.window())
+	g.fill(rigStart)
+	r := request(http.MethodPost, "/upload")
+	r.Body = &scriptedBody{delay: 30 * time.Millisecond}
+	queued := startCall(mw, r)
+	waitUntil(t, "the request is queued", func() bool { return intOf(g.s.Snapshot(), "waiting") == 1 })
+	since := time.Now()
+	waitUntil(t, "20 ms in the queue", func() bool { return time.Since(since) >= 20*time.Millisecond })
+	g.finishOldest(5 * time.Millisecond)
+	queued.wait(t)
+	if !queued.admitted.Load() {
+		t.Fatal(test.DiffMessage(queued.admitted.Load(), true, "fixture: the queued request is admitted when a slot frees"))
+	}
+	if _, err := r.Body.Read(make([]byte, 8)); err != io.EOF {
+		t.Fatal(test.DiffMessage(err, io.EOF, "fixture: the body is read"))
+	}
+	queued.ex.finish(60 * time.Millisecond)
+	for len(g.pool) > 0 {
+		g.finishOldest(5 * time.Millisecond)
+	}
+	g.sequential(5*time.Millisecond, 4*rigStart-(rigStart+1))
+	if got := durationOf(g.s.Snapshot(), "average"); got > 5050*time.Microsecond {
+		t.Error(test.DiffMessage(got, "<= 5.05ms", "L8: neither the queue wait nor the body time of a queued request is part of the sample"))
+	}
+}
+
+func TestLoadShed_BodyWrapperForwardsReadAndClose(t *testing.T) {
+	boom := errors.New("boom")
+	g := newRig(t)
+	inner := &scriptedBody{
+		steps:    []scriptedStep{{"abc", nil}, {"de", boom}, {"", io.EOF}},
+		closeErr: boom,
+	}
+	r := request(http.MethodPost, "/upload")
+	r.Body = inner
+	if !g.admitRequest(r) {
+		t.Fatal("fixture: the request is admitted")
+	}
+	if r.Body == io.ReadCloser(inner) {
+		t.Error(test.DiffMessage(false, true, "L8: in adaptive mode an admitted request with a body gets a wrapper"))
+	}
+	buf := make([]byte, 8)
+	for i, want := range []struct {
+		n   int
+		err error
+	}{{3, nil}, {2, boom}, {0, io.EOF}} {
+		n, err := r.Body.Read(buf)
+		if n != want.n || err != want.err {
+			t.Error(test.DiffMessage([]any{n, err}, []any{want.n, want.err}, "L8: Read forwards the byte count and the error of read "+strconv.Itoa(i)))
+		}
+	}
+	if err := r.Body.Close(); err != boom || inner.closed != 1 {
+		t.Error(test.DiffMessage([]any{err, inner.closed}, []any{boom, 1}, "L8: Close reaches the inner body once and returns its error"))
+	}
+	g.drain(time.Millisecond)
+}
+
+func TestLoadShed_BodyWrapperKeepsMaxBytesError(t *testing.T) {
+	g := newRig(t)
+	rec := httptest.NewRecorder()
+	r := request(http.MethodPost, "/upload")
+	r.Body = http.MaxBytesReader(rec, io.NopCloser(strings.NewReader("hello world")), 5)
+	if !g.admitRequest(r) {
+		t.Fatal("fixture: the request is admitted")
+	}
+	got, err := io.ReadAll(r.Body)
+	var tooLarge *http.MaxBytesError
+	if !errors.As(err, &tooLarge) || tooLarge.Limit != 5 {
+		t.Error(test.DiffMessage(err, "a *http.MaxBytesError with Limit 5", "L8: the body limit and its error are untouched"))
+	}
+	if string(got) != "hello" {
+		t.Error(test.DiffMessage(string(got), "hello", "L8: the bytes read before the limit are the same"))
+	}
+	g.drain(time.Millisecond)
+}
+
+func TestLoadShed_BodyNotWrappedWhenFixed(t *testing.T) {
+	mw := LoadShed{MaxInFlight: 4}.NewMiddleware()
+	body := &scriptedBody{}
+	r := request(http.MethodPost, "/upload")
+	r.Body = body
+	c := &call{rec: httptest.NewRecorder()}
+	c.ex = newExchange(c.rec)
+	mw.Use(r, c.ex, noop)
+	if r.Body != io.ReadCloser(body) {
+		t.Error(test.DiffMessage(false, true, "L8: fixed mode keeps r.Body"))
+	}
+	c.ex.finish(time.Millisecond)
+}
+
+func TestLoadShed_BodyNotWrappedWhenRefused(t *testing.T) {
+	g := newRig(t)
+	g.fill(rigStart)
+	body := &scriptedBody{}
+	r := request(http.MethodPost, "/upload")
+	r.Body = body
+	if g.admitRequest(r) {
+		t.Fatal(test.DiffMessage(true, false, "fixture: a request over the limit is refused"))
+	}
+	if r.Body != io.ReadCloser(body) {
+		t.Error(test.DiffMessage(false, true, "L8: a refused request keeps r.Body"))
+	}
+	g.drain(time.Millisecond)
+}
+
+func TestLoadShed_NoBodyLeftAlone(t *testing.T) {
+	g := newRig(t)
+	for _, body := range []io.ReadCloser{nil, http.NoBody} {
+		r := request(http.MethodPost, "/upload")
+		r.Body = body
+		if !g.admitRequest(r) {
+			t.Fatal("fixture: the request is admitted")
+		}
+		if r.Body != body {
+			t.Error(test.DiffMessage(r.Body, body, "L8: a nil or empty body is not wrapped"))
+		}
+	}
+	g.drain(time.Millisecond)
 }
 
 func TestLoadShed_OutsideAnApp_DegradesToNoop(t *testing.T) {

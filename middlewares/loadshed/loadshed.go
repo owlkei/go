@@ -1,6 +1,7 @@
 package loadshed
 
 import (
+	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -62,6 +63,14 @@ type waiter struct {
 
 type probeHook struct{ c *compiledLoadShed }
 
+type timedBody struct {
+	inner    io.ReadCloser
+	c        *compiledLoadShed
+	readTime atomic.Int64
+	waited   time.Duration
+	isProbe  bool
+}
+
 func (instance LoadShed) NewMiddleware() common.MiddlewareFn {
 	return loadLoadShedOptions(&instance)
 }
@@ -106,7 +115,7 @@ func (c *compiledLoadShed) Use(r *http.Request, w http.ResponseWriter, next ctx.
 		v = c.probeAdmitLimit(v)
 	}
 	if c.inFlight.Add(1) <= abs(v) {
-		c.register(hw, v < 0)
+		c.register(r, hw, v < 0)
 		next()
 		return
 	}
@@ -121,7 +130,11 @@ func abs(v int64) int64 {
 	return v
 }
 
-func (c *compiledLoadShed) register(hw httphook.Writer, isProbe bool) {
+func (c *compiledLoadShed) register(r *http.Request, hw httphook.Writer, isProbe bool) {
+	if c.hasBody(r) {
+		c.attachBody(r, hw, 0, isProbe)
+		return
+	}
 	if isProbe {
 		hw.OnDone(&c.probeDone)
 		return
@@ -144,7 +157,7 @@ func (c *compiledLoadShed) enqueue(r *http.Request, w http.ResponseWriter, hw ht
 	if c.inFlight.Add(1) <= abs(v) {
 		c.waiting.Add(-1)
 		c.mu.Unlock()
-		c.register(hw, v < 0)
+		c.register(r, hw, v < 0)
 		next()
 		return
 	}
@@ -157,12 +170,12 @@ func (c *compiledLoadShed) enqueue(r *http.Request, w http.ResponseWriter, hw ht
 	select {
 	case <-wt.ch:
 		timer.Stop()
-		c.admitWaiter(wt, hw, next)
+		c.admitWaiter(wt, r, hw, next)
 	case <-timer.C:
 		if c.leaveQueue(wt) {
 			c.refuse(w, &c.refusedTimeout)
 		}
-		c.admitWaiter(wt, hw, next)
+		c.admitWaiter(wt, r, hw, next)
 	case <-r.Context().Done():
 		timer.Stop()
 		if !c.leaveQueue(wt) {
@@ -172,9 +185,38 @@ func (c *compiledLoadShed) enqueue(r *http.Request, w http.ResponseWriter, hw ht
 	}
 }
 
-func (c *compiledLoadShed) admitWaiter(wt *waiter, hw httphook.Writer, next ctx.Next) {
-	hw.OnDone(wt)
+func (c *compiledLoadShed) admitWaiter(wt *waiter, r *http.Request, hw httphook.Writer, next ctx.Next) {
+	if c.hasBody(r) {
+		c.attachBody(r, hw, wt.waited, wt.isProbe)
+	} else {
+		hw.OnDone(wt)
+	}
 	next()
+}
+
+func (c *compiledLoadShed) hasBody(r *http.Request) bool {
+	return c.isAdaptive && r.Body != nil && r.Body != http.NoBody
+}
+
+func (c *compiledLoadShed) attachBody(r *http.Request, hw httphook.Writer, waited time.Duration, isProbe bool) {
+	b := &timedBody{inner: r.Body, c: c, waited: waited, isProbe: isProbe}
+	r.Body = b
+	hw.OnDone(b)
+}
+
+func (b *timedBody) Read(p []byte) (int, error) {
+	start := time.Now()
+	n, err := b.inner.Read(p)
+	b.readTime.Add(int64(time.Since(start)))
+	return n, err
+}
+
+func (b *timedBody) Close() error {
+	return b.inner.Close()
+}
+
+func (b *timedBody) Done(elapsed time.Duration) {
+	b.c.finish(max(elapsed-b.waited-time.Duration(b.readTime.Load()), 0), b.isProbe)
 }
 
 func (c *compiledLoadShed) refuse(w http.ResponseWriter, counter *atomic.Int64) {

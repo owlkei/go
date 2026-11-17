@@ -29,8 +29,10 @@
 - A fixed limit when you want one: `LoadShed{MaxInFlight: 200}`
 - Every slot is released exactly once, whatever the request did: returned, panicked, answered
   `404`, was refused by a later layer, or aborted
+- Hard to steer: the time a client spends sending its body is not counted, one slow request
+  weighs at most 32 baselines, and cheap requests cannot drag the reference latency down
 - No goroutine and no timer while the server is idle; an admitted request costs a few atomic
-  operations and no allocation
+  operations and no allocation (one small allocation for a request with a body in adaptive mode)
 
 ## Why you need it
 
@@ -40,6 +42,14 @@ for all of them, and clients time out on work the server finishes anyway. Refusi
 requests early, with a status code clients and load balancers understand, keeps the admitted ones
 fast (Google SRE Book, chapters 21 and 22, "Handling overload" and "Addressing cascading
 failures").
+
+An adaptive limit is only useful if clients cannot move it where they want. The adaptive mode
+measures the server's own time, not the client's: time spent waiting for a slow upload or for a
+client that reads the response slowly does not count as slowness. A flood of requests that do no
+work does not lower the reference latency by more than the tolerance, and a few very slow
+requests cannot take the limit down by more than half of what it has grown to until a probe
+confirms that the server really is slower. See [How the limit adapts](#how-the-limit-adapts) and
+[Known limits](#known-limits) for what remains.
 
 ## Usage
 
@@ -167,23 +177,40 @@ the limit stays where it is. This is the gradient rule of Netflix's `concurrency
   8 × `GOMAXPROCS` within those bounds. For example, 1 vCPU and 512 MiB gives 1 / 8 / 128
   (lowest / start / highest), and 2 vCPU and 2 GiB gives 2 / 16 / 512.
 - **Samples.** Every finished request is a sample, measured from the moment it got its slot, so
-  the time it waited in the queue is left out. Requests that take longer than 30 s (streams,
-  downloads) are ignored. Samples are grouped in windows of 4 × the current limit; the limit can
-  change when a window closes.
-- **Baseline.** The time requests take without contention: the average of samples that finished
-  with at most `GOMAXPROCS` requests running, blended with the previous baseline, and lowered
-  whenever a window was faster on average. Until a baseline is known, the limit stays where it
-  started.
+  the time it waited in the queue is left out. The time the handler spent inside `Read` on the
+  request body is left out too: a client that uploads slowly does not look like a slow server.
+  To measure it, `loadshed` replaces `r.Body` of an admitted request that has a body with a
+  wrapper that forwards `Read` and `Close` unchanged. Requests that take longer than 30 s
+  (streams, downloads) are ignored. Once a baseline is known, a sample counts for at most
+  32 × the baseline, so one slow request cannot own a window. Samples are grouped in windows of
+  4 × the current limit; the limit can change when a window closes.
+- **Baseline.** The time requests take without contention. `loadshed` learns it from the average
+  of samples that finished with at most `GOMAXPROCS` requests running (at least 8 in a window) and
+  from probes, blending each new value with the previous one. A window that is faster on average
+  lowers the baseline, but never below two thirds of the learned value, and it does not make the
+  baseline younger. Two thirds is one over the tolerance: requests that do no work can take the
+  tolerance away and nothing more. Until a baseline is known, the limit stays where it started.
 - **Update.** The limit moves only at the end of a window in which a request was queued or
   refused. Without that, the limit held nothing back, so there is nothing to learn. With
   `gradient = min(1.5 × baseline / average, 1)` and `useful = limit × gradient`, the new limit is
   `0.8 × limit + 0.2 × (useful + √useful)`, within the bounds. One window takes at most 20 % off
   the limit, so one slow burst does not empty the server. For example, with a limit of 32 and a
   baseline of 10 ms, a window that averages 10 ms gives 33, and one that averages 60 ms gives 27.
-- **Probe.** When requests were queued or refused and the baseline is unknown or older than 30 s,
-  `loadshed` lets only `GOMAXPROCS` requests run until 8 of them have finished (or 1 s has passed),
-  and takes their average as the new baseline. Probes start at least 30 s apart, and the window in
-  which a probe runs does not move the limit. No probe starts while nothing is queued or refused.
+- **No growth from much faster traffic.** A window that averages less than half of the baseline
+  does not raise the limit: it is not the traffic the baseline was learned from. Growth resumes
+  once quiet samples or probes have learned the new traffic.
+- **Floor.** The limit does not fall below half of the highest value it has grown to, until a
+  probe has finished with at least one request. A limit held by that floor asks for a probe. When
+  the probe shows that the slowness does not come from concurrency (a slow route, slow clients),
+  the baseline is relearned and the limit stops falling; when it does, the floor moves to half of
+  the current limit and the limit goes on down. The first limit is not earned, so the first
+  descent from the start value is not held.
+- **Probe.** When requests were queued or refused and the baseline is unknown, older than 30 s,
+  or the limit was held by the floor, `loadshed` lets only `GOMAXPROCS` requests run until 8 of
+  them have finished (or 1 s has passed), and learns their average as the baseline. Probes start
+  at least 30 s apart, and the window in which a probe runs does not move the limit. No probe
+  starts while nothing is queued or refused. A probe in which no request finished changes
+  nothing, so the floor stays where it is.
 
 All of this runs inside the request that finishes; there is no background goroutine and no timer.
 
@@ -197,6 +224,9 @@ All of this runs inside the request that finishes; there is no background gorout
 | Bounds | `GOMAXPROCS` to memory / 4 MiB (64-4,096) | one slot per core at least; about 4 MiB of memory per request in flight at most |
 | First limit | 8 × `GOMAXPROCS` | low enough that the limit settles within seconds on a small machine; an I/O-bound app grows it while its first bursts are held back |
 | Window | 4 × the current limit samples | enough samples to average out a few slow requests at any limit |
+| Sample cap | 32 × the baseline | keeps Go's overload signal on few cores (a few requests 10-70 × slower) while one request cannot own a window |
+| Lowest baseline | two thirds of the learned baseline (1 / tolerance) | requests that do no work can remove the tolerance and nothing more |
+| Floor | half of the highest limit reached, until a probe finishes | a client that causes slowness cannot spiral the limit down to `GOMAXPROCS` |
 
 ## Rules
 - At any instant, at most `limit` requests are between admission and the end of their exchange,
@@ -213,21 +243,38 @@ All of this runs inside the request that finishes; there is no background gorout
 - Under a burst of 50 × the limit, every response is `200` or `503`, and every slot is free
   afterwards.
 - The next layer receives the same `*http.Request` and the same context; the body is never read.
+  In adaptive mode, `r.Body` of an admitted request that has a body (neither `nil` nor
+  `http.NoBody`) is a wrapper whose `Read` and `Close` return exactly what the original body
+  returns, including `*http.MaxBytesError`. A refused request, and every request in fixed mode,
+  keeps its `r.Body`.
 - Idle, there is no goroutine in either mode, and none is left after requests waited.
 - Adaptive: the limit starts at 8 × `GOMAXPROCS`, never goes below `GOMAXPROCS` nor above the
   highest bound, and does not move without a baseline. It moves only at the close of a window of
   4 × limit samples in which a request was queued or refused: it shrinks by at most 20 % per slow
   window, grows on fast ones, and stays whatever the latency when nothing was held back. Samples
-  over 30 s leave no trace, and the time spent in the queue is not part of a sample.
-- Adaptive: a probe starts only when requests were queued or refused, the baseline is unknown or
-  older than 30 s, and no probe started in the last 30 s. It admits `GOMAXPROCS` requests, ends
-  after 8 of them finished or after 1 s, and the window it ran in leaves the limit as it was. A
-  probe in which no request finished leaves the baseline as it was.
+  over 30 s leave no trace, and neither the time spent in the queue nor the time spent inside
+  `Read` on the request body is part of a sample.
+- Adaptive: with a baseline known, a sample counts for at most 32 × the baseline. A faster window
+  lowers the baseline to at most two thirds of the learned value and leaves its age. A window
+  under half of the baseline does not grow the limit. The limit never falls below half of the
+  highest value it grew to until a probe finishes with at least one request; the first limit does
+  not count as grown.
+- Adaptive: a probe starts only when requests were queued or refused, the baseline is unknown,
+  older than 30 s or the limit was held by the floor, and no probe started in the last 30 s. It
+  admits `GOMAXPROCS` requests, ends after 8 of them finished or after 1 s, and the window it ran
+  in leaves the limit as it was. A probe in which no request finished leaves the baseline and the
+  floor as they were.
 - Adaptive, measured on 1 and 2 CPUs under 5 × the capacity: the limit stays within 35 % of its
   median for a CPU-bound handler and 20 % for an I/O-bound one, throughput is at least 95 % of the
   capacity, and the 99th percentile latency is at most 12 × (CPU-bound) and 3 × (I/O-bound) the
   latency without load. At 70 % of the capacity no request is refused.
-- An admitted request allocates nothing.
+- Adaptive, measured on 2 CPUs with an I/O-bound handler and legitimate traffic at 1.2 × the
+  capacity: 64 clients sending requests that do no work in bursts, or 40 clients each spending 1 s
+  in their request body, leave at least 90 % of the capacity served and the limit at least half
+  of its value before the attack; 10 s after the attack the limit is back to at least 60 %. 40
+  clients on a route that waits 1 s leave the limit at least 45 % of its value before.
+- An admitted request allocates nothing, except the body wrapper (48 B) for a request with a body
+  in adaptive mode.
 
 ## Known limits
 - One limit covers every route it is bound to. A mix of very fast and very slow routes blurs the
@@ -246,6 +293,25 @@ All of this runs inside the request that finishes; there is no background gorout
   that wait on a database, a socket or a lock reach the scheduler and are not affected.
 - `loadshed` protects one process. It does not know about other instances behind your load
   balancer.
+- `max` bounds the number of requests in flight, not their memory. A burst of large requests at a
+  limit already reached is not stopped by latency; bound the body size (the app's body limit) and
+  the memory (`GOMEMLIMIT`) for that.
+- The time a client takes to read the response after the handler returned is not sampled, so it
+  cannot move the limit. Such a client still holds its slot until the server's write timeout,
+  like any slow client: set `WriteTimeout` on your server.
+- Requests that really take long in the handler and that a client can send at will (a slow
+  search, a report) can cost half of the earned limit on top of the slots they hold, once they
+  hold about a third of them. The floor moves down only when a probe finishes, and a probe admits
+  nothing while more than `GOMAXPROCS` such requests are in flight. Protect such routes with
+  `guards/throttler`, or bind a fixed `LoadShed` to their module.
+- After such an attack the baseline has learned the attack's traffic, so the limit can grow above
+  its usual value until quiet samples or the next probes relearn it.
+- A client that fills a whole probe with requests that do no work (most of what arrives during
+  those few tens of milliseconds) halves the learned baseline once per 30 s. The floor bounds what
+  follows to one halving of the limit, and the next learning without that client repairs it.
+- A client that keeps every slot full for minutes with cheap requests that wait (not compute)
+  teaches the baseline its own traffic, one halving per probe, and can then grow the limit up to
+  `max`. A throttler on such routes prevents it.
 
 ## Loadshed or throttler
 
@@ -256,11 +322,14 @@ asks too much in a period of time, even when the server is idle, and answers `42
 (logins, search, uploads).
 
 ## Memory and CPU
-- Idle: about 200 B per instance (counters, the window, two mutexes, an empty queue). No goroutine,
+- Idle: about 230 B per instance (counters, the window, two mutexes, an empty queue). No goroutine,
   no timer.
 - Each waiting request: one timer and one channel (about 200 B), at most `MaxQueue` of them.
 - Admitted request: a few atomic operations and no allocation. The request that closes a window
   (every 4 × limit requests) also recomputes the adaptive limit.
+- Admitted request with a body, adaptive mode: one 48 B allocation (the body wrapper) and two
+  clock reads per `Read` call, about 110 ns per call. A body is read in chunks of 4 KiB or more,
+  so this is about 30 µs per MiB.
 - Refused request: the cost of the HTTP layer's error response.
 
 ## Benchmarks
@@ -270,13 +339,15 @@ Machine-dependent; captured on an Intel i7-9750H, Go 1.27.4, when this README wa
 
 | Benchmark | GOMAXPROCS 1 | GOMAXPROCS 2 | B/op | allocs/op |
 |---|---|---|---|---|
-| `LoadShed_Admitted_Fixed` | 26.8 ns | 26.8 ns | 0 | 0 |
-| `LoadShed_Admitted_Adaptive` | 40.7 ns | 40.3 ns | 0 | 0 |
-| `LoadShed_Admitted_Parallel` | 47.2 ns | 113 ns | 0 | 0 |
-| `LoadShed_Shed` | 445 ns | 434 ns | 16 | 1 |
-| `LoadShed_App_Admitted` | 1.67 µs | 1.28 µs | 680 | 9 |
+| `LoadShed_Admitted_Fixed` | 25.8 ns | 25.9 ns | 0 | 0 |
+| `LoadShed_Admitted_Adaptive` | 44.5 ns | 42.7 ns | 0 | 0 |
+| `LoadShed_Admitted_AdaptiveBody` | 309 ns | 281 ns | 48 | 1 |
+| `LoadShed_Admitted_Parallel` | 43.5 ns | 109 ns | 0 | 0 |
+| `LoadShed_Shed` | 373 ns | 361 ns | 16 | 1 |
+| `LoadShed_App_Admitted` | 1.33 µs | 1.02 µs | 680 | 9 |
 
 `Admitted_*` admit and release one request on the limiter alone, with a fixed or the adaptive limit;
-`Parallel` does it from every core at once, so the cores share the counters. `Shed` refuses a
+`AdaptiveBody` does it for a request whose body is read in two calls (the body wrapper is its one
+allocation); `Parallel` does it from every core at once, so the cores share the counters. `Shed` refuses a
 request (the `Retry-After` header is its one allocation). `App_Admitted` serves a whole request
 through an app; the allocations are the app's own.

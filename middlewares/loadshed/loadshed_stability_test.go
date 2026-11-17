@@ -2,6 +2,7 @@ package loadshed
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -354,3 +355,253 @@ func recoversRun(t *testing.T, procs int) {
 
 func TestAdaptive_RecoversWhenHandlerSlows_1CPU(t *testing.T) { recoversRun(t, 1) }
 func TestAdaptive_RecoversWhenHandlerSlows_2CPU(t *testing.T) { recoversRun(t, 2) }
+
+const (
+	steerLength   = 40 * time.Second
+	steerAttackAt = 6 * time.Second
+	steerAttackTo = 30 * time.Second
+	steerBurst    = 50 * time.Millisecond
+	steerHold     = time.Second
+)
+
+type timedLimit struct {
+	at    time.Duration
+	limit int64
+}
+
+type steering struct {
+	capacity float64
+	limits   []timedLimit
+	served   []int64
+}
+
+func (s steering) limitsBetween(from, to time.Duration) []int64 {
+	var out []int64
+	for _, l := range s.limits {
+		if l.at >= from && l.at < to {
+			out = append(out, l.limit)
+		}
+	}
+	return out
+}
+
+func (s steering) servedShare() float64 {
+	var total int64
+	for _, n := range s.served[12:30] {
+		total += n
+	}
+	return float64(total) / (s.capacity * 18)
+}
+
+type slowBody struct {
+	delay time.Duration
+	read  bool
+}
+
+func (b *slowBody) Read([]byte) (int, error) {
+	if !b.read {
+		b.read = true
+		time.Sleep(b.delay)
+	}
+	return 0, io.EOF
+}
+
+func (*slowBody) Close() error { return nil }
+
+func throughMiddleware(mw common.MiddlewareFn, r *http.Request, handler func(*http.Request)) bool {
+	start := time.Now()
+	ex := newExchange(&discardWriter{header: http.Header{}})
+	admitted := false
+	func() {
+		defer func() { _ = recover() }()
+		mw.Use(r, ex, func() { admitted = true })
+	}()
+	if !admitted {
+		return false
+	}
+	handler(r)
+	ex.finish(time.Since(start))
+	return true
+}
+
+func spawnClients(wg *sync.WaitGroup, start time.Time, clients int, step func(r *http.Request)) {
+	for i := 0; i < clients; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r := request(http.MethodPost, "/attack")
+			time.Sleep(time.Until(start.Add(steerAttackAt)))
+			for time.Since(start) < steerAttackTo {
+				step(r)
+			}
+		}()
+	}
+}
+
+type launcher func(mw common.MiddlewareFn, w workload, start time.Time, wg *sync.WaitGroup)
+
+func freeBursts(mw common.MiddlewareFn, _ workload, start time.Time, wg *sync.WaitGroup) {
+	spawnClients(wg, start, 64, func(r *http.Request) {
+		phase := time.Since(start) % time.Second
+		if phase >= steerBurst {
+			time.Sleep(time.Second - phase)
+			return
+		}
+		if !throughMiddleware(mw, r, func(*http.Request) {}) {
+			runtime.Gosched()
+		}
+	})
+}
+
+func slowUploads(mw common.MiddlewareFn, _ workload, start time.Time, wg *sync.WaitGroup) {
+	spawnClients(wg, start, 40, func(r *http.Request) {
+		r.Body = &slowBody{delay: steerHold}
+		if !throughMiddleware(mw, r, func(r *http.Request) { _, _ = io.Copy(io.Discard, r.Body) }) {
+			time.Sleep(time.Millisecond)
+		}
+	})
+}
+
+func slowRouteOf(hold func(workload) time.Duration) launcher {
+	return func(mw common.MiddlewareFn, w workload, start time.Time, wg *sync.WaitGroup) {
+		spawnClients(wg, start, 40, func(r *http.Request) {
+			if !throughMiddleware(mw, r, func(*http.Request) { time.Sleep(hold(w)) }) {
+				time.Sleep(time.Millisecond)
+			}
+		})
+	}
+}
+
+var (
+	slowRoute      = slowRouteOf(func(workload) time.Duration { return steerHold })
+	slowRouteTuned = slowRouteOf(func(w workload) time.Duration { return 16 * w.noLoad })
+)
+
+func runSteering(t testing.TB, attack launcher) steering {
+	t.Helper()
+	var factor atomic.Int64
+	factor.Store(1)
+	w := newWorkload("io", runtime.GOMAXPROCS(0), &factor)
+	mw := LoadShed{}.NewMiddleware()
+	snap := snapshotter(t, mw)
+	served := make([]atomic.Int64, int(steerLength/time.Second))
+	start := time.Now()
+
+	var mu sync.Mutex
+	var limits []timedLimit
+	stopSampling := make(chan struct{})
+	var sampler sync.WaitGroup
+	sampler.Add(1)
+	go func() {
+		defer sampler.Done()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopSampling:
+				return
+			case <-ticker.C:
+				limit := intOf(snap.Snapshot(), "limit")
+				mu.Lock()
+				limits = append(limits, timedLimit{at: time.Since(start), limit: limit})
+				mu.Unlock()
+			}
+		}
+	}()
+
+	var attackers sync.WaitGroup
+	attack(mw, w, start, &attackers)
+
+	var legitimate sync.WaitGroup
+	rate := 1.2 * w.capacity
+	due := 0.0
+	for {
+		elapsed := time.Since(start)
+		if elapsed >= steerLength {
+			break
+		}
+		for due <= elapsed.Seconds() {
+			legitimate.Add(1)
+			go func() {
+				defer legitimate.Done()
+				if throughMiddleware(mw, directRequest, func(*http.Request) { w.work() }) {
+					if second := int(time.Since(start) / time.Second); second < len(served) {
+						served[second].Add(1)
+					}
+				}
+			}()
+			due += 1 / rate
+		}
+		time.Sleep(time.Millisecond)
+	}
+	attackers.Wait()
+	legitimate.Wait()
+	close(stopSampling)
+	sampler.Wait()
+
+	result := steering{capacity: w.capacity, limits: limits, served: make([]int64, len(served))}
+	for i := range served {
+		result.served[i] = served[i].Load()
+	}
+	return result
+}
+
+func expectSteering(t *testing.T, s steering, label string, floorShare float64, wantServed, wantRecovery bool) {
+	t.Helper()
+	before := outcome{limits: s.limitsBetween(3*time.Second, steerAttackAt)}.median()
+	if before == 0 {
+		t.Fatal(test.DiffMessage(before, "> 0", "fixture: the limit was sampled between seconds 3 and 6"))
+	}
+	for _, l := range s.limitsBetween(steerAttackAt, steerAttackTo) {
+		if float64(l) < floorShare*before {
+			t.Error(test.DiffMessage(l, fmt.Sprintf(">= %.1f", floorShare*before), "L13: "+label+": the limit during the attack against "+strconv.FormatFloat(before, 'f', 0, 64)+" before"))
+			break
+		}
+	}
+	if wantServed {
+		if got := s.servedShare(); got < 0.9 {
+			t.Error(test.DiffMessage(got, ">= 0.9", "L13: "+label+": legitimate requests served between seconds 12 and 30 over the capacity"))
+		}
+	}
+	if wantRecovery {
+		after := outcome{limits: s.limitsBetween(steerLength-time.Second, steerLength)}.median()
+		if after < 0.6*before {
+			t.Error(test.DiffMessage(after, fmt.Sprintf(">= %.1f", 0.6*before), "L13: "+label+": the limit 10 s after the attack"))
+		}
+	}
+}
+
+func steeringRun(t *testing.T, attack launcher, label string, floorShare float64, wantServed, wantRecovery bool) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("L13 runs about 45 s")
+	}
+	withMachine(t, 2, math.MaxInt64)
+	expectSteering(t, runSteering(t, attack), label, floorShare, wantServed, wantRecovery)
+}
+
+func TestAdaptive_Steering_FreeBursts(t *testing.T) {
+	steeringRun(t, freeBursts, "free bursts", 0.5, true, true)
+}
+
+func TestAdaptive_Steering_SlowUploads(t *testing.T) {
+	steeringRun(t, slowUploads, "slow uploads", 0.5, true, true)
+}
+
+func TestAdaptive_Steering_SlowRoute(t *testing.T) {
+	steeringRun(t, slowRoute, "slow route", 0.45, false, false)
+}
+
+func BenchmarkLoadShed_L13_SlowRouteTuned(b *testing.B) {
+	for b.Loop() {
+		s := runSteering(b, slowRouteTuned)
+		limits := s.limitsBetween(steerAttackAt, steerAttackTo)
+		slices.Sort(limits)
+		if len(limits) > 0 {
+			b.ReportMetric(float64(limits[0]), "limit-min")
+			b.ReportMetric(float64(limits[len(limits)/2]), "limit-median")
+			b.ReportMetric(float64(limits[len(limits)-1]), "limit-max")
+		}
+		b.ReportMetric(s.servedShare(), "served/capacity")
+	}
+}
