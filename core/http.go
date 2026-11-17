@@ -112,14 +112,21 @@ type httpExchange struct {
 	traced          bool
 }
 
+// removeForm deletes the temp files of a parsed multipart form. net/http removes only those of
+// the request it passed in, and the exchange parses a copy.
+func (ex *httpExchange) removeForm() {
+	if r := ex.Request; r != nil && r.MultipartForm != nil {
+		_ = r.MultipartForm.RemoveAll()
+		r.MultipartForm = nil
+	}
+}
+
 func newHTTPExchange() *httpExchange {
 	return &httpExchange{HTTPContext: *ctx.NewHTTPContext()}
 }
 
 func (ex *httpExchange) reset() {
-	if form := ex.Request.MultipartForm; form != nil {
-		_ = form.RemoveAll()
-	}
+	ex.removeForm()
 	ex.HTTPContext.Reset()
 	ex.writer.reset(nil)
 	ex.scope = nil
@@ -565,6 +572,7 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 	}
 	if rec == stdHTTP.ErrAbortHandler {
 		ex.writer.runHooks(&ex.Timestamp)
+		ex.removeForm()
 		panic(rec)
 	}
 	if ex.filters != nil {
@@ -596,6 +604,7 @@ func (http *HTTP) catch(ex *httpExchange, rec any) {
 		}
 		if next == stdHTTP.ErrAbortHandler {
 			ex.writer.runHooks(&ex.Timestamp)
+			ex.removeForm()
 			panic(next)
 		}
 		rec = next

@@ -30,6 +30,11 @@ func (c multipartController) CREATE_boom(h *ctx.HTTPContext) string {
 	panic("boom after parsing the form")
 }
 
+func (c multipartController) CREATE_abort(h *ctx.HTTPContext) string {
+	h.Form()
+	panic(http.ErrAbortHandler)
+}
+
 type quietLogger struct{}
 
 func (quietLogger) Debug(string, ...any) {}
@@ -70,7 +75,7 @@ func multipartTempFiles(t *testing.T, dir string) int {
 }
 
 func TestMultipart_TempFilesRemovedAfterRequest(t *testing.T) {
-	for _, route := range []string{"/ok", "/boom"} {
+	for _, route := range []string{"/ok", "/boom", "/abort"} {
 		dir := t.TempDir()
 		t.Setenv("TMPDIR", dir)
 		app := New()
@@ -82,7 +87,7 @@ func TestMultipart_TempFilesRemovedAfterRequest(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, route, body)
 		r.Header.Set("Content-Type", contentType)
 		w := httptest.NewRecorder()
-		app.ServeHTTP(w, r)
+		serveRecovering(app, w, r)
 
 		if route == "/ok" && w.Code != http.StatusCreated {
 			t.Error(test.DiffMessage(w.Code, http.StatusCreated, "M1: the upload itself succeeds"))
@@ -91,4 +96,15 @@ func TestMultipart_TempFilesRemovedAfterRequest(t *testing.T) {
 			t.Error(test.DiffMessage(got, 0, "M1: multipart temp files are removed after the request ("+route+")"))
 		}
 	}
+}
+
+// serveRecovering serves r and swallows http.ErrAbortHandler, which core panics again for
+// net/http to abort the connection.
+func serveRecovering(app *App, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil && rec != http.ErrAbortHandler {
+			panic(rec)
+		}
+	}()
+	app.ServeHTTP(w, r)
 }
