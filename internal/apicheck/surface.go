@@ -145,13 +145,13 @@ func (w *lineWriter) add(line string) {
 }
 
 func (w *lineWriter) typeString(t types.Type) string {
-	printer := &typePrinter{mention: w.mention}
+	printer := &typePrinter{mention: w.mention, mentionAlias: w.mentionAlias}
 	printer.write(t)
 	return printer.String()
 }
 
 func (w *lineWriter) signature(sig *types.Signature) string {
-	printer := &typePrinter{mention: w.mention}
+	printer := &typePrinter{mention: w.mention, mentionAlias: w.mentionAlias}
 	printer.signature(sig)
 	return printer.String()
 }
@@ -167,6 +167,18 @@ func (w *lineWriter) mention(named *types.Named) {
 	}
 	w.reached[obj] = true
 	w.queue = append(w.queue, named)
+}
+
+func (w *lineWriter) mentionAlias(alias *types.Alias) {
+	obj := alias.Obj()
+	if w.reached[obj] || !w.inModule(obj.Pkg().Path()) {
+		return
+	}
+	if obj.Exported() && w.surface.public[obj.Pkg().Path()] {
+		return
+	}
+	w.reached[obj] = true
+	w.add("reach " + obj.Pkg().Name() + "." + obj.Name() + ", type = " + w.typeString(alias.Rhs()))
 }
 
 func (w *lineWriter) inModule(path string) bool {
@@ -224,7 +236,7 @@ func (w *lineWriter) typeParams(list *types.TypeParamList) string {
 	if list.Len() == 0 {
 		return ""
 	}
-	printer := &typePrinter{mention: w.mention}
+	printer := &typePrinter{mention: w.mention, mentionAlias: w.mentionAlias}
 	printer.typeParams(list)
 	return printer.String()
 }
@@ -264,11 +276,17 @@ func (w *lineWriter) reach(named *types.Named) {
 		w.fields(prefix+"field ", underlying)
 	case *types.Interface:
 		receiver := w.typeString(named)
+		unexported := 0
 		for i := 0; i < underlying.NumMethods(); i++ {
 			method := underlying.Method(i)
 			if method.Exported() {
 				w.add(prefix + "method (" + receiver + ") " + method.Name() + w.signature(method.Signature()))
+			} else {
+				unexported++
 			}
+		}
+		if unexported > 0 {
+			w.add(prefix + "unexported methods")
 		}
 	default:
 		w.add(prefix + "type " + w.typeString(underlying))

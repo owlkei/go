@@ -8,7 +8,8 @@ import (
 
 type typePrinter struct {
 	strings.Builder
-	mention func(*types.Named)
+	mention      func(*types.Named)
+	mentionAlias func(*types.Alias)
 }
 
 func (p *typePrinter) write(t types.Type) {
@@ -58,6 +59,9 @@ func (p *typePrinter) write(t types.Type) {
 		p.typeArgs(t.TypeArgs())
 		if t.Obj().Pkg() != nil {
 			p.mentionIn(t.Rhs())
+			if p.mentionAlias != nil {
+				p.mentionAlias(t)
+			}
 		}
 	case *types.Named:
 		p.qualified(t.Obj())
@@ -69,7 +73,7 @@ func (p *typePrinter) write(t types.Type) {
 }
 
 func (p *typePrinter) mentionIn(t types.Type) {
-	discard := &typePrinter{mention: p.mention}
+	discard := &typePrinter{mention: p.mention, mentionAlias: p.mentionAlias}
 	discard.write(t)
 }
 

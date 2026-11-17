@@ -293,8 +293,8 @@ need it only when you change the upstream host, for example with
 - **Scheme and host** are read only when the client came from a header entry. When the peer isn't
   trusted, the header has no valid entry, or hops mode finds too few entries, the connection's
   scheme and `r.Host` are kept.
-- **Scheme:** with `XForwarded`, the last value of `X-Forwarded-Proto` (the last header line, the
-  text after its last comma, spaces trimmed). Earlier values are never used. With `Forwarded`, the
+- **Scheme:** with `HeaderXForwarded`, the last value of `X-Forwarded-Proto` (the last header line, the
+  text after its last comma, spaces trimmed). Earlier values are never used. With `HeaderForwarded`, the
   `proto` of the client's element or of the nearest element to its right. Only `http` and `https`
   (any case) are accepted; anything else (an empty last value, `ftp`, a value over 512 bytes) keeps
   the connection's scheme.

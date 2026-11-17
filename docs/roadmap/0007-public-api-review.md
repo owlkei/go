@@ -1,6 +1,6 @@
 # 0007: Public API review
 
-Status: Running
+Status: Done
 
 ## Goal
 Every exported name outside `internal/`, `sample/` and `bench/` is one a user needs, named by one
@@ -29,7 +29,7 @@ leaves room for the next roadmaps (a render route kind for SSR, authentication a
 | 5 | Hooks: framework-only members of user-visible types become package-level functions of the internal packages; duplicate ways merged; `any` for the three layer types | tdd | docs/design/0017-public-api.md | 4c | only the design's members remain reachable; hot-path benchmarks within the design's bound | done |
 | 6 | Naming pass over the remaining packages: settings structs, constructors, error and event names by the design's rules | light | docs/design/0017-public-api.md | 2 | every public name follows the rules; the API file matches the design | done |
 | 7 | Docs: README of every package, the main README, `.ginject/` and `CLAUDE.md` rewritten around the new surface | light | - | 3-6 | every exported name is documented; no doc names a removed one | done |
-| 8 | Measure: `make bench` and the `bench/` load test against `docs/review/http-0006.md` | light | - | 4-6 | no scenario slower than the noise band; `docs/review/http-0007.md` | todo |
+| 8 | Measure: `make bench` and the `bench/` load test against `docs/review/http-0006.md` | light | - | 4-6 | no scenario slower than the noise band; `docs/review/http-0007.md` | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -60,3 +60,4 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
 - 2026-11-18: step 4c: `ginject.ModuleBuilder` is a variable holding `core.ModuleBuilder` until step 5 exports the builder type (the design's `func ModuleBuilder() *core.ModuleBuilder`). B4 checks every file of `sample/` (tests too: users copy them) and `bench/` except `bench/*_test.go` (a measuring module whose tests use `internal/test`). `api/ginject.txt`: 782 lines before step 4, 437 after.
 - 2026-11-18: step 5: every hook stays inlinable except `HTTPInit`, `WSInit` and `Aggregate` (not inlinable as methods either); no `internal/core` caller lost inlining. Interleaved benchmarks against the previous commit: Static 0.98, Chain 0.96, Invoke_Param 1.01, allocations equal; no fallback used. The versioning renames (`Options`, `Type`) are done in step 6 with the naming pass.
 - 2026-11-18: step 7: part of the doc rewrite landed in the step 6 commit (`702ab0d`), which was staged while the docs were being written; the rest is its own commit. All 37 `package main` examples of the public READMEs compile against the new surface; every name of `api/ginject.txt` is documented.
+- 2026-11-18: review (one pass): fixed both high findings (the API check now lists the target of an internal alias users reach, `reach ctx.Next, type = func()`, and whether a reached interface has unexported methods; `internal/wsevent/README.md` added) and the three medium ones (all six layer-shape messages, the `cache:` error texts and the devtool layer names are now pinned by tests) and the low doc leftovers (`proxy` README, `.ginject` routing and metadata).

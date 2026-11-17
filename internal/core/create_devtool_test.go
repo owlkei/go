@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/versioning"
 )
@@ -51,4 +52,40 @@ func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 			t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"2", "X-Version", int32(versioning.TypeHeader)}, "D1: with versioning the snapshot is what it is today"))
 		}
 	})
+}
+
+type dvGuard struct{}
+
+func (dvGuard) NewGuard() dvGuard                   { return dvGuard{} }
+func (dvGuard) CanActivate(c *ctx.HTTPContext) bool { return true }
+
+type dvGuardedController struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c dvGuardedController) NewController() Controller {
+	c.BindGuard(dvGuard{}, c.READ_dv)
+	return c
+}
+
+func (c dvGuardedController) READ_dv() string { return "dv" }
+
+func TestDevtool_SnapshotNamesUnchangedByMove(t *testing.T) {
+	app := New()
+	app.EnableDevtool()
+	app.Create(NewModuleBuilder().Controllers(dvGuardedController{}).Build())
+
+	if app.devtool == nil || len(app.devtool.Controller.Http) != 1 {
+		t.Fatal(test.DiffMessage(app.devtool, "one HTTP entry", "B22: the snapshot is built"))
+	}
+	e := app.devtool.Controller.Http[0]
+	got := []any{e.HttpMethod, e.Route, len(e.Guards)}
+	want := []any{"GET", "/dv/", 1}
+	if got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatal(test.DiffMessage(got, want, "B22: method, route and guard count"))
+	}
+	if e.Guards[0].Name != "core.dvGuard" {
+		t.Error(test.DiffMessage(e.Guards[0].Name, "core.dvGuard", "B22, D4: layer names keep the package name, not the path"))
+	}
 }

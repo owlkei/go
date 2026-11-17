@@ -336,3 +336,30 @@ func TestAPICheck_ReachedNamedTypeUnderlyingChangeFails(t *testing.T) {
 		}
 	}
 }
+
+func TestAPICheck_ReachedAliasTargetChangeFails(t *testing.T) {
+	dir := writeFixture(t)
+	appendFile(t, dir, "internal/ctx/ctx.go", "\ntype Hook = func()\n\nfunc (c *Ctx) Hook() Hook { return nil }\n")
+	generate(t, dir)
+	writeFile(t, dir, "internal/ctx/ctx.go", fixtureFiles["internal/ctx/ctx.go"]+"\ntype Hook = func(int)\n\nfunc (c *Ctx) Hook() Hook { return nil }\n")
+	code, lines := check(dir)
+	if code != 1 {
+		t.Error(test.DiffMessage(code, 1, "an internal alias's target change: exit code"))
+	}
+	for _, want := range []string{"- reach ctx.Hook, type = func()", "+ reach ctx.Hook, type = func(int)"} {
+		if !contains(lines, want) {
+			t.Error(test.DiffMessage(lines, want, "the reached alias's target line"))
+		}
+	}
+}
+
+func TestAPICheck_ReachedInterfaceUnexportedMethodFails(t *testing.T) {
+	dir := writeFixture(t)
+	appendFile(t, dir, "internal/ctx/ctx.go", "\ntype Role interface{ Name() string }\n\nfunc (c *Ctx) Role() Role { return nil }\n")
+	generate(t, dir)
+	writeFile(t, dir, "internal/ctx/ctx.go", fixtureFiles["internal/ctx/ctx.go"]+"\ntype Role interface {\n\tName() string\n\tseal()\n}\n\nfunc (c *Ctx) Role() Role { return nil }\n")
+	code, lines := check(dir)
+	if code != 1 || !contains(lines, "+ reach ctx.Role, unexported methods") {
+		t.Error(test.DiffMessage(lines, "+ reach ctx.Role, unexported methods", "a sealed interface can't be implemented by users"))
+	}
+}

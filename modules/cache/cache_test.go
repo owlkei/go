@@ -31,3 +31,20 @@ func TestNewMemoryCache_PassesOptions(t *testing.T) {
 		t.Error(test.DiffMessage(err, nil, "the returned Cache works"))
 	}
 }
+
+func TestCacheErrors_Prefix(t *testing.T) {
+	cases := map[error]string{
+		ErrEmptyKey:      "cache: key must not be empty",
+		ErrNegativeTTL:   "cache: ttl must not be negative",
+		ErrEntryTooLarge: "cache: entry is larger than the cache allows",
+		ErrNotCounter:    "cache: value is not a counter",
+	}
+	for err, want := range cases {
+		if err.Error() != want {
+			t.Error(test.DiffMessage(err.Error(), want, "B13: errors carry the prefix of the package users import"))
+		}
+	}
+	if err := NewMemoryCache(nil).Set(context.Background(), "", nil, 0); err != ErrEmptyKey {
+		t.Error(test.DiffMessage(err, ErrEmptyKey, "B13: the backend returns the sentinel callers compare"))
+	}
+}

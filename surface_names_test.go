@@ -73,3 +73,102 @@ func TestSurface_WrongLayerShapeNamesTheRootTypes(t *testing.T) {
 		t.Error(test.DiffMessage(msg, "invalid guard: <type>.CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard", "B12: the message spells the type as users write it"))
 	}
 }
+
+type wrongInterceptor struct{}
+
+func (wrongInterceptor) NewInterceptor() wrongInterceptor { return wrongInterceptor{} }
+func (wrongInterceptor) Intercept(string) any             { return nil }
+
+type wrongFilter struct{}
+
+func (wrongFilter) NewExceptionFilter() wrongFilter { return wrongFilter{} }
+func (wrongFilter) Catch(string)                    {}
+
+type wrongHTTPInterceptorController struct {
+	ginject.HTTP
+	ginject.Interceptor
+}
+
+func (c wrongHTTPInterceptorController) NewController() ginject.Controller {
+	c.BindInterceptor(wrongInterceptor{}, c.READ_x)
+	return c
+}
+
+func (wrongHTTPInterceptorController) READ_x() string { return "x" }
+
+type wrongHTTPFilterController struct {
+	ginject.HTTP
+	ginject.ExceptionFilter
+}
+
+func (c wrongHTTPFilterController) NewController() ginject.Controller {
+	c.BindExceptionFilter(wrongFilter{}, c.READ_x)
+	return c
+}
+
+func (wrongHTTPFilterController) READ_x() string { return "x" }
+
+type wrongWSGuardController struct {
+	ginject.WS
+	ginject.Guard
+}
+
+func (c wrongWSGuardController) NewController() ginject.Controller {
+	c.BindGuard(wrongGuard{}, c.SUBSCRIBE_x)
+	return c
+}
+
+func (wrongWSGuardController) SUBSCRIBE_x() string { return "x" }
+
+type wrongWSInterceptorController struct {
+	ginject.WS
+	ginject.Interceptor
+}
+
+func (c wrongWSInterceptorController) NewController() ginject.Controller {
+	c.BindInterceptor(wrongInterceptor{}, c.SUBSCRIBE_x)
+	return c
+}
+
+func (wrongWSInterceptorController) SUBSCRIBE_x() string { return "x" }
+
+type wrongWSFilterController struct {
+	ginject.WS
+	ginject.ExceptionFilter
+}
+
+func (c wrongWSFilterController) NewController() ginject.Controller {
+	c.BindExceptionFilter(wrongFilter{}, c.SUBSCRIBE_x)
+	return c
+}
+
+func (wrongWSFilterController) SUBSCRIBE_x() string { return "x" }
+
+func TestSurface_EveryWrongShapeMessage(t *testing.T) {
+	cases := []struct {
+		controller ginject.Controller
+		ws         bool
+		want       string
+	}{
+		{wrongShapeController{}, false, ".CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard"},
+		{wrongHTTPInterceptorController{}, false, ".Intercept must be func(ginject.HTTPContext, ginject.Aggregation) any to be bound as a HTTP interceptor"},
+		{wrongHTTPFilterController{}, false, ".Catch must be func(ginject.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter"},
+		{wrongWSGuardController{}, true, ".CanActivate must be func(ginject.WSContext) bool to be bound as a WS guard"},
+		{wrongWSInterceptorController{}, true, ".Intercept must be func(ginject.WSContext, ginject.Aggregation) any to be bound as a WS interceptor"},
+		{wrongWSFilterController{}, true, ".Catch must be func(ginject.WSContext, *exception.Exception) to be bound as a WS exception filter"},
+	}
+	for _, c := range cases {
+		msg := func() (msg string) {
+			defer func() { msg = fmt.Sprint(recover()) }()
+			app := ginject.New()
+			if c.ws {
+				app.EnableWS(&ginject.WSOptions{Path: "/ws"})
+			}
+			app.Create(ginject.ModuleBuilder().Controllers(c.controller).Build())
+			return ""
+		}()
+		if !strings.Contains(msg, c.want) {
+			t.Error(test.DiffMessage(msg, "…"+c.want, "B12: the exact shape message"))
+		}
+	}
+}

@@ -283,9 +283,9 @@
         "HTTP": "Embed in controller to enable HTTP routing (there is NO common.REST type — do not generate it)",
         "WS": "Embed in controller to enable WebSocket routing",
         "Middleware": "Separate embeddable type providing BindMiddleware(MiddlewareFn, ...any) *Middleware — not a field on HTTP/WS",
-        "Guard": "Separate embeddable type providing BindGuard(Guarder, ...any) *Guard",
-        "Interceptor": "Separate embeddable type providing BindInterceptor(Interceptable, ...any) *Interceptor",
-        "ExceptionFilter": "Separate embeddable type providing BindExceptionFilter(ExceptionFilterable, ...any) *ExceptionFilter"
+        "Guard": "Separate embeddable type providing BindGuard(any, ...any) *Guard",
+        "Interceptor": "Separate embeddable type providing BindInterceptor(any, ...any) *Interceptor",
+        "ExceptionFilter": "Separate embeddable type providing BindExceptionFilter(any, ...any) *ExceptionFilter"
       }
     },
     "routing": {

@@ -330,6 +330,7 @@ reach ctx.Header, method (ctx.Header) Has(string) bool
 reach ctx.Header, method (ctx.Header) Set(string, string)
 reach ctx.Header, type map[string][]string
 reach ctx.Map, type map[string]any
+reach ctx.Next, type = func()
 reach ctx.Param, method (ctx.Param) Add(string, string)
 reach ctx.Param, method (ctx.Param) Bind(any) (any, []ctx.FieldLevel)
 reach ctx.Param, method (ctx.Param) BindValue(any) any
@@ -346,6 +347,7 @@ reach ctx.Query, method (ctx.Query) Get(string) string
 reach ctx.Query, method (ctx.Query) Has(string) bool
 reach ctx.Query, method (ctx.Query) Set(string, string)
 reach ctx.Query, type map[string][]string
+reach ctx.Redirect, type = func(string)
 reach ctx.WSContext, field Conn *websocket.Conn embedded
 reach ctx.WSContext, method (*ctx.WSContext) Context() context.Context
 reach ctx.WSContext, method (*ctx.WSContext) ID() string
@@ -357,6 +359,7 @@ reach ctx.WSPayload, method (ctx.WSPayload) BindValue(any) any
 reach ctx.WSPayload, type map[string]any
 reach memorycache.MemoryCacheOptions, field MaxBytes int64
 reach memorycache.MemoryCacheOptions, field MaxEntries int
+reach versioning.ExtractorHandler, type = func(*ctx.HTTPContext) string
 reach versioning.Options, field DefaultVersion string
 reach versioning.Options, field Extractor versioning.ExtractorHandler
 reach versioning.Options, field Key string

@@ -151,7 +151,7 @@ type RouterItem struct {
 **Usage**:
 1. `Router.Match()` returns the shared `*RouterItem` (read-only; the pointer is stable across later `Use` / `For` / `Add`) and the parameter values, or nil.
 2. `item.Handlers` run in order (`internal/core/http.go`); a nil entry is the injectable main handler.
-3. `core` copies `item.ParamKeys` and the values into `HTTPContext.ParamKeys` / `ParamValues`.
+3. `core` hands `item.ParamKeys` and the values to `ctx.HTTPSetParams` (the context keeps them unexported; `ctx.HTTPParamValues` reads them).
 
 The root route's pattern is `/||/[GET]/` whether it was registered as `""` or `/`.
 
@@ -174,7 +174,7 @@ func (c UserController) READ_BY_ID(param ginject.Param) string {
 1. Registration: each `{name}` segment becomes `$` in the trie; `ParamNames` lists the names in path order, `ParamKeys` maps a name to its positions (a repeated name has several: `/s/{a}/t/{b}/{a}` → `{"a": [0, 2], "b": [1]}`).
 2. Match: one value per `$` on the matched route's path, in path order; values captured on abandoned branches are dropped, so `len(values) == len(item.ParamNames)` always.
 3. Values are substrings of the request path, unchanged (spaces, `*`, `$` kept). The slice is the `params` argument plus the values; with values it is a fresh allocation (core passes nil).
-4. `ctx.Param()` builds its map from `ParamKeys` + `ParamValues`.
+4. `ctx.Param()` builds its map from the keys and values set by `ctx.HTTPSetParams`.
 
 ### 4.2 Wildcards and globs
 
