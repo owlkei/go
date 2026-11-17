@@ -169,3 +169,12 @@ Found 2026-11-17 while rewriting the main README (not fixed; the WebSocket roadm
 - `EnableWS` writes into the caller's `*WSConfig`: two apps sharing one config overwrite each other.
 - The goroutine that drops dead WebSocket connections never stops, even after `Stop()`.
 - `Publisher.Publish` silently drops every payload after the first.
+
+## `loadshed` and long-lived requests (found in roadmap 0006)
+
+Every request in flight holds one slot of the concurrency limit for its whole life, so a few SSE
+clients, long polls or large downloads can fill the limit of a small machine and leave nothing for
+ordinary requests. Options to design: exclude routes or requests marked long-lived from the limit
+(a per-route opt-out or a separate fixed budget), or let a handler release its slot once it starts
+streaming. Needs its own design; today the README documents it as a known limit.
+

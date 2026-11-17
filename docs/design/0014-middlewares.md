@@ -1601,3 +1601,455 @@ window is needed.
    under its capacity); (b) a ceiling that follows the heap after each garbage collection, as its
    own design. An app whose routes can each hold megabytes should bind a fixed `LoadShed` to them
    today.
+
+## Revision 2026-11-17 (3): `loadshed` probes beside long-held requests, queue in arrival order
+
+Status of this revision: Approved (orchestrator, 2026-11-17, delegated by the maintainer for roadmap 0006; no exported name changes; open questions 1-4 as recommended: keep the overlap filter, fix the queue order, streams documented as a known limit plus a backlog item, L12 proven by interleaved HEAD-against-change runs and the final `make check`). Roadmap `docs/roadmap/0006-log-writer-and-loadshed-fixes.md`,
+steps 2 and 3; its Decisions are taken as given (the adaptive default stays, L12 and L13 keep their
+thresholds, no new exported name). It replaces L1 and L2, amends L11, adds L14 and changes the
+"Enter" / "Leave" lines of "Concurrency". L7-L10, L12, L13, the snapshot fields, fixed mode's
+limit and the public API are unchanged. Source: the roadmap 0005 review (Medium A and Medium B)
+and the measurements below.
+
+Measurements: a prototype of each candidate in a copy of the working tree (`git archive HEAD`),
+go1.27.4 darwin/amd64, the shared 12-thread i7-9750H of the earlier revisions. Every
+timing-sensitive run held `/tmp/ginject-heavy.lock` (another architect measured on the same
+machine); the machine still carried an editor at about 150 % CPU and a load average of 3.5-5.9, so
+L12's two tightest tests also failed at HEAD in this session (see "Results").
+
+### What the review found, reproduced at HEAD
+**A. Long-held requests stop the probe and the learning.** A probe admits while the *total* in
+flight is at most `min` (`inFlight.Add(1) <= abs(-min)` in `Use`, `enqueue` and `wake`). A request
+that stays in flight (an SSE stream, a download, a long poll) holds one of those `min` slots, so on
+1 vCPU one stream leaves the probe nothing to admit: it ends after 1 s with no sample, every
+request in the queue waits its 100 ms and is refused, and the next probe comes 30 s later. Quiet
+samples (L8: finished with at most `min` in flight) cannot happen either, so the baseline is never
+learned and, by L9, the limit never moves. The same holds on any machine once more than `min`
+requests are held.
+
+New scenario (L14 below): k requests admitted before the load and held for the whole run, L12's
+handlers at 5 × capacity for 45 s, measured from second 10. "Gap" is the longest run of 50 ms
+buckets in which no request was served (from second 2); "probe" the longest time `probing` stayed
+true (snapshot every 10 ms); limits are min / median / max outside probes.
+
+| Machine, handler, held | Limit | Baseline (no-load) | Probe | Gap | p99 | Served / capacity |
+|---|---|---|---|---|---|---|
+| 1 CPU, CPU 5 ms, 1 | 8 / 8 / 8 | none (3.5 ms) | 990 ms | 1 s | 13.4 × | 107 % |
+| 1 CPU, CPU 5 ms, 2 | 8 / 8 / 8 | none (5.0 ms) | 990 ms | 1 s | 10.1 × | 90 % |
+| 2 CPUs, CPU 5 ms, 1 | 5 / 6 / 6 | 4.5 ms (4.3 ms) | 40 ms | 0 | 3.3 × | 109 % |
+| 2 CPUs, CPU 5 ms, 3 | 16 / 16 / 16 | none (5.0 ms) | 990 ms | 1 s | 14.4 × | 83 % |
+| 1 CPU, I/O 20 ms, 1 | 8 / 8 / 8 | none (20.3 ms) | 990 ms | 1 s | 1.1 × | **14 %** |
+| 2 CPUs, I/O 20 ms, 3 | 16 / 16 / 16 | none (20.3 ms) | 990 ms | 950 ms | 1.2 × | **26 %** |
+
+The I/O rows are the worst case: the first limit (8 × `GOMAXPROCS`) is far below the 80-odd that
+the workload needs, and without a baseline it never grows. The CPU rows break L12's p99 bar
+(12 ×). Two CPUs with one stream are fine (`min` 2 leaves one probe slot).
+
+**B. The fast path does not yield to waiters.** `Use` admits on `inFlight.Add(1) <= limit`
+without looking at `waiting`. Between a finishing request's `inFlight.Add(-1)` and its `wake()`, a
+newcomer takes the slot, and the waiter it was freed for times out. The retry inside `enqueue`
+(`inFlight.Add(1)` under the mutex, before the newcomer appends itself) does the same for a
+newcomer that reaches the mutex first. L2 ("admits the longest waiter first") and the README
+("goes to the request that has waited longest", "admitted in arrival order") promise more than the
+code does. Reproduced deterministically: limit 1, one waiter, `inFlight.Add(-1)` by hand, a
+newcomer arrives: at HEAD the newcomer is admitted and the waiter is refused at 100 ms.
+
+### Decision
+**A. A probe gets its own `min` slots, and a probe sample must not overlap a request from before
+the probe.**
+
+1. Each probe has an unexported record, allocated when the probe starts (one per probe, at most
+   one per 30 s): its `min` slots in use, its samples' sum and count, and the number of requests
+   *not admitted by this probe* that finished while it ran.
+2. During a probe, a request is admitted when the probe has a free slot (`held < min`) **and** the
+   total in flight stays within the regular `limit` (L1 holds unchanged). Requests from before the
+   probe (streams, downloads, the requests the probe started on) take none of the probe's slots.
+   Requests admitted by an earlier probe take none either: the slots live in the record.
+3. A request admitted by the probe remembers the record's "finished" count at its admission. Its
+   sample counts toward the probe only when the count is the same at its end: no request from
+   outside the probe finished while it ran. When the probe starts, the server is still running the
+   up-to-`limit` requests admitted before it; a probe request that runs beside them measures
+   contention, not the baseline. Once they are gone (streams stay, but they do not finish and
+   mostly do not compute) every later probe request is clean. A probe with no clean sample by 1 s
+   is an empty probe (L11: it changes nothing).
+4. Quiet samples (L8) are not redefined. With the probe fixed, the baseline is learned at the first
+   window under pressure and relearned at most every 30 s while pressure lasts, which is when the
+   limit moves. Without pressure the limit does not move (L10), so a missing quiet sample costs
+   nothing. A server with long-held requests now learns only from probes; the README says so.
+
+Without (3), slots alone fix the 1 CPU rows but probe samples start beside the old requests and
+the baseline comes out 1.2-1.75 × too high (table below), which loosens the limit: on 2 CPUs the
+limit sat at 7 / 9 / 11 instead of 5 / 6 / 6, with a p99 of 6.2 × and 74-88 % served.
+
+**B. The fast path yields to waiters, and the queue hands free slots out in order.**
+
+1. `Use` admits on the fast path only when `waiting` is 0; otherwise it goes to `enqueue`.
+2. `enqueue`, under the waiters' mutex: when the list is not empty, first hand every free slot to
+   the waiters in order (the loop `wake` runs); then refuse when the list holds `MaxQueue`; then
+   count itself in `waiting`; retry for itself only when the list is empty; else append itself.
+   (HEAD's order is full check, count, retry always, append: the retry is what lets a newcomer
+   overtake.)
+
+The cost is one atomic load on the admitted path (`waiting`, in the cache line `inFlight.Add`
+already takes) and nothing else on it: see "Performance". The cheaper alternative, correcting L2
+and the README to "best effort", was not needed.
+
+Rules as they read after this revision:
+
+- **L1** At any instant at most `limit` requests are between admission and the end of their
+  exchange (K2), in both modes, during a probe too. Fixed mode: `limit` is `MaxInFlight`, forever.
+  Adaptive mode: `limit` moves between `min` and `max` (L7-L11). During a probe, in addition, at
+  most `min` of the requests that probe admitted are in flight at once; requests admitted before
+  the probe started, or by an earlier probe, count against `limit` but not against those `min`.
+  Example: limit 6, `min` 1, one stream and five other requests in flight when a probe starts:
+  nothing is admitted until one of the five finishes, then one probe request at a time, while the
+  stream stays.
+- **L2** A request waits in `loadshed`'s queue when, on arrival, every slot is taken **or another
+  request is already waiting**, and fewer than `MaxQueue` requests wait; it waits at most 100 ms.
+  Slots go to waiting requests in arrival order: a request is never admitted while a request that
+  was already waiting when it arrived is still waiting. A request finds the queue full only after
+  every free slot has gone to the requests waiting before it. With `MaxQueue` < 0 nothing waits.
+- **L11** (start condition, spacing, end and learning as revision 2) A probe is a period in which
+  only requests admitted by the probe enter (L1: at most `min` of them in flight, total within
+  `limit`); every other arrival waits or is refused (L2, L3). A *probe sample* is the sample (L8)
+  of a request the probe admitted, when no request that the probe did not admit finished between
+  that request's admission and the end of its exchange. The probe ends at its 8th probe sample, or
+  at the first admission 1 s after it started; the average of its probe samples is a learning (L9);
+  a probe that ends with none changes nothing. A request admitted by a probe that finishes after
+  the probe ended is an ordinary sample. Every sample, probe sample or not, also counts in its
+  window as before (L8).
+- **L14** Long-held requests (acceptance, real `GOMAXPROCS`, skipped with `-short` and under the
+  race detector). Before the load starts, k requests are admitted whose handler blocks until the
+  end of the run. Then L12's handler at 5 × the capacity (measured without `loadshed` and without
+  the held requests) for 45 s, the snapshot read every 10 ms. Cases: CPU-bound (L12's yielding
+  handler) on 1 CPU with k = 1 and k = 2, on 2 CPUs with k = 3; I/O-bound (L12's) on 1 CPU with
+  k = 1. In every case:
+  (a) `probing` is never true for 500 ms in a row;
+  (b) between second 2 and the end, no 500 ms passes without a served request;
+  (c) at the end, `baseline` is positive and at most 1.5 × the no-load latency;
+  (d) between seconds 10 and 45, served requests are at least 90 % of the capacity;
+  (e) CPU-bound: the p99 latency of admitted requests is at most 12 × the no-load latency
+  (L12's bar); I/O-bound: the median limit after second 10, outside probes, is at least 4 × the
+  first limit (8, so 32: the limit adapts).
+  The held requests are released after the measurement and every slot is free afterwards.
+
+The README rule "Waiting requests are admitted in arrival order" becomes true as written; the
+"What happens to a request" step 2 gains "or other requests are already waiting".
+
+### Results (prototype of both decisions)
+L14's scenario with the final prototype (probe record, slots, overlap filter, FIFO). The overlap
+filter was first prototyped with timestamps (`now - elapsed` against the last outside finish) and
+then with the counter of decision A3, which is deterministic under the tests' fake clock; the
+first table is the timestamp variant, the second the counter variant.
+
+| Machine, handler, held | Limit | Baseline (no-load) | Probe | Gap | p99 | Served / capacity |
+|---|---|---|---|---|---|---|
+| 1 CPU, CPU 5 ms, 1 | 3 / 4 / 4 | 3.7 ms (4.8 ms) | 30 ms | 0 | 2.8 × | 122 % |
+| 1 CPU, CPU 5 ms, 2 | 4 / 4 / 5 | 5.0 ms (5.0 ms) | 48 ms | 0 | 3.5 × | 96 % |
+| 2 CPUs, CPU 5 ms, 1 | 5 / 5 / 6 | 4.0 ms (4.0 ms) | 30 ms | 0 | 3.1 × | 98 % |
+| 2 CPUs, CPU 5 ms, 3 | 6 / 7 / 8 | 5.1 ms (5.0 ms) | 40 ms | 0 | 3.0 × | 96 % |
+| 1 CPU, I/O 20 ms, 1 | 78 / 84 / 85 | 20.1 ms (20.3 ms) | 220 ms | 100 ms | 2.0 × | 101 % |
+| 2 CPUs, I/O 20 ms, 3 | 80 / 86 / 87 | 20.1 ms (20.3 ms) | 130 ms | 0 | 2.0 × | 101 % |
+
+Counter variant (the decision):
+
+| Machine, handler, held | Limit | Baseline (no-load) | Probe | Gap | p99 | Served / capacity |
+|---|---|---|---|---|---|---|
+| 1 CPU, CPU 5 ms, 1 | 3 / 4 / 5 | 4.9 ms (4.9 ms) | 48 ms | 50 ms | 3.5 × | 103 % |
+| 1 CPU, CPU 5 ms, 2 | 3 / 4 / 5 | 5.6 ms (5.0 ms) | 50 ms | 100 ms | 4.1 × | 99 % |
+| 2 CPUs, CPU 5 ms, 1 | 4 / 5 / 6 | 5.2 ms (5.1 ms) | 30 ms | 50 ms | 3.8 × | 91 % |
+| 2 CPUs, CPU 5 ms, 3 | 6 / 8 / 9 | 6.4 ms (5.1 ms) | 40 ms | 50 ms | 3.6 × | 102 % |
+| 1 CPU, I/O 20 ms, 1 | 77 / 84 / 85 | 20.1 ms (20.6 ms) | 220 ms | 50 ms | 2.2 × | 100 % |
+| 2 CPUs, I/O 20 ms, 3 | 80 / 86 / 87 | 20.1 ms (20.6 ms) | 130 ms | 0 | 2.3 × | 103 % |
+
+Every row meets L14 (a)-(e); the tightest is (d) at 91 % on 2 CPUs with one stream, a case L14
+does not assert. The limits sit near L12's values without held requests (revision 2: 3 / 3 / 4 on
+one core, 6 / 6 / 7 on two, 82-85 for I/O).
+
+Slots without the overlap filter (rejected, see "Rejected"):
+
+| Machine, handler, held | Limit | Baseline (no-load) | p99 | Served / capacity |
+|---|---|---|---|---|
+| 1 CPU, CPU 5 ms, 1 | 4 / 5 / 5 | 6.0 ms (4.4 ms) | 4.5 × | 100 % |
+| 1 CPU, CPU 5 ms, 2 | 4 / 5 / 5 | 5.7 ms (4.7 ms) | 4.0 × | 95 % |
+| 2 CPUs, CPU 5 ms, 1 | 7 / 9 / 11 | 9.3 ms (5.3 ms) | 6.2 × | 88 % |
+| 2 CPUs, CPU 5 ms, 3 | 7 / 8 / 10 | 8.6 ms (6.1 ms) | 4.8 × | 74 % |
+| 1 CPU, I/O 20 ms, 1 | 80 / 84 / 87 | 20.7 ms (20.5 ms) | 2.0 × | 103 % |
+| 2 CPUs, I/O 20 ms, 3 | 81 / 86 / 93 | 21.6 ms (20.3 ms) | 2.2 × | 101 % |
+
+L12 and L13 (the eleven tests, `-run 'TestAdaptive_Stable|TestAdaptive_NoRefusal|TestAdaptive_Recovers|TestAdaptive_Steering'`):
+
+Two interleaved passes of HEAD and the decision (counter filter), same binary per side, each
+under the lock:
+
+| Test | HEAD pass 1 | HEAD pass 2 | Decision pass 1 | Decision pass 2 |
+|---|---|---|---|---|
+| `Stable_CPUBound_1CPU` | fail: p99 79 ms > 42 ms | fail: limit 2 left ± 35 % of 4 | pass | pass |
+| `Stable_CPUBound_2CPU` | fail: p99 106 ms > 62 ms | pass | fail: 399 < 419 req/s | fail: 348 < 356 req/s |
+| `Stable_IOBound_1CPU`, `_2CPU` | pass | pass | pass | pass |
+| `NoRefusalBelowCapacity_1CPU` | fail: 9 refused | pass | fail: 5 refused | fail: 25 refused |
+| `NoRefusalBelowCapacity_2CPU` | fail: 34 refused | fail: 9 refused | fail: 40 refused | pass |
+| `RecoversWhenHandlerSlows_1CPU` | pass | pass | fail: 58.7 < 66 req/s | pass |
+| `RecoversWhenHandlerSlows_2CPU` | pass | pass | pass | pass |
+| L13 (three tests) | pass | pass | pass | pass |
+
+Both sides pass 10 of 16 L12 runs and 6 of 6 L13 runs. Earlier runs in the same session agree:
+two passes of `NoRefusalBelowCapacity_1CPU` and `RecoversWhenHandlerSlows_2CPU` per variant
+failed 2 of 4 at HEAD, 2 of 4 with FIFO and slots and the timestamp filter, 2 of 4 with FIFO
+alone, 1 of 4 with slots and the filter alone (refusals of 5-143, throughputs 1-3 % under the
+bar); a first full pass of slots and FIFO (with a lost-wakeup bug since fixed) passed 6 of 8 L12
+and 3 of 3 L13. On this machine today L12 does not separate the
+variants; it must be rerun on a quiet machine before steps 2 and 3 are done (open question 4).
+
+`Stable_CPUBound_2CPU` failed in both decision passes on throughput, so it was rerun alone four
+times per side, interleaved: HEAD passed 4 of 4, the decision 3 of 4 (one run at 298 req/s), the
+decision without B (FIFO off) 3 of 4 (352 req/s). Over the session the test passed 5 of 6 at HEAD
+and 3 of 6 with the decision. A weak signal, not attributed to B (the run without it failed too)
+and with no mechanism found: a probe now admits as soon as it starts instead of after a drain,
+which adds work, not idle time, and a probe lasts 30-50 ms of the 10 s measured. It is the first
+thing the builder's L12 runs must settle (open question 4).
+
+Deterministic checks in the prototype (fake clock, no timing): the arrival-during-wake case of B
+(HEAD: the newcomer is admitted, the waiter refused; prototype: the waiter is admitted, the
+newcomer queued behind it), a probe beside `min` held requests (HEAD: admits nothing; prototype:
+admits `min`, refuses the next, learns 5 ms from 8 samples) and a probe sample that overlaps an
+old request's finish (HEAD and slots alone: learned with it; prototype: ignored, baseline exactly
+the clean value). The package's short tests and `-race -short` pass on the prototype.
+
+### Rejected
+- **Correct L2 and the README instead of B.** The fix costs one atomic load on the admitted path
+  (measured within the noise, "Performance"), and the queue then does what every reader of
+  "a queue" assumes. Without it, the requests that waited longest are the ones refused.
+- **Strict FIFO for every arrival**, including one that arrives together with a finish and loads
+  `waiting` as 0 an instant before a waiter counts itself. Concurrent arrivals have no order to
+  keep; closing that window needs the mutex on every admission.
+- **Probe slots without the overlap filter.** Measured above: the baseline comes out up to
+  1.75 × the no-load latency on 2 CPUs, and the limit, the p99 and the throughput follow it.
+- **Draining before the probe admits** (keep "total in flight ≤ `min`", HEAD's rule). It is what
+  fails: held requests never drain.
+- **Counting the held requests out** (admit while `inFlight - held ≤ min`). A held request cannot
+  be told from a slow one when it is admitted; telling them apart later needs per-request ages
+  (a timer or a scan), which L6 forbids.
+- **A timestamp filter** (`now - elapsed` against the last outside finish). Same results, no
+  allocation, but it compares the wall clock of `adaptive.now` with core's monotonic `elapsed`,
+  and every existing probe test that drains old requests and probes at the same fake instant would
+  call the probe samples dirty. The counter is exact and needs no clock; its price is the probe
+  ticket (one small allocation per request a probe admits on the fast path).
+- **Redefining quiet samples** so that held requests do not count (for example "requests admitted
+  in this window"). Every admission and finish would carry a window generation: a per-window
+  record and one more atomic on the hot path, for a baseline that matters only under pressure,
+  where the probe now learns it.
+- **Releasing a long-held request's slot** after some time or at its first `Flush`. It is the
+  right question for streams (open question 3), but it changes L1 and L4 for every app and needs
+  its own design.
+
+### Known limits (README)
+- A long-held request (an SSE stream, a download, a long poll) holds its slot for its whole life,
+  in both modes. Enough of them fill the limit, and then every other request waits and is refused.
+  Bind `loadshed` to the modules without streams, or a fixed `LoadShed` sized for the streams to
+  the streaming module (open question 3).
+- While long-held requests are in flight, samples are rarely quiet, so the baseline comes from
+  probes: the first window under pressure probes, and the baseline is relearned at most every
+  30 s while pressure lasts.
+- A probe that runs while requests from before it keep finishing (a slow route under attack, L13
+  (c)) may collect no clean sample in its second and end empty. That changes nothing: the floor
+  and the baseline stay, as for any empty probe.
+
+### Performance
+Hot path, `BenchmarkLoadShed_Admitted_Adaptive` (10 interleaved runs of HEAD and the prototype,
+`-cpu 1,2`, 0 allocations everywhere):
+
+| Benchmark | HEAD, `GOMAXPROCS` 1 / 2 | Prototype, `GOMAXPROCS` 1 / 2 |
+|---|---|---|
+| `Admitted_Adaptive` | 44.8 / 46.7 ns (43.9-60.3) | 43.7 / 44.4 ns (41.5-51.2) |
+| `Admitted_Fixed` | 30.0 / 29.4 ns | 27.3 / 27.3 ns |
+| `Admitted_Parallel` | 48.1 / 113.5 ns | 50.5 / 108.8 ns |
+
+Medians, ranges in brackets; benchstat calls the differences noise or a small gain (the prototype
+drops `abs` and a branch on the common path). Within the 60 ns budget at both settings in every
+run but one HEAD outlier (60.3 ns).
+
+The admitted path gains one atomic load (`waiting`, before `inFlight.Add(1)`) and, at the end of
+the exchange, one atomic load (`admit`, to see whether a probe runs) and a nil check. Everything
+else is on paths that already lock or allocate:
+- a probe start allocates its record (48 B: the instance pointer and four `atomic.Int64`), at most
+  one per 30 s; it stays reachable while a request it admitted is in flight;
+- a request a probe admits on the fast path without a body allocates a ticket (16 B: the record
+  and the mark); waiters and body wrappers carry the record and the mark in their existing
+  objects (8 B more each). A probe admits a few to a few hundred requests (8 clean samples, at most
+  1 s), so this is at most a few kilobytes per 30 s;
+- during a probe, a finishing request from outside it adds one atomic to the record;
+- `enqueue` runs the hand-off loop when the list is not empty (it holds the mutex already).
+Idle cost: 8 B more per instance (the record pointer); no goroutine, no timer (L6 holds). The
+README rule "An admitted request allocates nothing" gains "except a request admitted during a
+probe (16 B)".
+
+### Concurrency
+Replaces the "Enter" and "Leave" lines of "Concurrency" and adds the probe record:
+- **Probe record.** Allocated in `startProbeLocked` under the window mutex and published with
+  `adaptive.current.Store` **before** `admit.Store(-min)`, so any request that loads `admit < 0`
+  then loads a non-nil record. The record is never reused or reset: a new probe stores a new one.
+  `held`, `sum`, `count` and `finished` are atomics; `endProbeLocked` reads `count` and `sum`
+  under the window mutex.
+- **Enter (fast path).** `v := admit.Load()` (and the 1 s end check, as today). When
+  `waiting.Load() != 0`, go to `enqueue`. With `v >= 0`: `inFlight.Add(1) <= v` admits, else undo
+  and go to `enqueue`. With `v < 0` (probe): load the record; `held.Add(1) > min` → undo, go to
+  `enqueue`; `inFlight.Add(1) > limit.Load()` → undo both, go to `enqueue`; else admitted, the
+  mark is `finished.Load()`, and the hook is a ticket (record, mark) or the body wrapper.
+- **Enter (`enqueue`).** Lock; if the list is not empty, run the hand-off loop (below); if the
+  list holds `MaxQueue`, unlock and refuse; `waiting.Add(1)`; if the list is empty, try to acquire
+  (as the fast path) for itself: admitted → `waiting.Add(-1)`, unlock; else append, unlock, wait on
+  the channel, the 100 ms timer and `r.Context().Done()`, as today.
+- **Hand-off loop** (`wakeLocked`, under the waiters' mutex; `wake` is lock, loop, unlock): while
+  the list is not empty and an acquire succeeds for the current `admit`, pop the head,
+  `waiting.Add(-1)`, store the record and mark on the waiter (nil outside a probe), its wait time,
+  and signal it. The waiter reads those fields after receiving from its channel, or after
+  `leaveQueue` finds it already removed (both under or after the same mutex): happens-before holds.
+- **Leave.** If the request was admitted by a probe, `held.Add(-1)` on **its** record (an ended
+  probe's record absorbs it harmlessly); then `inFlight.Add(-1)`; the sample (below); then, if
+  `waiting.Load() > 0`, `wake`. A cancelled waiter that was already signalled releases the same
+  way.
+- **Probe sample.** At the end of an exchange, when `admit.Load() < 0`: load the current record;
+  if the request was not admitted by it, `finished.Add(1)` on it and stop; else, when the sample is
+  at most 30 s and `finished.Load()` equals the request's mark, add it to the record's sum and
+  count, and the 8th takes the window mutex and ends the probe if it is still the current one
+  (`admit < 0` and the same record). A request admitted against a record that ended an instant
+  before (the `admit` load raced the end) is admitted under `limit` (L1 holds) and its sample goes
+  to a record nobody reads.
+- **Ordering of B.** A waiter adds itself to `waiting` under the mutex before it is listed and
+  stays counted until it is removed. A newcomer that loads `waiting == 0` therefore arrived before
+  any waiter that is listed when it acquires: L2's order is about requests that were waiting
+  *when* the newcomer arrived. A newcomer that loads `waiting > 0` reaches the mutex, where the
+  hand-off loop serves the listed waiters first. The lost-wakeup argument is unchanged: a leaver
+  subtracts, then reads `waiting`; a waiter that appends after a failed retry was counted in
+  `waiting` before the retry; one that appends behind others needs no retry, because each slot
+  freed after its predecessors were counted is handed out by a `wake` that runs under the same
+  mutex.
+- Lock order unchanged: the waiters' mutex and the window mutex are never held together (acquire
+  and the hand-off loop touch only atomics of the record and `adaptive.limit`; the probe end runs
+  from `sample`, outside the waiters' mutex).
+
+### Security
+- **A held connection no longer disables the adaptive limit.** At HEAD one long poll on 1 vCPU (or
+  `min` + 1 anywhere) froze the limit at its first value and caused a 1 s blackout every 30 s
+  under load: a cheap denial of service against the default. The probe now admits beside held
+  requests.
+- **Spoiling probes.** Only requests from before the probe can dirty its samples (no outside
+  request is admitted while it runs), each finishes once, and each dirties at most the `min`
+  probe requests running at that moment. A client that keeps many slow requests finishing through
+  every probe can make probes end empty; an empty probe changes nothing (revision 2's floor
+  stays), so this is no lever on the limit, only a delay of a relearning.
+- **Queue order.** A newcomer can no longer take a slot freed for a waiter, so a client that
+  hammers cannot starve queued requests into timing out.
+- No new limit, input or secret. The probe ticket is bounded by the probe (at most `min` in flight,
+  at most 1 s).
+
+### Impact
+- No exported identifier, option or snapshot field changes. Behavior visible to users: queued
+  requests are admitted in order (fewer timeouts for them, newcomers wait behind them); probes
+  work beside streams; a request admitted during a probe allocates 16 B.
+- Docs: `middlewares/loadshed/README.md` ("What happens to a request" step 2, "How the limit
+  adapts" › Baseline and Probe, "Rules": the queue order, L1's probe sentence, the allocation
+  rule, L14 as a measured rule, "Known limits", "Memory and CPU", "Benchmarks");
+  `.ginject/package-reference.md` › `middlewares/loadshed` (probe slots, overlap rule, FIFO fast
+  path, L14); `Makefile` (`check` runs L14 with L12 and L13).
+
+### Builder: changes in `middlewares/loadshed`
+1. `loadshed.go`: an unexported probe record type (instance pointer; `held`, `sum`, `count`,
+   `finished` as `atomic.Int64`) whose pointer replaces `isProbe` in `waiter` and `timedBody`, each
+   with a `mark int64` beside it; an unexported ticket type (record, mark) with `Done`, replacing
+   `probeHook` and the `probeDone` field. Delete `abs`.
+2. `loadshed.go`, `Use`: the fast path of "Concurrency" (the `waiting` check first; the probe
+   branch through one helper shared with `enqueue` and the hand-off loop that returns the record,
+   the mark and whether it admitted). Keep the non-probe branch inline (`inFlight.Add(1) <= v`), so
+   the common path stays one load, one add and one compare.
+3. `loadshed.go`, `enqueue`: the order of "Enter (`enqueue`)": hand-off loop when the list is not
+   empty, full check, `waiting.Add(1)`, retry only when the list is empty, append. `wake` becomes
+   lock + `wakeLocked` + unlock; `wakeLocked` is the hand-off loop.
+4. `loadshed.go`: `finish` and `release` take the record and the mark; the probe's `held.Add(-1)`
+   goes on the request's own record before `inFlight.Add(-1)`.
+5. `adaptive.go`: `current atomic.Pointer[probe]` replaces `probeSum` and `probeCount`;
+   `startProbeLocked` stores a new record before `admit.Store(-min)`; `sample` takes the record and
+   the mark and, when `admit < 0`, runs the probe-sample step of "Concurrency" before the 30 s
+   check (an outside request that finishes after 30 s still counts as finished); the probe's 32 ×
+   cap uses the same baseline load as the window. `endProbeLocked` reads the current record.
+6. No change to L7-L10, the window, the snapshot, the probe start condition, fixed mode's limit or
+   the public API. `probeAdmitLimit` stays as it is.
+7. README and `.ginject/package-reference.md` as "Impact", the three "Known limits" above, and the
+   benchmark table rerun at `GOMAXPROCS` 1 and 2.
+8. `Makefile`, target `check`: add `LongHeld` to the loadshed acceptance pattern
+   (`'^TestAdaptive_(Stable|NoRefusalBelowCapacity|RecoversWhenHandlerSlows|Steering|LongHeld)_'`).
+
+### Tester: test changes
+Unit tests use the existing rig (4 CPUs, 64 MiB: `min` 4, `max` 64, first limit 32, window 128)
+and its fake clock; "held" requests are admitted with `tryAdmit` and kept outside `g.pool`, so the
+rig's helpers never finish them.
+
+1. `TestAdaptive_ProbeAdmitsBesideHeldRequests` (L1, L11): 4 held requests; a window under
+   pressure starts a probe; the pool drained; 4 more requests are admitted (HEAD: none), the 5th is
+   refused; 8 probe requests finish at 5 ms (admit one, finish it, in turn): `probing` false,
+   `baseline` exactly 5 ms.
+2. `TestAdaptive_ProbeSlotsBelongToOneProbe` (L1): during probe 1 a request is admitted and held;
+   probe 1 ends (8 samples); 31 s later a window under pressure starts probe 2, which admits 4
+   requests beside the held one.
+3. `TestAdaptive_ProbeKeepsLimit` (L1): limit 32 with 30 held requests from before the probe;
+   during the probe 2 requests are admitted and the 3rd is refused; after one held request
+   finishes, one more.
+4. `TestAdaptive_ProbeSampleOverlappingOutsideFinishIgnored` (L11): a probe starts with the
+   window's requests still in flight; one probe request is admitted; one old request finishes; the
+   probe request finishes at 50 ms; the other old requests finish; 8 probe requests then finish at
+   5 ms in turn: `baseline` exactly 5 ms (with the 50 ms sample it would be 10.6 ms).
+5. `TestAdaptive_ProbeOfOverlappingSamplesOnlyIsEmpty` (L11): every probe request runs across an
+   old request's finish; the clock moves 1.1 s; the next admission ends the probe: `probing` false,
+   `baseline` unchanged (0 when there was none), `probes` 1, the limit unchanged.
+6. `TestAdaptive_ProbeRequestAfterProbeIsOrdinary` (L11): a request admitted by probe 1 that
+   finishes during probe 2 does not count toward probe 2 (probe 2 still needs 8 of its own) and
+   counts as an outside finish for probe 2's samples running at that moment.
+7. `TestAdaptive_NeverAboveLimitDuringProbe` (L1, concurrent, `-race`): 16 goroutines send
+   requests in a loop through a probe and its end; the handler reads the instance's `inFlight` and
+   the current record's `held` (internal test package): never more than `limit`, never more than
+   `min`.
+8. `TestLoadShed_ArrivalDuringWakeYieldsToWaiter` (L2): `MaxInFlight: 1, MaxQueue: 4`; one admitted
+   request; one waiter (`waiting` 1); `inFlight.Add(-1)` on the compiled instance (the first half of
+   a finish); a newcomer arrives: the waiter is admitted, the newcomer is not (still waiting after
+   20 ms); `wake()` (the second half) admits nobody more; the waiter finishes; the newcomer is
+   admitted. The first request is never finished (its slot was released by hand). At HEAD: the
+   newcomer is admitted and the waiter refused.
+9. `TestLoadShed_FreeSlotsGoToWaitersBeforeQueueFull` (L2): `MaxInFlight: 1, MaxQueue: 1`; one
+   admitted, one waiter; `inFlight.Add(-1)` by hand; a newcomer: the waiter is admitted and the
+   newcomer waits (not refused for a full queue).
+10. Keep: `TestLoadShed_QueueAdmitsInOrder`, `_QueueFull_503`, `_QueueTimeout_503`,
+    `_ContextCancelledWhileWaiting`, `_NoQueue`, `_Burst`, `_Fixed_NeverAboveMax`, every adaptive
+    and body test, `_IdleNoGoroutineNoTimer`, `_Snapshot`; `TestAdaptive_ProbeOnlyWhenSaturatedAndStale`
+    keeps its assertions (no held request: 4 admitted, the 5th refused).
+11. L14, `loadshed_stability_test.go`: `TestAdaptive_LongHeld_OneStream_1CPU`,
+    `_TwoStreams_1CPU`, `_ThreeStreams_2CPU` (CPU-bound) and `_OneStream_IOBound_1CPU`, through
+    `throughMiddleware` with an open-loop arrival process like `runSteering`'s, served requests in
+    50 ms buckets, the snapshot every 10 ms, thresholds as L14. At HEAD (a)-(c) fail in all four
+    and (d) or (e) in three.
+12. `loadshed_bench_test.go`: `BenchmarkLoadShed_Admitted_Adaptive` stays at 0 allocations and
+    within the 60 ns of "Performance" (HEAD's table); no new benchmark.
+
+### Open questions (this revision)
+1. **The overlap filter (decision A3).** Recommended: yes. Without it the probe measures the
+   requests it starts beside, and on 2 CPUs the limit settled 50 % higher with up to a quarter of
+   the throughput lost (table above). Price: a 16 B ticket per request a probe admits, and one
+   rule more to explain. Alternative: slots only, a smaller change that fixes the 1 CPU blackout
+   and learning but leaves the baseline inflated.
+2. **The queue in arrival order (B).** Recommended: the fix, not the doc correction: its cost is
+   one atomic load on the admitted path, within the benchmark's noise and the 60 ns budget.
+   Alternative: say "roughly in arrival order" in L2 and the README and keep the code.
+3. **Streams and `loadshed`.** Long-held requests hold a slot each, in both modes (L1, L4): a few
+   SSE clients on a small box can fill the adaptive limit (8 on 1 vCPU at start). Recommended for
+   now: the "Known limits" text (bind `loadshed` to the modules that do not stream), and a backlog
+   item "release a streaming request's slot" (for example at its first `Flush`, as a WebSocket
+   releases at the handshake) for its own design. Alternative: decide it in this revision; it
+   changes L1 and L4 for every app and is outside roadmap 0006's scope.
+4. **How step 2 and 3 prove "L12 and L13 still pass".** On the shared machine today HEAD itself
+   fails 6 of 16 L12 runs, so a local pass count cannot show that the change keeps L12.
+   Recommended: the builder runs the eight L12 tests and the three L13 tests three times under the
+   heavy lock with nothing else measured on the machine (editor idle), and reports HEAD's count
+   from the same session beside its own; the step is done when the change fails no test that HEAD
+   passes in the same session, and the roadmap's final `make check` (which runs them without the
+   race detector) is green. Alternative: also run them on a CI runner once (CI runs only
+   `go test -race`, which skips them).
