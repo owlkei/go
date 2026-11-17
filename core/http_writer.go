@@ -40,10 +40,13 @@ func (w *responseWriter) OnDone(h httphook.Hook) {
 	w.hooks = append(w.hooks, h)
 }
 
+// runHooks ends the response: hooks may pool the writers they set as inner (compress), so a late
+// write from a goroutine the handler left running gets errResponseEnded instead of reaching them.
 func (w *responseWriter) runHooks(start *time.Time) {
 	if len(w.hooks) != 0 {
 		w.callHooks(start)
 	}
+	w.w = nil
 }
 
 func (w *responseWriter) callHooks(start *time.Time) {

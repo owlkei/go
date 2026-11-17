@@ -311,3 +311,27 @@ func TestResponseWriter_ResetDropsLateWrites(t *testing.T) {
 		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{codeBefore, bodyBefore}, "a late write on an idle exchange is dropped"))
 	}
 }
+
+// pooledHook stands for a middleware that pools the writer it set as inner (compress) in Done.
+type pooledHook struct{}
+
+func (pooledHook) Done(time.Duration) {}
+
+func TestResponseWriter_HooksEndTheResponse(t *testing.T) {
+	rec := httptest.NewRecorder()
+	var w responseWriter
+	w.reset(rec)
+	pooled := httptest.NewRecorder()
+	w.SetInner(pooled)
+	w.OnDone(pooledHook{})
+	start := time.Now()
+	w.runHooks(&start)
+
+	if _, err := w.Write([]byte("late")); !errors.Is(err, errResponseEnded) {
+		t.Error(test.DiffMessage(err, errResponseEnded, "a write after the hooks ran is refused"))
+	}
+	w.WriteHeader(http.StatusTeapot)
+	if pooled.Body.Len() != 0 || pooled.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Error(test.DiffMessage(pooled.Body.String(), "", "a late write reaches neither a writer a hook pooled nor the connection"))
+	}
+}

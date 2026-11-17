@@ -125,7 +125,8 @@ wants its own response writes it and returns without `next()`.
   `c.Next`.
 - Every layer receives the same `*responseWriter` as `c.ResponseWriter`; it forwards `Flush`,
   `Hijack`, `ReadFrom` and `Unwrap` (for `http.ResponseController`) and must not be used after the
-  request returns (a late write on an idle exchange is dropped).
+  request returns: `runHooks` sets its inner writer to nil, so a late write gets `errResponseEnded`
+  instead of reaching a writer a hook pooled (compress); a late write on an idle exchange is dropped.
 
 ---
 
