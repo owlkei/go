@@ -256,8 +256,14 @@ func (g *guard) tokenBucket(bgCtx context.Context, key []byte) result {
 	return result{
 		isAllowed: isAllowed,
 		remaining: int64(tokens),
-		resetAt:   time.Unix(0, now+int64(wait)).Unix(),
+		resetAt:   ceilSeconds(now + int64(wait)),
 	}
+}
+
+// ceilSeconds rounds a Unix time in nanoseconds up to whole seconds, so a refused client that
+// waits until the reset time finds the next token there.
+func ceilSeconds(ns int64) int64 {
+	return (ns + int64(time.Second) - 1) / int64(time.Second)
 }
 
 func (g *guard) stripeOf(key []byte) *sync.Mutex {

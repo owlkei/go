@@ -595,3 +595,23 @@ func TestThrottler_ConcurrentMixedKeysUnderRace(t *testing.T) {
 		wg.Wait()
 	}
 }
+
+func TestTokenBucket_RetryAfterNeverZeroOnRefusal(t *testing.T) {
+	// 100 tokens per second: once the bucket is empty, the next token is 10 ms away.
+	a := compile(t, Throttler{Limit: 100, TTL: time.Second, Strategy: TokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")})
+	for range 100 {
+		try(a, newCtx("203.0.113.9:1", nil))
+	}
+	c := newCtx("203.0.113.9:1", nil)
+	if ok, _ := try(a, c); ok {
+		t.Fatal(test.DiffMessage(ok, false, "the 101st request within a second is refused"))
+	}
+	h := headersOf(c)
+	if got := h.Get("Retry-After"); got != "1" {
+		t.Error(test.DiffMessage(got, "1", "a wait under a second rounds up, so a client that obeys it is served"))
+	}
+	reset, _ := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64)
+	if now := time.Now().Unix(); reset <= now-1 {
+		t.Error(test.DiffMessage(reset, "after the current second", "X-RateLimit-Reset rounds up too"))
+	}
+}
