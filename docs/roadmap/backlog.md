@@ -79,14 +79,6 @@ per use). Details and expected gains: `docs/review/http-0002.md` › What is lef
 | 0003 H1 | one scratch buffer and a kept JSON encoder per pooled context |
 | 0003 H2 | shared read-only header value slices |
 
-## Log writer batching delay (measured in roadmap 0004)
-
-On two or more CPUs the log writer is woken for almost every line: an access line costs about 3 µs
-more CPU on 2 CPUs than on 1 (`docs/review/http-0004.md`, follow-up). A short batching delay (the
-writer waits up to about 1 ms or 16 KiB before writing, a timer armed only while the queue is not
-empty, Fatal and shutdown flush at once) would remove most of it. Costs: up to about 1 ms of log
-latency and one more state in the sink. Needs a design addendum to 0012.
-
 ## New storage and HTTP client modules (after roadmap 0005)
 
 Decided 2026-11-17: the old `modules/storage` (embedded append-only document store, known data-loss

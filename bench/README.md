@@ -99,6 +99,11 @@ each run: the server prints it to stderr when it receives `SIGUSR1`.
   frameworks with their loggers on, and Ginject with its log off against net/http, which has no
   logger. The log lines column shows that a logger wrote every line: one that drops lines would
   otherwise look cheap.
+- **Reference points:** net/http with no logger is the floor, the fastest a framework on net/http
+  can be. The target to beat is the best of Gin, Echo and Chi in the same run, with the same
+  `GOMAXPROCS` and their loggers on, not one chosen framework. Fiber is shown for reference only: it
+  runs on fasthttp, not net/http (no HTTP/2, no `http.Handler` middlewares), so a goal set against it
+  would compare transports rather than frameworks.
 
 ## Results
 
