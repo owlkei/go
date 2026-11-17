@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -278,6 +280,32 @@ func TestExpand_TotalTooLarge(t *testing.T) {
 	pattern := regexp.MustCompile("^invalid config: " + regexp.QuoteMeta(path) + `:\d+: values larger than 16 MiB in total after expansion$`)
 	if !pattern.MatchString(text) {
 		t.Error(test.DiffMessage(text, pattern.String(), "E7: copies of one large value stop at 16 MiB in total"))
+	}
+}
+
+func TestExpand_TotalCountsChainsWhenExpanded(t *testing.T) {
+	// The first key expands the whole chain before its own turn: each link is counted as it is
+	// expanded, so the cap stops the chain and names a line inside it.
+	var b strings.Builder
+	n := 2000
+	for i := range n {
+		fmt.Fprintf(&b, "TT_R%d=${TT_R%d}\n", i, i+1)
+	}
+	fmt.Fprintf(&b, "TT_R%d=%s\n", n, strings.Repeat("x", 64<<10))
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	path, text := failEnv(t, b.String(), true)
+	runtime.ReadMemStats(&after)
+	pattern := regexp.MustCompile("^invalid config: " + regexp.QuoteMeta(path) + `:(\d+): values larger than 16 MiB in total after expansion$`)
+	m := pattern.FindStringSubmatch(text)
+	if m == nil {
+		t.Fatal(test.DiffMessage(text, pattern.String(), "E7: a chain of references stops at 16 MiB in total"))
+	}
+	if line, _ := strconv.Atoi(m[1]); line < 2 || line > n+1 {
+		t.Error(test.DiffMessage(line, "a line of the chain", "E7: the error names the value that crossed the limit"))
+	}
+	if got := (after.TotalAlloc - before.TotalAlloc) >> 20; got > 64 {
+		t.Error(test.DiffMessage(got, "at most 64 MiB allocated", "E7: expansion stops near the cap"))
 	}
 }
 

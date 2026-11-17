@@ -313,14 +313,10 @@ func (env *dotEnv) literalAll() (map[string]any, error) {
 func (env *dotEnv) expandAll() (map[string]any, error) {
 	ex := &expansion{env: env, doneByKey: map[string]string{}, isVisitingByKey: map[string]bool{}}
 	valuesByKey := make(map[string]any, len(env.keys))
-	total := 0
 	for _, key := range env.keys {
 		value, err := ex.expand(key)
 		if err != nil {
 			return nil, err
-		}
-		if total += len(value); total > maxExpandedSize {
-			return nil, env.lineError(env.valuesByKey[key].line, "values larger than 16 MiB in total after expansion")
 		}
 		valuesByKey[key] = value
 	}
@@ -331,6 +327,9 @@ type expansion struct {
 	env             *dotEnv
 	doneByKey       map[string]string
 	isVisitingByKey map[string]bool
+	// total counts every value once, when it is expanded: a key expands the keys it refers to
+	// before their own turn, so counting in file order would let a chain grow unchecked.
+	total int
 }
 
 func (ex *expansion) expand(key string) (string, error) {
@@ -351,6 +350,9 @@ func (ex *expansion) expand(key string) (string, error) {
 		}
 	}
 	delete(ex.isVisitingByKey, key)
+	if ex.total += b.Len(); ex.total > maxExpandedSize {
+		return "", ex.env.lineError(value.line, "values larger than 16 MiB in total after expansion")
+	}
 	ex.doneByKey[key] = b.String()
 	return b.String(), nil
 }
