@@ -286,3 +286,34 @@ func TestLoadShed_ArrivalAtFreedSlotMayTakeIt(t *testing.T) {
 	}
 	waiter.ex.finish(time.Millisecond)
 }
+
+func TestAdaptive_ProbeEndingOnTimeWakesWaiters(t *testing.T) {
+	withMachine(t, rigProcs, rigMemory)
+	mw := LoadShed{MaxQueue: 4}.NewMiddleware()
+	c := mw.(*compiledLoadShed)
+	s := snapshotter(t, mw)
+	clock := &fakeClock{t: time.Now()}
+	c.adaptive.now = clock.Now
+	c.adaptive.mu.Lock()
+	c.adaptive.startProbeLocked(c, clock.Now())
+	c.adaptive.mu.Unlock()
+	var held []*call
+	for i := int64(0); i < c.adaptive.min; i++ {
+		held = append(held, admitNow(t, mw))
+	}
+	waiter := startCall(mw, request(http.MethodGet, "/ok"))
+	waitUntil(t, "the waiter is queued behind the probe's full slots", func() bool { return intOf(s.Snapshot(), "waiting") == 1 })
+
+	clock.Advance(2 * time.Second)
+	newcomer, ok := tryAdmit(mw)
+	if !ok {
+		t.Fatal(test.DiffMessage(false, true, "L11: the first admission after 1 s ends the probe and is admitted"))
+	}
+	waiter.wait(t)
+	if !waiter.admitted.Load() || waiter.refusal != nil {
+		t.Error(test.DiffMessage([]any{waiter.admitted.Load(), waiter.refusal}, []any{true, nil}, "L2: a probe that ends on time hands the freed slots to the waiters"))
+	}
+	for _, h := range append(held, newcomer, waiter) {
+		h.ex.finish(time.Millisecond)
+	}
+}

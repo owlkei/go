@@ -126,6 +126,11 @@ func (c *compiledLoadShed) probeAdmitLimit(v int64) int64 {
 		a.endProbeLocked(c)
 	}
 	a.mu.Unlock()
+	// The slots the probe kept closed are free now: they go to the waiters first (L2), as after
+	// a probe that ends on its 8th sample.
+	if c.waiting.Load() > 0 {
+		c.wake()
+	}
 	return c.admit.Load()
 }
 
