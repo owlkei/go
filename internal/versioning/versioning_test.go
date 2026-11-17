@@ -30,110 +30,110 @@ func makeCtxEmpty() *ctx.HTTPContext {
 	return c
 }
 
-func TestGetVersion_Query(t *testing.T) {
-	v := &Versioning{Type: QueryVersion, Key: "version", DefaultVersion: "v1"}
+func TestVersion_Query(t *testing.T) {
+	v := &Options{Type: TypeQuery, Key: "version", DefaultVersion: "v1"}
 
-	got := v.GetVersion(makeCtxWithQuery("version", "v2"))
+	got := Version(v, makeCtxWithQuery("version", "v2"))
 	if got != "v2" {
 		t.Error(test.DiffMessage(got, "v2", "QueryVersion: key present"))
 	}
 
-	got = v.GetVersion(makeCtxEmpty())
+	got = Version(v, makeCtxEmpty())
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "QueryVersion: key absent uses default"))
 	}
 }
 
-func TestGetVersion_QueryDefaultKey(t *testing.T) {
-	v := &Versioning{Type: QueryVersion, Key: "v", DefaultVersion: "v3"}
+func TestVersion_QueryDefaultKey(t *testing.T) {
+	v := &Options{Type: TypeQuery, Key: "v", DefaultVersion: "v3"}
 
-	got := v.GetVersion(makeCtxWithQuery("v", "v5"))
+	got := Version(v, makeCtxWithQuery("v", "v5"))
 	if got != "v5" {
 		t.Error(test.DiffMessage(got, "v5", "QueryVersion: default key 'v'"))
 	}
 }
 
-func TestGetVersion_Header(t *testing.T) {
-	v := &Versioning{Type: HeaderVersion, Key: "X-Api-Version", DefaultVersion: "v1"}
+func TestVersion_Header(t *testing.T) {
+	v := &Options{Type: TypeHeader, Key: "X-Api-Version", DefaultVersion: "v1"}
 
-	got := v.GetVersion(makeCtxWithHeader("X-Api-Version", "v2"))
+	got := Version(v, makeCtxWithHeader("X-Api-Version", "v2"))
 	if got != "v2" {
 		t.Error(test.DiffMessage(got, "v2", "HeaderVersion: key present"))
 	}
 
-	got = v.GetVersion(makeCtxEmpty())
+	got = Version(v, makeCtxEmpty())
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "HeaderVersion: key absent uses default"))
 	}
 }
 
-func TestGetVersion_QueryAbsentUsesDefault(t *testing.T) {
-	v := &Versioning{Type: QueryVersion, Key: "version", DefaultVersion: "v1"}
+func TestVersion_QueryAbsentUsesDefault(t *testing.T) {
+	v := &Options{Type: TypeQuery, Key: "version", DefaultVersion: "v1"}
 
-	got := v.GetVersion(makeCtxWithQuery("version", ""))
+	got := Version(v, makeCtxWithQuery("version", ""))
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V1: empty value uses default"))
 	}
-	got = v.GetVersion(makeCtxWithQuery("other", "v2"))
+	got = Version(v, makeCtxWithQuery("other", "v2"))
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V1: other key uses default"))
 	}
 }
 
-func TestGetVersion_HeaderKeyCaseInsensitive(t *testing.T) {
-	v := &Versioning{Type: HeaderVersion, Key: "x-api-version", DefaultVersion: "v1"}
+func TestVersion_HeaderKeyCaseInsensitive(t *testing.T) {
+	v := &Options{Type: TypeHeader, Key: "x-api-version", DefaultVersion: "v1"}
 
-	got := v.GetVersion(makeCtxWithHeader("X-Api-Version", "v2"))
+	got := Version(v, makeCtxWithHeader("X-Api-Version", "v2"))
 	if got != "v2" {
 		t.Error(test.DiffMessage(got, "v2", "V2: header key in any case"))
 	}
-	got = v.GetVersion(makeCtxWithHeader("X-Api-Version", ""))
+	got = Version(v, makeCtxWithHeader("X-Api-Version", ""))
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V2: empty header uses default"))
 	}
 }
 
-func TestGetVersion_Custom(t *testing.T) {
-	v := &Versioning{
-		Type:           CustomVersion,
+func TestVersion_Custom(t *testing.T) {
+	v := &Options{
+		Type:           TypeCustom,
 		DefaultVersion: "v1",
 		Extractor:      func(c *ctx.HTTPContext) string { return "v9" },
 	}
 
-	got := v.GetVersion(makeCtxEmpty())
+	got := Version(v, makeCtxEmpty())
 	if got != "v9" {
 		t.Error(test.DiffMessage(got, "v9", "CustomVersion: extractor called"))
 	}
 }
 
-func TestGetVersion_CustomEmptyUsesDefault(t *testing.T) {
-	v := &Versioning{
-		Type:           CustomVersion,
+func TestVersion_CustomEmptyUsesDefault(t *testing.T) {
+	v := &Options{
+		Type:           TypeCustom,
 		DefaultVersion: "v1",
 		Extractor:      func(c *ctx.HTTPContext) string { return "" },
 	}
 
-	got := v.GetVersion(makeCtxEmpty())
+	got := Version(v, makeCtxEmpty())
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V4: an empty result uses default"))
 	}
 }
 
-func TestGetVersion_CustomNilExtractor(t *testing.T) {
-	v := &Versioning{Type: CustomVersion, DefaultVersion: "v1"}
+func TestVersion_CustomNilExtractor(t *testing.T) {
+	v := &Options{Type: TypeCustom, DefaultVersion: "v1"}
 
-	got := v.GetVersion(makeCtxEmpty())
+	got := Version(v, makeCtxEmpty())
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V4: nil extractor uses default"))
 	}
 }
 
 func acceptVersion(accept, key string) string {
-	v := &Versioning{Type: MediaType, Key: key, DefaultVersion: "dflt"}
-	return v.GetVersion(makeCtxWithHeader("Accept", accept))
+	v := &Options{Type: TypeMediaType, Key: key, DefaultVersion: "dflt"}
+	return Version(v, makeCtxWithHeader("Accept", accept))
 }
 
-func TestGetVersion_MediaType(t *testing.T) {
+func TestVersion_MediaType(t *testing.T) {
 	cases := []struct{ accept, want string }{
 		{"application/json;v=2", "2"},
 		{"application/json;v=2;q=0.9", "2"},
@@ -146,13 +146,13 @@ func TestGetVersion_MediaType(t *testing.T) {
 		}
 	}
 
-	v := &Versioning{Type: MediaType, Key: "v", DefaultVersion: "v1"}
-	if got := v.GetVersion(makeCtxEmpty()); got != "v1" {
+	v := &Options{Type: TypeMediaType, Key: "v", DefaultVersion: "v1"}
+	if got := Version(v, makeCtxEmpty()); got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V3: no Accept header uses default"))
 	}
 }
 
-func TestGetVersion_MediaTypeIgnoresOtherParams(t *testing.T) {
+func TestVersion_MediaTypeIgnoresOtherParams(t *testing.T) {
 	cases := []string{
 		"application/json;rev=7",
 		"application/json;q=0.9;charset=utf-8",
@@ -169,7 +169,7 @@ func TestGetVersion_MediaTypeIgnoresOtherParams(t *testing.T) {
 	}
 }
 
-func TestGetVersion_MediaTypeStopsAtComma(t *testing.T) {
+func TestVersion_MediaTypeStopsAtComma(t *testing.T) {
 	if got := acceptVersion("application/json;v=2, text/html", "v"); got != "2" {
 		t.Error(test.DiffMessage(got, "2", "V3: the value ends at the comma"))
 	}
@@ -178,13 +178,13 @@ func TestGetVersion_MediaTypeStopsAtComma(t *testing.T) {
 	}
 }
 
-func TestGetVersion_MediaTypeUnquotes(t *testing.T) {
+func TestVersion_MediaTypeUnquotes(t *testing.T) {
 	if got := acceptVersion(`application/json; v="2"`, "v"); got != "2" {
 		t.Error(test.DiffMessage(got, "2", "V3: quotes are removed"))
 	}
 }
 
-func TestGetVersion_MediaTypeNameCaseInsensitive(t *testing.T) {
+func TestVersion_MediaTypeNameCaseInsensitive(t *testing.T) {
 	if got := acceptVersion("text/html, application/json;V=3", "v"); got != "3" {
 		t.Error(test.DiffMessage(got, "3", "V3: name in upper case"))
 	}
@@ -196,7 +196,7 @@ func TestGetVersion_MediaTypeNameCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestGetVersion_MediaTypeSecondRange(t *testing.T) {
+func TestVersion_MediaTypeSecondRange(t *testing.T) {
 	if got := acceptVersion("text/html, application/json;v=3", "v"); got != "3" {
 		t.Error(test.DiffMessage(got, "3", "V3: version on the second range"))
 	}
@@ -205,7 +205,7 @@ func TestGetVersion_MediaTypeSecondRange(t *testing.T) {
 	}
 }
 
-func TestGetVersion_MediaTypeEmptyValueUsesDefault(t *testing.T) {
+func TestVersion_MediaTypeEmptyValueUsesDefault(t *testing.T) {
 	if got := acceptVersion("application/json;v=", "v"); got != "dflt" {
 		t.Error(test.DiffMessage(got, "dflt", "V3: empty value"))
 	}
@@ -217,53 +217,53 @@ func TestGetVersion_MediaTypeEmptyValueUsesDefault(t *testing.T) {
 	}
 }
 
-func TestGetVersion_UnknownType(t *testing.T) {
-	for _, typ := range []int{0, 99, -1} {
-		v := &Versioning{Type: typ, Key: "v", DefaultVersion: "v1"}
-		got := v.GetVersion(makeCtxWithQuery("v", "v2"))
+func TestVersion_UnknownType(t *testing.T) {
+	for _, typ := range []Type{0, 99, -1} {
+		v := &Options{Type: typ, Key: "v", DefaultVersion: "v1"}
+		got := Version(v, makeCtxWithQuery("v", "v2"))
 		if got != "v1" {
 			t.Error(test.DiffMessage(got, "v1", "V5: unknown type uses default"))
 		}
 	}
 }
 
-func TestGetTypeString(t *testing.T) {
-	cases := map[int]string{
-		QueryVersion:  "query",
-		HeaderVersion: "header",
-		CustomVersion: "custom",
-		MediaType:     "media_type",
+func TestTypeString(t *testing.T) {
+	cases := map[Type]string{
+		TypeQuery:     "query",
+		TypeHeader:    "header",
+		TypeCustom:    "custom",
+		TypeMediaType: "media_type",
 		0:             "",
 		99:            "",
 	}
 	for typ, want := range cases {
-		v := &Versioning{Type: typ}
-		if got := v.GetTypeString(); got != want {
-			t.Error(test.DiffMessage(got, want, "V5: GetTypeString"))
+		v := &Options{Type: typ}
+		if got := TypeString(v); got != want {
+			t.Error(test.DiffMessage(got, want, "V5: TypeString"))
 		}
 	}
 }
 
-func TestGetVersion_NoAlloc(t *testing.T) {
-	header := &Versioning{Type: HeaderVersion, Key: "X-Api-Version", DefaultVersion: "v1"}
-	media := &Versioning{Type: MediaType, Key: "v", DefaultVersion: "v1"}
-	custom := &Versioning{Type: CustomVersion, DefaultVersion: "v1", Extractor: func(c *ctx.HTTPContext) string { return "v9" }}
-	query := &Versioning{Type: QueryVersion, Key: "version", DefaultVersion: "v1"}
+func TestVersion_NoAlloc(t *testing.T) {
+	header := &Options{Type: TypeHeader, Key: "X-Api-Version", DefaultVersion: "v1"}
+	media := &Options{Type: TypeMediaType, Key: "v", DefaultVersion: "v1"}
+	custom := &Options{Type: TypeCustom, DefaultVersion: "v1", Extractor: func(c *ctx.HTTPContext) string { return "v9" }}
+	query := &Options{Type: TypeQuery, Key: "version", DefaultVersion: "v1"}
 
 	headerCtx := makeCtxWithHeader("X-Api-Version", "v2")
 	mediaCtx := makeCtxWithHeader("Accept", `text/html, application/json; charset=utf-8; V = "2"`)
 	customCtx := makeCtxEmpty()
 	queryCtx := makeCtxWithQuery("version", "v2")
-	query.GetVersion(queryCtx)
+	Version(query, queryCtx)
 
 	cases := []struct {
 		name string
 		f    func()
 	}{
-		{"header", func() { header.GetVersion(headerCtx) }},
-		{"media type", func() { media.GetVersion(mediaCtx) }},
-		{"custom", func() { custom.GetVersion(customCtx) }},
-		{"query after the first parse", func() { query.GetVersion(queryCtx) }},
+		{"header", func() { Version(header, headerCtx) }},
+		{"media type", func() { Version(media, mediaCtx) }},
+		{"custom", func() { Version(custom, customCtx) }},
+		{"query after the first parse", func() { Version(query, queryCtx) }},
 	}
 	for _, c := range cases {
 		if allocs := testing.AllocsPerRun(100, c.f); allocs != 0 {
@@ -272,10 +272,10 @@ func TestGetVersion_NoAlloc(t *testing.T) {
 	}
 }
 
-func TestGetVersion_Neutral(t *testing.T) {
-	v := &Versioning{Type: QueryVersion, Key: "v", DefaultVersion: NeutralVersion}
+func TestVersion_Neutral(t *testing.T) {
+	v := &Options{Type: TypeQuery, Key: "v", DefaultVersion: NeutralVersion}
 
-	got := v.GetVersion(makeCtxEmpty())
+	got := Version(v, makeCtxEmpty())
 	if got != NeutralVersion {
 		t.Error(test.DiffMessage(got, NeutralVersion, "default version can be NEUTRAL"))
 	}

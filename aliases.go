@@ -43,7 +43,8 @@ type (
 
 	Aggregation = *aggregation.Aggregation
 
-	Versioning = versioning.Versioning
+	VersioningOptions = versioning.Options
+	VersioningType    = versioning.Type
 )
 
 func ModuleBuilder() *core.ModuleBuilder {
@@ -53,3 +54,10 @@ func ModuleBuilder() *core.ModuleBuilder {
 func New() App {
 	return core.New()
 }
+
+const (
+	VersioningQuery     = versioning.TypeQuery
+	VersioningHeader    = versioning.TypeHeader
+	VersioningCustom    = versioning.TypeCustom
+	VersioningMediaType = versioning.TypeMediaType
+)

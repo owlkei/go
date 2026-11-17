@@ -413,7 +413,7 @@ type MessagePipeable struct {
 }
 
 func (m MessagePipeable) Transform(raw any, metadata ArgumentMetadata) any {
-    payload := raw.(ctx.WSPayload)
+    payload := raw.(ginject.WSPayload)
     // Validate, transform
     return transformedData
 }

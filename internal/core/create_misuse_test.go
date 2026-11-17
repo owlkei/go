@@ -75,7 +75,7 @@ func TestApp_BindGlobalExceptionFiltersAfterCreatePanics(t *testing.T) {
 func TestApp_EnableVersioningAfterCreatePanics(t *testing.T) {
 	app := msCreated()
 	msExpectPanic(t, "M3", "invalid app: EnableVersioning must be called before Create", func() {
-		app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
+		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
 	})
 }
 
@@ -107,7 +107,7 @@ func TestApp_ConfigurationBeforeCreateDoesNotPanic(t *testing.T) {
 		app.BindGlobalMiddlewares(msMiddleware{}).
 			BindGlobalGuards(isoGuard{Role: "ms-before"}).
 			BindGlobalInterceptors(z1Interceptor{Name: "ms-before"}).
-			EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
+			EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
 			EnableDevtool().
 			EnableAccessLog()
 		app.Create(NewModuleBuilder().Controllers(hkController{}).Build())

@@ -39,7 +39,7 @@ func TestDevtool_WithoutVersioning(t *testing.T) {
 func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		app := New()
-		app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
+		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
 		app.EnableDevtool()
 		app.Create(NewModuleBuilder().Controllers(dvController{}).Build())
 
@@ -47,8 +47,8 @@ func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 			t.Fatal(test.DiffMessage(app.devtool, "a snapshot with one HTTP entry", "D1: the snapshot is built"))
 		}
 		v := app.devtool.Controller.Http[0].Versioning
-		if v.Value != "2" || v.Key != "X-Version" || v.Type != int32(versioning.HeaderVersion) {
-			t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"2", "X-Version", int32(versioning.HeaderVersion)}, "D1: with versioning the snapshot is what it is today"))
+		if v.Value != "2" || v.Key != "X-Version" || v.Type != int32(versioning.TypeHeader) {
+			t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"2", "X-Version", int32(versioning.TypeHeader)}, "D1: with versioning the snapshot is what it is today"))
 		}
 	})
 }

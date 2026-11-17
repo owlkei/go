@@ -37,12 +37,12 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/cors"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(cors.CORS{
 		AllowOrigins:       []string{"https://app.example.com", "https://*.example.com"},
@@ -52,7 +52,7 @@ func main() {
 	})
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -155,7 +155,7 @@ call your app on a private network (a device, an intranet service).
 
 ### NewMiddleware
 ```go
-func (instance CORS) NewMiddleware() common.MiddlewareFn
+func (instance CORS) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Validates and compiles the options once; the framework calls it at `Create()`. It panics with
@@ -167,10 +167,10 @@ token.
 
 ### Use
 ```go
-func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Makes `CORS` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `CORS` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules

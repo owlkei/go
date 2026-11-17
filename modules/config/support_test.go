@@ -47,14 +47,14 @@ func registerWith(t *testing.T, opts *ConfigModuleOptions) ConfigService {
 func loadEnv(t *testing.T, content string, expand bool) ConfigService {
 	t.Helper()
 	path := writeEnv(t, content)
-	return registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{path}, IsExpandVariables: expand})
+	return registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{path}, IsExpandVariables: expand})
 }
 
 func failEnv(t *testing.T, content string, expand bool) (path, text string) {
 	t.Helper()
 	path = writeEnv(t, content)
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{ENVFilePaths: []string{path}, IsExpandVariables: expand})
+		Register(&ConfigModuleOptions{EnvFilePaths: []string{path}, IsExpandVariables: expand})
 	})
 	if !panicked {
 		t.Fatal(test.DiffMessage("no panic", "a panic", "Register must panic for this file"))

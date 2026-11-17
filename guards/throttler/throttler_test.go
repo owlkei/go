@@ -124,9 +124,9 @@ var allStrategies = []struct {
 	name     string
 	strategy Strategy
 }{
-	{"FixedWindow", FixedWindow},
-	{"SlidingWindow", SlidingWindow},
-	{"TokenBucket", TokenBucket},
+	{"FixedWindow", StrategyFixedWindow},
+	{"SlidingWindow", StrategySlidingWindow},
+	{"TokenBucket", StrategyTokenBucket},
 }
 
 func compile(t testing.TB, g Throttler) activator {
@@ -222,7 +222,7 @@ func TestThrottler_RefusalIs429WithRetryAfter(t *testing.T) {
 			t.Error(test.DiffMessage(ok, false, "T6: "+s.name+" second request must be refused"))
 		}
 		e, isException := refusal.(exception.Exception)
-		if !isException || e.GetCode() != http.StatusTooManyRequests {
+		if !isException || e.Code() != http.StatusTooManyRequests {
 			t.Error(test.DiffMessage(refusal, "exception 429", "T6: "+s.name+" refusal"))
 		}
 		h := headersOf(c)
@@ -308,31 +308,31 @@ func exactnessRun(t *testing.T, a activator, limit int64, goroutines, perGorouti
 }
 
 func TestFixedWindow_ExactUnderConcurrency(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: FixedWindow, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategyFixedWindow, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestFixedWindow_ExactUnderConcurrency_MemoryCache(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: FixedWindow, Backend: memorycache.NewMemoryCache(nil), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategyFixedWindow, Backend: memorycache.NewMemoryCache(nil), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestFixedWindow_ExactUnderConcurrency_DefaultStore(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: FixedWindow, KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategyFixedWindow, KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestSlidingWindow_ExactUnderConcurrency(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: SlidingWindow, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategySlidingWindow, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestSlidingWindow_ExactUnderConcurrency_DefaultStore(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: SlidingWindow, KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategySlidingWindow, KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestTokenBucket_ExactUnderConcurrency(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: TokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategyTokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestTokenBucket_ExactUnderConcurrency_DefaultStore(t *testing.T) {
-	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: TokenBucket, KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
+	exactnessRun(t, compile(t, Throttler{Limit: 1000, TTL: 24 * time.Hour, Strategy: StrategyTokenBucket, KeyFunc: fixedKeyFunc("k")}), 1000, 12, 1000)
 }
 
 func TestFixedWindow_CountsWithIncrOnly(t *testing.T) {
@@ -598,7 +598,7 @@ func TestThrottler_ConcurrentMixedKeysUnderRace(t *testing.T) {
 
 func TestTokenBucket_RetryAfterNeverZeroOnRefusal(t *testing.T) {
 	// 100 tokens per second: once the bucket is empty, the next token is 10 ms away.
-	a := compile(t, Throttler{Limit: 100, TTL: time.Second, Strategy: TokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")})
+	a := compile(t, Throttler{Limit: 100, TTL: time.Second, Strategy: StrategyTokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")})
 	for range 100 {
 		try(a, newCtx("203.0.113.9:1", nil))
 	}

@@ -1,5 +1,7 @@
 # Pattern
 
+Internal package: applications name WebSocket events with `SUBSCRIBE_…` controller methods and publish with `ginject.Publisher` instead.
+
 *Package `pattern` matches dotted topic names (`user.created`, `tenant.abc.user.updated`) against glob-style patterns: `*` is one segment, a trailing `**` is one or more. Ginject uses it for WebSocket event names, the topics of `memorybroker`, and the log's `MaskFields`.*
 
 - [Pattern](#pattern)

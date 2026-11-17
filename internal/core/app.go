@@ -232,7 +232,7 @@ func (app *App) initAccessLog() {
 		return
 	}
 
-	app.accesslog = accesslog.NewAccessLog(&accesslog.AccessLogConfig{
+	app.accesslog = accesslog.NewAccessLog(&accesslog.AccessLogOptions{
 		Tracer: &app.tracer,
 		Logger: app.logger,
 	})
@@ -468,9 +468,9 @@ func (app *App) BindGlobalMiddlewares(middlewares ...common.MiddlewareFn) *App {
 	return app
 }
 
-func (app *App) EnableVersioning(opts *versioning.Versioning) *App {
+func (app *App) EnableVersioning(opts *versioning.Options) *App {
 	app.mustBeBeforeCreate("EnableVersioning")
-	var v versioning.Versioning
+	var v versioning.Options
 	if opts != nil {
 		v = *opts
 	}

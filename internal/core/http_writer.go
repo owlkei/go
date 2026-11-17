@@ -11,7 +11,7 @@ import (
 	"github.com/dangduoc08/ginject/internal/httphook"
 )
 
-var errResponseEnded = errors.New("core: response writer used after the request ended")
+var errResponseEnded = errors.New("ginject: response writer used after the request ended")
 
 type responseWriter struct {
 	w     http.ResponseWriter

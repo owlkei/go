@@ -261,8 +261,8 @@ func TestHTTPContext_JSONPanicWritesNothing(t *testing.T) {
 
 		exc, err := panicException(t, func() { c.JSON(tc.data, tc.args...) })
 
-		if exc.GetCode() != http.StatusInternalServerError {
-			t.Error(test.DiffMessage(exc.GetCode(), http.StatusInternalServerError, "B30: "+name+" should panic with an exception of code 500"))
+		if exc.Code() != http.StatusInternalServerError {
+			t.Error(test.DiffMessage(exc.Code(), http.StatusInternalServerError, "B30: "+name+" should panic with an exception of code 500"))
 		}
 		if tc.cause != nil && !tc.cause(err) {
 			t.Error(test.DiffMessage(err, "<chain holding the encoding/json error>", "B30: "+name+" should keep the encoding error in the chain"))
@@ -450,8 +450,8 @@ func TestHTTPContext_JSONPEscapesLineSeparators(t *testing.T) {
 func TestHTTPContext_JSONPPanicWritesNothing(t *testing.T) {
 	c, w := newResponseContext("/?callback=cb")
 	exc, _ := panicException(t, func() { c.JSONP(make(chan int)) })
-	if exc.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(exc.GetCode(), http.StatusInternalServerError, "B30: JSONP should panic with an exception of code 500"))
+	if exc.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(exc.Code(), http.StatusInternalServerError, "B30: JSONP should panic with an exception of code 500"))
 	}
 	if len(w.Header()) != 0 || w.Body.Len() != 0 {
 		t.Error(test.DiffMessage([2]any{w.Header(), w.Body.Len()}, [2]any{http.Header{}, 0}, "B30: a failed JSONP should write nothing"))

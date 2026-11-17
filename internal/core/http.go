@@ -65,7 +65,7 @@ func buildAllowTable() []string {
 type HTTP struct {
 	route *routing.Router
 
-	versioning          *versioning.Versioning
+	versioning          *versioning.Options
 	isVersioningEnabled bool
 
 	tracer *trace.Tracer
@@ -143,7 +143,7 @@ func newHTTP() *HTTP {
 	}
 }
 
-func (http *HTTP) enableVersioning(v versioning.Versioning) {
+func (http *HTTP) enableVersioning(v versioning.Options) {
 	if v.Key == "" {
 		v.Key = "v"
 	}
@@ -243,7 +243,7 @@ func (http *HTTP) handleRequest(ex *httpExchange) {
 	}
 	version := ""
 	if http.isVersioningEnabled {
-		version = http.versioning.GetVersion(c)
+		version = versioning.Version(http.versioning, c)
 	}
 
 	route, isGone := http.match(c, method, version)
@@ -648,7 +648,7 @@ func (http *HTTP) exceptionOf(ex *httpExchange, rec any) *exception.Exception {
 func (http *HTTP) logAfterResponse(ex *httpExchange, rec any) {
 	value := rec
 	if e, ok := asException(rec); ok {
-		value = e.GetMessage()
+		value = e.Message()
 	}
 	c := &ex.HTTPContext
 	l := http.logger.From(c.Context())

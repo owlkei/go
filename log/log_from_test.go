@@ -107,7 +107,7 @@ func TestWrapLogger_AcceptsFiveMethodAdapter(t *testing.T) {
 }
 
 func TestLogger_WithoutFromUnchanged(t *testing.T) {
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	l.Info("hello", "a", 1, "b", "two")
 	got := jsonTime.ReplaceAllString(buf.String(), `"time":""`)
 	want := `{"time":"","level":"INFO","msg":"hello","a":1,"b":"two"}` + "\n"
@@ -123,7 +123,7 @@ func TestLogger_WithoutFromUnchanged(t *testing.T) {
 
 func TestFrom_NilContextReturnsReceiver(t *testing.T) {
 	var nilCtx context.Context
-	builtin, _ := newTestLog(JSONFormat, LogOptions{})
+	builtin, _ := newTestLog(FormatJSON, LogOptions{})
 	wrapped := WrapLogger(&fromAdapter{}, nil)
 	for name, l := range map[string]Logger{"built-in": builtin, "adapter": wrapped} {
 		if got := l.From(nilCtx); got != l {
@@ -133,7 +133,7 @@ func TestFrom_NilContextReturnsReceiver(t *testing.T) {
 }
 
 func TestFrom_NoScopeReturnsReceiver(t *testing.T) {
-	builtin, _ := newTestLog(JSONFormat, LogOptions{})
+	builtin, _ := newTestLog(FormatJSON, LogOptions{})
 	wrapped := WrapLogger(&fromAdapter{}, nil)
 	for name, l := range map[string]Logger{"built-in": builtin, "adapter": wrapped} {
 		if got := l.From(context.Background()); got != l {
@@ -143,7 +143,7 @@ func TestFrom_NoScopeReturnsReceiver(t *testing.T) {
 }
 
 func TestFrom_EmptyFieldsReturnsReceiver(t *testing.T) {
-	builtin, _ := newTestLog(JSONFormat, LogOptions{})
+	builtin, _ := newTestLog(FormatJSON, LogOptions{})
 	wrapped := WrapLogger(&fromAdapter{}, nil)
 	ctx := scopeContext(tracecontext.Scope{})
 	for name, l := range map[string]Logger{"built-in": builtin, "adapter": wrapped} {
@@ -154,7 +154,7 @@ func TestFrom_EmptyFieldsReturnsReceiver(t *testing.T) {
 }
 
 func TestFrom_BuiltinAddsFieldsAfterArgs_JSON(t *testing.T) {
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	l.From(requestContext()).Info("hello", "a", 1, "b", "two")
 	got := withoutTime(buf.String())
 	want := `{"time":"","level":"INFO","msg":"hello","a":1,"b":"two","trace_id":"` + fromTraceID + `","request":"` + fromRequest + `"}` + "\n"
@@ -164,7 +164,7 @@ func TestFrom_BuiltinAddsFieldsAfterArgs_JSON(t *testing.T) {
 }
 
 func TestFrom_BuiltinAddsFieldsAfterArgs_Text(t *testing.T) {
-	l, buf := newTestLog(TextFormat, LogOptions{})
+	l, buf := newTestLog(FormatText, LogOptions{})
 	l.From(requestContext()).Info("hello", "a", 1)
 	got := withoutTime(buf.String())
 	want := "time= level=INFO msg=hello a=1 trace_id=" + fromTraceID + " request=" + fromRequest + "\n"
@@ -174,9 +174,9 @@ func TestFrom_BuiltinAddsFieldsAfterArgs_Text(t *testing.T) {
 }
 
 func TestFrom_BuiltinAddsFieldsAfterArgs_Pretty(t *testing.T) {
-	scoped, scopedBuf := newTestLog(PrettyFormat, LogOptions{})
+	scoped, scopedBuf := newTestLog(FormatPretty, LogOptions{})
 	scoped.From(requestContext()).Info("hello", "a", 1)
-	plainLogger, plainBuf := newTestLog(PrettyFormat, LogOptions{})
+	plainLogger, plainBuf := newTestLog(FormatPretty, LogOptions{})
 	plainLogger.Info("hello", "a", 1, "trace_id", fromTraceID, "request", fromRequest)
 	if got, want := withoutTime(scopedBuf.String()), withoutTime(plainBuf.String()); got != want {
 		t.Error(test.DiffMessage(got, want, "F3: Pretty prints the fields as rows after the arguments"))
@@ -188,7 +188,7 @@ func TestFrom_BuiltinAddsFieldsAfterArgs_Pretty(t *testing.T) {
 }
 
 func TestFrom_AllFieldsInScopeOrder(t *testing.T) {
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	ctx := scopeContext(tracecontext.Scope{TraceID: fromTraceID, Request: fromRequest, Connection: "c0c0c0c0c0c0c0c0", Message: "m1m1m1m1", Upstream: "up-1"})
 	l.From(ctx).Info("m")
 	got := withoutTime(buf.String())
@@ -278,7 +278,7 @@ func TestFrom_FastPathEqualsSlowPath(t *testing.T) {
 }
 
 func TestFrom_MalformedArgsKeepFields(t *testing.T) {
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	ctx := requestContext()
 	l.From(ctx).Info("m", "lonely")
 	l.From(ctx).Info("m", 5, "x")
@@ -293,7 +293,7 @@ func TestFrom_MalformedArgsKeepFields(t *testing.T) {
 }
 
 func TestFrom_MaskRuleMasksField(t *testing.T) {
-	for _, format := range []logFormat{JSONFormat, TextFormat, PrettyFormat} {
+	for _, format := range []Format{FormatJSON, FormatText, FormatPretty} {
 		l, buf := newTestLog(format, LogOptions{MaskFields: []string{"request"}})
 		l.From(requestContext()).Info("m", "k", "v")
 		out := plain(buf.String())
@@ -344,7 +344,7 @@ func TestFrom_DuplicateKeyKept(t *testing.T) {
 	if calls := adapter.all(); len(calls) != 1 || !slices.Equal(calls[0].args, want) {
 		t.Error(test.DiffMessage(calls, want, "F5: a key the caller also passes is not deduplicated"))
 	}
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	l.From(requestContext()).Info("m", "trace_id", "mine")
 	if n := strings.Count(buf.String(), `"trace_id"`); n != 2 {
 		t.Error(test.DiffMessage(n, 2, "F5: the built-in logger keeps both"))
@@ -354,7 +354,7 @@ func TestFrom_DuplicateKeyKept(t *testing.T) {
 func TestFrom_SecondScopeReplaces(t *testing.T) {
 	a := scopeContext(tracecontext.Scope{TraceID: "aaaa", Request: "a1"})
 	b := scopeContext(tracecontext.Scope{TraceID: "bbbb", Request: "b1"})
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	l.From(a).From(b).Info("m")
 	l.From(b).Info("m")
 	lines := strings.Split(strings.TrimSuffix(withoutTime(buf.String()), "\n"), "\n")
@@ -391,7 +391,7 @@ func (f failingValue) LogValue() slog.Value {
 
 func TestFrom_BelowLevelDoesNoWork(t *testing.T) {
 	buf := &syncBuf{}
-	l := newLog(buf, false, &LogOptions{LogFormat: JSONFormat, Level: WarnLevel, MaskFields: []string{"k"}})
+	l := newLog(buf, false, &LogOptions{Format: FormatJSON, Level: LevelWarn, MaskFields: []string{"k"}})
 	scoped := l.From(requestContext())
 	scoped.Debug("m", "k", failingValue{t}, "nested", map[string]any{"v": failingValue{t}})
 	scoped.Info("m", "k", failingValue{t})
@@ -401,7 +401,7 @@ func TestFrom_BelowLevelDoesNoWork(t *testing.T) {
 }
 
 func TestFrom_AddSourceIsCaller(t *testing.T) {
-	l, buf := newTestLog(JSONFormat, LogOptions{AddSource: true})
+	l, buf := newTestLog(FormatJSON, LogOptions{IsAddSource: true})
 	_, _, line, _ := runtime.Caller(0)
 	l.From(requestContext()).Info("m", "a", 1)
 	var out struct {
@@ -420,7 +420,7 @@ func TestFrom_AddSourceIsCaller(t *testing.T) {
 }
 
 func TestFrom_DoesNotModifyReceiver(t *testing.T) {
-	l, buf := newTestLog(JSONFormat, LogOptions{})
+	l, buf := newTestLog(FormatJSON, LogOptions{})
 	_ = l.From(requestContext())
 	l.Info("m")
 	if strings.Contains(buf.String(), "trace_id") {
@@ -430,7 +430,7 @@ func TestFrom_DoesNotModifyReceiver(t *testing.T) {
 
 func TestFrom_ConcurrentSameScopeNoRace(t *testing.T) {
 	buf := &syncBuf{}
-	l := newLog(buf, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(buf, false, &LogOptions{Format: FormatJSON})
 	ctx := requestContext()
 	adapter := &fromAdapter{}
 	w := WrapLogger(adapter, nil)
@@ -469,7 +469,7 @@ func TestFrom_ConcurrentSameScopeNoRace(t *testing.T) {
 
 func TestFrom_AfterRequestStillHasFields(t *testing.T) {
 	buf := &syncBuf{}
-	l := newLog(buf, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(buf, false, &LogOptions{Format: FormatJSON})
 	base := requestContext()
 	ctx, cancel := context.WithCancel(base)
 	scoped := l.From(ctx)
@@ -485,7 +485,7 @@ func TestFrom_AfterRequestStillHasFields(t *testing.T) {
 
 func TestFrom_CachedPerScope(t *testing.T) {
 	ctx := requestContext()
-	l, _ := newTestLog(JSONFormat, LogOptions{})
+	l, _ := newTestLog(FormatJSON, LogOptions{})
 	first := l.From(ctx)
 	if second := l.From(ctx); second != first {
 		t.Error(test.DiffMessage(second, first, "C5, F9: From on the same scope and logger returns the cached logger"))
@@ -504,7 +504,7 @@ func TestFrom_CachedPerScope(t *testing.T) {
 }
 
 func TestFrom_NoScopeAllocatesNothing(t *testing.T) {
-	l, _ := newTestLog(JSONFormat, LogOptions{})
+	l, _ := newTestLog(FormatJSON, LogOptions{})
 	ctx := context.Background()
 	if allocs := testing.AllocsPerRun(200, func() { _ = l.From(ctx) }); allocs != 0 {
 		t.Error(test.DiffMessage(allocs, 0, "C1: From on a context without a scope allocates nothing"))
@@ -513,9 +513,9 @@ func TestFrom_NoScopeAllocatesNothing(t *testing.T) {
 
 func TestFrom_DifferentLoggersSameScopeDoNotMix(t *testing.T) {
 	ctx := requestContext()
-	jsonLogger, jsonBuf := newTestLog(JSONFormat, LogOptions{})
-	textLogger, textBuf := newTestLog(TextFormat, LogOptions{})
-	maskedLogger, maskedBuf := newTestLog(JSONFormat, LogOptions{MaskFields: []string{"request"}})
+	jsonLogger, jsonBuf := newTestLog(FormatJSON, LogOptions{})
+	textLogger, textBuf := newTestLog(FormatText, LogOptions{})
+	maskedLogger, maskedBuf := newTestLog(FormatJSON, LogOptions{MaskFields: []string{"request"}})
 	adapter := &fromAdapter{}
 	wrapped := WrapLogger(adapter, nil)
 	for range 3 {
@@ -540,7 +540,7 @@ func TestFrom_DifferentLoggersSameScopeDoNotMix(t *testing.T) {
 
 func TestFrom_FatalWritesFieldsThenExits(t *testing.T) {
 	buf := &syncBuf{}
-	l := newLog(buf, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(buf, false, &LogOptions{Format: FormatJSON})
 	saved := exit
 	var code int
 	var atExit string

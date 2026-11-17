@@ -95,23 +95,23 @@ func TestNormalizeRecovered_ExceptionPassthrough(t *testing.T) {
 
 func TestNormalizeRecovered_ErrorValue(t *testing.T) {
 	got := NormalizeRecovered(errors.New("boom"))
-	if got.GetMessage() != "boom" {
-		t.Error(test.DiffMessage(got.GetMessage(), "boom", "an error panic should use its Error() text as the response"))
+	if got.Message() != "boom" {
+		t.Error(test.DiffMessage(got.Message(), "boom", "an error panic should use its Error() text as the response"))
 	}
 }
 
 func TestNormalizeRecovered_StringValue(t *testing.T) {
 	got := NormalizeRecovered("boom string")
-	if got.GetMessage() != "boom string" {
-		t.Error(test.DiffMessage(got.GetMessage(), "boom string", "a string panic should be used verbatim as the response"))
+	if got.Message() != "boom string" {
+		t.Error(test.DiffMessage(got.Message(), "boom string", "a string panic should be used verbatim as the response"))
 	}
 }
 
 func TestNormalizeRecovered_UnknownTypeUsesGenericMessage(t *testing.T) {
 	got := NormalizeRecovered(42)
 	want := http.StatusText(http.StatusInternalServerError)
-	if got.GetMessage() != want {
-		t.Error(test.DiffMessage(got.GetMessage(), want, "an unrecognized panic value should fall back to the generic 500 text"))
+	if got.Message() != want {
+		t.Error(test.DiffMessage(got.Message(), want, "an unrecognized panic value should fall back to the generic 500 text"))
 	}
 }
 
@@ -127,11 +127,11 @@ func TestNormalizeRecovered_PointerIsReturnedAsIs(t *testing.T) {
 	if got != &original {
 		t.Error(test.DiffMessage(got, &original, "B21: a re-thrown pointer is returned as is"))
 	}
-	if got.GetCode() != http.StatusNotFound {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusNotFound, "B21: the status code is kept"))
+	if got.Code() != http.StatusNotFound {
+		t.Error(test.DiffMessage(got.Code(), http.StatusNotFound, "B21: the status code is kept"))
 	}
-	if got.GetMessage() != "nope" {
-		t.Error(test.DiffMessage(got.GetMessage(), "nope", "B21: the message is kept"))
+	if got.Message() != "nope" {
+		t.Error(test.DiffMessage(got.Message(), "nope", "B21: the message is kept"))
 	}
 }
 
@@ -146,11 +146,11 @@ func TestNormalizeRecovered_NilPointerIsUnknown(t *testing.T) {
 	if got == nil {
 		t.Fatal(test.DiffMessage(got, "an exception", "B21: a nil pointer becomes an exception"))
 	}
-	if got.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "B21: code"))
+	if got.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, "B21: code"))
 	}
-	if got.GetMessage() != "Internal Server Error" {
-		t.Error(test.DiffMessage(got.GetMessage(), "Internal Server Error", "B21: message"))
+	if got.Message() != "Internal Server Error" {
+		t.Error(test.DiffMessage(got.Message(), "Internal Server Error", "B21: message"))
 	}
 }
 
@@ -162,11 +162,11 @@ func TestNormalizeRecovered_ValueKeepsFields(t *testing.T) {
 	if got == &original {
 		t.Error(test.DiffMessage(got, "a pointer to a copy", "B22: the value is copied"))
 	}
-	if got.GetCode() != original.GetCode() {
-		t.Error(test.DiffMessage(got.GetCode(), original.GetCode(), "B22: code"))
+	if got.Code() != original.Code() {
+		t.Error(test.DiffMessage(got.Code(), original.Code(), "B22: code"))
 	}
-	if got.GetMessage() != original.GetMessage() {
-		t.Error(test.DiffMessage(got.GetMessage(), original.GetMessage(), "B22: message"))
+	if got.Message() != original.Message() {
+		t.Error(test.DiffMessage(got.Message(), original.Message(), "B22: message"))
 	}
 	if got.Error() != original.Error() {
 		t.Error(test.DiffMessage(got.Error(), original.Error(), "B22: Error()"))
@@ -176,11 +176,11 @@ func TestNormalizeRecovered_ValueKeepsFields(t *testing.T) {
 func TestNormalizeRecovered_ErrorBecomes500(t *testing.T) {
 	got := NormalizeRecovered(errors.New("boom"))
 
-	if got.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "B23: code"))
+	if got.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, "B23: code"))
 	}
-	if got.GetMessage() != "boom" {
-		t.Error(test.DiffMessage(got.GetMessage(), "boom", "B23: message is err.Error()"))
+	if got.Message() != "boom" {
+		t.Error(test.DiffMessage(got.Message(), "boom", "B23: message is err.Error()"))
 	}
 	if got.Error() != "Internal Server Error" {
 		t.Error(test.DiffMessage(got.Error(), "Internal Server Error", "B23: Error()"))
@@ -190,33 +190,33 @@ func TestNormalizeRecovered_ErrorBecomes500(t *testing.T) {
 func TestNormalizeRecovered_CustomErrorBecomes500(t *testing.T) {
 	got := NormalizeRecovered(&customError{text: "driver: connection refused"})
 
-	if got.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "B23: code"))
+	if got.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, "B23: code"))
 	}
-	if got.GetMessage() != "driver: connection refused" {
-		t.Error(test.DiffMessage(got.GetMessage(), "driver: connection refused", "B23: message"))
+	if got.Message() != "driver: connection refused" {
+		t.Error(test.DiffMessage(got.Message(), "driver: connection refused", "B23: message"))
 	}
 }
 
 func TestNormalizeRecovered_StringBecomes500(t *testing.T) {
 	got := NormalizeRecovered("boom string")
 
-	if got.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "B23: code"))
+	if got.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, "B23: code"))
 	}
-	if got.GetMessage() != "boom string" {
-		t.Error(test.DiffMessage(got.GetMessage(), "boom string", "B23: message is the string"))
+	if got.Message() != "boom string" {
+		t.Error(test.DiffMessage(got.Message(), "boom string", "B23: message is the string"))
 	}
 }
 
 func TestNormalizeRecovered_NilIs500(t *testing.T) {
 	got := NormalizeRecovered(nil)
 
-	if got.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "B24: code"))
+	if got.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, "B24: code"))
 	}
-	if got.GetMessage() != "Internal Server Error" {
-		t.Error(test.DiffMessage(got.GetMessage(), "Internal Server Error", "B24: message"))
+	if got.Message() != "Internal Server Error" {
+		t.Error(test.DiffMessage(got.Message(), "Internal Server Error", "B24: message"))
 	}
 }
 
@@ -225,11 +225,11 @@ func TestNormalizeRecovered_OtherValueIs500(t *testing.T) {
 	for _, rec := range []any{42, 3.5, []string{"a"}, payload{secret: "token"}, &payload{secret: "token"}} {
 		got := NormalizeRecovered(rec)
 
-		if got.GetCode() != http.StatusInternalServerError {
-			t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, fmt.Sprintf("B24: %T code", rec)))
+		if got.Code() != http.StatusInternalServerError {
+			t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, fmt.Sprintf("B24: %T code", rec)))
 		}
-		if got.GetMessage() != "Internal Server Error" {
-			t.Error(test.DiffMessage(got.GetMessage(), "Internal Server Error", fmt.Sprintf("B24: %T message", rec)))
+		if got.Message() != "Internal Server Error" {
+			t.Error(test.DiffMessage(got.Message(), "Internal Server Error", fmt.Sprintf("B24: %T message", rec)))
 		}
 	}
 }
@@ -239,8 +239,8 @@ func TestNormalizeRecovered_WrappedExceptionKeepsCode(t *testing.T) {
 
 	got := NormalizeRecovered(wrapped)
 
-	if got.GetCode() != http.StatusNotFound {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusNotFound, "Q4: a wrapped exception keeps its code"))
+	if got.Code() != http.StatusNotFound {
+		t.Error(test.DiffMessage(got.Code(), http.StatusNotFound, "Q4: a wrapped exception keeps its code"))
 	}
 }
 
@@ -250,8 +250,8 @@ func TestNormalizeRecovered_DeeplyWrappedExceptionKeepsCode(t *testing.T) {
 
 	got := NormalizeRecovered(wrapped)
 
-	if got.GetCode() != http.StatusForbidden {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusForbidden, "Q4: errors.As reaches through several wrappers"))
+	if got.Code() != http.StatusForbidden {
+		t.Error(test.DiffMessage(got.Code(), http.StatusForbidden, "Q4: errors.As reaches through several wrappers"))
 	}
 }
 
@@ -260,10 +260,10 @@ func TestNormalizeRecovered_WrappedPlainErrorBecomes500(t *testing.T) {
 
 	got := NormalizeRecovered(wrapped)
 
-	if got.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(got.GetCode(), http.StatusInternalServerError, "Q4: an error without an exception is a 500"))
+	if got.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(got.Code(), http.StatusInternalServerError, "Q4: an error without an exception is a 500"))
 	}
-	if got.GetMessage() != "load user: disk" {
-		t.Error(test.DiffMessage(got.GetMessage(), "load user: disk", "B23: message is err.Error()"))
+	if got.Message() != "load user: disk" {
+		t.Error(test.DiffMessage(got.Message(), "load user: disk", "B23: message is err.Error()"))
 	}
 }

@@ -27,13 +27,13 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/httpsredirect"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(
 		proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}},
@@ -41,7 +41,7 @@ func main() {
 	)
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -85,7 +85,7 @@ httpsredirect.HTTPSRedirect{Port: 8443}
 
 ### NewMiddleware
 ```go
-func (instance HTTPSRedirect) NewMiddleware() common.MiddlewareFn
+func (instance HTTPSRedirect) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Validates the options once; the framework calls it at `Create()`. It panics with
@@ -95,10 +95,10 @@ outside 0-65535.
 
 ### Use
 ```go
-func (instance HTTPSRedirect) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance HTTPSRedirect) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Makes `HTTPSRedirect` a `common.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `HTTPSRedirect` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules

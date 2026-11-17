@@ -179,8 +179,8 @@ func TestHTTPContext_FormMalformedIsBadRequest(t *testing.T) {
 
 	exc, err := panicException(t, func() { c.Form() })
 
-	if exc.GetCode() != http.StatusBadRequest || exc.GetMessage() != "Invalid form body" {
-		t.Error(test.DiffMessage([2]any{exc.GetCode(), exc.GetMessage()}, [2]any{http.StatusBadRequest, "Invalid form body"}, "B11: a malformed form should be a bad request"))
+	if exc.Code() != http.StatusBadRequest || exc.Message() != "Invalid form body" {
+		t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusBadRequest, "Invalid form body"}, "B11: a malformed form should be a bad request"))
 	}
 	var escape url.EscapeError
 	if !errors.As(err, &escape) {
@@ -204,8 +204,8 @@ func TestHTTPContext_FormTooLargeIs413(t *testing.T) {
 
 		exc, err := panicException(t, func() { c.Form() })
 
-		if exc.GetCode() != http.StatusRequestEntityTooLarge {
-			t.Error(test.DiffMessage(exc.GetCode(), http.StatusRequestEntityTooLarge, "B11: a "+name+" form over the limit should panic with code 413"))
+		if exc.Code() != http.StatusRequestEntityTooLarge {
+			t.Error(test.DiffMessage(exc.Code(), http.StatusRequestEntityTooLarge, "B11: a "+name+" form over the limit should panic with code 413"))
 		}
 		var tooLarge *http.MaxBytesError
 		if !errors.As(err, &tooLarge) {
@@ -225,8 +225,8 @@ func TestHTTPContext_FormBrokenMultipartIsBadRequest(t *testing.T) {
 
 		exc, _ := panicException(t, func() { c.Form() })
 
-		if exc.GetCode() != http.StatusBadRequest || exc.GetMessage() != "Invalid form body" {
-			t.Error(test.DiffMessage([2]any{exc.GetCode(), exc.GetMessage()}, [2]any{http.StatusBadRequest, "Invalid form body"}, "B11: a broken multipart body ("+name+") should be a bad request"))
+		if exc.Code() != http.StatusBadRequest || exc.Message() != "Invalid form body" {
+			t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusBadRequest, "Invalid form body"}, "B11: a broken multipart body ("+name+") should be a bad request"))
 		}
 	}
 }
@@ -234,8 +234,8 @@ func TestHTTPContext_FormBrokenMultipartIsBadRequest(t *testing.T) {
 func TestHTTPContext_FormMissingBoundaryIsBadRequest(t *testing.T) {
 	c := newFormContext("multipart/form-data", strings.NewReader("--xyz--"))
 	exc, _ := panicException(t, func() { c.Form() })
-	if exc.GetCode() != http.StatusBadRequest {
-		t.Error(test.DiffMessage(exc.GetCode(), http.StatusBadRequest, "B11: a multipart form without a boundary should be a bad request"))
+	if exc.Code() != http.StatusBadRequest {
+		t.Error(test.DiffMessage(exc.Code(), http.StatusBadRequest, "B11: a multipart form without a boundary should be a bad request"))
 	}
 }
 

@@ -1,5 +1,7 @@
 # Common
 
+Internal package: applications use `ginject.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
+
 *Common is a part of `Ginject` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
 
 - [Common](#common)
@@ -79,10 +81,10 @@ func (instance EnvelopeInterceptor) Intercept(c *ctx.HTTPContext, a *aggregation
 type NotFoundFilter struct{}
 
 func (instance NotFoundFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	if ex.GetCode() != 404 {
+	if ex.Code() != 404 {
 		panic(ex)
 	}
-	c.Status(404).JSON(map[string]any{"message": ex.GetMessage()})
+	c.Status(404).JSON(map[string]any{"message": ex.Message()})
 }
 
 type UserController struct {

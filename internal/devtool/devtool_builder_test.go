@@ -31,7 +31,7 @@ func buildSnapshot() *Devtool {
 		AddMiddlewares(nil, nil).
 		AddGuarders([]any{snapshotGlobalGuard{}}, nil).
 		AddInterceptors(nil, nil).
-		AddVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
+		AddVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
 		AddHTTPMainHandlers([]common.HTTPLayer{{
 			Handler:        snapshotHandler,
 			ControllerPath: "users.Controller",
@@ -65,8 +65,8 @@ func TestDevtoolBuilder_BuildsHTTPComponent(t *testing.T) {
 		t.Error(test.DiffMessage(component.Id, "a non-empty id", "id"))
 	}
 	if component.Versioning.Key != "X-Version" || component.Versioning.Value != "1" ||
-		component.Versioning.Type != int32(versioning.HeaderVersion) {
-		t.Error(test.DiffMessage(*component.Versioning, HTTPVersioning{Type: int32(versioning.HeaderVersion), Value: "1", Key: "X-Version"}, "versioning"))
+		component.Versioning.Type != int32(versioning.TypeHeader) {
+		t.Error(test.DiffMessage(*component.Versioning, HTTPVersioning{Type: int32(versioning.TypeHeader), Value: "1", Key: "X-Version"}, "versioning"))
 	}
 }
 

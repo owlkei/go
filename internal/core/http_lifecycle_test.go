@@ -172,7 +172,7 @@ func (f lcFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
 		h(c, ex)
 		return
 	}
-	c.Status(ex.GetCode()).Text("F[" + f.Name + "]" + ex.GetMessage())
+	c.Status(ex.Code()).Text("F[" + f.Name + "]" + ex.Message())
 }
 
 func lcHandle(c *ctx.HTTPContext) any {
@@ -646,7 +646,7 @@ func TestLifecycle_FilterPanicPassesWhatItPanickedWith(t *testing.T) {
 	w := lcServe(app, http.MethodGet, "/ok")
 
 	got, ok := lcCaughtBy("mf1")
-	if !ok || got.GetCode() != http.StatusNotFound || got.GetMessage() != "other" {
+	if !ok || got.Code() != http.StatusNotFound || got.Message() != "other" {
 		t.Error(test.DiffMessage(got, "404 other", "L20: the next filter receives what the filter panicked with"))
 	}
 	lcExpectResponse(t, w, http.StatusNotFound, "F[mf1]other", "L20: the next filter handled it")
@@ -659,7 +659,7 @@ func TestLifecycle_FilterRethrowKeepsTheExceptionUnchanged(t *testing.T) {
 	lcServe(app, http.MethodGet, "/ok")
 
 	got, ok := lcCaughtBy("mf1")
-	if !ok || got.GetCode() != http.StatusBadRequest || got.GetMessage() != "boom" {
+	if !ok || got.Code() != http.StatusBadRequest || got.Message() != "boom" {
 		t.Error(test.DiffMessage(got, "400 boom", "L20: panic(ex) passes the exception on unchanged"))
 	}
 }

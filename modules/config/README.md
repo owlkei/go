@@ -10,7 +10,7 @@
     - [IsIgnoreEnvFile](#isignoreenvfile)
     - [IsOverride](#isoverride)
     - [IsExpandVariables](#isexpandvariables)
-    - [ENVFilePaths](#envfilepaths)
+    - [EnvFilePaths](#envfilepaths)
     - [OnInit](#oninit)
     - [Loads (Custom Configuration Files)](#loads-custom-configuration-files)
     - [Hooks](#hooks)
@@ -59,7 +59,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -67,17 +67,17 @@ type DBProvider struct {
 	ConfigService config.ConfigService
 }
 
-func (dbProvider DBProvider) NewProvider() core.Provider {
+func (dbProvider DBProvider) NewProvider() ginject.Provider {
 	fmt.Println("USERNAME:", dbProvider.ConfigService.Get(("USERNAME")))
 	fmt.Println("PASSWORD:", dbProvider.ConfigService.Get(("PASSWORD")))
 	return dbProvider
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{}),
 			).
@@ -122,7 +122,7 @@ Default: `false`
 
 Required: `false`
 
-If you don't want to use `.env` file, instead would like to simply access `OS` environment variables from the runtime environment. set `IsIgnoreEnvFile: true`. No file is read, the default `.env` included. Setting it together with `ENVFilePaths` panics with `invalid config: IsIgnoreEnvFile is set with ENVFilePaths`.
+If you don't want to use `.env` file, instead would like to simply access `OS` environment variables from the runtime environment. set `IsIgnoreEnvFile: true`. No file is read, the default `.env` included. Setting it together with `EnvFilePaths` panics with `invalid config: IsIgnoreEnvFile is set with ENVFilePaths`.
 
 ```go
 config.Register(&config.ConfigModuleOptions{
@@ -177,18 +177,18 @@ Console:
 URI: mongodb://admin:secret@localhost:27017/test
 ```
 
-### ENVFilePaths
+### EnvFilePaths
 Type: `[]string`
 
 Default: `.env` in the nearest directory, from the working directory upward, that contains `go.mod`; else `.env` in the working directory
 
 Required: `false`
 
-By default, the module looks for a .env file in the root directory of your project, so `go test` in a package directory finds it too. A missing default file is not an error. To specify another paths for the .env files, set the `ENVFilePaths` property to list of files, as follows. Every file you list must exist, and the default file is then not read:
+By default, the module looks for a .env file in the root directory of your project, so `go test` in a package directory finds it too. A missing default file is not an error. To specify another paths for the .env files, set the `EnvFilePaths` property to list of files, as follows. Every file you list must exist, and the default file is then not read:
 
 ```go
 config.Register(&config.ConfigModuleOptions{
-  ENVFilePaths: []string{".env.sql", ".env.aws", "env.redis"},
+  EnvFilePaths: []string{".env.sql", ".env.aws", "env.redis"},
 })
 ```
 
@@ -392,7 +392,7 @@ RAW='${NOT_EXPANDED} \n stays as written'
 
 ## Precedence
 
-Sources are merged in this order: the process environment, then the files in the order of `ENVFilePaths`, then `Loads` in their order. The first source that defines a key wins; with `IsOverride`, the last one wins. The process environment is read, never written: `os.Getenv` does not see values from files.
+Sources are merged in this order: the process environment, then the files in the order of `EnvFilePaths`, then `Loads` in their order. The first source that defines a key wins; with `IsOverride`, the last one wins. The process environment is read, never written: `os.Getenv` does not see values from files.
 
 ## Errors
 
@@ -485,7 +485,7 @@ Binds configuration values to the `bind:"NAME"` fields of a struct and returns t
 
 - Description: Transformed configuration data
 
-- 2nd value: `[]ctx.FieldLevel`
+- 2nd value: `[]ginject.FieldLevel`
 
 - Description: Field validation levels
 

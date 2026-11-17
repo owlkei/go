@@ -350,7 +350,7 @@ func TestLoadDotEnv_AtSizeLimit(t *testing.T) {
 func TestLoadDotEnv_NotRegularFile(t *testing.T) {
 	dir := t.TempDir()
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{ENVFilePaths: []string{dir}})
+		Register(&ConfigModuleOptions{EnvFilePaths: []string{dir}})
 	})
 	want := "invalid config: " + dir + ": not a regular file"
 	if !panicked || text != want {
@@ -369,7 +369,7 @@ func TestLoadDotEnv_NULByte(t *testing.T) {
 func TestLoadDotEnv_MissingFile(t *testing.T) {
 	path := t.TempDir() + "/missing.env"
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{ENVFilePaths: []string{path}})
+		Register(&ConfigModuleOptions{EnvFilePaths: []string{path}})
 	})
 	prefix := "invalid config: " + path + ": "
 	if !panicked || !strings.HasPrefix(text, prefix) || !strings.Contains(text, "no such file") {
@@ -386,7 +386,7 @@ func TestLoadDotEnv_UnreadableFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{ENVFilePaths: []string{path}})
+		Register(&ConfigModuleOptions{EnvFilePaths: []string{path}})
 	})
 	prefix := "invalid config: " + path + ": "
 	if !panicked || !strings.HasPrefix(text, prefix) || !strings.Contains(text, "permission denied") {

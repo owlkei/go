@@ -574,7 +574,7 @@ func TestHTTPError_FilterNeverSeesPanicText(t *testing.T) {
 
 	lcExpectResponse(t, w, http.StatusInternalServerError, "F[mf2]Internal Server Error", "bug 2, E7: a filter that prints GetMessage() prints the fixed text")
 	got, ok := lcCaughtBy("mf2")
-	if !ok || got.GetCode() != http.StatusInternalServerError || got.GetMessage() != "Internal Server Error" {
+	if !ok || got.Code() != http.StatusInternalServerError || got.Message() != "Internal Server Error" {
 		t.Error(test.DiffMessage(got, "500 Internal Server Error", "E7: the filter receives InternalServerErrorException(\"Internal Server Error\")"))
 	}
 }
@@ -769,7 +769,7 @@ func TestAsException_RecognizesExceptionsOnly(t *testing.T) {
 			t.Error(test.DiffMessage(ok, c.ok, "E2: asException for a "+c.name))
 			continue
 		}
-		if ok && (got == nil || got.GetCode() != http.StatusConflict || got.GetMessage() != "taken") {
+		if ok && (got == nil || got.Code() != http.StatusConflict || got.Message() != "taken") {
 			t.Error(test.DiffMessage(got, "409 taken", "E2: asException returns the exception for a "+c.name))
 		}
 	}

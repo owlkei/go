@@ -80,7 +80,7 @@ type chain struct {
 
 type item struct{ N int }
 
-func logOnce(format logFormat, opts LogOptions, msg string, args ...any) string {
+func logOnce(format Format, opts LogOptions, msg string, args ...any) string {
 	logger, buf := newTestLog(format, opts)
 	logger.Info(msg, args...)
 	return buf.String()
@@ -155,10 +155,10 @@ func TestLog_NilPointerIsNull(t *testing.T) {
 			if strings.Contains(out, "log_error") {
 				t.Error(test.DiffMessage(out, "no log_error", "V2: no method is called on a nil pointer ("+formatName(format)+")"))
 			}
-			if format == JSONFormat && strings.Count(out, "null") != 3 {
+			if format == FormatJSON && strings.Count(out, "null") != 3 {
 				t.Error(test.DiffMessage(out, "three nulls", "V2: a nil pointer is null"))
 			}
-			if format == PrettyFormat && strings.Count(plain(out), "null") != 3 {
+			if format == FormatPretty && strings.Count(plain(out), "null") != 3 {
 				t.Error(test.DiffMessage(plain(out), "three nulls", "V2: a nil pointer is null"))
 			}
 		}
@@ -173,28 +173,28 @@ func TestLog_TypedNilError(t *testing.T) {
 		if strings.Contains(out, "log_error") {
 			t.Error(test.DiffMessage(out, "no log_error", "V2: a typed nil error is not called ("+formatName(format)+")"))
 		}
-		if format == JSONFormat && strings.Count(out, "null") != 2 {
+		if format == FormatJSON && strings.Count(out, "null") != 2 {
 			t.Error(test.DiffMessage(out, "two nulls", "V2: nil errors are null"))
 		}
 	}
 }
 
 func TestLog_StructBecomesMap(t *testing.T) {
-	out := logOnce(JSONFormat, LogOptions{MaskFields: []string{"zzz"}}, "x", "a", account{Name: "n", Password: "p"}, "pa", &account{Name: "m", Password: "q"})
+	out := logOnce(FormatJSON, LogOptions{MaskFields: []string{"zzz"}}, "x", "a", account{Name: "n", Password: "p"}, "pa", &account{Name: "m", Password: "q"})
 	if !strings.Contains(out, `"a":{"Name":"n","Password":"p"}`) || !strings.Contains(out, `"pa":{"Name":"m","Password":"q"}`) {
 		t.Error(test.DiffMessage(out, "structs as objects of their fields", "V3: a struct becomes a map, pointers are followed"))
 	}
 }
 
 func TestLog_TagRenames(t *testing.T) {
-	out := logOnce(JSONFormat, LogOptions{}, "x", "r", renamed{Name: "n", Plain: "p"})
+	out := logOnce(FormatJSON, LogOptions{}, "x", "r", renamed{Name: "n", Plain: "p"})
 	if !strings.Contains(out, `"name":"n"`) || strings.Contains(out, `"Name"`) {
 		t.Error(test.DiffMessage(out, `"name":"n"`, "V3: log:\"name\" renames the field"))
 	}
 }
 
 func TestLog_TagDash(t *testing.T) {
-	out := logOnce(JSONFormat, LogOptions{}, "x", "r", renamed{Hidden: "nope", secret: "nope", Plain: "p"})
+	out := logOnce(FormatJSON, LogOptions{}, "x", "r", renamed{Hidden: "nope", secret: "nope", Plain: "p"})
 	if strings.Contains(out, "nope") || strings.Contains(out, "Hidden") || strings.Contains(out, "secret") {
 		t.Error(test.DiffMessage(out, "no hidden or untagged unexported field", "V3: log:\"-\" and untagged unexported fields are left out"))
 	}
@@ -213,14 +213,14 @@ func TestLog_TaggedUnexportedField(t *testing.T) {
 }
 
 func TestLog_IntegerKeyMap(t *testing.T) {
-	out := logOnce(JSONFormat, LogOptions{}, "x", "m", map[int]account{2: {Name: "b"}, 1: {Name: "a"}})
+	out := logOnce(FormatJSON, LogOptions{}, "x", "m", map[int]account{2: {Name: "b"}, 1: {Name: "a"}})
 	if !strings.Contains(out, `"m":{"1":{"Name":"a","Password":""},"2":{"Name":"b","Password":""}}`) {
 		t.Error(test.DiffMessage(out, "integer keys in decimal", "V3: integer keys become decimal strings"))
 	}
 }
 
 func TestLog_SliceAndArrayOfStructs(t *testing.T) {
-	out := logOnce(JSONFormat, LogOptions{}, "x", "s", []account{{Name: "a"}}, "a", [1]account{{Name: "b"}})
+	out := logOnce(FormatJSON, LogOptions{}, "x", "s", []account{{Name: "a"}}, "a", [1]account{{Name: "b"}})
 	if !strings.Contains(out, `"s":[{"Name":"a","Password":""}]`) || !strings.Contains(out, `"a":[{"Name":"b","Password":""}]`) {
 		t.Error(test.DiffMessage(out, "arrays of objects", "V3: slices and arrays become lists"))
 	}
@@ -341,7 +341,7 @@ func TestLog_DepthLimit(t *testing.T) {
 }
 
 func TestLog_ShallowNestingIsNotCut(t *testing.T) {
-	out := logOnce(JSONFormat, LogOptions{}, "x", "c", chainOf(5))
+	out := logOnce(FormatJSON, LogOptions{}, "x", "c", chainOf(5))
 	if strings.Contains(out, "[MAX_DEPTH]") || !strings.Contains(out, "leaf-5") {
 		t.Error(test.DiffMessage(out, "all 6 levels", "V5: a shallow value is shown whole"))
 	}
@@ -372,7 +372,7 @@ func TestLog_NodeLimitKeepsTheFirstValues(t *testing.T) {
 	for i := range items {
 		items[i] = item{N: i}
 	}
-	out := logOnce(JSONFormat, LogOptions{}, "x", "v", items)
+	out := logOnce(FormatJSON, LogOptions{}, "x", "v", items)
 	if !strings.Contains(out, `{"N":0}`) || strings.Contains(out, `{"N":1999}`) {
 		t.Error(test.DiffMessage(out, "first elements shown, last replaced", "V5: the first 1,000 values are kept"))
 	}
@@ -399,7 +399,7 @@ func TestLog_PanickingMethodRecovered(t *testing.T) {
 				if !strings.Contains(out, "original message") || !strings.Contains(out, "log_error") || !strings.Contains(out, "kaboom") || !strings.Contains(out, "WARN") {
 					t.Error(test.DiffMessage(out, "WARN, the message, log_error kaboom", "V6: one line with the level, the message and log_error ("+name+", "+formatName(format)+")"))
 				}
-				if format != PrettyFormat && strings.Count(out, "\n") != 1 {
+				if format != FormatPretty && strings.Count(out, "\n") != 1 {
 					t.Error(test.DiffMessage(out, "one line", "V6: exactly one line is written ("+name+", "+formatName(format)+")"))
 				}
 			}
@@ -425,7 +425,7 @@ func TestLog_PanickingMethodReachesCustomLoggerUnchanged(t *testing.T) {
 }
 
 func TestLog_ErrorLevelRecordedAfterRecovery(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	logger.Error("failed", "bad", panicStringer{})
 	line := jsonLine(t, buf.String())
 	if line["level"] != "ERROR" || line["msg"] != "failed" || line["log_error"] == nil {
@@ -434,7 +434,7 @@ func TestLog_ErrorLevelRecordedAfterRecovery(t *testing.T) {
 }
 
 func TestLog_BuiltInLoggerAfterRecoveryStillWorks(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	logger.Info("a", "bad", panicStringer{})
 	buf.Reset()
 	logger.Info("b", "k", "v")

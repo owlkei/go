@@ -55,7 +55,7 @@ func InjectProvidersIntoHTTPGuards(g *Guard, r *HTTP, cb func(int, reflect.Type,
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid guard: %v.%s must be func(*ctx.HTTPContext) bool to be bound as a HTTP guard",
+				"invalid guard: %v.%s must be func(ginject.HTTPContext) bool to be bound as a HTTP guard",
 				guarderType,
 				GuardMethodName,
 			)))

@@ -24,18 +24,18 @@ func TestWSExceptionHelpers(t *testing.T) {
 	}
 	for _, c := range cases {
 		e := c.fn("body")
-		if e.GetCode() != c.status {
-			t.Error(test.DiffMessage(e.GetCode(), c.status, "WS close status helper code"))
+		if e.Code() != c.status {
+			t.Error(test.DiffMessage(e.Code(), c.status, "WS close status helper code"))
 		}
-		if e.GetStatusText() != c.text {
-			t.Error(test.DiffMessage(e.GetStatusText(), c.text, "WS close status helper text"))
+		if e.StatusText() != c.text {
+			t.Error(test.DiffMessage(e.StatusText(), c.text, "WS close status helper text"))
 		}
 	}
 }
 
 func TestWSCloseStatusText_ReservedCodeHasNoText(t *testing.T) {
 	e := NewException("body", 1006)
-	if text := e.GetStatusText(); text != "" {
+	if text := e.StatusText(); text != "" {
 		t.Error(test.DiffMessage(text, "", "reserved WS close code 1006 must resolve to no text"))
 	}
 }

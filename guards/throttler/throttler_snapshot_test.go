@@ -41,7 +41,7 @@ func numberOf(v any) (int64, bool) {
 }
 
 func TestThrottler_Snapshot(t *testing.T) {
-	a := compile(t, Throttler{Limit: 2, TTL: 24 * time.Hour, Strategy: SlidingWindow})
+	a := compile(t, Throttler{Limit: 2, TTL: 24 * time.Hour, Strategy: StrategySlidingWindow})
 	for i := range 5 {
 		try(a, newCtx("203.0.113.9:"+strconv.Itoa(i+1), nil))
 	}

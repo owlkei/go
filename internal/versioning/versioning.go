@@ -6,56 +6,58 @@ import (
 	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
+type Type int
+
 const (
-	QueryVersion = iota + 1
-	HeaderVersion
-	CustomVersion
-	MediaType
+	TypeQuery Type = iota + 1
+	TypeHeader
+	TypeCustom
+	TypeMediaType
 )
 
 const NeutralVersion = "NEUTRAL"
 
 type ExtractorHandler = func(*ctx.HTTPContext) string
 
-type Versioning struct {
-	Type           int
+type Options struct {
+	Type           Type
 	Key            string
 	DefaultVersion string
 	Extractor      ExtractorHandler
 }
 
-func (v *Versioning) GetTypeString() string {
+func TypeString(v *Options) string {
 	switch v.Type {
-	case QueryVersion:
+	case TypeQuery:
 		return "query"
-	case HeaderVersion:
+	case TypeHeader:
 		return "header"
-	case CustomVersion:
+	case TypeCustom:
 		return "custom"
-	case MediaType:
+	case TypeMediaType:
 		return "media_type"
 	default:
 		return ""
 	}
 }
 
-func (v *Versioning) GetVersion(c *ctx.HTTPContext) string {
+func Version(v *Options, c *ctx.HTTPContext) string {
 	switch v.Type {
-	case QueryVersion:
+	case TypeQuery:
 		if version := c.Query().Get(v.Key); version != "" {
 			return version
 		}
-	case HeaderVersion:
+	case TypeHeader:
 		if version := c.Header().Get(v.Key); version != "" {
 			return version
 		}
-	case CustomVersion:
+	case TypeCustom:
 		if v.Extractor != nil {
 			if version := v.Extractor(c); version != "" {
 				return version
 			}
 		}
-	case MediaType:
+	case TypeMediaType:
 		if version := mediaTypeVersion(c.Header().Get("Accept"), v.Key); version != "" {
 			return version
 		}

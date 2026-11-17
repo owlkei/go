@@ -72,12 +72,12 @@ func TestNewProxy_ValidConfigs(t *testing.T) {
 		{TrustedProxies: entries},
 		{TrustedHops: 1},
 		{TrustedHops: 16},
-		{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded},
-		{TrustedHops: 2, Header: Forwarded},
+		{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded},
+		{TrustedHops: 2, Header: HeaderForwarded},
 		{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true},
 		{TrustedHops: 2, IsHostForwarded: true},
-		{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded, IsHostForwarded: true},
-		{TrustedHops: 1, Header: Forwarded, IsHostForwarded: true},
+		{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded, IsHostForwarded: true},
+		{TrustedHops: 1, Header: HeaderForwarded, IsHostForwarded: true},
 	}
 	for i, p := range valid {
 		if text, ok := panicText(func() { p.NewMiddleware() }); ok {
@@ -87,8 +87,8 @@ func TestNewProxy_ValidConfigs(t *testing.T) {
 }
 
 func TestProxy_HeaderConstants(t *testing.T) {
-	if XForwarded != 0 || Forwarded == XForwarded {
-		t.Error(test.DiffMessage([]Header{XForwarded, Forwarded}, "XForwarded is the zero value", "P11: the default family is X-Forwarded-*"))
+	if HeaderXForwarded != 0 || HeaderForwarded == HeaderXForwarded {
+		t.Error(test.DiffMessage([]Header{HeaderXForwarded, HeaderForwarded}, "XForwarded is the zero value", "P11: the default family is X-Forwarded-*"))
 	}
 }
 
@@ -137,7 +137,7 @@ func TestProxy_UntrustedPeer_IgnoresHeaders(t *testing.T) {
 		"Forwarded", "for=3.3.3.3;proto=https;host=evil.example", "Forwarded", "for=4.4.4.4;proto=https",
 		"X-Real-IP", "5.5.5.5", "X-Client-IP", "6.6.6.6", "True-Client-IP", "7.7.7.7",
 	}
-	for _, header := range []Header{XForwarded, Forwarded} {
+	for _, header := range []Header{HeaderXForwarded, HeaderForwarded} {
 		p := Proxy{TrustedProxies: []string{"10.0.0.0/8", "203.0.113.7"}, Header: header}
 		r := resolve(t, p, "198.51.100.9:1234", headers...)
 		expectIP(t, ClientIP(r), "198.51.100.9", fmt.Sprintf("P3: an untrusted peer's headers change nothing (family %d)", header))
@@ -398,8 +398,8 @@ func TestProxy_Host_OffByDefault(t *testing.T) {
 	}{
 		{"XForwarded trusted mode", trustedPrivate, "10.0.0.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Host", "app.example.com"}},
 		{"XForwarded hops mode", Proxy{TrustedHops: 1}, "198.51.100.1:80", []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Host", "app.example.com"}},
-		{"Forwarded", Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded}, "10.0.0.1:80", []string{"Forwarded", "for=1.1.1.1;proto=https;host=app.example.com"}},
-		{"Forwarded hops mode", Proxy{TrustedHops: 1, Header: Forwarded}, "198.51.100.1:80", []string{"Forwarded", "for=1.1.1.1;proto=https;host=app.example.com"}},
+		{"Forwarded", Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded}, "10.0.0.1:80", []string{"Forwarded", "for=1.1.1.1;proto=https;host=app.example.com"}},
+		{"Forwarded hops mode", Proxy{TrustedHops: 1, Header: HeaderForwarded}, "198.51.100.1:80", []string{"Forwarded", "for=1.1.1.1;proto=https;host=app.example.com"}},
 	}
 	for _, c := range cases {
 		r := resolve(t, c.p, c.remote, c.headers...)
@@ -476,7 +476,7 @@ func TestProxy_NoEntry_KeepsConnection(t *testing.T) {
 }
 
 func TestProxy_Forwarded_Parse(t *testing.T) {
-	p := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded, IsHostForwarded: true}
+	p := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded, IsHostForwarded: true}
 	type result struct{ ip, scheme, host string }
 	cases := []struct {
 		lines []string
@@ -515,7 +515,7 @@ func TestProxy_Forwarded_Parse(t *testing.T) {
 }
 
 func TestProxy_Forwarded_Hops(t *testing.T) {
-	p := Proxy{TrustedHops: 2, Header: Forwarded}
+	p := Proxy{TrustedHops: 2, Header: HeaderForwarded}
 	r := resolve(t, p, "198.51.100.1:80", "Forwarded", "for=9.9.9.9, for=1.1.1.1;proto=https, for=2.2.2.2")
 	expectIP(t, ClientIP(r), "1.1.1.1", "P5, P10: hops count Forwarded elements")
 	if got := Scheme(r); got != "https" {
@@ -527,7 +527,7 @@ func TestProxy_OtherFamilyIgnored(t *testing.T) {
 	xff := []string{"X-Forwarded-For", "1.1.1.1", "X-Forwarded-Proto", "https", "X-Forwarded-Host", "evil.example"}
 	std := []string{"Forwarded", "for=2.2.2.2;proto=https;host=evil.example"}
 
-	r := resolve(t, Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded, IsHostForwarded: true}, "10.0.0.1:80", xff...)
+	r := resolve(t, Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded, IsHostForwarded: true}, "10.0.0.1:80", xff...)
 	expectIP(t, ClientIP(r), "10.0.0.1", "P11: with Header Forwarded, X-Forwarded-* changes nothing")
 	if Scheme(r) != "http" || Host(r) != "example.com" {
 		t.Error(test.DiffMessage([]string{Scheme(r), Host(r)}, []string{"http", "example.com"}, "P11: scheme and host ignore X-Forwarded-*"))
@@ -550,7 +550,7 @@ func TestProxy_NeverRefuses_NeverMutatesRequest(t *testing.T) {
 		{"X-Forwarded-Host", "evil\r\nSet-Cookie: x=1", "Forwarded", "for=;;;;===,,,\""},
 		{"Forwarded", strings.Repeat("for=1.1.1.1,", 3000)},
 	}
-	for _, header := range []Header{XForwarded, Forwarded} {
+	for _, header := range []Header{HeaderXForwarded, HeaderForwarded} {
 		for _, headers := range hostile {
 			r := scoped("10.0.0.1:80", headers...)
 			before := r.Header.Clone()
@@ -653,7 +653,7 @@ func TestProxy_InApp_ResolutionDoesNotLeakToNextRequest(t *testing.T) {
 }
 
 func TestProxy_Snapshot(t *testing.T) {
-	mw := Proxy{TrustedProxies: []string{"10.0.0.0/8", "203.0.113.7"}, Header: Forwarded}.NewMiddleware()
+	mw := Proxy{TrustedProxies: []string{"10.0.0.0/8", "203.0.113.7"}, Header: HeaderForwarded}.NewMiddleware()
 	s, ok := mw.(inspect.Snapshotter)
 	if !ok {
 		t.Fatal(test.DiffMessage(mw, "an inspect.Snapshotter", "I1: the compiled proxy implements Snapshotter"))
@@ -743,7 +743,7 @@ func TestProxy_Allocations(t *testing.T) {
 		t.Error(test.DiffMessage(got, 0.0, "P5: hops mode costs no allocation"))
 	}
 
-	forwarded := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded}.NewMiddleware()
+	forwarded := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded}.NewMiddleware()
 	r = scoped("10.0.0.1:80", "Forwarded", "for=8.8.8.8;proto=https, for=10.0.0.2")
 	if got := testing.AllocsPerRun(200, func() { forwarded.Use(r, w, noop) }); got != 0 {
 		t.Error(test.DiffMessage(got, 0.0, "P10: the Forwarded family costs no allocation"))

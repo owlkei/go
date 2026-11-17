@@ -313,7 +313,7 @@ func TestConcurrentAppCreate_NoDataRace(t *testing.T) {
 
 func TestEnableVersioning_Chaining(t *testing.T) {
 	app := New()
-	result := app.EnableVersioning(&versioning.Versioning{})
+	result := app.EnableVersioning(&versioning.Options{})
 	if result != app {
 		t.Error(test.DiffMessage(result, app, "EnableVersioning should return *App"))
 	}
@@ -1199,7 +1199,7 @@ func TestEnableVersioning_NilIsZeroOptions(t *testing.T) {
 
 func TestEnableVersioning_PointerIsNotRetained(t *testing.T) {
 	app := New()
-	opts := &versioning.Versioning{Key: "X-V"}
+	opts := &versioning.Options{Key: "X-V"}
 	app.EnableVersioning(opts)
 	opts.Key = "changed"
 	if app.http.versioning.Key != "X-V" {

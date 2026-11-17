@@ -24,7 +24,7 @@ func asyncBenchLogger(b *testing.B, out io.Writer) Logger {
 	s := logpipe.New(out)
 	s.StartAsync()
 	b.Cleanup(func() { s.StopAsync(time.Minute) })
-	return newLogSink(s, false, &LogOptions{LogFormat: JSONFormat})
+	return newLogSink(s, false, &LogOptions{Format: FormatJSON})
 }
 
 func BenchmarkLog_Info_Scalars_JSON_Async_1(b *testing.B) {
@@ -51,7 +51,7 @@ func BenchmarkLog_Info_Scalars_JSON_Async_12(b *testing.B) {
 }
 
 func BenchmarkLog_Info_Scalars_JSON_Sync_1(b *testing.B) {
-	l := newLogSink(logpipe.New(io.Discard), false, &LogOptions{LogFormat: JSONFormat})
+	l := newLogSink(logpipe.New(io.Discard), false, &LogOptions{Format: FormatJSON})
 	b.ReportAllocs()
 	for b.Loop() {
 		l.Info("request", "id", "0f1e2d3c4b5a6978", "code", 200, "ok", true, "took", 1.5)
@@ -82,7 +82,7 @@ func BenchmarkLog_Info_SlowOutput_12(b *testing.B) {
 }
 
 func BenchmarkFrom_NoScope(b *testing.B) {
-	l := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(io.Discard, false, &LogOptions{Format: FormatJSON})
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
@@ -91,7 +91,7 @@ func BenchmarkFrom_NoScope(b *testing.B) {
 }
 
 func BenchmarkFrom_First(b *testing.B) {
-	l := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(io.Discard, false, &LogOptions{Format: FormatJSON})
 	b.ReportAllocs()
 	for b.Loop() {
 		ctx := tracecontext.With(context.Background(), &tracecontext.Scope{TraceID: fromTraceID, Request: fromRequest})
@@ -100,7 +100,7 @@ func BenchmarkFrom_First(b *testing.B) {
 }
 
 func BenchmarkFrom_Cached(b *testing.B) {
-	l := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(io.Discard, false, &LogOptions{Format: FormatJSON})
 	ctx := requestContext()
 	l.From(ctx)
 	b.ReportAllocs()
@@ -110,7 +110,7 @@ func BenchmarkFrom_Cached(b *testing.B) {
 }
 
 func BenchmarkLog_From_Info_JSON(b *testing.B) {
-	l := newLog(io.Discard, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLog(io.Discard, false, &LogOptions{Format: FormatJSON})
 	ctx := requestContext()
 	scoped := l.From(ctx)
 	b.ReportAllocs()

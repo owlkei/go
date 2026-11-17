@@ -9,6 +9,11 @@
     - [IsGlobal](#isglobal)
     - [OnInit](#oninit)
     - [Backend](#backend)
+  - [Functions](#functions)
+    - [NewMemoryCache](#newmemorycache)
+  - [`MemoryCacheOptions` Parameters](#memorycacheoptions-parameters)
+    - [MaxEntries](#maxentries)
+    - [MaxBytes](#maxbytes)
   - [`CacheService`](#cacheservice)
   - [`CacheService` Methods](#cacheservice-methods)
     - [Get](#get)
@@ -38,17 +43,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/modules/cache"
 )
 
 type VisitController struct {
-	common.HTTP
+	ginject.HTTP
 	Cache cache.CacheService
 }
 
-func (instance VisitController) NewController() core.Controller {
+func (instance VisitController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -61,9 +65,9 @@ func (instance VisitController) READ_visits() map[string]int64 {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Imports(cache.Register(nil)).
 			Controllers(VisitController{}).
 			Build(),
@@ -112,7 +116,7 @@ cache.Register(&cache.CacheModuleOptions{
 
 Type: `cache.Cache`
 
-Default: `memorycache.NewMemoryCache(nil)`
+Default: `cache.NewMemoryCache(nil)`
 
 Required: `false`
 
@@ -121,11 +125,60 @@ entries and 16 MiB of keys and values; for other bounds, pass your own:
 
 ```go
 cache.Register(&cache.CacheModuleOptions{
-	Backend: memorycache.NewMemoryCache(&memorycache.MemoryCacheOptions{MaxEntries: 200_000, MaxBytes: 64 << 20}),
+	Backend: cache.NewMemoryCache(&cache.MemoryCacheOptions{MaxEntries: 200_000, MaxBytes: 64 << 20}),
 })
 ```
 
-See `memorycache/README.md` for its bounds, eviction and memory cost.
+## Functions
+
+### NewMemoryCache
+
+```go
+func NewMemoryCache(opts *MemoryCacheOptions) Cache
+```
+
+Creates the built-in memory store, for `Backend` or for a component that needs its own store.
+`NewMemoryCache(nil)` is the module's default backend.
+
+#### Rules
+- Creating a cache starts no goroutine and no timer. A timer runs only while the cache holds
+  entries that expire.
+- A full cache forgets old entries: a write never fails or blocks for lack of room.
+- Expiry is exact: an entry is gone the instant its time-to-live has passed.
+- Values are copied in and out.
+- A cache nobody references is garbage collected. It needs no cleanup call.
+
+## `MemoryCacheOptions` Parameters
+
+Pass `nil` (or an empty struct) for the defaults, which suit a small server.
+
+### MaxEntries
+
+Type: `int`
+
+Default: `65536`
+
+Required: `false`
+
+The most entries the cache holds. The cache is split into 64 shards that each hold
+`MaxEntries / 64` entries, so the value is rounded down to a multiple of 64. Values from 1 to 63
+become 64. Zero or a negative value takes the default.
+
+### MaxBytes
+
+Type: `int64`
+
+Default: `16 << 20` (16 MiB)
+
+Required: `false`
+
+The most key bytes plus value bytes the cache holds (`len(key) + len(val)` per entry). Each shard
+holds `MaxBytes / 64` bytes, which is also the largest single entry: 256 KiB with the default. A
+value below 64 KiB becomes 64 KiB. Zero or a negative value takes the default.
+
+```go
+backend := cache.NewMemoryCache(&cache.MemoryCacheOptions{MaxEntries: 32768, MaxBytes: 4 << 20})
+```
 
 ## `CacheService`
 
@@ -229,15 +282,6 @@ Returns `(remaining, true)` for an entry that expires, `(0, true)` for one that 
 
 ## Errors
 
-```go
-var (
-	ErrEmptyKey      = memorycache.ErrEmptyKey
-	ErrNegativeTTL   = memorycache.ErrNegativeTTL
-	ErrEntryTooLarge = memorycache.ErrEntryTooLarge
-	ErrNotCounter    = memorycache.ErrNotCounter
-)
-```
-
 | Error | When |
 |---|---|
 | `ErrEmptyKey` | `Set`, `SetNX`, `Incr` or `Delete` got the key `""`. |
@@ -245,7 +289,7 @@ var (
 | `ErrEntryTooLarge` | The entry is larger than the backend allows (256 KiB of key and value with the default memory cache). |
 | `ErrNotCounter` | `Incr` found a live value that is not 8 bytes. |
 
-They are the same values as the `memorycache` errors. Compare them with `errors.Is`:
+The memory store returns these same values. Their messages start with `cache:`. Compare them with `errors.Is`:
 
 ```go
 if err := instance.Cache.Set(ctx, key, val, ttl); errors.Is(err, cache.ErrEntryTooLarge) {
@@ -323,7 +367,7 @@ func (p prefixed) TTL(ctx context.Context, key string) (time.Duration, bool) {
 }
 
 var Module = cache.Register(&cache.CacheModuleOptions{
-	Backend: prefixed{prefix: "shop:", next: memorycache.NewMemoryCache(nil)},
+	Backend: prefixed{prefix: "shop:", next: cache.NewMemoryCache(nil)},
 })
 ```
 

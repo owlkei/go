@@ -23,10 +23,10 @@ const (
 )
 
 var (
-	ErrEmptyKey      = errors.New("memorycache: key must not be empty")
-	ErrNegativeTTL   = errors.New("memorycache: ttl must not be negative")
-	ErrEntryTooLarge = errors.New("memorycache: entry is larger than the cache allows")
-	ErrNotCounter    = errors.New("memorycache: value is not a counter")
+	ErrEmptyKey      = errors.New("cache: key must not be empty")
+	ErrNegativeTTL   = errors.New("cache: ttl must not be negative")
+	ErrEntryTooLarge = errors.New("cache: entry is larger than the cache allows")
+	ErrNotCounter    = errors.New("cache: value is not a counter")
 )
 
 type MemoryCacheOptions struct {

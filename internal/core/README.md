@@ -1,5 +1,7 @@
 # Core
 
+Internal package: applications use `ginject.New()`, `ginject.ModuleBuilder()` and the root package's `App`, `Module`, `Controller`, `Provider`, `ServerOptions` and `WSOptions` instead.
+
 *Package `core` is the dependency injection container and the server of `Ginject`: it builds the module tree, injects providers into controllers, plans every handler's arguments once at `Create()` and serves HTTP and WebSocket requests through the middleware, guard, interceptor, handler and exception filter pipeline.*
 
 - [Core](#core)
@@ -27,7 +29,7 @@
       - [ShutdownTimeout](#shutdowntimeout)
       - [MaxRequestBodyBytes](#maxrequestbodybytes)
       - [TLSConfig](#tlsconfig)
-      - [H2C](#h2c)
+      - [IsH2C](#ish2c)
     - [Startup errors and logs](#startup-errors-and-logs)
     - [Protocols](#protocols)
     - [Graceful shutdown and Stop](#graceful-shutdown-and-stop)
@@ -157,9 +159,9 @@ app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 #### Request and trace IDs
 - Every response (a route, a 404, a 405, an error) carries `X-Request-Id: <request ID>` (16 hex characters, the same as `c.ID()`) and `Traceparent: 00-<trace ID>-<request ID>-<flags>`.
 - The request ID is always the app's own: neither an incoming `X-Request-Id` nor a `traceparent` sets it.
-- One valid incoming `traceparent` continues its trace ID and keeps its flags (`& 03`), so a client chooses the trace ID of its request (see [trace › Security](../internal/trace/README.md#security)); an absent, repeated or invalid one (upper case, zero IDs, version `ff`, CR/LF, a megabyte of junk) is ignored silently and a new, time-ordered trace starts with flags `03`.
+- One valid incoming `traceparent` continues its trace ID and keeps its flags (`& 03`), so a client chooses the trace ID of its request (see [trace › Security](../trace/README.md#security)); an absent, repeated or invalid one (upper case, zero IDs, version `ff`, CR/LF, a megabyte of junk) is ignored silently and a new, time-ordered trace starts with flags `03`.
 - The scope is in `c.Context()`, `c.Request.Context()` and the `*http.Request` every middleware receives, so guards, interceptors, filters, the handler and a service called with `c.Context()` all read the same IDs. A goroutine that keeps `c.Context()` reads them after the request ended and the pooled context was reused; concurrent requests never read each other's scope.
-- An outbound `net/http` request built with `c.Context()` and sent through `trace.Transport` forwards the trace (`Traceparent`); see [trace](../internal/trace/README.md#outbound-calls).
+- An outbound `net/http` request built with `c.Context()` and sent through `trace.Transport` forwards the trace (`Traceparent`); see [trace](../trace/README.md#outbound-calls).
 - A WebSocket handshake follows the same rules: the 101 response carries both headers, and the connection ID (the `connected` payload's `id`, the `WSConnmgr` key) is the handshake's request ID. Each message dispatched to a topic is its own message with its own ID (a frame naming two topics is two messages); its `c.Context()` carries the connection's trace, the connection ID and the message ID, and is done when the connection closes.
 - A refused upgrade (bad version, missing key) still releases the pooled context.
 - The scope adds one allocation to a request with no trace listener (7 for a static route, 4 for a 404, 5 for a 405), and continuing a trace costs no more.
@@ -184,7 +186,7 @@ func (app *App) Logger() log.Logger
 `Logger()` never returns `nil`: without `SetLogger` it is the built-in logger with default options, the same value on every call. `app.Logger()` and every injected `log.Logger` have `From(ctx)`, whatever was given to `SetLogger`: inside a request, `logger.From(c.Context()).Info(…)` adds the trace ID and the request ID to the line. Only fields of type `log.Logger` are injected; a `log.LogAdapter` field is not.
 
 ```go
-app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
+app.SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON}))
 app.SetLogger(log.WrapLogger(myLogger, []string{"password"}))
 app.Logger().Info("Started")
 ```
@@ -205,7 +207,7 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 | `BindGlobalGuards(...any)` | Guards for every HTTP route and WS event |
 | `BindGlobalInterceptors(...any)` | Interceptors for every HTTP route and WS event |
 | `BindGlobalExceptionFilters(...any)` | Exception filters for every HTTP route and WS event |
-| `EnableVersioning(*versioning.Versioning)` | Route versioning (`Key` defaults to `v`). `nil` is the zero options; the options are copied, so a later change of the caller's struct changes nothing |
+| `EnableVersioning(*versioning.Options)` | Route versioning (`Key` defaults to `v`). `nil` is the zero options; the options are copied, so a later change of the caller's struct changes nothing |
 | `EnableWS(*WSOptions, ...common.MiddlewareFn)` | The WebSocket server, with handshake middlewares |
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
@@ -432,7 +434,7 @@ Required: `false` (`ListenTLS` needs it when no certificate files are given)
 
 The TLS configuration of `ListenTLS` and `Serve`. It is cloned, never modified.
 
-#### H2C
+#### IsH2C
 Type: `bool`
 
 Default: `false`
@@ -445,7 +447,7 @@ For `Listen` and `Serve` without TLS: also accept unencrypted HTTP/2.
 err := app.Listen(8080, &core.ServerOptions{
 	ShutdownTimeout:     10 * time.Second,
 	MaxRequestBodyBytes: 1 << 20,
-	H2C:                 true,
+	IsH2C:               true,
 })
 ```
 
@@ -457,14 +459,14 @@ The serving calls return an error, and never fall back to plain HTTP, when:
 
 | Case | Error |
 |---|---|
-| Called before `Create` | `core: Create must be called before serving` |
-| The app is already serving | `core: app is already serving` |
-| The app has stopped | `core: app is stopped` |
-| `Listen` with a `TLSConfig` | `core: TLSConfig is set: use ListenTLS, or Serve with your listener` |
-| `ListenTLS`, or `Serve` with a `TLSConfig`, with `H2C` | `core: H2C applies to connections without TLS` |
-| No certificate source, or only one of the file names | `core: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates` |
-| The certificate pair can't be loaded | `core: load TLS certificate: <err>` |
-| The port can't be bound (in use, out of range) | `core: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
+| Called before `Create` | `ginject: Create must be called before serving` |
+| The app is already serving | `ginject: app is already serving` |
+| The app has stopped | `ginject: app is stopped` |
+| `Listen` with a `TLSConfig` | `ginject: TLSConfig is set: use ListenTLS, or Serve with your listener` |
+| `ListenTLS`, or `Serve` with a `TLSConfig`, with `IsH2C` | `ginject: IsH2C applies to connections without TLS` |
+| No certificate source, or only one of the file names | `ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates` |
+| The certificate pair can't be loaded | `ginject: load TLS certificate: <err>` |
+| The port can't be bound (in use, out of range) | `ginject: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
 
 In these cases nothing is logged, no hook runs, a listener passed to `Serve` is left open, and the port stays free. After a bind error the app can be served again.
 
@@ -476,9 +478,9 @@ Once the address is bound, the app logs through its logger: one `InstanceLoader`
 |---|---|
 | `Listen`, `Serve` without TLS | HTTP/1.1 only; an HTTP/2 prior-knowledge client is not served as HTTP/2 |
 | `ListenTLS`, `Serve` with TLS | HTTP/1.1 and HTTP/2, chosen by ALPN. A `TLSConfig.NextProtos` without `h2` turns HTTP/2 off |
-| `H2C: true` | HTTP/1.1 and unencrypted HTTP/2 with prior knowledge on the same port. An `Upgrade: h2c` request is answered as HTTP/1.1 |
+| `IsH2C: true` | HTTP/1.1 and unencrypted HTTP/2 with prior knowledge on the same port. An `Upgrade: h2c` request is answered as HTTP/1.1 |
 
-A handler sees `r.Proto == "HTTP/2.0"` for an HTTP/2 client. WebSocket needs HTTP/1.1: `wss://` clients negotiate it by ALPN, so `EnableWS` works on a TLS server, and an upgrade sent over HTTP/2 is refused. Use `H2C` only on a hop you trust, such as behind a TLS-terminating proxy: never expose an h2c port to the internet.
+A handler sees `r.Proto == "HTTP/2.0"` for an HTTP/2 client. WebSocket needs HTTP/1.1: `wss://` clients negotiate it by ALPN, so `EnableWS` works on a TLS server, and an upgrade sent over HTTP/2 is refused. Use `IsH2C` only on a hop you trust, such as behind a TLS-terminating proxy: never expose an h2c port to the internet.
 
 ### Graceful shutdown and Stop
 
@@ -489,9 +491,9 @@ A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `Shut
 3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
 4. The modules' `OnShutdown` hooks run, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
 5. The access log stops, a pending count of suppressed panic stacks is logged, and the log's stdout pipeline is flushed for at most 2 seconds: the lines of the last requests and of the hooks are written when the serving call returns. Lines logged after that are synchronous.
-6. The serving call returns `nil`, `core: shutdown timed out after <timeout>` when step 3 timed out, or `core: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
+6. The serving call returns `nil`, `ginject: shutdown timed out after <timeout>` when step 3 timed out, or `ginject: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
 
-After that the app is stopped: a new serving call returns `core: app is stopped`, while `ServeHTTP` still answers.
+After that the app is stopped: a new serving call returns `ginject: app is stopped`, while `ServeHTTP` still answers.
 
 `Stop()` is safe from any goroutine and any number of times. On a serving app it runs the shutdown above and returns when the hooks have finished. On an app that is not serving, it runs the hooks once and marks the app stopped. The hooks run once per app: every later call waits until the hooks have finished, from any goroutine, and only a call made from inside an `OnShutdown` hook returns at once. Called from a request handler, `Stop()` waits for that same request, so call it as `go app.Stop()` there.
 
@@ -522,7 +524,7 @@ A panic in a handler answers the fixed 500 and the server keeps serving.
 
 ### Deploying
 
-- Run behind a TLS-terminating proxy with `Listen` (add `H2C: true` when the proxy speaks h2c), or serve HTTPS yourself with `ListenTLS`. For certificate rotation without a restart, use `TLSConfig.GetCertificate`; `autocert.Manager.TLSConfig()` fits `TLSConfig`.
+- Run behind a TLS-terminating proxy with `Listen` (add `IsH2C: true` when the proxy speaks h2c), or serve HTTPS yourself with `ListenTLS`. For certificate rotation without a restart, use `TLSConfig.GetCertificate`; `autocert.Manager.TLSConfig()` fits `TLSConfig`.
 - Set the proxy's idle timeout below 75 s.
 - On Kubernetes, add a `preStop` sleep so the endpoint is removed before `SIGTERM` arrives.
 
@@ -631,7 +633,7 @@ From the tests (`http_error_test.go`):
 
 - A middleware's panic and the built-in filter give the same status, body and `Content-Type` for every value.
 - A string, an `error`, a runtime error, `panic(nil)`, a nil `*exception.Exception` or any other value answers the fixed 500 body; nothing of the value is in the response. It is logged once as `UnhandledPanic`; an exception is not.
-- A filter that prints `GetMessage()` of a non-exception panic prints `Internal Server Error`; a filter's own non-exception panic reaches the next filter as the same fixed exception, and is logged.
+- A filter that prints `Message()` of a non-exception panic prints `Internal Server Error`; a filter's own non-exception panic reaches the next filter as the same fixed exception, and is logged.
 - After `c.Text`, `c.JSON`, `c.Redirect`, `w.Write`, `w.WriteHeader` with a code of 200 or more, or `http.ServeFile`, a later panic changes neither status nor body, runs no filter and logs one `ErrorAfterResponse` line. An informational status (`103`) does not count as a response.
 - Codes `0`, `7`, `200`, `399`, `600`, `999`, `1008`, `4001` and `-1` answer `500`; `400` and `599` are kept. `WriteHeader` is never called with an invalid code.
 - With a trace listener, a middleware that panics still emits its `middleware` event, with `Code` = the status of the error response; one that returns emits `Code` 0.

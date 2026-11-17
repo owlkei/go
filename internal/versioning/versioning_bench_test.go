@@ -28,40 +28,40 @@ func benchCtxEmpty() *ctx.HTTPContext {
 }
 
 func BenchmarkGetVersion_Query(b *testing.B) {
-	v := &Versioning{Type: QueryVersion, Key: "version", DefaultVersion: "v1"}
+	v := &Options{Type: TypeQuery, Key: "version", DefaultVersion: "v1"}
 	c := benchCtxQuery("version", "v2")
 	b.ReportAllocs()
 	for b.Loop() {
-		v.GetVersion(c)
+		Version(v, c)
 	}
 }
 
 func BenchmarkGetVersion_Header(b *testing.B) {
-	v := &Versioning{Type: HeaderVersion, Key: "X-Api-Version", DefaultVersion: "v1"}
+	v := &Options{Type: TypeHeader, Key: "X-Api-Version", DefaultVersion: "v1"}
 	c := benchCtxHeader("X-Api-Version", "v2")
 	b.ReportAllocs()
 	for b.Loop() {
-		v.GetVersion(c)
+		Version(v, c)
 	}
 }
 
 func BenchmarkGetVersion_Custom(b *testing.B) {
-	v := &Versioning{
-		Type:      CustomVersion,
+	v := &Options{
+		Type:      TypeCustom,
 		Extractor: func(c *ctx.HTTPContext) string { return "v9" },
 	}
 	c := benchCtxEmpty()
 	b.ReportAllocs()
 	for b.Loop() {
-		v.GetVersion(c)
+		Version(v, c)
 	}
 }
 
 func BenchmarkGetVersion_MediaType(b *testing.B) {
-	v := &Versioning{Type: MediaType, Key: "v", DefaultVersion: "v1"}
+	v := &Options{Type: TypeMediaType, Key: "v", DefaultVersion: "v1"}
 	c := benchCtxHeader("Accept", "application/json;v=v2")
 	b.ReportAllocs()
 	for b.Loop() {
-		v.GetVersion(c)
+		Version(v, c)
 	}
 }

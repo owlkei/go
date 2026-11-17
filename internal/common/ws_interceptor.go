@@ -51,7 +51,7 @@ func InjectProvidersIntoWSInterceptors(i *Interceptor, ws *WS, cb func(int, refl
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid interceptor: %v.%s must be func(*ctx.WSContext, *aggregation.Aggregation) any to be bound as a WS interceptor",
+				"invalid interceptor: %v.%s must be func(ginject.WSContext, ginject.Aggregation) any to be bound as a WS interceptor",
 				interceptableType,
 				InterceptorMethodName,
 			)))

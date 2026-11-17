@@ -42,6 +42,7 @@ WebSocket servers from modules, controllers and providers, and Ginject wires the
   - [Built-in middlewares](#built-in-middlewares)
   - [Production checklist](#production-checklist)
   - [Exceptions](#exceptions)
+  - [Package reference](#package-reference)
   - [License](#license)
 
 ---
@@ -79,15 +80,11 @@ Create `main.go`:
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-)
+import "github.com/dangduoc08/ginject"
 
 type GreetingService struct{}
 
-func (instance GreetingService) NewProvider() core.Provider {
+func (instance GreetingService) NewProvider() ginject.Provider {
 	return instance
 }
 
@@ -96,11 +93,11 @@ func (instance GreetingService) Greet(name string) string {
 }
 
 type HelloController struct {
-	common.HTTP
+	ginject.HTTP
 	GreetingService GreetingService
 }
 
-func (instance HelloController) NewController() core.Controller {
+func (instance HelloController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -108,14 +105,14 @@ func (instance HelloController) READ_hello() string {
 	return "hello"
 }
 
-func (instance HelloController) READ_hello_BY_name(param ctx.Param) ctx.Map {
-	return ctx.Map{"greeting": instance.GreetingService.Greet(param.Get("name"))}
+func (instance HelloController) READ_hello_BY_name(param ginject.Param) ginject.Map {
+	return ginject.Map{"greeting": instance.GreetingService.Greet(param.Get("name"))}
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Controllers(HelloController{}).
 			Providers(GreetingService{}).
 			Build(),
@@ -138,7 +135,7 @@ Run it with `go run .`, then call it:
 
 ### Application
 
-`core.New()` creates an application. Configure it, wire it once with `Create`, then serve it:
+`ginject.New()` creates an application. Configure it, wire it once with `Create`, then serve it:
 
 1. **Configure.** Call the configuration methods below. Each one returns the app, so calls chain.
    They must run before `Create`: after it they panic with
@@ -147,8 +144,8 @@ Run it with `go run .`, then call it:
    controllers, and plans every handler. Call it once per app.
 3. **Serve.** `app.Listen(port, nil)` blocks until the server stops. `ListenTLS` serves HTTPS and
    HTTP/2, and `Serve` serves on a `net.Listener` you made. Pass `nil` options for the safe
-   defaults, or a `*core.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`,
-   `H2C`).
+   defaults, or a `*ginject.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`,
+   `IsH2C`).
 
 | Method | Effect |
 |---|---|
@@ -157,14 +154,14 @@ Run it with `go run .`, then call it:
 | `BindGlobalGuards(...)` | Guards for every HTTP route and WebSocket event. |
 | `BindGlobalInterceptors(...)` | Interceptors for every HTTP route and WebSocket event. |
 | `BindGlobalExceptionFilters(...)` | Exception filters for every HTTP route and WebSocket event. |
-| `EnableVersioning(versioning.Versioning)` | Routes per API version. See [Versioning](#versioning). |
-| `EnableWS(*core.WSOptions, ...)` | The WebSocket server. See [WebSocket](#websocket). |
+| `EnableVersioning(*ginject.VersioningOptions)` | Routes per API version. See [Versioning](#versioning). |
+| `EnableWS(*ginject.WSOptions, ...)` | The WebSocket server. See [WebSocket](#websocket). |
 | `EnableAccessLog()` | One access log line per request. |
 | `EnableDevtool()` | A snapshot of the routes and layers for development tools. |
 
 The server shuts down gracefully on `SIGINT`, `SIGTERM` or `app.Stop()`: running requests get
 30 seconds to finish. An `App` is also an `http.Handler`, so you can serve it with your own
-`http.Server` or call it from tests with `httptest`. See [core › Server](core/README.md#server).
+`http.Server` or call it from tests with `httptest`. See [core › Server](internal/core/README.md#server).
 
 ```go
 package main
@@ -174,15 +171,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 )
 
 type HealthController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance HealthController) NewController() core.Controller {
+func (instance HealthController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -191,8 +187,8 @@ func (instance HealthController) READ_health() string {
 }
 
 func TestHealth(t *testing.T) {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(HealthController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(HealthController{}).Build())
 
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
@@ -203,25 +199,22 @@ func TestHealth(t *testing.T) {
 }
 ```
 
-Each `core.New()` is independent: two apps in one process have their own providers, routes,
+Each `ginject.New()` is independent: two apps in one process have their own providers, routes,
 layers and logger.
 
 ### Module
 
 A module groups controllers and providers, and imports other modules. Build one with
-`core.NewModuleBuilder()`:
+`ginject.ModuleBuilder()`:
 
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-)
+import "github.com/dangduoc08/ginject"
 
 type UserService struct{}
 
-func (instance UserService) NewProvider() core.Provider {
+func (instance UserService) NewProvider() ginject.Provider {
 	return instance
 }
 
@@ -230,11 +223,11 @@ func (instance UserService) FindAll() []string {
 }
 
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 	UserService UserService
 }
 
-func (instance UserController) NewController() core.Controller {
+func (instance UserController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -242,18 +235,18 @@ func (instance UserController) READ_users() []string {
 	return instance.UserService.FindAll()
 }
 
-var UserModule = core.NewModuleBuilder().
+var UserModule = ginject.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}).
 	Build()
 
-var AppModule = core.NewModuleBuilder().
+var AppModule = ginject.ModuleBuilder().
 	Imports(UserModule).
 	Build().
 	Prefix("api")
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(AppModule)
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -268,7 +261,7 @@ func main() {
   by a root with `Prefix("api")` serves `/api/v1/…`.
 - **Global modules:** set `IsGlobal = true` on a module to make its providers visible to every
   module, without an import. The root module's providers are always global.
-- **Module functions:** `Imports` also takes a function that returns a `*core.Module`. Ginject
+- **Module functions:** `Imports` also takes a function that returns a `ginject.Module`. Ginject
   calls it once per app and injects its arguments from the global providers, so a module can
   depend on configuration. This is how `config.Register(…)` and `cache.Register(…)` work.
 - **Hooks:** a module's `OnInit` runs before its providers are constructed, `OnReady` at the end
@@ -278,8 +271,7 @@ func main() {
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -287,13 +279,13 @@ type Database struct {
 	URL string
 }
 
-func (instance Database) NewProvider() core.Provider {
+func (instance Database) NewProvider() ginject.Provider {
 	return instance
 }
 
-func NewDatabaseModule(configService config.ConfigService) *core.Module {
+func NewDatabaseModule(configService config.ConfigService) ginject.Module {
 	url, _ := configService.Get("DATABASE_URL").(string)
-	module := core.NewModuleBuilder().
+	module := ginject.ModuleBuilder().
 		Providers(Database{URL: url}).
 		Build()
 	module.IsGlobal = true
@@ -304,11 +296,11 @@ func NewDatabaseModule(configService config.ConfigService) *core.Module {
 }
 
 type StatusController struct {
-	common.HTTP
+	ginject.HTTP
 	Database Database
 }
 
-func (instance StatusController) NewController() core.Controller {
+func (instance StatusController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -317,9 +309,9 @@ func (instance StatusController) READ_status() bool {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
 				NewDatabaseModule,
@@ -339,7 +331,7 @@ global provider supplies stops `Create()` with
 
 ### Provider
 
-A provider is a struct with a `NewProvider() core.Provider` method. It holds your business logic:
+A provider is a struct with a `NewProvider() ginject.Provider` method. It holds your business logic:
 services, repositories, clients.
 
 - Ginject constructs each provider type once per app. It first injects the provider's exported
@@ -351,7 +343,7 @@ services, repositories, clients.
   when its module is global.
 - Providers are injected by value. Put state that must be shared, such as a connection pool,
   behind a pointer.
-- A field of type `log.Logger` gets the app's logger, and a field of type `common.Publisher`
+- A field of type `log.Logger` gets the app's logger, and a field of type `ginject.Publisher`
   the app's WebSocket publisher.
 
 Never call `NewProvider` yourself: the instance it returns has no injected fields. To read a
@@ -359,9 +351,9 @@ provider from outside the module tree, use `app.Get(UserService{}).(UserService)
 
 ### Controller
 
-A controller is a struct with a `NewController() core.Controller` method. Embed `common.HTTP` for
-HTTP routes or `common.WS` for WebSocket events, plus one embed per kind of layer you bind:
-`common.Middleware`, `common.Guard`, `common.Interceptor` and `common.ExceptionFilter`.
+A controller is a struct with a `NewController() ginject.Controller` method. Embed `ginject.HTTP` for
+HTTP routes or `ginject.WS` for WebSocket events, plus one embed per kind of layer you bind:
+`ginject.Middleware`, `ginject.Guard`, `ginject.Interceptor` and `ginject.ExceptionFilter`.
 
 Bind layers in `NewController`. Pass method values to bind a layer to some handlers only, or none
 to bind it to every handler of the controller:
@@ -372,31 +364,29 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 )
 
 type AdminGuard struct{}
 
-func (instance AdminGuard) CanActivate(c *ctx.HTTPContext) bool {
+func (instance AdminGuard) CanActivate(c ginject.HTTPContext) bool {
 	return c.Header().Get("X-Role") == "admin"
 }
 
 type NoStoreMiddleware struct{}
 
-func (instance NoStoreMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+func (instance NoStoreMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
 	w.Header().Set("Cache-Control", "no-store")
 	next()
 }
 
 type ProductController struct {
-	common.HTTP
-	common.Guard
-	common.Middleware
+	ginject.HTTP
+	ginject.Guard
+	ginject.Middleware
 }
 
-func (instance ProductController) NewController() core.Controller {
+func (instance ProductController) NewController() ginject.Controller {
 	instance.Prefix("catalog")
 	instance.BindMiddleware(NoStoreMiddleware{})
 	instance.BindGuard(AdminGuard{}, instance.CREATE_products, instance.DELETE_products_BY_id)
@@ -411,13 +401,13 @@ func (instance ProductController) CREATE_products() string {
 	return "created"
 }
 
-func (instance ProductController) DELETE_products_BY_id(param ctx.Param) string {
+func (instance ProductController) DELETE_products_BY_id(param ginject.Param) string {
 	return "deleted " + param.Get("id")
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(ProductController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(ProductController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -476,7 +466,7 @@ The rules that follow from the name:
 
 A request for a path with no route answers `404`. A request for a path that has a route under
 another method answers `405` with an `Allow` header. `HEAD` is served by the `GET` route.
-The complete rules are in [common › Route DSL](common/README.md#route-dsl).
+The complete rules are in [common › Route DSL](internal/common/README.md#route-dsl).
 
 ### Handler parameters
 
@@ -488,41 +478,39 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 )
 
 type OrderController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance OrderController) NewController() core.Controller {
+func (instance OrderController) NewController() ginject.Controller {
 	return instance
 }
 
 func (instance OrderController) READ_orders_BY_id(
-	c *ctx.HTTPContext,
-	param ctx.Param,
-	query ctx.Query,
-	header ctx.Header,
-) ctx.Map {
-	return ctx.Map{
+	c ginject.HTTPContext,
+	param ginject.Param,
+	query ginject.Query,
+	header ginject.Header,
+) ginject.Map {
+	return ginject.Map{
 		"id":       param.Get("id"),
 		"expand":   query.Get("expand"),
 		"language": header.Get("Accept-Language"),
-		"request":  c.GetID(),
+		"request":  c.ID(),
 	}
 }
 
-func (instance OrderController) CREATE_orders(body ctx.Body, w http.ResponseWriter) ctx.Map {
+func (instance OrderController) CREATE_orders(body ginject.Body, w http.ResponseWriter) ginject.Map {
 	w.Header().Set("Location", "/orders/1")
-	return ctx.Map{"item": body.Get("item")}
+	return ginject.Map{"item": body.Get("item")}
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(OrderController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(OrderController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -531,29 +519,29 @@ func main() {
 
 | Parameter type | HTTP | WebSocket | Value |
 |---|---|---|---|
-| `*ctx.HTTPContext` | yes | no | The request's context: request data, status and response helpers. |
+| `ginject.HTTPContext` | yes | no | The request's context: request data, status and response helpers. |
 | `*http.Request`, `http.ResponseWriter` | yes | no | The request and the response writer. |
-| `ctx.Param` | yes | no | Path parameters. |
-| `ctx.Query` | yes | no | Query string values. |
-| `ctx.Header` | yes | no | Request headers. |
-| `ctx.Body` | yes | no | The JSON body, as a `map[string]any`. Malformed JSON answers `400`. |
-| `ctx.Form`, `ctx.File` | yes | no | Form values and uploaded files of a urlencoded or multipart request. |
-| `ctx.Redirect` | yes | no | `c.Redirect`: sends a redirect. |
-| `*ctx.WSContext` | no | yes | The message's context. |
-| `ctx.WSPayload` | no | yes | The message's `message` object. |
-| `ctx.Next` | yes | yes | Continues the pipeline. |
-| `common.Publisher` | yes | yes | Publishes to WebSocket subscribers. |
+| `ginject.Param` | yes | no | Path parameters. |
+| `ginject.Query` | yes | no | Query string values. |
+| `ginject.Header` | yes | no | Request headers. |
+| `ginject.Body` | yes | no | The JSON body, as a `map[string]any`. Malformed JSON answers `400`. |
+| `ginject.Form`, `ginject.File` | yes | no | Form values and uploaded files of a urlencoded or multipart request. |
+| `ginject.Redirect` | yes | no | `c.Redirect`: sends a redirect. |
+| `ginject.WSContext` | no | yes | The message's context. |
+| `ginject.WSPayload` | no | yes | The message's `message` object. |
+| `ginject.Next` | yes | yes | Continues the pipeline. |
+| `ginject.Publisher` | yes | yes | Publishes to WebSocket subscribers. |
 | A pipe | yes | yes | What its `Transform` returns. See [Pipes](#pipes). |
 
-The root `ginject` package re-exports these types as aliases (`ginject.Param`, `ginject.Body`,
-`ginject.HTTPContext`, `ginject.Map` …), so you can import one package instead of several.
+These types live in the root `ginject` package. An application imports it, plus `exception`,
+`log`, `middlewares/*`, `modules/*` and `guards/*`; the engine's other packages are internal.
 
 Any other parameter type stops `Create()`:
 `dependency injection: can't resolve dependencies of the 'func(*ctx.HTTPContext, int) string'…`.
 
 The context belongs to one request: never keep `c` or a value read from it after the handler
 returns. Pass `c.Context()` to services and goroutines instead. It carries the request's trace and
-request IDs. See [ctx](ctx/README.md).
+request IDs. See [ctx](internal/ctx/README.md).
 
 ### Handler results
 
@@ -567,7 +555,7 @@ A handler returns nothing, one value, or a status code and a value:
 | `(int, value)` | The first result sets the status code |
 
 The status is `200`, or `201` for `POST`, unless a layer or the handler sets another one. To
-write the response yourself, take `*ctx.HTTPContext` and call `c.Status(code).JSON(data)`,
+write the response yourself, take `ginject.HTTPContext` and call `c.Status(code).JSON(data)`,
 `c.Text(…)` or `c.Redirect(url)`, and return nothing.
 
 ```go
@@ -576,30 +564,28 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 )
 
 type JobController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance JobController) NewController() core.Controller {
+func (instance JobController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance JobController) CREATE_jobs() (int, ctx.Map) {
-	return http.StatusAccepted, ctx.Map{"status": "queued"}
+func (instance JobController) CREATE_jobs() (int, ginject.Map) {
+	return http.StatusAccepted, ginject.Map{"status": "queued"}
 }
 
-func (instance JobController) READ_jobs_BY_id(c *ctx.HTTPContext) {
-	c.Status(http.StatusOK).JSON(ctx.Map{"id": c.Param().Get("id")})
+func (instance JobController) READ_jobs_BY_id(c ginject.HTTPContext) {
+	c.Status(http.StatusOK).JSON(ginject.Map{"id": c.Param().Get("id")})
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(JobController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(JobController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -634,11 +620,11 @@ a panic from a guard onwards   → module exception filters → global exception
   handler. Work that must happen after the handler belongs in an interceptor.
 - A request that matches no route runs the global middlewares only, then answers `404` or `405`.
 
-The complete rules are in [core › Request lifecycle](core/README.md#request-lifecycle).
+The complete rules are in [core › Request lifecycle](internal/core/README.md#request-lifecycle).
 
 ### Middleware
 
-A middleware is a struct with a `Use(*http.Request, http.ResponseWriter, ctx.Next)` method. Call
+A middleware is a struct with a `Use(*http.Request, http.ResponseWriter, ginject.Next)` method. Call
 `next()` to continue, or write a response and return to stop the request:
 
 ```go
@@ -647,23 +633,22 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
+	"github.com/dangduoc08/ginject/log"
 )
 
 type RequestLogMiddleware struct {
 	Logger log.Logger
 }
 
-func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
 	instance.Logger.From(r.Context()).Info("Request", "method", r.Method, "path", r.URL.Path)
 	next()
 }
 
 type APIKeyMiddleware struct{}
 
-func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
 	if r.Header.Get("X-Api-Key") == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -674,11 +659,11 @@ func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, nex
 }
 
 type ReportController struct {
-	common.HTTP
-	common.Middleware
+	ginject.HTTP
+	ginject.Middleware
 }
 
-func (instance ReportController) NewController() core.Controller {
+func (instance ReportController) NewController() ginject.Controller {
 	instance.BindMiddleware(APIKeyMiddleware{}, instance.READ_reports)
 	return instance
 }
@@ -688,9 +673,9 @@ func (instance ReportController) READ_reports() []string {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.BindGlobalMiddlewares(RequestLogMiddleware{})
-	app.Create(core.NewModuleBuilder().Controllers(ReportController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(ReportController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -702,13 +687,13 @@ func main() {
 - `Logger.From(r.Context())` adds the request's `trace_id` and `request` ID to the log line.
 - A middleware's panic never reaches your exception filters. An exception keeps its code and
   message, and any other value answers a fixed `500`. See
-  [core › Errors in middleware](core/README.md#errors-in-middleware).
+  [core › Errors in middleware](internal/core/README.md#errors-in-middleware).
 - Middlewares don't run for WebSocket messages. See [WebSocket](#websocket).
 
 ### Guard
 
 A guard decides whether a request may reach its handler. Write
-`CanActivate(*ctx.HTTPContext) bool` for HTTP routes, or `CanActivate(*ctx.WSContext) bool` for
+`CanActivate(ginject.HTTPContext) bool` for HTTP routes, or `CanActivate(ginject.WSContext) bool` for
 WebSocket events. A guard that returns `false` answers `403` with
 `{"code":403,"error":"Forbidden","message":"Access denied"}`.
 
@@ -723,9 +708,7 @@ can't have unexported fields: they stop `Create()`.
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -739,16 +722,16 @@ func (instance TokenGuard) NewGuard() TokenGuard {
 	return instance
 }
 
-func (instance TokenGuard) CanActivate(c *ctx.HTTPContext) bool {
+func (instance TokenGuard) CanActivate(c ginject.HTTPContext) bool {
 	return instance.Token != "" && c.Header().Get("Authorization") == "Bearer "+instance.Token
 }
 
 type AccountController struct {
-	common.HTTP
-	common.Guard
+	ginject.HTTP
+	ginject.Guard
 }
 
-func (instance AccountController) NewController() core.Controller {
+func (instance AccountController) NewController() ginject.Controller {
 	instance.BindGuard(TokenGuard{})
 	return instance
 }
@@ -758,9 +741,9 @@ func (instance AccountController) READ_account() string {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Imports(config.Register(&config.ConfigModuleOptions{IsGlobal: true})).
 			Controllers(AccountController{}).
 			Build(),
@@ -779,8 +762,8 @@ shape of the input, use a [pipe](#pipes).
 ### Interceptor
 
 An interceptor runs code before and after the handler. Write
-`Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any`, or the same method with
-`*ctx.WSContext` for WebSocket events.
+`Intercept(ginject.HTTPContext, ginject.Aggregation) any`, or the same method with
+`ginject.WSContext` for WebSocket events.
 
 - Return `a.Pipe(operators…)` to run the handler and pass its result through the operators.
 - Return any other value to skip the handler: that value is the response.
@@ -794,28 +777,23 @@ An interceptor runs code before and after the handler. Write
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-)
+import "github.com/dangduoc08/ginject"
 
 type EnvelopeInterceptor struct{}
 
-func (instance EnvelopeInterceptor) Intercept(c *ctx.HTTPContext, a *aggregation.Aggregation) any {
+func (instance EnvelopeInterceptor) Intercept(c ginject.HTTPContext, a ginject.Aggregation) any {
 	return a.Pipe(
 		a.Transform(func(data any) any {
-			return ctx.Map{"data": data, "request": c.GetID()}
+			return ginject.Map{"data": data, "request": c.ID()}
 		}),
 	)
 }
 
 type TagController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance TagController) NewController() core.Controller {
+func (instance TagController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -824,9 +802,9 @@ func (instance TagController) READ_tags() []string {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.BindGlobalInterceptors(EnvelopeInterceptor{})
-	app.Create(core.NewModuleBuilder().Controllers(TagController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(TagController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -834,7 +812,7 @@ func main() {
 ```
 
 `GET /tags` answers `{"data":["go","web"],"request":"<request ID>"}`. Bind an interceptor to one
-controller with `instance.BindInterceptor(EnvelopeInterceptor{})` (embed `common.Interceptor`).
+controller with `instance.BindInterceptor(EnvelopeInterceptor{})` (embed `ginject.Interceptor`).
 The optional constructor is `NewInterceptor`.
 
 ### Exception filter
@@ -843,40 +821,38 @@ Panic with an exception anywhere from a guard onwards, and an exception filter t
 response. Without a filter of your own, the built-in filter answers with the exception's code
 and `{"code":<int>,"error":<string>,"message":<string>}`.
 
-To change the response, write `Catch(*ctx.HTTPContext, *exception.Exception)`, or the same method
-with `*ctx.WSContext` for WebSocket events:
+To change the response, write `Catch(ginject.HTTPContext, *exception.Exception)`, or the same method
+with `ginject.WSContext` for WebSocket events:
 
 ```go
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 )
 
 type ProblemFilter struct{}
 
-func (instance ProblemFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	c.Status(ex.GetCode()).JSON(ctx.Map{
-		"status": ex.GetCode(),
-		"title":  ex.GetStatusText(),
-		"detail": ex.GetMessage(),
+func (instance ProblemFilter) Catch(c ginject.HTTPContext, ex *exception.Exception) {
+	c.Status(ex.Code()).JSON(ginject.Map{
+		"status": ex.Code(),
+		"title":  ex.StatusText(),
+		"detail": ex.Message(),
 	})
 }
 
 type BookController struct {
-	common.HTTP
-	common.ExceptionFilter
+	ginject.HTTP
+	ginject.ExceptionFilter
 }
 
-func (instance BookController) NewController() core.Controller {
+func (instance BookController) NewController() ginject.Controller {
 	instance.BindExceptionFilter(ProblemFilter{})
 	return instance
 }
 
-func (instance BookController) READ_books_BY_id(param ctx.Param) string {
+func (instance BookController) READ_books_BY_id(param ginject.Param) string {
 	if param.Get("id") != "1" {
 		panic(exception.NotFoundException("Book not found"))
 	}
@@ -884,8 +860,8 @@ func (instance BookController) READ_books_BY_id(param ctx.Param) string {
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(BookController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(BookController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -908,20 +884,23 @@ Bind a filter to every route with `app.BindGlobalExceptionFilters(ProblemFilter{
 ### Pipes
 
 A pipe binds and validates one handler parameter. It is a value type with a `Transform` method
-that takes a source and a `common.ArgumentMetadata`, and returns a value of the pipe's own type.
+that takes a source and a `ginject.ArgumentMetadata`, and returns a value of the pipe's own type.
 Declare the pipe as a handler parameter: Ginject calls `Transform` before the handler and passes
 its result.
 
-| Source parameter of `Transform` | Interface |
+| Source | `Transform` method |
 |---|---|
-| `ctx.Body` | `common.BodyPipeable` |
-| `ctx.Query` | `common.QueryPipeable` |
-| `ctx.Param` | `common.ParamPipeable` |
-| `ctx.Header` | `common.HeaderPipeable` |
-| `ctx.Form` | `common.FormPipeable` |
-| `ctx.File` | `common.FilePipeable` |
-| `*ctx.HTTPContext` | `common.ContextPipeable` |
-| `ctx.WSPayload` | `common.WSPayloadPipeable` |
+| The JSON body | `Transform(ginject.Body, ginject.ArgumentMetadata) any` |
+| The query string | `Transform(ginject.Query, ginject.ArgumentMetadata) any` |
+| The path parameters | `Transform(ginject.Param, ginject.ArgumentMetadata) any` |
+| The request headers | `Transform(ginject.Header, ginject.ArgumentMetadata) any` |
+| The form values | `Transform(ginject.Form, ginject.ArgumentMetadata) any` |
+| The uploaded files | `Transform(ginject.File, ginject.ArgumentMetadata) any` |
+| The request's context | `Transform(ginject.HTTPContext, ginject.ArgumentMetadata) any` |
+| A WebSocket message | `Transform(ginject.WSPayload, ginject.ArgumentMetadata) any` |
+
+`ArgumentMetadata` tells the pipe where it runs: `ContextType` is `http` or `ws`, and `ParamType`
+is the source (`body`, `query`, `param`, `header`, `form`, `file`, `context` or `wsPayload`).
 
 `Bind` and `BindValue` copy the source into a struct, field by field, by the `bind` tag:
 
@@ -931,9 +910,7 @@ package main
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 )
 
@@ -942,7 +919,7 @@ type CreateUserBody struct {
 	Email string `bind:"email"`
 }
 
-func (instance CreateUserBody) Transform(body ctx.Body, _ common.ArgumentMetadata) any {
+func (instance CreateUserBody) Transform(body ginject.Body, _ ginject.ArgumentMetadata) any {
 	user := body.BindValue(instance).(CreateUserBody)
 	if user.Name == "" || !strings.Contains(user.Email, "@") {
 		panic(exception.BadRequestException("A name and a valid email are required"))
@@ -951,20 +928,20 @@ func (instance CreateUserBody) Transform(body ctx.Body, _ common.ArgumentMetadat
 }
 
 type SignupController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance SignupController) NewController() core.Controller {
+func (instance SignupController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance SignupController) CREATE_users(user CreateUserBody) ctx.Map {
-	return ctx.Map{"name": user.Name, "email": user.Email}
+func (instance SignupController) CREATE_users(user CreateUserBody) ginject.Map {
+	return ginject.Map{"name": user.Name, "email": user.Email}
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(SignupController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(SignupController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -980,46 +957,42 @@ With `{}` it answers `400`.
 - A pointer parameter (`*CreateUserBody`) stops `Create()`. A `Transform` that returns another
   type answers `500`.
 
-See [core › Pipes](core/README.md#pipes) and [ctx › Binding](ctx/README.md#binding).
+See [core › Pipes](internal/core/README.md#pipes) and [ctx › Binding](internal/ctx/README.md#binding).
 
 ---
 
 ## WebSocket
 
-Turn on the WebSocket server with `app.EnableWS(&core.WSOptions{Path: "ws"})` before `Create`. An
-empty `Path` serves `/ws`. Then write a controller that embeds `common.WS`, with one
+Turn on the WebSocket server with `app.EnableWS(&ginject.WSOptions{Path: "ws"})` before `Create`. An
+empty `Path` serves `/ws`. Then write a controller that embeds `ginject.WS`, with one
 `SUBSCRIBE_…` method per event:
 
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-)
+import "github.com/dangduoc08/ginject"
 
 type ChatMessage struct {
 	Text string `bind:"text"`
 }
 
 type ChatController struct {
-	common.WS
+	ginject.WS
 }
 
-func (instance ChatController) NewController() core.Controller {
+func (instance ChatController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance ChatController) SUBSCRIBE_chat_ANY(payload ctx.WSPayload) ctx.Map {
+func (instance ChatController) SUBSCRIBE_chat_ANY(payload ginject.WSPayload) ginject.Map {
 	message := payload.BindValue(ChatMessage{}).(ChatMessage)
-	return ctx.Map{"received": message.Text}
+	return ginject.Map{"received": message.Text}
 }
 
 func main() {
-	app := core.New()
-	app.EnableWS(&core.WSOptions{Path: "ws"})
-	app.Create(core.NewModuleBuilder().Controllers(ChatController{}).Build())
+	app := ginject.New()
+	app.EnableWS(&ginject.WSOptions{Path: "ws"})
+	app.Create(ginject.ModuleBuilder().Controllers(ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1056,49 +1029,45 @@ Clients and the server exchange JSON objects with the fields `type`, `id`, `topi
 
 ### Publish from the server
 
-Ask for a `common.Publisher` in any handler, HTTP or WebSocket, to send a message to every
+Ask for a `ginject.Publisher` in any handler, HTTP or WebSocket, to send a message to every
 subscriber of a topic:
 
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-)
+import "github.com/dangduoc08/ginject"
 
 type NewsController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance NewsController) NewController() core.Controller {
+func (instance NewsController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance NewsController) CREATE_news(body ctx.Body, publisher common.Publisher) string {
-	if err := publisher.Publish("chat.news", ctx.Map{"headline": body.Get("headline")}); err != nil {
+func (instance NewsController) CREATE_news(body ginject.Body, publisher ginject.Publisher) string {
+	if err := publisher.Publish("chat.news", ginject.Map{"headline": body.Get("headline")}); err != nil {
 		panic(err)
 	}
 	return "sent"
 }
 
 type ChatController struct {
-	common.WS
+	ginject.WS
 }
 
-func (instance ChatController) NewController() core.Controller {
+func (instance ChatController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance ChatController) SUBSCRIBE_chat_ANY(payload ctx.WSPayload) ctx.WSPayload {
+func (instance ChatController) SUBSCRIBE_chat_ANY(payload ginject.WSPayload) ginject.WSPayload {
 	return payload
 }
 
 func main() {
-	app := core.New()
-	app.EnableWS(&core.WSOptions{Path: "ws"})
-	app.Create(core.NewModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
+	app := ginject.New()
+	app.EnableWS(&ginject.WSOptions{Path: "ws"})
+	app.Create(ginject.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1112,10 +1081,10 @@ subscribed to `chat.news`.
 ### Layers on WebSocket
 
 - Guards, interceptors and exception filters work on WebSocket events: write their methods with
-  `*ctx.WSContext` and bind them in the controller or globally.
+  `ginject.WSContext` and bind them in the controller or globally.
 - Middlewares bound with `BindGlobalMiddlewares` don't run on WebSocket connections. Pass the
   middlewares the handshake needs to `EnableWS`, after the config:
-  `app.EnableWS(&core.WSOptions{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+  `app.EnableWS(&ginject.WSOptions{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
   They run once per connection, at the handshake, and a middleware that doesn't call `next()`
   refuses the connection.
 
@@ -1129,18 +1098,13 @@ Versioning lets one path answer differently per API version. Enable it before `C
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/versioning"
-)
+import "github.com/dangduoc08/ginject"
 
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance UserController) NewController() core.Controller {
+func (instance UserController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -1148,8 +1112,8 @@ func (instance UserController) READ_users_VERSION_1() []string {
 	return []string{"alice"}
 }
 
-func (instance UserController) READ_users_VERSION_2() ctx.Map {
-	return ctx.Map{"users": []string{"alice"}, "total": 1}
+func (instance UserController) READ_users_VERSION_2() ginject.Map {
+	return ginject.Map{"users": []string{"alice"}, "total": 1}
 }
 
 func (instance UserController) READ_health_VERSION_NEUTRAL() string {
@@ -1157,13 +1121,13 @@ func (instance UserController) READ_health_VERSION_NEUTRAL() string {
 }
 
 func main() {
-	app := core.New()
-	app.EnableVersioning(versioning.Versioning{
-		Type:           versioning.HeaderVersion,
+	app := ginject.New()
+	app.EnableVersioning(&ginject.VersioningOptions{
+		Type:           ginject.VersioningHeader,
 		Key:            "X-Api-Version",
 		DefaultVersion: "1",
 	})
-	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(UserController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1175,10 +1139,10 @@ func main() {
 
 | `Type` | Where the version is read | Example with the default `Key` (`v`) |
 |---|---|---|
-| `versioning.QueryVersion` | A query parameter | `GET /users?v=2` |
-| `versioning.HeaderVersion` | A request header | `v: 2` |
-| `versioning.MediaType` | A parameter of the `Accept` header | `Accept: application/json;v=2` |
-| `versioning.CustomVersion` | Your `Extractor` function, `func(*ctx.HTTPContext) string` | |
+| `ginject.VersioningQuery` | A query parameter | `GET /users?v=2` |
+| `ginject.VersioningHeader` | A request header | `v: 2` |
+| `ginject.VersioningMediaType` | A parameter of the `Accept` header | `Accept: application/json;v=2` |
+| `ginject.VersioningCustom` | Your `Extractor` function, `func(ginject.HTTPContext) string` | |
 
 - `DefaultVersion` is the version of a request that carries none.
 - `VERSION_NEUTRAL` marks a route that answers for every version, and for requests without one.
@@ -1198,28 +1162,24 @@ A `SERVE_…` handler returns the directory to serve. `SERVE_ANY_OF_assets` serv
 ```go
 package main
 
-import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-)
+import "github.com/dangduoc08/ginject"
 
 type AssetController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance AssetController) NewController() core.Controller {
+func (instance AssetController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance AssetController) SERVE_ANY_OF_assets(c *ctx.HTTPContext) string {
+func (instance AssetController) SERVE_ANY_OF_assets(c ginject.HTTPContext) string {
 	c.ResponseWriter.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	return "public/assets"
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(AssetController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(AssetController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1236,7 +1196,7 @@ func main() {
   `Cache-Control`, as above. Set a long lifetime only for files whose names change with their
   content, such as `app.3f9a1c.js`.
 
-See [core › Static files](core/README.md#static-files).
+See [core › Static files](internal/core/README.md#static-files).
 
 ---
 
@@ -1252,8 +1212,7 @@ binding, variable expansion and validation hooks. It never prints a value. See t
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -1262,17 +1221,17 @@ type DatabaseService struct {
 	Host          string
 }
 
-func (instance DatabaseService) NewProvider() core.Provider {
+func (instance DatabaseService) NewProvider() ginject.Provider {
 	instance.Host, _ = instance.ConfigService.Get("DB_HOST").(string)
 	return instance
 }
 
 type InfoController struct {
-	common.HTTP
+	ginject.HTTP
 	DatabaseService DatabaseService
 }
 
-func (instance InfoController) NewController() core.Controller {
+func (instance InfoController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -1281,9 +1240,9 @@ func (instance InfoController) READ_info() string {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{
 					IsGlobal:          true,
@@ -1308,7 +1267,7 @@ func main() {
 | `IsIgnoreEnvFile` | `bool` | Reads the process environment only, without `.env` files. |
 | `IsOverride` | `bool` | Lets `.env` values override the process environment. |
 | `IsExpandVariables` | `bool` | Expands `${VAR}` in values. |
-| `ENVFilePaths` | `[]string` | The `.env` files to read. The default is `.env` in the directory of the nearest `go.mod`. |
+| `EnvFilePaths` | `[]string` | The `.env` files to read. The default is `.env` in the directory of the nearest `go.mod`. |
 | `Loads` | `[]config.ConfigLoadFn` | Functions that return more configuration as a `map[string]any`. |
 | `Hooks` | `[]config.ConfigHookFn` | Functions that receive the `ConfigService` at startup, to validate or transform it. |
 | `OnInit` | `config.ConfigOnInitFn` | Runs when the module is initialized. |
@@ -1326,22 +1285,20 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/modules/cache"
 )
 
 type ProfileController struct {
-	common.HTTP
+	ginject.HTTP
 	Cache cache.CacheService
 }
 
-func (instance ProfileController) NewController() core.Controller {
+func (instance ProfileController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance ProfileController) READ_profiles_BY_id(c *ctx.HTTPContext) string {
+func (instance ProfileController) READ_profiles_BY_id(c ginject.HTTPContext) string {
 	key := "profile:" + c.Param().Get("id")
 	if data, ok := instance.Cache.Get(c.Context(), key); ok {
 		return string(data)
@@ -1353,9 +1310,9 @@ func (instance ProfileController) READ_profiles_BY_id(c *ctx.HTTPContext) string
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Imports(cache.Register(&cache.CacheModuleOptions{IsGlobal: true})).
 			Controllers(ProfileController{}).
 			Build(),
@@ -1372,12 +1329,12 @@ func main() {
 |---|---|---|
 | `IsGlobal` | `bool` | Makes `CacheService` available to every module. |
 | `OnInit` | `cache.CacheOnInitFn` | Runs once when the app that imports the module is created. |
-| `Backend` | `cache.Cache` | The store. The default is `memorycache.NewMemoryCache(nil)`. |
+| `Backend` | `cache.Cache` | The store. The default is `cache.NewMemoryCache(nil)`. |
 
 ### Outbound HTTP calls
 
 Ginject ships no HTTP client module. Call other services with `net/http`, and wrap the transport
-with `trace.Transport` so the outgoing request continues the incoming request's trace
+with `ginject.TraceTransport` so the outgoing request continues the incoming request's trace
 (`Traceparent`). See the [trace documentation](internal/trace/README.md#outbound-calls).
 
 ```go
@@ -1387,25 +1344,23 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/trace"
+	"github.com/dangduoc08/ginject/log"
 )
 
-var client = &http.Client{Transport: trace.Transport(nil), Timeout: 10 * time.Second}
+var client = &http.Client{Transport: ginject.TraceTransport(nil), Timeout: 10 * time.Second}
 
 type AccountController struct {
-	common.HTTP
+	ginject.HTTP
 	Logger log.Logger
 }
 
-func (instance AccountController) NewController() core.Controller {
+func (instance AccountController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance AccountController) READ_profile(c *ctx.HTTPContext) int {
+func (instance AccountController) READ_profile(c ginject.HTTPContext) int {
 	req, err := http.NewRequestWithContext(c.Context(), http.MethodGet, "https://accounts.example.com/me", nil)
 	if err != nil {
 		panic(err)
@@ -1420,8 +1375,8 @@ func (instance AccountController) READ_profile(c *ctx.HTTPContext) int {
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(AccountController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(AccountController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1457,13 +1412,13 @@ The access log is a switch on the app: `app.EnableAccessLog()` ([`accesslog`](in
 ## Production checklist
 
 A new app is safe to run as it is: the server has timeouts, a 10 MiB body limit and graceful
-shutdown ([core › Server](core/README.md#server)). Before you put it on the internet, turn on the
+shutdown ([core › Server](internal/core/README.md#server)). Before you put it on the internet, turn on the
 pieces below. Each one costs nothing until you bind it.
 
 ### Logs
 1. **JSON logs.** The built-in logger writes JSON when stdout is not a terminal, which is the case
    in a container. Set it explicitly and add the fields to mask:
-   `app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat, MaskFields: []string{"password"}}))`
+   `app.SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON, MaskFields: []string{"password"}}))`
    ([log](log/README.md)).
 2. **Access log.** `app.EnableAccessLog()` writes one line per request with its status, its total
    time and the time of each middleware, guard and handler ([accesslog](internal/accesslog/README.md)).
@@ -1505,8 +1460,7 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/guards/throttler"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/middlewares/compress"
@@ -1520,10 +1474,10 @@ import (
 )
 
 type HelloController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance HelloController) NewController() core.Controller {
+func (instance HelloController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -1532,10 +1486,10 @@ func (instance HelloController) READ_hello() string {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.SetLogger(log.NewLog(&log.LogOptions{
-		LogFormat:  log.JSONFormat,
+		Format:     log.FormatJSON,
 		MaskFields: []string{"password", "token"},
 	}))
 	app.EnableAccessLog()
@@ -1557,7 +1511,7 @@ func main() {
 	app.BindGlobalGuards(throttler.Throttler{Limit: 300, TTL: time.Minute})
 
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Controllers(HelloController{}).
 			Build(),
 	)
@@ -1576,18 +1530,18 @@ with `"ip":"198.51.100.20"`. The same request over plain HTTP answers
 ### WebSocket
 Middlewares bound with `BindGlobalMiddlewares` don't run on the WebSocket handshake. Pass the ones
 the handshake needs to `EnableWS`, in the same order, for example
-`app.EnableWS(&core.WSOptions{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+`app.EnableWS(&ginject.WSOptions{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
 `cors` then refuses a handshake from an origin you didn't list.
 
 ### Security notes
 - `c.Redirect` sends the client to any URL: never pass a URL from the request unchecked
-  ([ctx › Redirect](ctx/README.md#redirect)).
+  ([ctx › Redirect](internal/ctx/README.md#redirect)).
 - `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
-  instead ([ctx › JSON](ctx/README.md#json)).
-- `trace.Transport` sends your trace ID and request ID to every host you call
+  instead ([ctx › JSON](internal/ctx/README.md#json)).
+- `ginject.TraceTransport` sends your trace ID and request ID to every host you call
   ([trace › Outbound calls](internal/trace/README.md#outbound-calls)).
 - Change response headers with `Header().Set`, `Add` or `Del`, never by writing into a value slice
-  in place ([core › Response writer](core/README.md#response-writer)).
+  in place ([core › Response writer](internal/core/README.md#response-writer)).
 
 ---
 
@@ -1602,16 +1556,15 @@ package main
 import (
 	"database/sql"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 )
 
 type InvoiceController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance InvoiceController) NewController() core.Controller {
+func (instance InvoiceController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -1623,8 +1576,8 @@ func (instance InvoiceController) READ_invoices() string {
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(InvoiceController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(InvoiceController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1669,6 +1622,79 @@ func main() {
 WebSocket events also have constructors with WebSocket close codes, such as
 `PolicyViolationException` (1008) and `TopicNotFoundException` (4004). See
 [exception](exception/README.md).
+
+## Package reference
+
+An application imports `github.com/dangduoc08/ginject`, plus the packages it uses among
+[`exception`](exception/README.md), [`log`](log/README.md), `middlewares/*`, `modules/*` and
+`guards/*`. Every other package of the module is under `internal/` and can't be imported.
+
+### Functions
+
+| Function | Description |
+|---|---|
+| `New() App` | Creates an application. |
+| `ModuleBuilder() *ModuleBuilder` | Starts a module: chain `Imports(...)`, `Providers(...)`, `Controllers(...)`, then `Build()`. |
+| `TraceTransport(base http.RoundTripper) http.RoundTripper` | Wraps a transport so outgoing requests continue the request's trace. `nil` wraps `http.DefaultTransport`. See [Outbound HTTP calls](#outbound-http-calls). |
+
+### Application and modules
+
+| Type | Description |
+|---|---|
+| `App` | The application returned by `New`. Configure it with `SetLogger`, `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`, `EnableVersioning`, `EnableWS`, `EnableAccessLog` and `EnableDevtool`; wire it with `Create(Module)`; serve it with `Listen(port, opts)`, `ListenTLS(port, certFile, keyFile, opts)` or `Serve(listener, opts)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
+| `Module` | A built module. Set its fields after `Build()`: `Name`, `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown`. `Prefix(path)` adds a path prefix. |
+| `Provider` | The interface of a provider: `NewProvider() Provider`. |
+| `Controller` | The interface of a controller: `NewController() Controller`. |
+| `ServerOptions` | The second argument of `Listen`, `ListenTLS` and `Serve`; `nil` gives the defaults. `ShutdownTimeout` (default 30 s), `MaxRequestBodyBytes` (default 10 MiB, negative turns the cap off), `TLSConfig`, and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |
+| `WSOptions` | The first argument of `EnableWS`. `Path` is the endpoint path (default `/ws`). |
+| `VersioningOptions` | The argument of `EnableVersioning`: `Type`, `Key` (default `v`), `DefaultVersion` and `Extractor`. See [Versioning](#versioning). |
+| `VersioningType` | The type of `VersioningOptions.Type`: `VersioningQuery`, `VersioningHeader`, `VersioningMediaType` or `VersioningCustom`. |
+
+### Controller embeds
+
+| Type | Description |
+|---|---|
+| `HTTP` | Makes a controller serve HTTP routes. `Prefix(path, handlers...)` adds a route prefix. |
+| `WS` | Makes a controller handle WebSocket events. |
+| `Middleware` | `BindMiddleware(middleware, handlers...)` binds a middleware to the controller's handlers. |
+| `Guard` | `BindGuard(guard, handlers...)` binds a guard. |
+| `Interceptor` | `BindInterceptor(interceptor, handlers...)` binds an interceptor. |
+| `ExceptionFilter` | `BindExceptionFilter(filter, handlers...)` binds an exception filter. |
+
+Without handlers, a layer applies to every handler of the controller.
+
+### Layers
+
+| Type | Description |
+|---|---|
+| `MiddlewareFn` | The interface of a middleware: `Use(*http.Request, http.ResponseWriter, Next)`. |
+| `Aggregation` | The second parameter of `Intercept`: `Pipe(operators...)` runs the handler, and `Transform`, `Tap` and `Filter` build the operators. |
+| `ArgumentMetadata` | The second parameter of a pipe's `Transform`: `ContextType` (`http` or `ws`) and `ParamType` (the source). |
+| `Publisher` | `Publish(topic, message...) error` sends a message to the subscribers of a WebSocket topic. Ask for it as a handler parameter or a field. |
+
+Guards, interceptors and exception filters are any value with the right method
+(`CanActivate`, `Intercept` or `Catch`). `Create()` checks each method's shape and stops on a
+wrong one, for example
+`invalid guard: main.TokenGuard.CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard`.
+
+### Contexts and request data
+
+| Type | Description |
+|---|---|
+| `HTTPContext` | The request's context. It embeds `*http.Request` and `http.ResponseWriter`. `ID()` is the request ID; `Status(code)`, `Text`, `JSON`, `JSONP` and `Redirect(url)` write the response; `Body()`, `Form()`, `File()`, `Query()`, `Header()` and `Param()` read the request. |
+| `WSContext` | A WebSocket message's context. It embeds `*websocket.Conn`. `ID()` is the message ID, `WSPayload()` the message, `Send(data)` answers the connection, and `Context()` / `SetContext(ctx)` carry values. |
+| `Body` | `map[string]any`, the JSON body. `Get`, `Set`, `Del`, `Has`, `Bind` and `BindValue`. |
+| `WSPayload` | `map[string]any`, the WebSocket message. `Bind` and `BindValue`. |
+| `Query`, `Header`, `Param`, `Form` | `map[string][]string`. `Get`, `Set`, `Add`, `Del`, `Has`, `Bind` and `BindValue`. |
+| `File` | The uploaded files. `Bind(dto)` binds them into fields of type `DataFile` or `[]DataFile`. |
+| `DataFile` | One uploaded file: the embedded `*multipart.FileHeader`, `Index`, `Size`, `Total`, `Key`, `Filename`, `Type` and `Dest`. A file DTO may implement `IsValid(DataFile) bool` to refuse a file (`400`) and `Store(DataFile, multipart.File)` to save it. |
+| `FieldLevel` | One bound field, returned by `Bind` for validation: `Tag`, `NestedTag`, `Namespace`, `Field`, `Index`, `Value`, `IsValue`, `Kind` and `Type`. |
+| `Map` | `map[string]any`, the JSON object a handler returns. |
+| `Next` | `func()`: continues the pipeline. |
+| `Redirect` | `func(string)`: sends a redirect to the given URL. |
+
+`Bind` returns the bound struct and its field levels. `BindValue` returns the struct only and
+allocates nothing more.
 
 ---
 

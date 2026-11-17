@@ -1,5 +1,7 @@
 # Trace
 
+Internal package: applications use `ginject.TraceTransport` and `log.Logger.From(ctx)` instead.
+
 *Package `trace` holds the trace events the framework emits for each request and WebSocket message, and the `Tracer` that delivers them to listeners such as the access log.*
 
 - [Trace](#trace)
@@ -152,7 +154,7 @@ defer stop()
 A service that calls another service over HTTP continues the incoming request's trace by wrapping its
 `http.RoundTripper` with `Transport`. Any service that reads W3C Trace Context then joins your trace.
 A Ginject service you call logs the same `trace_id`, and its `upstream` is your request ID. To
-search the logs of a whole chain, see [Find the logs of a request](../log/README.md#find-the-logs-of-a-request).
+search the logs of a whole chain, see [Find the logs of a request](../../log/README.md#find-the-logs-of-a-request).
 
 `Transport` is not related to the `TransportHTTP` and `TransportWS` values of `Event.Transport`:
 those name the protocol of a traced unit, while `Transport` is an `http.RoundTripper` for outbound

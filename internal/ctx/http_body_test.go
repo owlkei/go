@@ -255,11 +255,11 @@ func TestHTTPContext_BodyMalformedIsBadRequest(t *testing.T) {
 	for name, payload := range map[string]string{"garbage": "{not-json", "truncated": `{"a":`, "trailing": `{"a":1} x`, "unquoted key": "{a:1}"} {
 		c := newBodyContext(applicationJSON, payload)
 		exc, err := panicException(t, func() { c.Body() })
-		if exc.GetCode() != http.StatusBadRequest {
-			t.Error(test.DiffMessage(exc.GetCode(), http.StatusBadRequest, "B9: "+name+" should panic with code 400"))
+		if exc.Code() != http.StatusBadRequest {
+			t.Error(test.DiffMessage(exc.Code(), http.StatusBadRequest, "B9: "+name+" should panic with code 400"))
 		}
-		if exc.GetMessage() != "Invalid JSON body" {
-			t.Error(test.DiffMessage(exc.GetMessage(), "Invalid JSON body", "B9: "+name+" should have the message"))
+		if exc.Message() != "Invalid JSON body" {
+			t.Error(test.DiffMessage(exc.Message(), "Invalid JSON body", "B9: "+name+" should have the message"))
 		}
 		var syn *json.SyntaxError
 		var typ *json.UnmarshalTypeError
@@ -282,8 +282,8 @@ func TestHTTPContext_BodyTopLevelArrayIsBadRequest(t *testing.T) {
 	for name, payload := range map[string]string{"array": "[1]", "string": `"x"`, "number": "1", "bool": "true"} {
 		c := newBodyContext(applicationJSON, payload)
 		exc, err := panicException(t, func() { c.Body() })
-		if exc.GetCode() != http.StatusBadRequest || exc.GetMessage() != "Invalid JSON body" {
-			t.Error(test.DiffMessage([2]any{exc.GetCode(), exc.GetMessage()}, [2]any{http.StatusBadRequest, "Invalid JSON body"}, "B9: a top-level "+name+" should be a bad request"))
+		if exc.Code() != http.StatusBadRequest || exc.Message() != "Invalid JSON body" {
+			t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusBadRequest, "Invalid JSON body"}, "B9: a top-level "+name+" should be a bad request"))
 		}
 		var typ *json.UnmarshalTypeError
 		if !errors.As(err, &typ) {
@@ -298,8 +298,8 @@ func TestHTTPContext_BodyTooLargeIs413(t *testing.T) {
 
 	exc, err := panicException(t, func() { c.Body() })
 
-	if exc.GetCode() != http.StatusRequestEntityTooLarge {
-		t.Error(test.DiffMessage(exc.GetCode(), http.StatusRequestEntityTooLarge, "B9: a body over the limit should panic with code 413"))
+	if exc.Code() != http.StatusRequestEntityTooLarge {
+		t.Error(test.DiffMessage(exc.Code(), http.StatusRequestEntityTooLarge, "B9: a body over the limit should panic with code 413"))
 	}
 	var tooLarge *http.MaxBytesError
 	if !errors.As(err, &tooLarge) {
@@ -315,8 +315,8 @@ func TestHTTPContext_BodyReadErrorIsBadRequest(t *testing.T) {
 
 	exc, err := panicException(t, func() { c.Body() })
 
-	if exc.GetCode() != http.StatusBadRequest || exc.GetMessage() != "Cannot read request body" {
-		t.Error(test.DiffMessage([2]any{exc.GetCode(), exc.GetMessage()}, [2]any{http.StatusBadRequest, "Cannot read request body"}, "B9: a read error should be a bad request"))
+	if exc.Code() != http.StatusBadRequest || exc.Message() != "Cannot read request body" {
+		t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusBadRequest, "Cannot read request body"}, "B9: a read error should be a bad request"))
 	}
 	if !errors.Is(err, boom) {
 		t.Error(test.DiffMessage(err, boom, "B9: the read error should stay in the chain"))

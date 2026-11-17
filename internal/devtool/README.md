@@ -1,5 +1,7 @@
 # Devtool
 
+Internal package: applications use `app.EnableDevtool()` instead.
+
 *Package `devtool` builds an in-memory snapshot of an app's HTTP routes: for each route its handler, method, path, version, the layers that run on it and the shape of its request.*
 
 - [Devtool](#devtool)
@@ -65,7 +67,7 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 | `AddMiddlewares([]common.MiddlewareFn, []common.HTTPLayer)` | global and per-route middlewares |
 | `AddGuarders([]any, []common.HTTPLayer)` | global and per-route guards |
 | `AddInterceptors([]any, []common.HTTPLayer)` | global and per-route interceptors |
-| `AddVersioning(*versioning.Versioning)` | the app's versioning, or `nil` without versioning |
+| `AddVersioning(*versioning.Options)` | the app's versioning, or `nil` without versioning |
 | `AddHTTPMainHandlers([]common.HTTPLayer)` | the routes, sorted by path |
 
 ### Build
@@ -76,7 +78,7 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 
 ```go
 snapshot := devtool.DevtoolBuilder().
-	AddVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
+	AddVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
 	AddHTTPMainHandlers(handlers).
 	Build()
 ```

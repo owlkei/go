@@ -79,7 +79,7 @@ func setup(t *testing.T) (*trace.Tracer, *fakeLogger, *AccessLog) {
 	t.Helper()
 	tr := &trace.Tracer{}
 	logger := newFakeLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: logger})
 	t.Cleanup(al.Stop)
 	return tr, logger, al
 }
@@ -269,24 +269,24 @@ func builtinAccessLog(t *testing.T, format int) (*trace.Tracer, *outBuf) {
 	out := &outBuf{}
 	restore := logpipe.SetStdout(out)
 	t.Cleanup(restore)
-	opts := &log.LogOptions{Level: log.DebugLevel}
+	opts := &log.LogOptions{Level: log.LevelDebug}
 	switch format {
 	case 0:
-		opts.LogFormat = log.JSONFormat
+		opts.Format = log.FormatJSON
 	case 1:
-		opts.LogFormat = log.TextFormat
+		opts.Format = log.FormatText
 	default:
-		opts.LogFormat = log.PrettyFormat
+		opts.Format = log.FormatPretty
 	}
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(opts)})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: log.NewLog(opts)})
 	t.Cleanup(al.Stop)
 	return tr, out
 }
 
 func TestAccessLog_AcceptsLogAdapter(t *testing.T) {
 	var adapter log.LogAdapter = newFakeLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: &trace.Tracer{}, Logger: adapter})
+	al := NewAccessLog(&AccessLogOptions{Tracer: &trace.Tracer{}, Logger: adapter})
 	al.Stop()
 }
 
@@ -329,7 +329,7 @@ func TestAccessLog_LineOnEmittingGoroutine(t *testing.T) {
 	logger := newFakeLogger()
 	var loggerGoroutine int
 	logger.onInfo = func(int) { loggerGoroutine = goroutineID() }
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: logger})
 	defer al.Stop()
 	emitter := make(chan int, 1)
 	go func() {
@@ -350,7 +350,7 @@ func TestAccessLog_StartsNoGoroutine(t *testing.T) {
 	trs := make([]*trace.Tracer, 50)
 	for i := range logs {
 		trs[i] = &trace.Tracer{}
-		logs[i] = NewAccessLog(&AccessLogConfig{Tracer: trs[i], Logger: newFakeLogger()})
+		logs[i] = NewAccessLog(&AccessLogOptions{Tracer: trs[i], Logger: newFakeLogger()})
 	}
 	for _, tr := range trs {
 		tr.Emit(stageEvent("r", trace.StageMiddleware, "M", 0))
@@ -793,7 +793,7 @@ func TestAccessLog_LoggerPanicRecovered(t *testing.T) {
 			panic("logger exploded")
 		}
 	}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: logger})
 	defer al.Stop()
 	tr.Emit(completeEvent("a", 200, "/a", 0))
 	tr.Emit(completeEvent("b", 200, "/b", 0))
@@ -810,7 +810,7 @@ func TestAccessLog_LoggerPanicRecovered(t *testing.T) {
 
 func TestAccessLog_StopRemovesListener(t *testing.T) {
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: newFakeLogger()})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: newFakeLogger()})
 	if !tr.Enabled() {
 		t.Error(test.DiffMessage(false, true, "A5: the access log listens while it runs"))
 	}
@@ -855,7 +855,7 @@ func TestAccessLog_StopDiscardsPendingRequests(t *testing.T) {
 func TestAccessLog_StopReturnsAtOnce(t *testing.T) {
 	tr := &trace.Tracer{}
 	logger, gate, entered := blockedLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: logger})
 	emitted := make(chan struct{})
 	go func() {
 		defer close(emitted)
@@ -870,7 +870,7 @@ func TestAccessLog_StopReturnsAtOnce(t *testing.T) {
 func TestAccessLog_StopDuringEmit_NoRace(t *testing.T) {
 	tr := &trace.Tracer{}
 	logger := newFakeLogger()
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: logger})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: logger})
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for g := range 8 {
@@ -898,7 +898,7 @@ func TestAccessLog_StopDuringEmit_NoRace(t *testing.T) {
 
 func TestNewAccessLog_NilPanics(t *testing.T) {
 	want := color.FmtRed("invalid access log: a tracer and a logger are required")
-	cases := map[string]*AccessLogConfig{
+	cases := map[string]*AccessLogOptions{
 		"nil config": nil,
 		"nil tracer": {Logger: newFakeLogger()},
 		"nil logger": {Tracer: &trace.Tracer{}},
@@ -933,7 +933,7 @@ func TestAccessLog_SixStageLineAllocations(t *testing.T) {
 	restore := logpipe.SetStdout(io.Discard)
 	defer restore()
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat})})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: log.NewLog(&log.LogOptions{Format: log.FormatJSON})})
 	defer al.Stop()
 	names := []struct{ stage, name string }{
 		{trace.StageMiddleware, "cors.CORS"},
@@ -1029,7 +1029,7 @@ func TestAccessLog_PrettyForgedMarkerInUserRecordNotColored(t *testing.T) {
 	out := &outBuf{}
 	restore := logpipe.SetStdout(out)
 	defer restore()
-	logger := log.NewLog(&log.LogOptions{LogFormat: log.PrettyFormat})
+	logger := log.NewLog(&log.LogOptions{Format: log.FormatPretty})
 	logger.Info("GET /forged 5ms (4%)", "middleware", "CORS 5ms (4%)", "total", "2s")
 	if strings.Contains(out.String(), string(color.Gray)) || strings.Contains(out.String(), string(color.Red)+"2s") {
 		t.Error(test.DiffMessage(out.String(), "no duration color", "A2: a user record is never colored"))
@@ -1044,7 +1044,7 @@ func TestAccessLog_BuiltinLineDroppedUnderOverloadIsCounted(t *testing.T) {
 	defer logpipe.Stdout().StopAsync(time.Minute)
 	defer w.openAll()
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat})})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: log.NewLog(&log.LogOptions{Format: log.FormatJSON})})
 	defer al.Stop()
 	const total = 5000
 	target := "/overload-" + strings.Repeat("x", 200)
@@ -1272,7 +1272,7 @@ func TestAccessLog_PrettyUserStageLikeValueStaysString(t *testing.T) {
 	out := &outBuf{}
 	restore := logpipe.SetStdout(out)
 	defer restore()
-	logger := log.NewLog(&log.LogOptions{LogFormat: log.PrettyFormat})
+	logger := log.NewLog(&log.LogOptions{Format: log.FormatPretty})
 	logger.Info("GET /forged", "middleware", "CORS 5ms (4%), CSRF 2s (96%)")
 	if !strings.Contains(out.String(), "CORS 5ms (4%), CSRF 2s (96%)") {
 		t.Error(test.DiffMessage(out.String(), "one string", "A2 (2026-11-17): user records are never drawn as a stage tree"))

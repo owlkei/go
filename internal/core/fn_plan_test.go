@@ -1012,8 +1012,8 @@ func TestHTTPHandlerPlan_ExceptionFromAccessorPropagates(t *testing.T) {
 	if !ok {
 		t.Fatal(test.DiffMessage(rec, "an exception.Exception", "B9: an accessor's exception propagates"))
 	}
-	if ex.GetCode() != http.StatusRequestEntityTooLarge {
-		t.Error(test.DiffMessage(ex.GetCode(), http.StatusRequestEntityTooLarge, "B9: an oversized body is a 413"))
+	if ex.Code() != http.StatusRequestEntityTooLarge {
+		t.Error(test.DiffMessage(ex.Code(), http.StatusRequestEntityTooLarge, "B9: an oversized body is a 413"))
 	}
 	if h.calls != 0 || len(planOrder) != 0 {
 		t.Error(test.DiffMessage([]any{h.calls, planOrder}, []any{0, []string(nil)}, "B9: nothing after the failed accessor runs"))
@@ -1134,12 +1134,12 @@ func planWantTransformFailure(t *testing.T, rec any, typeName, returned string) 
 	if !ok {
 		t.Fatal(test.DiffMessage(rec, "an exception.Exception", "B11: a wrong Transform result panics with an exception"))
 	}
-	if ex.GetCode() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(ex.GetCode(), http.StatusInternalServerError, "B11: code"))
+	if ex.Code() != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(ex.Code(), http.StatusInternalServerError, "B11: code"))
 	}
 	want := "pipe " + typeName + ": Transform returned " + returned + ", want " + typeName
-	if ex.GetMessage() != want {
-		t.Error(test.DiffMessage(ex.GetMessage(), want, "B11: message"))
+	if ex.Message() != want {
+		t.Error(test.DiffMessage(ex.Message(), want, "B11: message"))
 	}
 }
 

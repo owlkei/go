@@ -77,13 +77,13 @@ func newPrettyHandler() *prettyHandler {
 
 func (h *prettyHandler) label(l slog.Level) levelLabel {
 	switch {
-	case l < InfoLevel:
+	case l < LevelInfo:
 		return h.labels[0]
-	case l < WarnLevel:
+	case l < LevelWarn:
 		return h.labels[1]
-	case l < ErrorLevel:
+	case l < LevelError:
 		return h.labels[2]
-	case l < FatalLevel:
+	case l < LevelFatal:
 		return h.labels[3]
 	default:
 		return h.labels[4]

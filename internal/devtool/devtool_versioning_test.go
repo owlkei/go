@@ -56,12 +56,12 @@ func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 		AddMiddlewares(nil, nil).
 		AddGuarders(nil, nil).
 		AddInterceptors(nil, nil).
-		AddVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
+		AddVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
 		AddHTTPMainHandlers(versionedHandlers()).
 		Build()
 
 	v := snapshot.Controller.Http[0].Versioning
-	if v.Value != "1" || v.Key != "X-Version" || v.Type != int32(versioning.HeaderVersion) {
-		t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"1", "X-Version", int32(versioning.HeaderVersion)}, "D1: with versioning the entry is what it is today"))
+	if v.Value != "1" || v.Key != "X-Version" || v.Type != int32(versioning.TypeHeader) {
+		t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"1", "X-Version", int32(versioning.TypeHeader)}, "D1: with versioning the entry is what it is today"))
 	}
 }

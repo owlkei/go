@@ -68,12 +68,12 @@ RootModule                    its providers are global
 ### 2.1 Static Module
 
 ```go
-var UserModule = core.NewModuleBuilder().
+var UserModule = ginject.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}, UserRepository{}).
 	Build()
 
-var AppModule = core.NewModuleBuilder().
+var AppModule = ginject.ModuleBuilder().
 	Imports(UserModule).
 	Build()
 ```
@@ -95,14 +95,14 @@ argument panics `dependency injection: can't resolve argument of '<func>' …`.
 ```go
 type ReportService struct{}
 
-func (instance ReportService) NewProvider() core.Provider { return instance }
+func (instance ReportService) NewProvider() ginject.Provider { return instance }
 
-func ReportModule(logger log.Logger) *core.Module {
+func ReportModule(logger log.Logger) ginject.Module {
 	logger.Info("ReportModule")
-	return core.NewModuleBuilder().Providers(ReportService{}).Build()
+	return ginject.ModuleBuilder().Providers(ReportService{}).Build()
 }
 
-var AppModule = core.NewModuleBuilder().
+var AppModule = ginject.ModuleBuilder().
 	Imports(UserModule, ReportModule).
 	Build()
 ```
@@ -164,7 +164,7 @@ type DatabasePool struct {
 	DB *sql.DB
 }
 
-func (instance DatabasePool) NewProvider() core.Provider {
+func (instance DatabasePool) NewProvider() ginject.Provider {
 	instance.DB, _ = sql.Open("postgres", "postgres://localhost/app")
 	return instance
 }
@@ -206,11 +206,11 @@ An unexported field panics `dependency injection: can't set value to unexported 
 
 ```go
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 	UserService UserService
 }
 
-func (instance UserController) NewController() core.Controller {
+func (instance UserController) NewController() ginject.Controller {
 	return instance
 }
 ```
@@ -227,8 +227,8 @@ recursive type and doesn't compile. Move shared logic into a third provider.
 ## 6. Global Modules
 
 ```go
-var InfraModule = func() *core.Module {
-	m := core.NewModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
+var InfraModule = func() ginject.Module {
+	m := ginject.ModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
 	m.IsGlobal = true
 	return m
 }()
@@ -271,18 +271,18 @@ the exact reverse.
 ### 9.1 Dependency Hierarchy
 
 ```go
-var InfraModule = func() *core.Module {
-	m := core.NewModuleBuilder().Providers(DatabasePool{}).Build()
+var InfraModule = func() ginject.Module {
+	m := ginject.ModuleBuilder().Providers(DatabasePool{}).Build()
 	m.IsGlobal = true
 	return m
 }()
 
-var UserModule = core.NewModuleBuilder().
+var UserModule = ginject.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}, UserRepository{}).
 	Build()
 
-var AppModule = core.NewModuleBuilder().
+var AppModule = ginject.ModuleBuilder().
 	Imports(InfraModule, UserModule).
 	Build()
 ```

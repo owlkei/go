@@ -110,8 +110,8 @@ func (rethrowFilter) Catch(_ *ctx.HTTPContext, ex *exception.Exception) {
 type finalFilter struct{}
 
 func (finalFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	c.Status(ex.GetCode())
-	c.Text(ex.GetMessage())
+	c.Status(ex.Code())
+	c.Text(ex.Message())
 }
 
 type rethrowController struct {

@@ -18,24 +18,24 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-var allFormats = []logFormat{JSONFormat, TextFormat, PrettyFormat}
+var allFormats = []Format{FormatJSON, FormatText, FormatPretty}
 
-func formatName(f logFormat) string {
+func formatName(f Format) string {
 	switch f {
-	case JSONFormat:
+	case FormatJSON:
 		return "JSON"
-	case TextFormat:
+	case FormatText:
 		return "Text"
 	default:
 		return "Pretty"
 	}
 }
 
-func newTestLog(format logFormat, opts LogOptions) (Logger, *bytes.Buffer) {
+func newTestLog(format Format, opts LogOptions) (Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
-	opts.LogFormat = format
-	if opts.Level == InfoLevel {
-		opts.Level = DebugLevel
+	opts.Format = format
+	if opts.Level == LevelInfo {
+		opts.Level = LevelDebug
 	}
 	return newLog(buf, false, &opts), buf
 }
@@ -81,8 +81,8 @@ func TestNewLog_NilOptions(t *testing.T) {
 }
 
 func TestNewLog_DoesNotModifyOptions(t *testing.T) {
-	opts := &LogOptions{Level: -1, LogFormat: JSONFormat, AddSource: true, MaskFields: []string{"password", "token"}}
-	want := &LogOptions{Level: -1, LogFormat: JSONFormat, AddSource: true, MaskFields: []string{"password", "token"}}
+	opts := &LogOptions{Level: -1, Format: FormatJSON, IsAddSource: true, MaskFields: []string{"password", "token"}}
+	want := &LogOptions{Level: -1, Format: FormatJSON, IsAddSource: true, MaskFields: []string{"password", "token"}}
 	NewLog(opts)
 	newLog(io.Discard, false, opts)
 	WrapLogger(&instanceRecorder{}, opts.MaskFields)
@@ -93,9 +93,9 @@ func TestNewLog_DoesNotModifyOptions(t *testing.T) {
 
 func TestNewLog_LaterOptionChangesIgnored(t *testing.T) {
 	buf := &bytes.Buffer{}
-	opts := &LogOptions{LogFormat: JSONFormat, MaskFields: []string{"password"}}
+	opts := &LogOptions{Format: FormatJSON, MaskFields: []string{"password"}}
 	logger := newLog(buf, false, opts)
-	opts.Level = ErrorLevel
+	opts.Level = LevelError
 	opts.MaskFields[0] = "other"
 	opts.MaskFields = append(opts.MaskFields, "more")
 	logger.Info("x", "password", "secret", "other", "kept")
@@ -117,7 +117,7 @@ func TestWrapLogger_LaterMaskFieldChangesIgnored(t *testing.T) {
 }
 
 func TestLog_JSONLine(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	logger.Info("hello", "k", "v", "n", 3)
 	line := jsonLine(t, buf.String())
 	if line["msg"] != "hello" || line["level"] != "INFO" || line["k"] != "v" || line["n"] != float64(3) {
@@ -132,7 +132,7 @@ func TestLog_JSONLine(t *testing.T) {
 }
 
 func TestLog_TextLine(t *testing.T) {
-	logger, buf := newTestLog(TextFormat, LogOptions{})
+	logger, buf := newTestLog(FormatText, LogOptions{})
 	logger.Warn("hello", "k", "v")
 	out := buf.String()
 	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "msg=hello") || !strings.Contains(out, "k=v") || !strings.Contains(out, "time=") {
@@ -166,8 +166,8 @@ func TestLog_LevelLabelsJSONAndText(t *testing.T) {
 	exit = func(int) {}
 	defer func() { exit = saved }()
 
-	jsonLogger, jsonBuf := newTestLog(JSONFormat, LogOptions{})
-	textLogger, textBuf := newTestLog(TextFormat, LogOptions{})
+	jsonLogger, jsonBuf := newTestLog(FormatJSON, LogOptions{})
+	textLogger, textBuf := newTestLog(FormatText, LogOptions{})
 	for _, logger := range []Logger{jsonLogger, textLogger} {
 		logger.Debug("m")
 		logger.Info("m")
@@ -205,10 +205,10 @@ func TestLog_DefaultFormatNotTerminal(t *testing.T) {
 
 func TestLog_ExplicitFormatBeatsTerminal(t *testing.T) {
 	buf := &bytes.Buffer{}
-	newLog(buf, true, &LogOptions{LogFormat: JSONFormat}).Info("hello")
+	newLog(buf, true, &LogOptions{Format: FormatJSON}).Info("hello")
 	jsonLine(t, buf.String())
 	buf.Reset()
-	newLog(buf, false, &LogOptions{LogFormat: PrettyFormat}).Info("hello")
+	newLog(buf, false, &LogOptions{Format: FormatPretty}).Info("hello")
 	if !strings.HasPrefix(buf.String(), "\n") {
 		t.Error(test.DiffMessage(buf.String(), "Pretty", "L4: an explicit format wins whatever the output"))
 	}
@@ -217,7 +217,7 @@ func TestLog_ExplicitFormatBeatsTerminal(t *testing.T) {
 func TestLog_BelowLevelWritesNothing(t *testing.T) {
 	for _, format := range allFormats {
 		buf := &bytes.Buffer{}
-		logger := newLog(buf, false, &LogOptions{LogFormat: format, Level: WarnLevel})
+		logger := newLog(buf, false, &LogOptions{Format: format, Level: LevelWarn})
 		logger.Debug("d", "k", "v")
 		logger.Info("i", "k", "v")
 		if buf.Len() != 0 {
@@ -241,7 +241,7 @@ func TestLog_BelowLevelCallsNoMethod(t *testing.T) {
 	}
 	for _, format := range allFormats {
 		for _, rules := range [][]string{nil, {"password"}} {
-			logger, buf := newTestLog(format, LogOptions{Level: ErrorLevel, MaskFields: rules})
+			logger, buf := newTestLog(format, LogOptions{Level: LevelError, MaskFields: rules})
 			logger.Debug("x", args...)
 			logger.Info("x", args...)
 			logger.Warn("x", args...)
@@ -257,7 +257,7 @@ func TestLog_BelowLevelAllocatesNothing(t *testing.T) {
 	args := []any{"user", &ptrCountingStringer{&calls}, "n", 1, "p", benchUser{Name: "a", Password: "b"}}
 	for _, format := range allFormats {
 		for _, rules := range [][]string{nil, {"password"}} {
-			logger, _ := newTestLog(format, LogOptions{Level: InfoLevel + 1, MaskFields: rules})
+			logger, _ := newTestLog(format, LogOptions{Level: LevelInfo + 1, MaskFields: rules})
 			if n := testing.AllocsPerRun(50, func() { logger.Debug("x", args...) }); n != 0 {
 				t.Error(test.DiffMessage(n, 0.0, "L3: a dropped line allocates nothing ("+formatName(format)+")"))
 			}
@@ -267,13 +267,13 @@ func TestLog_BelowLevelAllocatesNothing(t *testing.T) {
 
 func TestLog_AddSourceIsCaller(t *testing.T) {
 	for _, format := range allFormats {
-		logger, buf := newTestLog(format, LogOptions{AddSource: true})
+		logger, buf := newTestLog(format, LogOptions{IsAddSource: true})
 		_, file, line, _ := runtime.Caller(0)
 		logger.Info("here")
 		where := file + ":" + strconv.Itoa(line+1)
 		out := buf.String()
 		switch format {
-		case JSONFormat:
+		case FormatJSON:
 			parsed := jsonLine(t, out)
 			src, _ := parsed["source"].(map[string]any)
 			if src == nil || src["file"] != file || src["line"] != float64(line+1) {
@@ -289,13 +289,13 @@ func TestLog_AddSourceIsCaller(t *testing.T) {
 
 func TestLog_AddSourceThroughWrapLogger(t *testing.T) {
 	for _, format := range allFormats {
-		logger, buf := newTestLog(format, LogOptions{AddSource: true})
+		logger, buf := newTestLog(format, LogOptions{IsAddSource: true})
 		wrapped := WrapLogger(logger, []string{"password"})
 		_, file, line, _ := runtime.Caller(0)
 		wrapped.Info("here", "password", "s")
 		where := file + ":" + strconv.Itoa(line+1)
 		out := buf.String()
-		if format == JSONFormat {
+		if format == FormatJSON {
 			src, _ := jsonLine(t, out)["source"].(map[string]any)
 			if src == nil || src["file"] != file || src["line"] != float64(line+1) {
 				t.Error(test.DiffMessage(src, where, "L5: JSON source is the caller through WrapLogger"))
@@ -307,7 +307,7 @@ func TestLog_AddSourceThroughWrapLogger(t *testing.T) {
 }
 
 func TestLog_PrettySourceIsLastRow(t *testing.T) {
-	logger, buf := newTestLog(PrettyFormat, LogOptions{AddSource: true})
+	logger, buf := newTestLog(FormatPretty, LogOptions{IsAddSource: true})
 	logger.Info("here", "k", "v")
 	lines := strings.Split(strings.TrimRight(plain(buf.String()), "\n"), "\n")
 	last := lines[len(lines)-1]
@@ -329,7 +329,7 @@ func TestLog_NoSourceWithoutAddSource(t *testing.T) {
 func TestLog_OneWritePerRecord(t *testing.T) {
 	for _, format := range allFormats {
 		w := &countingWriter{}
-		logger := newLog(w, false, &LogOptions{LogFormat: format, Level: DebugLevel})
+		logger := newLog(w, false, &LogOptions{Format: format, Level: LevelDebug})
 		logger.Info("m", "a", 1, "b", map[string]int{"x": 1, "y": 2}, "c", benchUser{Name: "n", Password: "p"})
 		logger.Error("m")
 		if w.writes != 2 {
@@ -339,9 +339,9 @@ func TestLog_OneWritePerRecord(t *testing.T) {
 }
 
 func TestLog_ConcurrentRecordsNeverInterleave(t *testing.T) {
-	for _, format := range []logFormat{JSONFormat, TextFormat} {
+	for _, format := range []Format{FormatJSON, FormatText} {
 		buf := &bytes.Buffer{}
-		logger := newLog(buf, false, &LogOptions{LogFormat: format, MaskFields: []string{"password"}})
+		logger := newLog(buf, false, &LogOptions{Format: format, MaskFields: []string{"password"}})
 		var wg sync.WaitGroup
 		for i := range 16 {
 			wg.Add(1)
@@ -357,7 +357,7 @@ func TestLog_ConcurrentRecordsNeverInterleave(t *testing.T) {
 		if len(lines) != 800 {
 			t.Fatal(test.DiffMessage(len(lines), 800, "L6: every record is one line ("+formatName(format)+")"))
 		}
-		if format == JSONFormat {
+		if format == FormatJSON {
 			for _, line := range lines {
 				jsonLine(t, line)
 			}
@@ -368,7 +368,7 @@ func TestLog_ConcurrentRecordsNeverInterleave(t *testing.T) {
 func TestLog_ConcurrentCalls_NoRace(t *testing.T) {
 	for _, format := range allFormats {
 		buf := &bytes.Buffer{}
-		logger := newLog(buf, false, &LogOptions{LogFormat: format, MaskFields: []string{"password"}})
+		logger := newLog(buf, false, &LogOptions{Format: format, MaskFields: []string{"password"}})
 		var wg sync.WaitGroup
 		for i := range 16 {
 			wg.Add(1)
@@ -389,7 +389,7 @@ func TestLog_FatalLogsThenExits(t *testing.T) {
 
 	for _, format := range allFormats {
 		buf := &bytes.Buffer{}
-		logger := newLog(buf, false, &LogOptions{LogFormat: format})
+		logger := newLog(buf, false, &LogOptions{Format: format})
 		var code = -1
 		var written string
 		exit = func(c int) {
@@ -411,14 +411,14 @@ func TestLog_FatalBelowNothingStillExits(t *testing.T) {
 	defer func() { exit = saved }()
 	var code = -1
 	exit = func(c int) { code = c }
-	newLog(&bytes.Buffer{}, false, &LogOptions{LogFormat: JSONFormat, Level: FatalLevel}).Fatal("x")
+	newLog(&bytes.Buffer{}, false, &LogOptions{Format: FormatJSON, Level: LevelFatal}).Fatal("x")
 	if code != 1 {
 		t.Error(test.DiffMessage(code, 1, "L7: Fatal always exits"))
 	}
 }
 
 func TestLog_ColoredIsPlainTextInJSON(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	logger.Info("x", "middleware", []map[string]color.Colored{{"CORS": {Text: "120µs (4%)", Color: color.Red}}})
 	out := buf.String()
 	if strings.Contains(out, `\u001b`) || strings.Contains(out, "\x1b") || strings.Contains(out, "Color") {
@@ -430,7 +430,7 @@ func TestLog_ColoredIsPlainTextInJSON(t *testing.T) {
 }
 
 func TestLog_ColoredIsPlainTextInText(t *testing.T) {
-	logger, buf := newTestLog(TextFormat, LogOptions{})
+	logger, buf := newTestLog(FormatText, LogOptions{})
 	logger.Info("x", "d", color.Colored{Text: "120µs (4%)", Color: color.Red})
 	out := buf.String()
 	if strings.Contains(out, "\x1b") || strings.Contains(out, `\x1b`) || !strings.Contains(out, "120µs (4%)") {
@@ -439,7 +439,7 @@ func TestLog_ColoredIsPlainTextInText(t *testing.T) {
 }
 
 func TestLog_JSONEscapesControlChars(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	msg := "/a\n\x1b[2K FAKE\r\nERROR forged\u0085"
 	logger.Info(msg, "k\n\x1b", "v\n\x1b[2J")
 	out := buf.String()
@@ -452,7 +452,7 @@ func TestLog_JSONEscapesControlChars(t *testing.T) {
 }
 
 func TestLog_TextEscapesControlChars(t *testing.T) {
-	logger, buf := newTestLog(TextFormat, LogOptions{})
+	logger, buf := newTestLog(FormatText, LogOptions{})
 	logger.Info("/a\n\x1b[2K FAKE\r\nERROR forged", "k", "v\n\x1b[2J")
 	out := buf.String()
 	if strings.Count(out, "\n") != 1 || strings.ContainsAny(out, "\x1b\r") {
@@ -461,7 +461,7 @@ func TestLog_TextEscapesControlChars(t *testing.T) {
 }
 
 func TestLog_AttrArgument(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	logger.Info("x", slog.String("a", "1"), "b", 2, slog.Int("c", 3))
 	line := jsonLine(t, buf.String())
 	if line["a"] != "1" || line["b"] != float64(2) || line["c"] != float64(3) {
@@ -470,7 +470,7 @@ func TestLog_AttrArgument(t *testing.T) {
 }
 
 func TestLog_OddArguments(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	logger.Info("x", "a", 1, "dangling")
 	line := jsonLine(t, buf.String())
 	if line["a"] != float64(1) || line["!BADKEY"] != "dangling" {
@@ -479,7 +479,7 @@ func TestLog_OddArguments(t *testing.T) {
 }
 
 func TestLog_NonStringKey(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{MaskFields: []string{"password"}})
+	logger, buf := newTestLog(FormatJSON, LogOptions{MaskFields: []string{"password"}})
 	logger.Info("x", 42, "value", "k", "v")
 	out := buf.String()
 	if !strings.Contains(out, `"!BADKEY":42,"value":"k","!BADKEY":"v"`) {

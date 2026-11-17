@@ -1,5 +1,7 @@
 # Aggregation
 
+Internal package: applications use `ginject.Aggregation`, the second parameter of `Intercept`, instead.
+
 *Aggregation is a part of `Ginject` framework: it carries an interceptor's result through the request and applies the operators the interceptor pipes over the handler's return value.*
 
 - [Aggregation](#aggregation)

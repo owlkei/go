@@ -18,7 +18,7 @@ type jsonAppender interface {
 }
 
 func mapBody(e Exception) []byte {
-	b, err := json.Marshal(map[string]any{"code": e.GetCode(), "error": e.Error(), "message": e.GetMessage()})
+	b, err := json.Marshal(map[string]any{"code": e.Code(), "error": e.Error(), "message": e.Message()})
 	if err != nil {
 		panic(err)
 	}
@@ -183,7 +183,7 @@ type bodyForEncodingJSON struct {
 
 func encodingJSONBody(t testing.TB, e Exception) []byte {
 	t.Helper()
-	b, err := json.Marshal(bodyForEncodingJSON{Code: e.GetCode(), Error: e.Error(), Message: e.GetMessage()})
+	b, err := json.Marshal(bodyForEncodingJSON{Code: e.Code(), Error: e.Error(), Message: e.Message()})
 	if err != nil {
 		t.Fatal(err)
 	}

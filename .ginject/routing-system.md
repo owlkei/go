@@ -165,7 +165,7 @@ The root route's pattern is `/||/[GET]/` whether it was registered as `""` or `/
 
 **In handler**:
 ```go
-func (c UserController) READ_BY_ID(param ctx.Param) string {
+func (c UserController) READ_BY_ID(param ginject.Param) string {
     return "User " + param.Get("id")
 }
 ```
@@ -181,7 +181,7 @@ func (c UserController) READ_BY_ID(param ctx.Param) string {
 `*` and globs capture nothing: there is no `param["*"]`. A file route (`SERVE`, `READ_FILE…`) reads
 the rest of the URL itself (`core/http.go` `serveContent`, from the route's `serveIndex`). A
 directory answers its `index.html` or 404, never a listing. `core` registers routes with
-`AddInjectableHandler` and finds them with `Match`, passing `c.ParamValues[:0]` as the buffer that
+`AddInjectableHandler` and finds them with `Match`, passing `ctx.HTTPParamValues(c)[:0]` as the buffer that
 `Find` appends to (design 0002 H1); it no longer uses `Use`, `For` or `RouterItem.Handlers`.
 
 ---
@@ -276,7 +276,7 @@ If both versioned and unversioned routes exist:
 
 ```go
 type UserController struct {
-    common.HTTP  // Makes this an HTTP controller
+    ginject.HTTP  // Makes this an HTTP controller
     UserService  // Dependency to inject
 }
 
@@ -325,7 +325,7 @@ func (c *UserController) READ_BY_ID_AND_NAME() { ... }
 // Method name defines params, but handler expects different names
 // Routes to: GET /{id} (only :id extracted)
 // Param map won't have "userId" → error at runtime
-func (c *UserController) READ_BY_ID(params ctx.Param) {
+func (c *UserController) READ_BY_ID(params ginject.Param) {
     // This fails:
     id := params.Get("userId")  // NOT "id"
 }

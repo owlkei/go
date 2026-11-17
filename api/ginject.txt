@@ -1,3 +1,7 @@
+pkg ginject, const VersioningCustom versioning.Type = 3
+pkg ginject, const VersioningHeader versioning.Type = 2
+pkg ginject, const VersioningMediaType versioning.Type = 4
+pkg ginject, const VersioningQuery versioning.Type = 1
 pkg ginject, func ModuleBuilder() *core.ModuleBuilder
 pkg ginject, func New() ginject.App
 pkg ginject, func TraceTransport(http.RoundTripper) http.RoundTripper
@@ -27,7 +31,8 @@ pkg ginject, type Publisher = common.Publisher
 pkg ginject, type Query = ctx.Query
 pkg ginject, type Redirect = ctx.Redirect
 pkg ginject, type ServerOptions = core.ServerOptions
-pkg ginject, type Versioning = versioning.Versioning
+pkg ginject, type VersioningOptions = versioning.Options
+pkg ginject, type VersioningType = versioning.Type
 pkg ginject, type WS = common.WS
 pkg ginject, type WSContext = *ctx.WSContext
 pkg ginject, type WSOptions = core.WSOptions
@@ -65,19 +70,19 @@ pkg ginject/exception, func UnsupportedDataException(string, ...any) exception.E
 pkg ginject/exception, func UnsupportedMediaTypeException(string, ...any) exception.Exception
 pkg ginject/exception, func WSInternalErrorException(string, ...any) exception.Exception
 pkg ginject/exception, method (exception.Exception) AppendJSON([]byte) []byte
+pkg ginject/exception, method (exception.Exception) Code() int
 pkg ginject/exception, method (exception.Exception) Error() string
-pkg ginject/exception, method (exception.Exception) GetCode() int
-pkg ginject/exception, method (exception.Exception) GetMessage() string
-pkg ginject/exception, method (exception.Exception) GetStatusText() string
 pkg ginject/exception, method (exception.Exception) MarshalJSON() ([]byte, error)
+pkg ginject/exception, method (exception.Exception) Message() string
+pkg ginject/exception, method (exception.Exception) StatusText() string
 pkg ginject/exception, method (exception.Exception) Unwrap() error
 pkg ginject/exception, type Exception struct
 pkg ginject/exception, type ExceptionOptions struct
 pkg ginject/exception, type ExceptionOptions struct, Cause error
 pkg ginject/exception, type ExceptionOptions struct, Description string
-pkg ginject/guards/throttler, const FixedWindow throttler.Strategy = 0
-pkg ginject/guards/throttler, const SlidingWindow throttler.Strategy = 1
-pkg ginject/guards/throttler, const TokenBucket throttler.Strategy = 2
+pkg ginject/guards/throttler, const StrategyFixedWindow throttler.Strategy = 0
+pkg ginject/guards/throttler, const StrategySlidingWindow throttler.Strategy = 1
+pkg ginject/guards/throttler, const StrategyTokenBucket throttler.Strategy = 2
 pkg ginject/guards/throttler, method (throttler.Throttler) NewGuard() any
 pkg ginject/guards/throttler, type Strategy int
 pkg ginject/guards/throttler, type Throttler struct
@@ -86,16 +91,17 @@ pkg ginject/guards/throttler, type Throttler struct, KeyFunc func(*ctx.HTTPConte
 pkg ginject/guards/throttler, type Throttler struct, Limit int64
 pkg ginject/guards/throttler, type Throttler struct, Strategy throttler.Strategy
 pkg ginject/guards/throttler, type Throttler struct, TTL time.Duration
-pkg ginject/log, const DebugLevel slog.Level = -4
-pkg ginject/log, const ErrorLevel slog.Level = 8
-pkg ginject/log, const FatalLevel slog.Level = 12
-pkg ginject/log, const InfoLevel slog.Level = 0
-pkg ginject/log, const JSONFormat log.logFormat = 12
-pkg ginject/log, const PrettyFormat log.logFormat = 13
-pkg ginject/log, const TextFormat log.logFormat = 11
-pkg ginject/log, const WarnLevel slog.Level = 4
+pkg ginject/log, const FormatJSON log.Format = 12
+pkg ginject/log, const FormatPretty log.Format = 13
+pkg ginject/log, const FormatText log.Format = 11
+pkg ginject/log, const LevelDebug slog.Level = -4
+pkg ginject/log, const LevelError slog.Level = 8
+pkg ginject/log, const LevelFatal slog.Level = 12
+pkg ginject/log, const LevelInfo slog.Level = 0
+pkg ginject/log, const LevelWarn slog.Level = 4
 pkg ginject/log, func NewLog(*log.LogOptions) log.Logger
 pkg ginject/log, func WrapLogger(log.LogAdapter, []string) log.Logger
+pkg ginject/log, type Format int
 pkg ginject/log, type LogAdapter interface
 pkg ginject/log, type LogAdapter interface, Debug(string, ...any)
 pkg ginject/log, type LogAdapter interface, Error(string, ...any)
@@ -103,9 +109,9 @@ pkg ginject/log, type LogAdapter interface, Fatal(string, ...any)
 pkg ginject/log, type LogAdapter interface, Info(string, ...any)
 pkg ginject/log, type LogAdapter interface, Warn(string, ...any)
 pkg ginject/log, type LogOptions struct
-pkg ginject/log, type LogOptions struct, AddSource bool
+pkg ginject/log, type LogOptions struct, Format log.Format
+pkg ginject/log, type LogOptions struct, IsAddSource bool
 pkg ginject/log, type LogOptions struct, Level slog.Level
-pkg ginject/log, type LogOptions struct, LogFormat log.logFormat
 pkg ginject/log, type LogOptions struct, MaskFields []string
 pkg ginject/log, type Logger interface
 pkg ginject/log, type Logger interface, Debug(string, ...any)
@@ -158,8 +164,8 @@ pkg ginject/middlewares/loadshed, method (loadshed.LoadShed) Use(*http.Request, 
 pkg ginject/middlewares/loadshed, type LoadShed struct
 pkg ginject/middlewares/loadshed, type LoadShed struct, MaxInFlight int
 pkg ginject/middlewares/loadshed, type LoadShed struct, MaxQueue int
-pkg ginject/middlewares/proxy, const Forwarded proxy.Header = 1
-pkg ginject/middlewares/proxy, const XForwarded proxy.Header = 0
+pkg ginject/middlewares/proxy, const HeaderForwarded proxy.Header = 1
+pkg ginject/middlewares/proxy, const HeaderXForwarded proxy.Header = 0
 pkg ginject/middlewares/proxy, func ClientIP(*http.Request) netip.Addr
 pkg ginject/middlewares/proxy, func Host(*http.Request) string
 pkg ginject/middlewares/proxy, func Scheme(*http.Request) string
@@ -209,7 +215,7 @@ pkg ginject/modules/config, method (config.ConfigService) NewProvider() core.Pro
 pkg ginject/modules/config, type ConfigHookFn = func(config.ConfigService)
 pkg ginject/modules/config, type ConfigLoadFn = func() map[string]any
 pkg ginject/modules/config, type ConfigModuleOptions struct
-pkg ginject/modules/config, type ConfigModuleOptions struct, ENVFilePaths []string
+pkg ginject/modules/config, type ConfigModuleOptions struct, EnvFilePaths []string
 pkg ginject/modules/config, type ConfigModuleOptions struct, Hooks []config.ConfigHookFn
 pkg ginject/modules/config, type ConfigModuleOptions struct, IsExpandVariables bool
 pkg ginject/modules/config, type ConfigModuleOptions struct, IsGlobal bool
@@ -240,7 +246,7 @@ reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn)
 reach core.App, method (*core.App) Create(*core.Module)
 reach core.App, method (*core.App) EnableAccessLog() *core.App
 reach core.App, method (*core.App) EnableDevtool() *core.App
-reach core.App, method (*core.App) EnableVersioning(*versioning.Versioning) *core.App
+reach core.App, method (*core.App) EnableVersioning(*versioning.Options) *core.App
 reach core.App, method (*core.App) EnableWS(*core.WSOptions, ...common.MiddlewareFn) *core.App
 reach core.App, method (*core.App) Get(core.Provider) any
 reach core.App, method (*core.App) Listen(int, *core.ServerOptions) error
@@ -262,7 +268,7 @@ reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Contr
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
 reach core.Provider, method (core.Provider) NewProvider() core.Provider
-reach core.ServerOptions, field H2C bool
+reach core.ServerOptions, field IsH2C bool
 reach core.ServerOptions, field MaxRequestBodyBytes int64
 reach core.ServerOptions, field ShutdownTimeout time.Duration
 reach core.ServerOptions, field TLSConfig *tls.Config
@@ -349,12 +355,10 @@ reach ctx.WSContext, method (*ctx.WSContext) WSPayload() ctx.WSPayload
 reach ctx.WSPayload, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
 reach ctx.WSPayload, method (ctx.WSPayload) BindValue(any) any
 reach ctx.WSPayload, type map[string]any
-reach log.logFormat, type int
 reach memorycache.MemoryCacheOptions, field MaxBytes int64
 reach memorycache.MemoryCacheOptions, field MaxEntries int
-reach versioning.Versioning, field DefaultVersion string
-reach versioning.Versioning, field Extractor versioning.ExtractorHandler
-reach versioning.Versioning, field Key string
-reach versioning.Versioning, field Type int
-reach versioning.Versioning, method (*versioning.Versioning) GetTypeString() string
-reach versioning.Versioning, method (*versioning.Versioning) GetVersion(*ctx.HTTPContext) string
+reach versioning.Options, field DefaultVersion string
+reach versioning.Options, field Extractor versioning.ExtractorHandler
+reach versioning.Options, field Key string
+reach versioning.Options, field Type versioning.Type
+reach versioning.Type, type int

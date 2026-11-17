@@ -14,8 +14,8 @@ import (
 func main() {
 	app := ginject.New()
 	logger := log.NewLog(&log.LogOptions{
-		Level:     log.DebugLevel,
-		LogFormat: log.PrettyFormat,
+		Level:  log.LevelDebug,
+		Format: log.FormatPretty,
 	})
 
 	mw := []ginject.MiddlewareFn{

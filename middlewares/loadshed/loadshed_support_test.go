@@ -110,7 +110,7 @@ func refusalOf(v any) (code int, message string, ok bool) {
 	if e == nil {
 		return 0, "", false
 	}
-	return e.GetCode(), e.GetMessage(), true
+	return e.Code(), e.Message(), true
 }
 
 func expectBusy(t *testing.T, c *call, desc string) {

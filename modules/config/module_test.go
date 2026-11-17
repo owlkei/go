@@ -91,7 +91,7 @@ func TestRegister_ExplicitFileMissing(t *testing.T) {
 	missing := filepath.Join(root, "nope.env")
 
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{ENVFilePaths: []string{missing}})
+		Register(&ConfigModuleOptions{EnvFilePaths: []string{missing}})
 	})
 	if !panicked || !strings.HasPrefix(text, "invalid config: "+missing+": ") {
 		t.Error(test.DiffMessage(text, "invalid config: "+missing+": <os error>", "E8/E9: every path in ENVFilePaths must exist"))
@@ -103,7 +103,7 @@ func TestRegister_ExplicitPathsReplaceDefault(t *testing.T) {
 	t.Chdir(root)
 	explicit := writeEnv(t, "TT_EXPLICIT=1\n")
 
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{explicit}})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{explicit}})
 	expectValues(t, svc, "E8", map[string]any{"TT_EXPLICIT": "1"})
 	expectAbsent(t, svc, "E8: the default file is read only when ENVFilePaths is empty", "TT_DEFAULT_ONLY")
 }
@@ -125,7 +125,7 @@ func TestRegister_IsIgnoreEnvFile(t *testing.T) {
 func TestRegister_IsIgnoreEnvFileWithPaths(t *testing.T) {
 	path := writeEnv(t, "TT_X=1\n")
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{IsIgnoreEnvFile: true, ENVFilePaths: []string{path}})
+		Register(&ConfigModuleOptions{IsIgnoreEnvFile: true, EnvFilePaths: []string{path}})
 	})
 	want := "invalid config: IsIgnoreEnvFile is set with ENVFilePaths"
 	if !panicked || text != want {
@@ -137,10 +137,10 @@ func TestRegister_EnvironmentWins(t *testing.T) {
 	t.Setenv("TT_PREC", "env")
 	path := writeEnv(t, "TT_PREC=file\nTT_ONLY_FILE=file\n")
 
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{path}})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{path}})
 	expectValues(t, svc, "E11", map[string]any{"TT_PREC": "env", "TT_ONLY_FILE": "file"})
 
-	svc = registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{path}, IsOverride: true})
+	svc = registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{path}, IsOverride: true})
 	expectValues(t, svc, "E11: IsOverride", map[string]any{"TT_PREC": "file"})
 }
 
@@ -148,7 +148,7 @@ func TestRegister_FirstFileWins(t *testing.T) {
 	first := writeEnv(t, "TT_K=first\nTT_ONLY_FIRST=1\n")
 	second := writeEnv(t, "TT_K=second\nTT_ONLY_SECOND=2\n")
 
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{first, second}})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{first, second}})
 	expectValues(t, svc, "E11", map[string]any{"TT_K": "first", "TT_ONLY_FIRST": "1", "TT_ONLY_SECOND": "2"})
 }
 
@@ -157,13 +157,13 @@ func TestRegister_IsOverrideLastWins(t *testing.T) {
 	second := writeEnv(t, "TT_K=second\n")
 	loads := func() map[string]any { return map[string]any{"TT_K": "loads", "TT_L": "loads-only"} }
 
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{first, second}, IsOverride: true})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{first, second}, IsOverride: true})
 	expectValues(t, svc, "E11", map[string]any{"TT_K": "second"})
 
-	svc = registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{first}, Loads: []ConfigLoadFn{loads}})
+	svc = registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{first}, Loads: []ConfigLoadFn{loads}})
 	expectValues(t, svc, "E11: files before Loads", map[string]any{"TT_K": "first", "TT_L": "loads-only"})
 
-	svc = registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{first}, Loads: []ConfigLoadFn{loads}, IsOverride: true})
+	svc = registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{first}, Loads: []ConfigLoadFn{loads}, IsOverride: true})
 	expectValues(t, svc, "E11: IsOverride, Loads after files", map[string]any{"TT_K": "loads"})
 
 	later := func() map[string]any { return map[string]any{"TT_K": "later"} }
@@ -186,7 +186,7 @@ func TestRegister_ProcessEnvironmentIsVisible(t *testing.T) {
 func TestRegister_DoesNotSetProcessEnv(t *testing.T) {
 	path := writeEnv(t, "TT_NOSET=1\n")
 	loads := func() map[string]any { return map[string]any{"TT_NOSET_LOADS": "1"} }
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{path}, Loads: []ConfigLoadFn{loads}, IsOverride: true})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{path}, Loads: []ConfigLoadFn{loads}, IsOverride: true})
 	expectValues(t, svc, "E11", map[string]any{"TT_NOSET": "1"})
 
 	for _, key := range []string{"TT_NOSET", "TT_NOSET_LOADS"} {
@@ -341,7 +341,7 @@ func TestConfigState_FilesAndSortedKeys(t *testing.T) {
 	second := writeEnv(t, "TT_STATE_C=3\n")
 	loads := func() map[string]any { return map[string]any{"tt_state_loaded": map[string]any{"x": 1}} }
 
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{first, second}, Loads: []ConfigLoadFn{loads}})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{first, second}, Loads: []ConfigLoadFn{loads}})
 	svc.Set("TT_STATE_SET", "later")
 
 	state, ok := inspect.ConfigStateOf(svc)
@@ -373,7 +373,7 @@ func TestConfigState_NoValues(t *testing.T) {
 	t.Setenv("TT_STATE_ENV_SECRET", canary+"-env")
 	path := writeEnv(t, "TT_STATE_SECRET="+canary+"-file\n")
 	loads := func() map[string]any { return map[string]any{"TT_STATE_LOADS": canary + "-loads"} }
-	svc := registerWith(t, &ConfigModuleOptions{ENVFilePaths: []string{path}, Loads: []ConfigLoadFn{loads}})
+	svc := registerWith(t, &ConfigModuleOptions{EnvFilePaths: []string{path}, Loads: []ConfigLoadFn{loads}})
 	svc.Set("TT_STATE_SET_SECRET", canary+"-set")
 
 	state, ok := inspect.ConfigStateOf(svc)

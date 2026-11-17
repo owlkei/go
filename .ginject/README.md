@@ -75,7 +75,7 @@ This directory (`.ginject/`) contains complete AI-friendly documentation of the 
 ### Concurrency
 - HTTP: Each request is independent (thread-safe)
 - WebSocket: Each connection is single-threaded (2 goroutines: read + write)
-- App state: read-only after app.Create(); every `core.New()` is independent
+- App state: read-only after app.Create(); every `ginject.New()` is independent
 
 ### Performance
 - A static route through `ServeHTTP` is about 0.6 µs and 6 allocations (`core/README.md` › Benchmarks)
@@ -199,11 +199,11 @@ app.Create(module)
 **Example**:
 ```go
 type UserController struct {
-    common.HTTP
+    ginject.HTTP
     UserService UserService
 }
 
-func (instance UserController) READ_users_BY_id(param ctx.Param) string {
+func (instance UserController) READ_users_BY_id(param ginject.Param) string {
     return instance.UserService.GetUser(param.Get("id"))
 }
 ```
@@ -288,7 +288,7 @@ Measured numbers: `core/README.md` › Benchmarks.
 - Global memorybroker thread-safe (single RWMutex, no sharding)
 
 **App State**:
-- Each `core.New()` has its own (no package-level registry)
+- Each `ginject.New()` has its own (no package-level registry)
 - Read-only after app.Create()
 
 ---

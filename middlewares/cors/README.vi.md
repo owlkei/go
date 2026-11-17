@@ -37,12 +37,12 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/cors"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(cors.CORS{
 		AllowOrigins:       []string{"https://app.example.com", "https://*.example.com"},
@@ -52,7 +52,7 @@ func main() {
 	})
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -137,7 +137,7 @@ Trả `Access-Control-Allow-Private-Network: true` cho preflight có
 
 ### NewMiddleware
 ```go
-func (instance CORS) NewMiddleware() common.MiddlewareFn
+func (instance CORS) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Kiểm tra và biên dịch option một lần; framework gọi khi `Create()`. Panic với
@@ -148,10 +148,10 @@ token RFC 9110.
 
 ### Use
 ```go
-func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Giúp `CORS` là một `common.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
+Giúp `CORS` là một `ginject.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
 
 ## Quy Tắc
 - Với một danh sách (không phải `*`), mọi response có `Vary: Origin`, thêm vào `Vary` sẵn có: kể cả

@@ -41,7 +41,7 @@ func BenchmarkException_GetStatusText(b *testing.B) {
 	e := NewException("body", http.StatusBadRequest)
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = e.GetStatusText()
+		_ = e.StatusText()
 	}
 }
 
@@ -92,7 +92,7 @@ func BenchmarkException_MarshalMap(b *testing.B) {
 	e := NewException("Cannot GET /users", http.StatusNotFound)
 	b.ReportAllocs()
 	for b.Loop() {
-		_, _ = json.Marshal(map[string]any{"code": e.GetCode(), "error": e.Error(), "message": e.GetMessage()})
+		_, _ = json.Marshal(map[string]any{"code": e.Code(), "error": e.Error(), "message": e.Message()})
 	}
 }
 

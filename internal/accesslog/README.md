@@ -1,12 +1,14 @@
 # Access Log
 
+Internal package: applications use `app.EnableAccessLog()` instead.
+
 *Package `accesslog` writes one log line per HTTP request or WebSocket message, with the time each middleware, guard, interceptor, pipe, handler and filter took. The line is formatted and logged on the request goroutine (a few microseconds), with no worker, queue or timer of its own.*
 
 - [Access Log](#access-log)
   - [Key Features](#key-features)
   - [Usage](#usage)
   - [The line](#the-line)
-  - [`AccessLogConfig` Parameters](#accesslogconfig-parameters)
+  - [`AccessLogOptions` Parameters](#accesslogoptions-parameters)
     - [Tracer](#tracer)
     - [Logger](#logger)
   - [Functions](#functions)
@@ -37,7 +39,7 @@ import (
 
 func main() {
 	app := core.New()
-	app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
+	app.SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON}))
 	app.EnableAccessLog()
 	app.Create(core.NewModuleBuilder().Build())
 	_ = app.Listen(8080, nil)
@@ -77,7 +79,7 @@ In the pretty format of the built-in logger each stage is a branch of the tree w
 - The client IP is personal data in many jurisdictions (GDPR). Keep the access log under the same retention rules as your other personal data, or mask it in your log pipeline. Behind a load balancer, bind `proxy` with your proxies' addresses, or every line shows the load balancer's address.
 - Events of different requests never mix, whatever the interleaving.
 
-## `AccessLogConfig` Parameters
+## `AccessLogOptions` Parameters
 
 ### Tracer
 Type: `*trace.Tracer`
@@ -104,7 +106,7 @@ The logger that receives the lines. `core` passes the app's logger. A logger fro
 Listens to the tracer; it starts no goroutine. Users never call it: `app.EnableAccessLog()` does.
 
 #### Parameters
-- 1st parameter: `*AccessLogConfig`
+- 1st parameter: `*AccessLogOptions`
 
 - Description: The tracer and the logger
 
@@ -114,7 +116,7 @@ Listens to the tracer; it starts no goroutine. Users never call it: `app.EnableA
 #### Usage
 
 ```go
-al := accesslog.NewAccessLog(&accesslog.AccessLogConfig{Tracer: tracer, Logger: logger})
+al := accesslog.NewAccessLog(&accesslog.AccessLogOptions{Tracer: tracer, Logger: logger})
 defer al.Stop()
 ```
 

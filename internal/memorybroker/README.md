@@ -1,5 +1,7 @@
 # memorybroker
 
+Internal package: applications use `ginject.Publisher` and `SUBSCRIBE_…` controller methods instead.
+
 *Lightweight in-process topic-based pub/sub broker for the Ginject framework — exact topics, prefix wildcards, global subscriptions, and complex patterns.*
 
 ---

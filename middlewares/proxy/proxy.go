@@ -16,8 +16,8 @@ import (
 type Header int
 
 const (
-	XForwarded Header = iota
-	Forwarded
+	HeaderXForwarded Header = iota
+	HeaderForwarded
 )
 
 const (
@@ -82,7 +82,7 @@ func loadProxyOptions(p *Proxy) *compiledProxy {
 		panic(color.FmtRed("invalid proxy: TrustedProxies has %d entries, at most %d are allowed", len(p.TrustedProxies), maxTrustedProxies))
 	case !hasProxies && (p.TrustedHops < 1 || p.TrustedHops > maxHops):
 		panic(color.FmtRed("invalid proxy: TrustedHops is %d, it must be between 1 and %d", p.TrustedHops, maxHops))
-	case p.Header != XForwarded && p.Header != Forwarded:
+	case p.Header != HeaderXForwarded && p.Header != HeaderForwarded:
 		panic(color.FmtRed("invalid proxy: unknown Header %d", int(p.Header)))
 	}
 	c := &compiledProxy{hops: p.TrustedHops, header: p.Header, isHostForwarded: p.IsHostForwarded}
@@ -199,7 +199,7 @@ func (c *compiledProxy) walkHops(h http.Header) result {
 }
 
 func (c *compiledProxy) entries(h http.Header) entryIterator {
-	if c.header == Forwarded {
+	if c.header == HeaderForwarded {
 		return newEntryIterator(h[forwardedHeader])
 	}
 	return newEntryIterator(h[forwardedForHeader])
@@ -209,7 +209,7 @@ func (c *compiledProxy) parse(entry string, res *result) (netip.Addr, bool) {
 	if len(entry) > maxEntryLength {
 		return netip.Addr{}, false
 	}
-	if c.header == XForwarded {
+	if c.header == HeaderXForwarded {
 		return parseEntry(trimSpace(entry))
 	}
 	element, ok := parseElement(entry)
@@ -231,7 +231,7 @@ func (c *compiledProxy) parse(entry string, res *result) (netip.Addr, bool) {
 
 func (c *compiledProxy) scheme(h http.Header, res *result) (bool, bool) {
 	value := res.proto
-	if c.header == XForwarded {
+	if c.header == HeaderXForwarded {
 		value = lastValue(h[forwardedProtoHeader])
 	}
 	switch {
@@ -245,7 +245,7 @@ func (c *compiledProxy) scheme(h http.Header, res *result) (bool, bool) {
 
 func (c *compiledProxy) host(h http.Header, res *result) string {
 	value := res.host
-	if c.header == XForwarded {
+	if c.header == HeaderXForwarded {
 		value = lastValue(h[forwardedHostHeader])
 	}
 	if !tracecontext.IsValidHost(value) {
@@ -405,7 +405,7 @@ func (c *compiledProxy) Snapshot() inspect.Snapshot {
 	if c.hops > 0 {
 		mode = "hops"
 	}
-	if c.header == Forwarded {
+	if c.header == HeaderForwarded {
 		header = "forwarded"
 	}
 	trusted := make([]string, len(c.prefixes))

@@ -26,7 +26,7 @@ const (
 	maxTargetBytes      = 2048
 )
 
-type AccessLogConfig struct {
+type AccessLogOptions struct {
 	Tracer *trace.Tracer
 	Logger log.LogAdapter
 }
@@ -71,7 +71,7 @@ type stageText struct {
 	start, end int
 }
 
-func NewAccessLog(cfg *AccessLogConfig) *AccessLog {
+func NewAccessLog(cfg *AccessLogOptions) *AccessLog {
 	if cfg == nil || cfg.Tracer == nil || cfg.Logger == nil {
 		panic(color.FmtRed("invalid access log: a tracer and a logger are required"))
 	}

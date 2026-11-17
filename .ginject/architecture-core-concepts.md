@@ -310,9 +310,9 @@ type Exception struct {
 }
 
 Methods:
-- GetCode() int
-- GetMessage() string
-- GetStatusText() string (HTTP status text)
+- Code() int
+- Message() string
+- StatusText() string (HTTP status text)
 - GetStackTrace() string
 - SetStackTrace(trace string)
 ```
@@ -363,7 +363,7 @@ HTTP response written (or WS message sent)
 **Filter Interface**:
 ```go
 any // bound as any, matched by its method:
-// Catch(*ctx.HTTPContext, *exception.Exception)
+// Catch(ginject.HTTPContext, *exception.Exception)
 ```
 
 **Execution Order**:

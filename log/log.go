@@ -16,13 +16,13 @@ import (
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
 
-type logFormat int
+type Format int
 
 type LogOptions struct {
-	Level      slog.Level
-	LogFormat  logFormat
-	AddSource  bool
-	MaskFields []string
+	Level       slog.Level
+	Format      Format
+	IsAddSource bool
+	MaskFields  []string
 }
 
 const (
@@ -32,15 +32,15 @@ const (
 	labelError = "ERROR"
 	labelFatal = "FATAL"
 
-	DebugLevel = slog.LevelDebug
-	InfoLevel  = slog.LevelInfo
-	WarnLevel  = slog.LevelWarn
-	ErrorLevel = slog.LevelError
-	FatalLevel = slog.Level(12)
+	LevelDebug = slog.LevelDebug
+	LevelInfo  = slog.LevelInfo
+	LevelWarn  = slog.LevelWarn
+	LevelError = slog.LevelError
+	LevelFatal = slog.Level(12)
 
-	TextFormat logFormat = iota + 1
-	JSONFormat
-	PrettyFormat
+	FormatText Format = iota + 1
+	FormatJSON
+	FormatPretty
 )
 
 const (
@@ -61,7 +61,7 @@ type accessKey struct{}
 type logger struct {
 	level     slog.Level
 	addSource bool
-	format    logFormat
+	format    Format
 	sink      *logpipe.Sink
 	conv      converter
 	encoders  *sync.Pool
@@ -103,31 +103,31 @@ func newLogSink(s *logpipe.Sink, isTerminal bool, opts *LogOptions) Logger {
 	if opts != nil {
 		o = *opts
 	}
-	format := o.LogFormat
+	format := o.Format
 	if format == 0 {
-		format = JSONFormat
+		format = FormatJSON
 		if isTerminal {
-			format = PrettyFormat
+			format = FormatPretty
 		}
 	}
 	l := &logger{
 		level:     o.Level,
-		addSource: o.AddSource,
+		addSource: o.IsAddSource,
 		format:    format,
 		sink:      s,
 		conv:      converter{rules: mergeRules(nil, o.MaskFields), mode: modeText},
-		encoders:  newEncoderPool(format, o.AddSource),
+		encoders:  newEncoderPool(format, o.IsAddSource),
 	}
-	if format == PrettyFormat {
+	if format == FormatPretty {
 		l.conv.mode = modePretty
 	}
 	l.report = l.dropReport
 	return l
 }
 
-func newEncoderPool(format logFormat, addSource bool) *sync.Pool {
+func newEncoderPool(format Format, addSource bool) *sync.Pool {
 	var pretty *prettyHandler
-	if format == PrettyFormat {
+	if format == FormatPretty {
 		pretty = newPrettyHandler()
 	}
 	return &sync.Pool{New: func() any {
@@ -135,9 +135,9 @@ func newEncoderPool(format logFormat, addSource bool) *sync.Pool {
 		plainOpts := &slog.HandlerOptions{AddSource: addSource}
 		fatalOpts := &slog.HandlerOptions{AddSource: addSource, ReplaceAttr: fatalLabel}
 		switch format {
-		case TextFormat:
+		case FormatText:
 			e.out, e.fatal = slog.NewTextHandler(e, plainOpts), slog.NewTextHandler(e, fatalOpts)
-		case JSONFormat:
+		case FormatJSON:
 			e.escapeC1 = true
 			e.out, e.fatal = slog.NewJSONHandler(e, plainOpts), slog.NewJSONHandler(e, fatalOpts)
 		}
@@ -173,13 +173,13 @@ func appendEscapedC1(dst, p []byte) []byte {
 	return dst
 }
 
-func (l *logger) Debug(msg string, args ...any) { l.log(DebugLevel, msg, args) }
-func (l *logger) Info(msg string, args ...any)  { l.log(InfoLevel, msg, args) }
-func (l *logger) Warn(msg string, args ...any)  { l.log(WarnLevel, msg, args) }
-func (l *logger) Error(msg string, args ...any) { l.log(ErrorLevel, msg, args) }
+func (l *logger) Debug(msg string, args ...any) { l.log(LevelDebug, msg, args) }
+func (l *logger) Info(msg string, args ...any)  { l.log(LevelInfo, msg, args) }
+func (l *logger) Warn(msg string, args ...any)  { l.log(LevelWarn, msg, args) }
+func (l *logger) Error(msg string, args ...any) { l.log(LevelError, msg, args) }
 
 func (l *logger) Fatal(msg string, args ...any) {
-	l.log(FatalLevel, msg, args)
+	l.log(LevelFatal, msg, args)
 	l.sink.Flush(logpipe.FlushTimeout)
 	exit(1)
 }
@@ -230,7 +230,7 @@ func (l *logger) scopeFields(s *tracecontext.Scope) scopeFields {
 		{tracecontext.KeyMessage, s.Message},
 		{tracecontext.KeyUpstream, s.Upstream},
 	}
-	fast := l.format != PrettyFormat
+	fast := l.format != FormatPretty
 	for _, p := range pairs {
 		if p[1] != "" && (!isPlainField(p[1]) || l.masked(p[0])) {
 			fast = false
@@ -243,7 +243,7 @@ func (l *logger) scopeFields(s *tracecontext.Scope) scopeFields {
 			if p[1] == "" {
 				continue
 			}
-			if l.format == JSONFormat {
+			if l.format == FormatJSON {
 				f.suffix = append(append(append(append(append(f.suffix, ",\""...), p[0]...), "\":\""...), p[1]...), '"')
 			} else {
 				f.suffix = append(append(append(append(f.suffix, ' '), p[0]...), '='), p[1]...)
@@ -312,13 +312,13 @@ func (l *logger) release(e *encoder) {
 
 func pipeLevel(level slog.Level) logpipe.Level {
 	switch {
-	case level < InfoLevel:
+	case level < LevelInfo:
 		return logpipe.Debug
-	case level < WarnLevel:
+	case level < LevelWarn:
 		return logpipe.Info
-	case level < ErrorLevel:
+	case level < LevelError:
 		return logpipe.Warn
-	case level < FatalLevel:
+	case level < LevelFatal:
 		return logpipe.Error
 	default:
 		return logpipe.Fatal
@@ -377,7 +377,7 @@ func (l *logger) handle(ctx context.Context, e *encoder, r slog.Record) {
 	switch {
 	case e.pretty != nil:
 		e.buf = e.pretty.appendRecord(e.buf, r, ctx == accessContext)
-	case r.Level >= FatalLevel:
+	case r.Level >= LevelFatal:
 		_ = e.fatal.Handle(ctx, r)
 	default:
 		_ = e.out.Handle(ctx, r)
@@ -389,7 +389,7 @@ func (l *logger) handle(ctx context.Context, e *encoder, r slog.Record) {
 
 func (l *logger) splice(buf, suffix []byte) []byte {
 	tail := "\n"
-	if l.format == JSONFormat {
+	if l.format == FormatJSON {
 		tail = "}\n"
 	}
 	if len(buf) < len(tail) || string(buf[len(buf)-len(tail):]) != tail {
@@ -427,12 +427,12 @@ func (l *logger) dropReport(dropped [4]uint64) []byte {
 		}
 	}
 	e := l.encoders.New().(*encoder)
-	l.encode(e, WarnLevel, droppedMessage, 0, args)
+	l.encode(e, LevelWarn, droppedMessage, 0, args)
 	return e.buf
 }
 
 func (l *logger) LogAccess(line logpipe.AccessLine) {
-	if InfoLevel < l.level {
+	if LevelInfo < l.level {
 		return
 	}
 	var pc uintptr
@@ -441,7 +441,7 @@ func (l *logger) LogAccess(line logpipe.AccessLine) {
 		runtime.Callers(2, pcs[:])
 		pc = pcs[0]
 	}
-	r := slog.NewRecord(time.Now(), InfoLevel, line.Msg, pc)
+	r := slog.NewRecord(time.Now(), LevelInfo, line.Msg, pc)
 	if len(l.conv.rules) > 0 {
 		for i := range line.Attrs {
 			if l.masked(line.Attrs[i].Key) {

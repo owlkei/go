@@ -60,17 +60,17 @@ Bind `loadshed` first, so a refused request costs as little as possible:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/loadshed"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(loadshed.LoadShed{})
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 
 	app.Listen(8080, nil)
@@ -93,7 +93,7 @@ values share one limiter.
 To limit WebSocket handshakes too, pass it to `EnableWS`:
 
 ```go
-app.EnableWS(&core.WSOptions{Path: "/ws"}, loadshed.LoadShed{})
+app.EnableWS(&ginject.WSOptions{Path: "/ws"}, loadshed.LoadShed{})
 ```
 
 The slot of a handshake is released when the handshake ends, not when the connection closes.
@@ -139,7 +139,7 @@ The wait and the `Retry-After` value are fixed.
 
 ### NewMiddleware
 ```go
-func (instance LoadShed) NewMiddleware() common.MiddlewareFn
+func (instance LoadShed) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Validates the options and reads the machine's bounds once; the framework calls it at `Create()`.
@@ -147,10 +147,10 @@ It panics with `invalid loadshed: ...` for an option out of range.
 
 ### Use
 ```go
-func (instance LoadShed) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance LoadShed) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Makes `LoadShed` a `common.MiddlewareFn`. It builds a new limiter on every call, so use it in tests
+Makes `LoadShed` a `ginject.MiddlewareFn`. It builds a new limiter on every call, so use it in tests
 only; the framework always calls `NewMiddleware`. Called outside an app, it only calls the next
 layer.
 

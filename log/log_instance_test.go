@@ -49,10 +49,10 @@ func TestNewLog_NewLoggerPerCall(t *testing.T) {
 }
 
 func TestNewLog_OptionsOfSecondCallApply(t *testing.T) {
-	NewLog(&LogOptions{LogFormat: TextFormat})
+	NewLog(&LogOptions{Format: FormatText})
 
 	out := captureStdout(t, func() func() {
-		logger := NewLog(&LogOptions{LogFormat: JSONFormat})
+		logger := NewLog(&LogOptions{Format: FormatJSON})
 		return func() { logger.Info("hello", "k", "v") }
 	})
 
@@ -64,11 +64,11 @@ func TestNewLog_OptionsOfSecondCallApply(t *testing.T) {
 func TestNewLog_TwoLoggersBehaveDifferently(t *testing.T) {
 	var textOut, jsonOut string
 	textOut = captureStdout(t, func() func() {
-		logger := NewLog(&LogOptions{LogFormat: TextFormat})
+		logger := NewLog(&LogOptions{Format: FormatText})
 		return func() { logger.Info("hello") }
 	})
 	jsonOut = captureStdout(t, func() func() {
-		logger := NewLog(&LogOptions{LogFormat: JSONFormat})
+		logger := NewLog(&LogOptions{Format: FormatJSON})
 		return func() { logger.Info("hello") }
 	})
 
@@ -82,11 +82,11 @@ func TestNewLog_TwoLoggersBehaveDifferently(t *testing.T) {
 
 func TestNewLog_MaskFieldsOfEachCallApply(t *testing.T) {
 	masked := captureStdout(t, func() func() {
-		logger := NewLog(&LogOptions{LogFormat: TextFormat, MaskFields: []string{"password"}})
+		logger := NewLog(&LogOptions{Format: FormatText, MaskFields: []string{"password"}})
 		return func() { logger.Info("login", "password", "secret") }
 	})
 	plain := captureStdout(t, func() func() {
-		logger := NewLog(&LogOptions{LogFormat: TextFormat})
+		logger := NewLog(&LogOptions{Format: FormatText})
 		return func() { logger.Info("login", "password", "secret") }
 	})
 

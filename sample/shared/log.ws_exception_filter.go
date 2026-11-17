@@ -18,8 +18,8 @@ func (instance LogWSExceptionFilter) Catch(c ginject.WSContext, ex *exception.Ex
 	}
 
 	c.Send(ginject.Map{
-		"code":    ex.GetCode(),
+		"code":    ex.Code(),
 		"error":   ex.Error(),
-		"message": ex.GetMessage(),
+		"message": ex.Message(),
 	})
 }

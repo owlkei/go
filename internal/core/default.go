@@ -14,9 +14,9 @@ func (g globalHTTPExceptionFilter) Catch(c *ctx.HTTPContext, ex *exception.Excep
 type globalWSExceptionFilter struct{}
 
 func (g globalWSExceptionFilter) Catch(c *ctx.WSContext, ex *exception.Exception) {
-	code := ex.GetCode()
+	code := ex.Code()
 	if code == 0 {
-		code = defaultException.GetCode()
+		code = defaultException.Code()
 	}
 
 	err := ex.Error()
@@ -24,9 +24,9 @@ func (g globalWSExceptionFilter) Catch(c *ctx.WSContext, ex *exception.Exception
 		err = defaultException.Error()
 	}
 
-	message := ex.GetMessage()
+	message := ex.Message()
 	if message == "" {
-		message = defaultException.GetMessage()
+		message = defaultException.Message()
 	}
 
 	c.Send(ctx.Map{

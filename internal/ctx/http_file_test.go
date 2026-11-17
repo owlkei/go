@@ -270,8 +270,8 @@ func TestHTTPContext_FileAndFormShareFields(t *testing.T) {
 func TestHTTPContext_FileBrokenMultipartIsBadRequest(t *testing.T) {
 	c := newFormContext("multipart/form-data; boundary=xyz", strings.NewReader("garbage"))
 	exc, _ := panicException(t, func() { c.File() })
-	if exc.GetCode() != http.StatusBadRequest || exc.GetMessage() != "Invalid form body" {
-		t.Error(test.DiffMessage([2]any{exc.GetCode(), exc.GetMessage()}, [2]any{http.StatusBadRequest, "Invalid form body"}, "B13: File should fail like Form on a broken multipart body"))
+	if exc.Code() != http.StatusBadRequest || exc.Message() != "Invalid form body" {
+		t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusBadRequest, "Invalid form body"}, "B13: File should fail like Form on a broken multipart body"))
 	}
 }
 
@@ -281,8 +281,8 @@ func TestHTTPContext_FileTooLargeIs413(t *testing.T) {
 
 	exc, err := panicException(t, func() { c.File() })
 
-	if exc.GetCode() != http.StatusRequestEntityTooLarge {
-		t.Error(test.DiffMessage(exc.GetCode(), http.StatusRequestEntityTooLarge, "B13: File over the limit should panic with code 413"))
+	if exc.Code() != http.StatusRequestEntityTooLarge {
+		t.Error(test.DiffMessage(exc.Code(), http.StatusRequestEntityTooLarge, "B13: File over the limit should panic with code 413"))
 	}
 	var tooLarge *http.MaxBytesError
 	if !errors.As(err, &tooLarge) {

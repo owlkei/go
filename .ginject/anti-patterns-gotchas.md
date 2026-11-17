@@ -10,10 +10,10 @@
 ```go
 type UserService struct{}
 
-func (instance UserService) NewProvider() core.Provider { return instance }
+func (instance UserService) NewProvider() ginject.Provider { return instance }
 
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 	UserService *UserService
 }
 
@@ -27,7 +27,7 @@ func (instance UserController) READ_users(us UserService) string { return "" }
 **RIGHT**:
 ```go
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 	UserService UserService
 }
 
@@ -58,11 +58,11 @@ func (c UserController) READ() {
 **RIGHT**:
 ```go
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 	UserService UserService
 }
 
-func (instance UserController) READ_users_BY_id(param ctx.Param) string {
+func (instance UserController) READ_users_BY_id(param ginject.Param) string {
 	return instance.UserService.GetUser(param.Get("id"))
 }
 ```
@@ -85,9 +85,9 @@ Providers are value types injected by value, so a cycle (`ServiceA` with a `Serv
 
 **WRONG**:
 ```go
-var lastCtx *ctx.HTTPContext
+var lastCtx ginject.HTTPContext
 
-func (c UserController) READ(httpCtx *ctx.HTTPContext) {
+func (c UserController) READ(httpCtx ginject.HTTPContext) {
     lastCtx = httpCtx  // WRONG! Retain pooled object
     return "ok"
 }
@@ -104,7 +104,7 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext) {
 
 **RIGHT**:
 ```go
-func (c UserController) READ(httpCtx *ctx.HTTPContext) {
+func (c UserController) READ(httpCtx ginject.HTTPContext) {
     // Use httpCtx only within request
     return httpCtx.ID()  // Use locally
     // After function returns, httpCtx released to pool
@@ -121,7 +121,7 @@ trace scope (`internal/tracecontext`) stays readable after the request ended.
 
 **WRONG**:
 ```go
-func (c UserController) READ(httpCtx *ctx.HTTPContext) {
+func (c UserController) READ(httpCtx ginject.HTTPContext) {
     // Handler runs AFTER guard
     // If guard saw certain context state, don't change it
     httpCtx.Request.Header.Set("X-User-ID", "123")  // WRONG!
@@ -137,14 +137,14 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext) {
 **RIGHT**:
 ```go
 // Use middleware to set headers (before guard)
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginject.Next) {
     // Runs BEFORE guard
     r.Header.Set("X-User-ID", "123")
     next()
 })
 
 // Guard sees modified request
-func (c UserController) READ(httpCtx *ctx.HTTPContext) {
+func (c UserController) READ(httpCtx ginject.HTTPContext) {
     // Use context
 }
 ```
@@ -160,7 +160,7 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext) {
 A guard that returns `false` hands `exception.ForbiddenException("Access denied")` (403) to the route's exception filters. A guard may also panic an exception: the panic goes to the same filters, so `panic(exception.UnauthorizedException("not logged in"))` answers 401.
 
 ```go
-func (instance AuthGuard) CanActivate(c *ctx.HTTPContext) bool {
+func (instance AuthGuard) CanActivate(c ginject.HTTPContext) bool {
 	if c.Request.Header.Get("Authorization") == "" {
 		panic(exception.UnauthorizedException("not logged in"))
 	}
@@ -176,7 +176,7 @@ func (instance AuthGuard) CanActivate(c *ctx.HTTPContext) bool {
 
 **WRONG**:
 ```go
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginject.Next) {
     // Process request
     next()
     
@@ -192,7 +192,7 @@ app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ctx.
 
 **RIGHT**:
 ```go
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginject.Next) {
     // Pre-processing
     startTime := time.Now()
     
@@ -261,7 +261,7 @@ func (c ChatController) ON_MESSAGE(conn *websocket.Conn) {
 
 **RIGHT**:
 ```go
-func (c ChatController) ON_MESSAGE(publisher common.Publisher) {
+func (c ChatController) ON_MESSAGE(publisher ginject.Publisher) {
     publisher.Publish("topic", data)  // Safe, thread-safe
 }
 ```
@@ -299,10 +299,10 @@ publisher.Publish("event", data)
 
 **WRONG**:
 ```go
-var MyModule = func() *core.Module {
+var MyModule = func() ginject.Module {
     var counter = 0  // MUTABLE STATE!
     
-    return core.NewModuleBuilder().
+    return ginject.ModuleBuilder().
         Providers(
             CounterService{counter: &counter},  // Shared mutable
         ).
@@ -320,8 +320,8 @@ var MyModule = func() *core.Module {
 **RIGHT**:
 ```go
 // Option 1: Create new module each time
-func NewMyModule() *core.Module {
-    return core.NewModuleBuilder().
+func NewMyModule() ginject.Module {
+    return ginject.ModuleBuilder().
         Providers(
             CounterService{counter: 0},
         ).
@@ -329,8 +329,8 @@ func NewMyModule() *core.Module {
 }
 
 // Option 2: Make counter immutable
-var MyModule = func() *core.Module {
-    return core.NewModuleBuilder().
+var MyModule = func() ginject.Module {
+    return ginject.ModuleBuilder().
         Providers(
             CounterService{counter: 0},  // Immutable
         ).
@@ -351,7 +351,7 @@ type CounterService struct {
 	count *atomic.Int64
 }
 
-func (instance CounterService) NewProvider() core.Provider {
+func (instance CounterService) NewProvider() ginject.Provider {
 	instance.count = new(atomic.Int64)
 	return instance
 }
@@ -385,10 +385,10 @@ c.BindExceptionFilter(authFilter, c.READ)
 
 **RIGHT**: one filter that handles every code it cares about, and `panic(ex)` for the rest:
 ```go
-func (instance APIFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	switch ex.GetCode() {
+func (instance APIFilter) Catch(c ginject.HTTPContext, ex *exception.Exception) {
+	switch ex.Code() {
 	case http.StatusUnauthorized, http.StatusBadRequest:
-		c.Status(ex.GetCode()).JSON(ctx.Map{"error": ex.GetMessage()})
+		c.Status(ex.Code()).JSON(ginject.Map{"error": ex.Message()})
 	default:
 		panic(ex)
 	}
@@ -435,12 +435,12 @@ An exception costs about 1.6 µs per request; any other panic value (a string, a
 
 - A pipe parameter must be a value type: `func (c X) READ(dto *SearchDTO)` panics at `Create()` (`pipe '*…SearchDTO' … must not be a pointer`).
 - `Transform` must return the parameter's type (or one assignable to it): `return &dto` or `return nil` answers a 500 exception (`pipe …: Transform returned …, want …`) and the handler is not called.
-- A type from another package that prints like a framework type (your own `ctx.HTTPContext`) is not injected: `Create()` panics.
+- A type from another package that prints like a framework type (your own `ginject.HTTPContext`) is not injected: `Create()` panics.
 
 ### 7.5 GOTCHA: Forgetting `From` Inside a Request
 
 ```go
-func (instance UserController) READ_me(c *ctx.HTTPContext) any {
+func (instance UserController) READ_me(c ginject.HTTPContext) any {
 	instance.Logger.Info("ReadMe")                  // no trace_id, no request: can't be tied to the request
 	instance.Logger.From(c.Context()).Info("ReadMe") // carries trace_id and request
 	return "ok"
@@ -455,9 +455,9 @@ about 6 ns; a line through it costs what a plain line does (`log/README.md` › 
 
 ### 8.1 GOTCHA: State Shared Between Tests Outside the Framework
 
-Every `core.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module func.
+Every `ginject.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module func.
 
-**Rule**: A new `core.New()` per test; build modules that hold resources per test when the tests must not share them
+**Rule**: A new `ginject.New()` per test; build modules that hold resources per test when the tests must not share them
 
 ---
 
@@ -572,14 +572,14 @@ c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
 
 **WRONG** (generating an upload handler without checking the cap):
 ```go
-func (c UploadController) CREATE(body ctx.Body) any {
+func (c UploadController) CREATE(body ginject.Body) any {
     // Assumes any size body reaches here — it doesn't.
 }
 ```
 
-**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless the serving call sets `ServerOptions.MaxRequestBodyBytes` (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `ctx.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
+**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless the serving call sets `ServerOptions.MaxRequestBodyBytes` (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `ginject.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
 
-**RIGHT**: Raise the cap for the whole app with `app.Listen(port, &core.ServerOptions{MaxRequestBodyBytes: 50 << 20})`; there is no per-route cap.
+**RIGHT**: Raise the cap for the whole app with `app.Listen(port, &ginject.ServerOptions{MaxRequestBodyBytes: 50 << 20})`; there is no per-route cap.
 
 **Rule**: Any handler that accepts uploads must account for the app-wide cap and the 413 it produces; don't assume an unlimited body size.
 
@@ -634,9 +634,9 @@ Each is documented once in the package README named; generated code must respect
   `Del` or a new slice, never `h[k][0] = …` (`core/README.md` › Response writer).
 - **`c.Redirect` takes any URL**: validate a URL from the request (local paths only) before
   redirecting (`ctx/README.md` › Redirect).
-- **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `ctx.Map` or a
+- **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `ginject.Map` or a
   struct, never as a format argument or the format string (`ctx/README.md` › JSON).
-- **`trace.Transport` sends `traceparent` to every host**, and an incoming valid `traceparent`
+- **`ginject.TraceTransport` sends `traceparent` to every host**, and an incoming valid `traceparent`
   sets the trace ID and flags: never authorize by a trace ID (`trace/README.md` › Security).
 - **`proxy` hops mode (`TrustedHops`) doesn't check the peer**: only when the app is unreachable
   except through the proxies (`middlewares/proxy/README.md` › Security).

@@ -56,7 +56,7 @@ func InjectProvidersIntoHTTPExceptionFilters(e *ExceptionFilter, r *HTTP, cb fun
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid exception filter: %v.%s must be func(*ctx.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter",
+				"invalid exception filter: %v.%s must be func(ginject.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter",
 				exceptionFilterableType,
 				ExceptionFilterMethodName,
 			)))

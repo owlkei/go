@@ -266,7 +266,7 @@ func TestScope_SameInEveryLayer(t *testing.T) {
 	for _, name := range []string{"gf1", "gf2", "mf1", "mf2"} {
 		lcSetFilter(name, func(c *ctx.HTTPContext, ex *exception.Exception) {
 			record("filter", c.Context())
-			c.Status(ex.GetCode()).Text("caught")
+			c.Status(ex.Code()).Text("caught")
 		})
 	}
 	lcSetHandler(func(c *ctx.HTTPContext) any {

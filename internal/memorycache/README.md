@@ -1,5 +1,7 @@
 # Memory Cache
 
+Internal package: applications use `cache.NewMemoryCache(&cache.MemoryCacheOptions{…})` from `modules/cache` instead.
+
 *Package `memorycache` is a bounded, thread-safe in-memory byte cache with exact expiry and an atomic counter. It is the default backend of the cache module (`modules/cache`) and of the throttler guard.*
 
 - [Memory Cache](#memory-cache)

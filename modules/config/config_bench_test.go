@@ -53,7 +53,7 @@ func envFixture(b *testing.B) string {
 
 func BenchmarkRegister_File(b *testing.B) {
 	path := envFixture(b)
-	opts := &ConfigModuleOptions{ENVFilePaths: []string{path}}
+	opts := &ConfigModuleOptions{EnvFilePaths: []string{path}}
 	b.ReportAllocs()
 	for b.Loop() {
 		Register(opts)
@@ -62,7 +62,7 @@ func BenchmarkRegister_File(b *testing.B) {
 
 func BenchmarkRegister_FileExpandVariables(b *testing.B) {
 	path := envFixture(b)
-	opts := &ConfigModuleOptions{ENVFilePaths: []string{path}, IsExpandVariables: true}
+	opts := &ConfigModuleOptions{EnvFilePaths: []string{path}, IsExpandVariables: true}
 	b.ReportAllocs()
 	for b.Loop() {
 		Register(opts)

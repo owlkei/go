@@ -44,10 +44,10 @@ func (mc *MemoryCache) Keys(ctx context.Context) []string
 func (mc *MemoryCache) TTL(ctx context.Context, key string) (time.Duration, bool)
 
 var (
-	ErrEmptyKey      = errors.New("memorycache: key must not be empty")
-	ErrNegativeTTL   = errors.New("memorycache: ttl must not be negative")         // new
-	ErrEntryTooLarge = errors.New("memorycache: entry is larger than the cache allows") // new
-	ErrNotCounter    = errors.New("memorycache: value is not a counter")           // new
+	ErrEmptyKey      = errors.New("cache: key must not be empty")
+	ErrNegativeTTL   = errors.New("cache: ttl must not be negative")         // new
+	ErrEntryTooLarge = errors.New("cache: entry is larger than the cache allows") // new
+	ErrNotCounter    = errors.New("cache: value is not a counter")           // new
 )
 ```
 Removed: `(*MemoryCache).Stop` (nothing left to stop).

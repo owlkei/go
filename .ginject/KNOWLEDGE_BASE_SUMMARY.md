@@ -192,16 +192,16 @@ Verify: Guard MUST return bool, never panic
 **Step 3: Reference APIs**
 ```
 Read: package-reference.md → common package → guard shape
-Check: CanActivate(*ctx.HTTPContext) bool signature
+Check: CanActivate(ginject.HTTPContext) bool signature
 ```
 
 **Step 4: Generate Code**
 ```go
 type JWTGuard struct {
-    common.Guard
+    ginject.Guard
 }
 
-func (g JWTGuard) CanActivate(httpCtx *ctx.HTTPContext) bool {
+func (g JWTGuard) CanActivate(httpCtx ginject.HTTPContext) bool {
     token := httpCtx.Request.Header.Get("Authorization")
     // Validate JWT...
     return isValid

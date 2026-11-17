@@ -37,7 +37,7 @@ func BenchmarkProxy_Hops(b *testing.B) {
 }
 
 func BenchmarkProxy_Forwarded(b *testing.B) {
-	mw := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: Forwarded}.NewMiddleware()
+	mw := Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: HeaderForwarded}.NewMiddleware()
 	r := scoped("10.0.0.1:80", "Forwarded", "for=8.8.8.8;proto=https, for=10.0.0.2")
 	w := &discardWriter{header: http.Header{}}
 	b.ReportAllocs()

@@ -114,7 +114,7 @@ func NewGinjectApp() ginject.App {
 }
 
 func NewGinjectAppWithLog() ginject.App {
-	app := ginject.New().SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
+	app := ginject.New().SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON}))
 	return newGinjectApp(app.EnableAccessLog())
 }
 

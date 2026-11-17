@@ -40,7 +40,7 @@ func (e Exception) Error() string {
 
 	text := e.description
 	if text == "" {
-		text = e.GetStatusText()
+		text = e.StatusText()
 	}
 
 	if e.cause == nil {
@@ -56,15 +56,15 @@ func (e Exception) Unwrap() error {
 	return e.cause
 }
 
-func (e Exception) GetCode() int {
+func (e Exception) Code() int {
 	return e.code
 }
 
-func (e Exception) GetMessage() string {
+func (e Exception) Message() string {
 	return e.message
 }
 
-func (e Exception) GetStatusText() string {
+func (e Exception) StatusText() string {
 	statusText := http.StatusText(e.code)
 	if statusText == "" {
 		statusText = wsCloseStatusText[e.code]

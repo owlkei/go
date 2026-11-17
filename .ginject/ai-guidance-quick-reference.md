@@ -10,16 +10,16 @@
 Feature Request
   │
   ├─ "I need an HTTP endpoint"
-  │   ├─ Embed common.HTTP in controller
+  │   ├─ Embed ginject.HTTP in controller
   │   ├─ Create method: READ/CREATE/UPDATE/MODIFY/DELETE_BY_params
   │   ├─ Add parameters to method signature (built-in types and pipes, core/README.md › Handler injection)
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Providers go in exported controller fields (injected at Create())
   │
   ├─ "I need WebSocket support"
-  │   ├─ Embed common.WS in controller
+  │   ├─ Embed ginject.WS in controller
   │   ├─ Create method: SUBSCRIBE_<topic> (e.g. SUBSCRIBE_chat_PERSON_ANY)
-  │   ├─ Inject *ctx.WSContext, *websocket.Conn, common.Publisher
+  │   ├─ Inject ginject.WSContext, *websocket.Conn, ginject.Publisher
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Use publisher.Publish() for fanout
   │
@@ -62,7 +62,7 @@ Feature Request
   │   └─ Logger is available everywhere
   │
   └─ "I need to send events (WebSocket)"
-      ├─ Inject common.Publisher into handler
+      ├─ Inject ginject.Publisher into handler
       ├─ Call publisher.Publish(topic, data)
       ├─ All WS clients subscribed to topic receive message
       └─ Use topic patterns for selective delivery
@@ -129,33 +129,33 @@ I need access to...
   │   └─ http.ResponseWriter (HTTP only)
   │
   ├─ "Full request context with helpers"
-  │   ├─ HTTP: *ctx.HTTPContext
-  │   └─ WS: *ctx.WSContext
+  │   ├─ HTTP: ginject.HTTPContext
+  │   └─ WS: ginject.WSContext
   │
   ├─ "Request body (parsed JSON/form)"
-  │   └─ ctx.Body (HTTP only)
+  │   └─ ginject.Body (HTTP only)
   │
   ├─ "Query parameters"
-  │   └─ ctx.Query (HTTP only)
+  │   └─ ginject.Query (HTTP only)
   │
   ├─ "Path parameters (:id, :name, etc.)"
-  │   └─ ctx.Param (HTTP only)
+  │   └─ ginject.Param (HTTP only)
   │
   ├─ "HTTP headers"
-  │   └─ ctx.Header (HTTP only)
+  │   └─ ginject.Header (HTTP only)
   │
   ├─ "File uploads"
-  │   └─ ctx.File (HTTP only)
+  │   └─ ginject.File (HTTP only)
   │
   ├─ "WebSocket connection"
   │   └─ *websocket.Conn (WS only)
   │
   ├─ "Incoming WebSocket message"
-  │   └─ ctx.WSPayload (WS only)
+  │   └─ ginject.WSPayload (WS only)
   │
   ├─ "Send response/message"
   │   ├─ HTTP: httpCtx.JSON() or Text() method
-  │   └─ WS: common.Publisher for fanout
+  │   └─ WS: ginject.Publisher for fanout
   │
   ├─ "Custom service/provider"
   │   └─ Register as Provider, inject by type
@@ -165,13 +165,13 @@ I need access to...
   │   └─ log.Logger (globally available)
   │
   ├─ "Event publisher"
-  │   └─ common.Publisher (for WS fanout)
+  │   └─ ginject.Publisher (for WS fanout)
   │
   ├─ "Call next middleware"
-  │   └─ ctx.Next (function injected in middleware)
+  │   └─ ginject.Next (function injected in middleware)
   │
   └─ "Redirect response"
-      └─ ctx.Redirect (function injected in handler)
+      └─ ginject.Redirect (function injected in handler)
 ```
 
 ---
@@ -271,7 +271,7 @@ Architecture Question
   │
   └─ "How do I test this application?"
       ├─ Create new app instance per test
-      ├─ Modules may be shared: every core.New() has its own routes, providers and layers
+      ├─ Modules may be shared: every ginject.New() has its own routes, providers and layers
       ├─ Mock providers via dependency injection
       ├─ Use httptest.Server for HTTP testing
       ├─ For WS: use real websocket connection or mock interface
@@ -335,8 +335,8 @@ Pattern Question
   │   └─ NO - csrf.CSRF uses Sec-Fetch-Site and Origin; its only option is TrustedOrigins
   │
   └─ "Should I assume request bodies are unlimited or add app.SetMaxBodySize(...)?"
-      └─ NO - 10 MiB cap by default; change it with app.Listen(port, &core.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)
-          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from ctx.Body()
+      └─ NO - 10 MiB cap by default; change it with app.Listen(port, &ginject.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)
+          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from ginject.Body()
 ```
 
 ---

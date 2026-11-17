@@ -40,7 +40,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `EnableWS(cfg *WSOptions, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSOptions` argument**, not zero-arg |
 | `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
-| `EnableVersioning(opts *versioning.Versioning) *App` | Enable API versioning; `nil` = zero options, the options are copied |
+| `EnableVersioning(opts *versioning.Options) *App` | Enable API versioning; `nil` = zero options, the options are copied |
 | `SetLogger(logger log.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
 | `Logger() log.Logger` | The app's logger; never `nil` (the built-in logger by default) |
 
@@ -48,7 +48,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 
 ### HTTP Server Defaults
 
-`core/server.go`; the only options are the four fields of `ServerOptions` (`ShutdownTimeout` 0 = 30 s, `MaxRequestBodyBytes` 0 = 10 MiB / negative = off, `TLSConfig`, `H2C`). The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
+`core/server.go`; the only options are the four fields of `ServerOptions` (`ShutdownTimeout` 0 = 30 s, `MaxRequestBodyBytes` 0 = 10 MiB / negative = off, `TLSConfig`, `IsH2C`). The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
 
 | Setting | Value |
 |----------|-------|
@@ -195,9 +195,11 @@ type WSContext struct {
 
 ### Built-in Dependency Types
 
-**HTTP-specific**: `*ctx.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ctx.Body`, `ctx.Query`, `ctx.Header`, `ctx.Param`, `ctx.Form`, `ctx.File`, `ctx.Next`, `ctx.Redirect`, `common.Publisher`
+Applications write them with the root aliases.
 
-**WebSocket-specific**: `*ctx.WSContext`, `*websocket.Conn`, `ctx.WSPayload`, `ctx.Next`, `common.Publisher`
+**HTTP-specific**: `ginject.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ginject.Body`, `ginject.Query`, `ginject.Header`, `ginject.Param`, `ginject.Form`, `ginject.File`, `ginject.Next`, `ginject.Redirect`, `ginject.Publisher`
+
+**WebSocket-specific**: `ginject.WSContext`, `*websocket.Conn`, `ginject.WSPayload`, `ginject.Next`, `ginject.Publisher`
 
 ---
 
@@ -221,27 +223,21 @@ type WSContext struct {
 A bare func literal does **not** satisfy any of these — you must bind a struct value with the matching method. Example:
 ```go
 type AuthGuard struct{}
-func (g AuthGuard) CanActivate(httpCtx *ctx.HTTPContext) bool { return isAuthorized(httpCtx) }
+func (g AuthGuard) CanActivate(httpCtx ginject.HTTPContext) bool { return isAuthorized(httpCtx) }
 // c.BindGuard(AuthGuard{}, c.READ_BY_ID)
 ```
 
-### `Logger` / `Publisher`
+### `Publisher`
+
+`Logger` and `LogAdapter` moved to `log` (design 0017); see the `log` section.
 
 ```go
-type Logger interface {
-    Debug(msg string, args ...any)
-    Info(msg string, args ...any)
-    Warn(msg string, args ...any)
-    Error(msg string, args ...any)
-    Fatal(msg string, args ...any)
-}
-
 type Publisher interface {
     Publish(topic string, payload ...any) error   // variadic payload, not a single `data any`
 }
 ```
 
-There is no `Log()`/`LogStructured()` method on `Logger` — it mirrors slog-style leveled logging.
+There is no `Log()`/`LogStructured()` method on `log.Logger` — it mirrors slog-style leveled logging.
 
 ### Embeddable Controller Types
 
@@ -364,9 +360,9 @@ No stack-trace field or method exists — `GetStackTrace()`/`SetStackTrace()` ar
 |--------|-----------|
 | `Error` | `Error() string` |
 | `Unwrap` | `Unwrap() error` |
-| `GetCode` | `GetCode() int` |
-| `GetMessage` | `GetMessage() string` |
-| `GetStatusText` | `GetStatusText() string` |
+| `Code` | `Code() int` |
+| `Message` | `Message() string` |
+| `StatusText` | `StatusText() string` |
 | `AppendJSON` | `AppendJSON(dst []byte) []byte`: appends `{"code":…,"error":…,"message":…}` (`encoding/json` of a fixed struct, same bytes as `json.Marshal` of the map); makes `Exception` and `*Exception` a `ctx.JSONAppender` |
 | `MarshalJSON` | `MarshalJSON() ([]byte, error)`: the same body, so `json.Marshal(ex)` is no longer `{}` |
 
@@ -397,10 +393,10 @@ with the five methods only is a `LogAdapter`: pass it to `SetLogger` / `WrapLogg
 
 ```go
 type LogOptions struct {
-    Level      slog.Level          // DebugLevel/InfoLevel/WarnLevel/ErrorLevel/FatalLevel; used as given
-    LogFormat  logFormat           // TextFormat/JSONFormat/PrettyFormat; zero: Pretty on a terminal, JSON otherwise
-    AddSource  bool                // the caller's file:line in all three formats
-    MaskFields []string            // case-insensitive rules; see log/README.md; args pair exactly like slog (a non-string key takes one slot), LogValuer groups masked by path
+    Level       slog.Level // LevelDebug/LevelInfo/LevelWarn/LevelError/LevelFatal; used as given
+    Format      log.Format // FormatText/FormatJSON/FormatPretty; zero: Pretty on a terminal, JSON otherwise
+    IsAddSource bool       // the caller's file:line in all three formats
+    MaskFields  []string   // case-insensitive rules; see log/README.md; args pair exactly like slog (a non-string key takes one slot), LogValuer groups masked by path
 }
 ```
 
@@ -482,8 +478,8 @@ broker.Publish("users.created", userData)
 // Cleanup
 broker.Unsubscribe(sub)
 
-// Alternative (preferred): inject common.Publisher into a handler
-func (instance UserController) SUBSCRIBE_users_created(pub common.Publisher) string {
+// Alternative (preferred): inject ginject.Publisher into a handler
+func (instance UserController) SUBSCRIBE_users_created(pub ginject.Publisher) string {
     pub.Publish("users.profile.updated", profileData)
     return "ok"
 }
@@ -635,7 +631,7 @@ type ConfigModuleOptions struct {
     IsIgnoreEnvFile   bool
     IsOverride        bool
     IsExpandVariables bool
-    ENVFilePaths      []string
+    EnvFilePaths      []string
     Loads             []func() map[string]any
     Hooks             []func(ConfigService)
     OnInit            func()
@@ -644,8 +640,8 @@ type ConfigModuleOptions struct {
 
 Provides `ConfigService{State *configState}` (`Get(k string) any`, `Set(k string, v any)`, `Transform(s any) (any, []ctx.FieldLevel)`). `State` is opaque (unexported type, no exported field or method): there is **no exported config map or `.env` type**; read values only through `Get`. `Get` is an atomic load + map lookup; `Set` copies the map under a mutex (copy on write), so both are race-free at any time; `Set` on a zero `ConfigService{}` panics. `Transform` binds strings, and bools / integers / floats through their `strconv` text, skipping maps, slices and nil. **There is no package-level `NewConfigModule(envPath string)` function** — use `config.Register(opts)`.
 
-- Precedence: process env, then `ENVFilePaths` in order, then `Loads` in order; first source wins, last with `IsOverride`. Files never reach `os.Setenv`.
-- Default file: `.env` in the nearest directory upward with a `go.mod`, else the working directory; missing default is fine, listed paths must exist. `IsIgnoreEnvFile` reads no file; with `ENVFilePaths` it panics.
+- Precedence: process env, then `EnvFilePaths` in order, then `Loads` in order; first source wins, last with `IsOverride`. Files never reach `os.Setenv`.
+- Default file: `.env` in the nearest directory upward with a `go.mod`, else the working directory; missing default is fine, listed paths must exist. `IsIgnoreEnvFile` reads no file; with `EnvFilePaths` it panics.
 - Strict parser (`dotenv.go`, byte loops, no regexp): `[export ]KEY=value`, `#` starts a comment only after a blank, no escapes unquoted, double quotes with `\n \r \t \\ \" \$`, literal single quotes, multiline quotes, BOM, CRLF. Expansion (`IsExpandVariables`) of `${NAME}` only (same file, then process env) with cycle detection.
 - Limits: 1 MiB regular file (FIFOs / devices refused before reading), 64 KiB per value and 16 MiB for all values together after expansion, no NUL, `Loads` nesting ≤ 32.
 - Every failure is a `Register` panic `invalid config: <path>:<line>: <detail>` without any value.
@@ -722,7 +718,7 @@ type Throttler struct {
     Limit    int64                        // default 100
     TTL      time.Duration                // default time.Minute
     Strategy Strategy                     // FixedWindow (default 0) | SlidingWindow | TokenBucket; unknown panics
-    KeyFunc  func(*ctx.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
+    KeyFunc  func(ginject.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
     Backend  cache.Cache                  // default: one memorycache per guard, MaxEntries 32,768 (CLOCK eviction)
 }
 func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, inspect.Snapshotter)
@@ -834,7 +830,7 @@ Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `htt
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
+- `accesslog` — `NewAccessLog(cfg *AccessLogOptions) *AccessLog` (`AccessLogOptions{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
 - `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`: the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.

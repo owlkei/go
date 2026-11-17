@@ -195,8 +195,8 @@ func TestBinderOf_Struct(t *testing.T) {
 }
 
 func TestBinderOf_ErrBindTargetMessage(t *testing.T) {
-	if ErrBindTarget.Error() != "ctx: bind target must be a struct" {
-		t.Error(test.DiffMessage(ErrBindTarget.Error(), "ctx: bind target must be a struct", "ErrBindTarget message"))
+	if ErrBindTarget.Error() != "ginject: bind target must be a struct" {
+		t.Error(test.DiffMessage(ErrBindTarget.Error(), "ginject: bind target must be a struct", "ErrBindTarget message"))
 	}
 }
 

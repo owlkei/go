@@ -21,7 +21,7 @@ func TestLoadDotEnv_NotRegularFile_FIFO(t *testing.T) {
 	done := make(chan string, 1)
 	go func() {
 		text, _ := panicText(func() {
-			Register(&ConfigModuleOptions{ENVFilePaths: []string{path}})
+			Register(&ConfigModuleOptions{EnvFilePaths: []string{path}})
 		})
 		done <- text
 	}()
@@ -45,7 +45,7 @@ func TestLoadDotEnv_NotRegularFile_Device(t *testing.T) {
 		t.Skip("no /dev/zero")
 	}
 	text, panicked := panicText(func() {
-		Register(&ConfigModuleOptions{ENVFilePaths: []string{"/dev/zero"}})
+		Register(&ConfigModuleOptions{EnvFilePaths: []string{"/dev/zero"}})
 	})
 	want := "invalid config: /dev/zero: not a regular file"
 	if !panicked || text != want {

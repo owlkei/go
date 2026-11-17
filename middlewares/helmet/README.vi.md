@@ -27,12 +27,12 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/helmet"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(helmet.Helmet{
 		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:",
@@ -40,7 +40,7 @@ func main() {
 	})
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -85,7 +85,7 @@ viết. Chỉ thêm `preload` vào `StrictTransportSecurity` sau khi đã đọc
 
 ### NewMiddleware
 ```go
-func (instance Helmet) NewMiddleware() common.MiddlewareFn
+func (instance Helmet) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Dựng mọi giá trị header một lần; framework gọi khi `Create()`. Panic với `invalid helmet: ...` cho
@@ -93,10 +93,10 @@ giá trị có ký tự điều khiển (xuống dòng, `NUL`, `DEL`, escape).
 
 ### Use
 ```go
-func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Giúp `Helmet` là một `common.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
+Giúp `Helmet` là một `ginject.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
 
 ## Quy Tắc
 - `Strict-Transport-Security` chỉ được gửi khi `proxy.Scheme(r)` là `https`: kết nối TLS trực tiếp,

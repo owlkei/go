@@ -147,7 +147,7 @@ Bind calls must pass a **struct value implementing `Use`** — the framework res
 ```go
 type LogMiddleware struct{}
 
-func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
     next()
 }
 ```
@@ -172,8 +172,8 @@ app.BindGlobalMiddlewares(LogMiddleware{})
 **Module-Scoped** (applies to this module's routes):
 ```go
 type UserController struct {
-    common.HTTP
-    common.Middleware
+    ginject.HTTP
+    ginject.Middleware
 }
 
 func (c UserController) NewController() Controller {
@@ -258,13 +258,13 @@ A guard is a value — bind a struct implementing `CanActivate`, not a bare func
 ```go
 type AuthGuard struct{}
 
-func (g AuthGuard) CanActivate(httpCtx *ctx.HTTPContext) bool {
+func (g AuthGuard) CanActivate(httpCtx ginject.HTTPContext) bool {
     return isAuthorized(httpCtx)
 }
 
 type UserController struct {
-    common.HTTP
-    common.Guard
+    ginject.HTTP
+    ginject.Guard
 }
 
 func (c UserController) NewController() Controller {
@@ -333,7 +333,7 @@ An interceptor is a value — bind a struct implementing `Intercept`, not a bare
 ```go
 type TimestampInterceptor struct{}
 
-func (i TimestampInterceptor) Intercept(httpCtx *ctx.HTTPContext, agg *aggregation.Aggregation) any {
+func (i TimestampInterceptor) Intercept(httpCtx ginject.HTTPContext, agg ginject.Aggregation) any {
     return agg.Pipe(
         agg.Transform(func(data any) any {
             return map[string]any{"data": data, "timestamp": time.Now()}
@@ -342,8 +342,8 @@ func (i TimestampInterceptor) Intercept(httpCtx *ctx.HTTPContext, agg *aggregati
 }
 
 type UserController struct {
-    common.HTTP
-    common.Interceptor
+    ginject.HTTP
+    ginject.Interceptor
 }
 
 func (c UserController) NewController() Controller {
@@ -428,16 +428,16 @@ An exception filter is `any` — bind a struct implementing `Catch(*ctx.HTTPCont
 ```go
 type UserErrorFilter struct{}
 
-func (f UserErrorFilter) Catch(httpCtx *ctx.HTTPContext, ex *exception.Exception) {
-    httpCtx.Status(ex.GetCode())
+func (f UserErrorFilter) Catch(httpCtx ginject.HTTPContext, ex *exception.Exception) {
+    httpCtx.Status(ex.Code())
     httpCtx.JSON(map[string]any{
-        "error": ex.GetMessage(),
+        "error": ex.Message(),
     })
 }
 
 type UserController struct {
-    common.HTTP
-    common.ExceptionFilter
+    ginject.HTTP
+    ginject.ExceptionFilter
 }
 
 func (c UserController) NewController() Controller {

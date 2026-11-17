@@ -15,7 +15,7 @@ var cwd, _ = os.Getwd()
 var ConfModule = config.Register(&config.ConfigModuleOptions{
 	IsGlobal:          true,
 	IsExpandVariables: true,
-	ENVFilePaths: []string{
+	EnvFilePaths: []string{
 		filepath.Join(cwd, ".env"),
 	},
 	Hooks: []config.ConfigHookFn{

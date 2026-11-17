@@ -37,11 +37,11 @@ func TestHTTPExceptionHelpers(t *testing.T) {
 	}
 	for _, c := range cases {
 		e := c.fn("body")
-		if e.GetCode() != c.status {
-			t.Error(test.DiffMessage(e.GetCode(), c.status, "HTTP status helper code"))
+		if e.Code() != c.status {
+			t.Error(test.DiffMessage(e.Code(), c.status, "HTTP status helper code"))
 		}
-		if e.GetStatusText() != http.StatusText(c.status) {
-			t.Error(test.DiffMessage(e.GetStatusText(), http.StatusText(c.status), "HTTP status helper text"))
+		if e.StatusText() != http.StatusText(c.status) {
+			t.Error(test.DiffMessage(e.StatusText(), http.StatusText(c.status), "HTTP status helper text"))
 		}
 	}
 }

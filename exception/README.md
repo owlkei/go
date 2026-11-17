@@ -15,9 +15,9 @@
   - [`Exception` Methods](#exception-methods)
     - [Error](#error)
     - [Unwrap](#unwrap)
-    - [GetCode](#getcode)
-    - [GetMessage](#getmessage)
-    - [GetStatusText](#getstatustext)
+    - [Code](#code)
+    - [Message](#message)
+    - [StatusText](#statustext)
     - [AppendJSON](#appendjson)
     - [MarshalJSON](#marshaljson)
   - [Security](#security)
@@ -40,18 +40,17 @@ package main
 import (
 	"errors"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 )
 
 var errNoRows = errors.New("no rows")
 
 type UserController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance UserController) NewController() core.Controller {
+func (instance UserController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -63,8 +62,8 @@ func (instance UserController) READ() string {
 }
 
 func main() {
-	app := core.New()
-	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Controllers(UserController{}).Build())
 	app.Listen(3000, nil)
 }
 ```
@@ -113,11 +112,11 @@ Builds an exception with any code. The constructors below call it with their cod
 #### Parameters
 - 1st parameter: `string`
 
-- Description: The message for the client (`GetMessage`)
+- Description: The message for the client (`Message`)
 
 - 2nd parameter: `int`
 
-- Description: An HTTP status or a WebSocket close code (`GetCode`)
+- Description: An HTTP status or a WebSocket close code (`Code`)
 
 - Variadic parameter: `...any`
 
@@ -180,7 +179,7 @@ panic(exception.ForbiddenException("Access denied"))
 ```
 
 #### Rules
-- Each constructor sets its code, and `GetStatusText()` is `http.StatusText` of that code.
+- Each constructor sets its code, and `StatusText()` is `http.StatusText` of that code.
 
 ### WebSocket constructors
 
@@ -247,7 +246,7 @@ if errors.Is(ex, sql.ErrNoRows) {
 - `errors.Is` and `errors.As` find the cause through the exception.
 - Without a cause (no option, a string, a description alone, the zero value), `Unwrap()` and `errors.Unwrap(ex)` are `nil`.
 
-### GetCode
+### Code
 
 #### Returns
 - 1st value: `int`
@@ -257,10 +256,10 @@ if errors.Is(ex, sql.ErrNoRows) {
 #### Usage
 
 ```go
-code := ex.GetCode()
+code := ex.Code()
 ```
 
-### GetMessage
+### Message
 
 #### Returns
 - 1st value: `string`
@@ -270,10 +269,10 @@ code := ex.GetCode()
 #### Usage
 
 ```go
-message := ex.GetMessage()
+message := ex.Message()
 ```
 
-### GetStatusText
+### StatusText
 
 #### Returns
 - 1st value: `string`
@@ -283,7 +282,7 @@ message := ex.GetMessage()
 #### Usage
 
 ```go
-text := exception.NewException("m", 404).GetStatusText()
+text := exception.NewException("m", 404).StatusText()
 ```
 
 #### Rules
@@ -291,7 +290,7 @@ text := exception.NewException("m", 404).GetStatusText()
 
 ### AppendJSON
 
-Appends the error body `{"code":<GetCode()>,"error":<Error()>,"message":<GetMessage()>}` to `dst`. `Exception` and `*Exception` implement `ctx.JSONAppender`, so `c.JSON(ex)` and `c.JSON(&ex)` write this body.
+Appends the error body `{"code":<Code()>,"error":<Error()>,"message":<Message()>}` to `dst`. `c.JSON(ex)` and `c.JSON(&ex)` call it, so they write this body.
 
 #### Parameters
 - 1st parameter: `[]byte`
@@ -306,7 +305,7 @@ Appends the error body `{"code":<GetCode()>,"error":<Error()>,"message":<GetMess
 #### Usage
 
 ```go
-c.Status(ex.GetCode()).JSON(ex)
+c.Status(ex.Code()).JSON(ex)
 ```
 
 #### Rules

@@ -1,5 +1,7 @@
 # Ctx
 
+Internal package: applications use `ginject.HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel` and `DataFile` instead.
+
 *Package `ctx` holds the per-request context of `Ginject`: it reads the request (query, body, form, files, route parameters, headers), binds it into structs and writes the response, for HTTP and WebSocket.*
 
 - [Ctx](#ctx)
@@ -446,7 +448,7 @@ dto, fls := b.Struct(map[string]any{"name": "joe"})
 #### Rules
 - Concurrent calls for one type all return the one stored `*Binder`.
 - Self-referential types (`Children []Node`, `Next *Node`) build without recursing forever and bind to any depth the data holds.
-- `ErrBindTarget.Error()` is `ctx: bind target must be a struct`.
+- `ErrBindTarget.Error()` is `ginject: bind target must be a struct`.
 
 ### Binder methods
 
@@ -538,7 +540,7 @@ An uploaded file bound by `File.Bind`.
 | `Redirect` | `func(string)`. |
 | `RequestID` | `"X-Request-Id"`, the response header name `core` writes the ID under (next to `Traceparent`). |
 | `TagBind` | `"bind"`. |
-| `ErrBindTarget` | `errors.New("ctx: bind target must be a struct")`. |
+| `ErrBindTarget` | `errors.New("ginject: bind target must be a struct")`. |
 
 ## Performance notes
 

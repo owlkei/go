@@ -51,7 +51,7 @@ func InjectProvidersIntoWSExceptionFilters(e *ExceptionFilter, ws *WS, cb func(i
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid exception filter: %v.%s must be func(*ctx.WSContext, *exception.Exception) to be bound as a WS exception filter",
+				"invalid exception filter: %v.%s must be func(ginject.WSContext, *exception.Exception) to be bound as a WS exception filter",
 				exceptionFilterableType,
 				ExceptionFilterMethodName,
 			)))

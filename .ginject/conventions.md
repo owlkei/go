@@ -47,7 +47,7 @@ don't mass-rewrite the exceptions.
   middlewares, `log/log.go`, and every controller, provider, guard and filter in `sample/`. Use it
   for types a user declares in their own app, and in examples.
 - **Exported option booleans start with `Is`:** `IsGlobal`, `IsAllowCredentials`,
-  `IsAllowPrivateNetwork`, `IsExpandVariables`, `IsOverride`. Exceptions (`AddSource`,
+  `IsAllowPrivateNetwork`, `IsExpandVariables`, `IsOverride`. Exceptions (`IsAddSource`,
   `DisableGitignore`) predate the habit; new options use `Is`.
 - **Maps are named `<values>By<Key>`:** `entriesByKey`, `funcNameByEvent`, `routeByPattern`,
   `docsByTable`.
@@ -81,11 +81,11 @@ don't mass-rewrite the exceptions.
   Bootstrap-time Error Convention). The request path never panics on purpose.
 - **Runtime errors are values.** Sentinels are `Err<Reason>` in a `var` block, with messages
   prefixed by the package and a colon, lower case, no final period:
-  `ErrEmptyKey = errors.New("memorycache: key must not be empty")`
+  `ErrEmptyKey = errors.New("cache: key must not be empty")`
   (`memorycache/memory_cache.go`), the `memorybroker` errors. Callers compare them with `==` or
   `errors.Is`.
 - **Wrap with `%w`** and the package prefix when adding context:
-  `fmt.Errorf("core: listen on %s: %w", address, err)` (`core/server.go`).
+  `fmt.Errorf("ginject: listen on %s: %w", address, err)` (`core/server.go`).
 - Known inconsistency: a few `core` errors have no prefix (`"root not found: %s"`). Follow the rule in new code.
 
 ## Concurrency

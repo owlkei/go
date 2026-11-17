@@ -58,35 +58,35 @@ func TestException_ErrorsAs_ChainWorks(t *testing.T) {
 
 func TestException_GetCode(t *testing.T) {
 	e := NewException("body", 999)
-	if e.GetCode() != 999 {
-		t.Error(test.DiffMessage(e.GetCode(), 999, "GetCode returns raw code"))
+	if e.Code() != 999 {
+		t.Error(test.DiffMessage(e.Code(), 999, "GetCode returns raw code"))
 	}
 }
 
 func TestException_GetMessage(t *testing.T) {
 	e := NewException("hello", http.StatusBadRequest)
-	if e.GetMessage() != "hello" {
-		t.Error(test.DiffMessage(e.GetMessage(), "hello", "GetMessage"))
+	if e.Message() != "hello" {
+		t.Error(test.DiffMessage(e.Message(), "hello", "GetMessage"))
 	}
 }
 
 func TestException_GetStatusText_HTTPValid(t *testing.T) {
 	e := NewException("body", http.StatusNotFound)
-	if text := e.GetStatusText(); text != "Not Found" {
+	if text := e.StatusText(); text != "Not Found" {
 		t.Error(test.DiffMessage(text, "Not Found", "GetStatusText valid HTTP code"))
 	}
 }
 
 func TestException_GetStatusText_WSValid(t *testing.T) {
 	e := NewException("body", 1008)
-	if text := e.GetStatusText(); text != "Policy Violation" {
+	if text := e.StatusText(); text != "Policy Violation" {
 		t.Error(test.DiffMessage(text, "Policy Violation", "GetStatusText valid WS code"))
 	}
 }
 
 func TestException_GetStatusText_Unknown(t *testing.T) {
 	e := NewException("body", 999)
-	if text := e.GetStatusText(); text != "" {
+	if text := e.StatusText(); text != "" {
 		t.Error(test.DiffMessage(text, "", "GetStatusText unknown code"))
 	}
 }
@@ -364,7 +364,7 @@ func TestNewException_NoAllocs_OptionsByValueLocalResult(t *testing.T) {
 	sum := 0
 	allocs := testing.AllocsPerRun(100, func() {
 		ex := NewException("m", http.StatusBadRequest, ExceptionOptions{Description: "d", Cause: cause})
-		sum += ex.GetCode()
+		sum += ex.Code()
 	})
 	if sum == 0 {
 		t.Fatal("result unused")

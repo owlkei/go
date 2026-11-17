@@ -29,19 +29,19 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/csrf"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(csrf.CSRF{
 		TrustedOrigins: []string{"https://app.example.com"},
 	})
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -88,7 +88,7 @@ csrf.CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.examp
 
 ### NewMiddleware
 ```go
-func (instance CSRF) NewMiddleware() common.MiddlewareFn
+func (instance CSRF) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Validates and compiles the options once; the framework calls it at `Create()`. It panics with
@@ -98,10 +98,10 @@ origins.
 
 ### Use
 ```go
-func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Makes `CSRF` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `CSRF` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules

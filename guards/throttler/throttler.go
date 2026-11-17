@@ -23,9 +23,9 @@ import (
 type Strategy int
 
 const (
-	FixedWindow Strategy = iota
-	SlidingWindow
-	TokenBucket
+	StrategyFixedWindow Strategy = iota
+	StrategySlidingWindow
+	StrategyTokenBucket
 )
 
 const (
@@ -94,11 +94,11 @@ func loadThrottlerOptions(t *Throttler) *guard {
 		g.ttl = defaultTTL
 	}
 	switch g.strategy {
-	case FixedWindow:
+	case StrategyFixedWindow:
 		g.prefix = "rl:fw:"
-	case SlidingWindow:
+	case StrategySlidingWindow:
 		g.prefix = "rl:sw:"
-	case TokenBucket:
+	case StrategyTokenBucket:
 		g.prefix = "rl:tb:"
 	default:
 		panic(color.FmtRed("invalid throttler: unknown Strategy %d", int(g.strategy)))
@@ -118,9 +118,9 @@ func (g *guard) CanActivate(c *ctx.HTTPContext) bool {
 
 	var res result
 	switch g.strategy {
-	case SlidingWindow:
+	case StrategySlidingWindow:
 		res = g.slidingWindow(c.Context(), key)
-	case TokenBucket:
+	case StrategyTokenBucket:
 		res = g.tokenBucket(c.Context(), key)
 	default:
 		res = g.fixedWindow(c.Context(), key)
@@ -298,9 +298,9 @@ func (g *guard) Snapshot() inspect.Snapshot {
 
 func strategyName(s Strategy) string {
 	switch s {
-	case SlidingWindow:
+	case StrategySlidingWindow:
 		return "sliding-window"
-	case TokenBucket:
+	case StrategyTokenBucket:
 		return "token-bucket"
 	}
 	return "fixed-window"

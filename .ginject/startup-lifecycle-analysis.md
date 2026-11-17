@@ -115,7 +115,7 @@ SIGINT / SIGTERM / app.Stop()
   │     a panicking hook is logged as OnShutdownPanic (module, panic) and the others still run;
   │     then the access log is stopped, a pending PanicStacksSuppressed count is logged,
   │     and the stdout log pipeline is flushed (at most 2 s) and made synchronous again
-  └─ the serving call returns nil, "core: shutdown timed out after <timeout>" or "core: serve: <err>"
+  └─ the serving call returns nil, "ginject: shutdown timed out after <timeout>" or "ginject: serve: <err>"
 ```
 
 `app.Stop()` on an app that is not serving runs the hooks once and marks the app stopped. Every
@@ -130,15 +130,15 @@ connections are not drained: they end when the process exits.
 ### Condition 1: Async Module Initialization ⚠️ REAL
 
 ```go
-var CacheModule = func() *core.Module {
-	m := core.NewModuleBuilder().Providers(CacheService{}).Build()
+var CacheModule = func() ginject.Module {
+	m := ginject.ModuleBuilder().Providers(CacheService{}).Build()
 	m.OnInit = func() {
 		go client.Connect("redis://...")
 	}
 	return m
 }()
 
-func (instance ChatController) SUBSCRIBE_chat(payload ctx.WSPayload) string {
+func (instance ChatController) SUBSCRIBE_chat(payload ginject.WSPayload) string {
 	instance.CacheService.Set("key", "value")
 	return "ok"
 }

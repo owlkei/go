@@ -40,7 +40,7 @@ func benchStages(id string, n int) []trace.Event {
 
 func BenchmarkAccessLog_Request_1Stage(b *testing.B) {
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: &discardLogger{}})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: &discardLogger{}})
 	defer al.Stop()
 	events := benchStages("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 1)
 	b.ReportAllocs()
@@ -53,7 +53,7 @@ func BenchmarkAccessLog_Request_1Stage(b *testing.B) {
 
 func BenchmarkAccessLog_Request_6Stages(b *testing.B) {
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: &discardLogger{}})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: &discardLogger{}})
 	defer al.Stop()
 	events := benchStages("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 6)
 	b.ReportAllocs()
@@ -66,7 +66,7 @@ func BenchmarkAccessLog_Request_6Stages(b *testing.B) {
 
 func BenchmarkAccessLog_Request_6Stages_Parallel(b *testing.B) {
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: &discardLogger{}})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: &discardLogger{}})
 	defer al.Stop()
 	var next atomic.Uint64
 	var total atomic.Int64
@@ -89,7 +89,7 @@ func benchBuiltinLine(b *testing.B, opts *log.LogOptions) {
 	restore := logpipe.SetStdout(io.Discard)
 	defer restore()
 	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogConfig{Tracer: tr, Logger: log.NewLog(opts)})
+	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: log.NewLog(opts)})
 	defer al.Stop()
 	events := benchStages("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 6)
 	b.ReportAllocs()
@@ -101,11 +101,11 @@ func benchBuiltinLine(b *testing.B, opts *log.LogOptions) {
 }
 
 func BenchmarkAccessLog_Line_6Stages(b *testing.B) {
-	benchBuiltinLine(b, &log.LogOptions{LogFormat: log.JSONFormat})
+	benchBuiltinLine(b, &log.LogOptions{Format: log.FormatJSON})
 }
 
 func BenchmarkAccessLog_Line_6Stages_Pretty(b *testing.B) {
-	benchBuiltinLine(b, &log.LogOptions{LogFormat: log.PrettyFormat})
+	benchBuiltinLine(b, &log.LogOptions{Format: log.FormatPretty})
 }
 
 func BenchmarkFormatDuration(b *testing.B) {

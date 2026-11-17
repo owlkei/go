@@ -208,11 +208,11 @@ func asException(rec any) (*exception.Exception, bool) {
 }
 
 func writeErrorResponse(w http.ResponseWriter, e *exception.Exception) int {
-	code := e.GetCode()
+	code := e.Code()
 	if code < http.StatusBadRequest || code > 599 {
 		code = http.StatusInternalServerError
 	}
-	rawErrorText, rawMessage := e.Error(), e.GetMessage()
+	rawErrorText, rawMessage := e.Error(), e.Message()
 	errorText, message := rawErrorText, rawMessage
 	if errorText == "" {
 		errorText = http.StatusText(code)
@@ -221,13 +221,13 @@ func writeErrorResponse(w http.ResponseWriter, e *exception.Exception) int {
 		errorText = defaultException.Error()
 	}
 	if message == "" {
-		message = defaultException.GetMessage()
+		message = defaultException.Message()
 	}
 
 	switch {
-	case code == http.StatusInternalServerError && errorText == internalServerErrorException.Error() && message == internalServerErrorException.GetMessage():
+	case code == http.StatusInternalServerError && errorText == internalServerErrorException.Error() && message == internalServerErrorException.Message():
 		writeJSONError(w, code, internalErrorBody)
-	case code == e.GetCode() && errorText == rawErrorText && message == rawMessage:
+	case code == e.Code() && errorText == rawErrorText && message == rawMessage:
 		writeJSONError(w, code, e.AppendJSON(nil))
 	default:
 		normalized := exception.NewException(message, code, errorText)

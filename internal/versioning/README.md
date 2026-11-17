@@ -1,18 +1,20 @@
 # Versioning
 
+Internal package: applications use `app.EnableVersioning(&ginject.VersioningOptions{…})` with `ginject.VersioningQuery`, `VersioningHeader`, `VersioningCustom` or `VersioningMediaType` instead.
+
 *Package `versioning` reads the API version of a request from the query, a header, the `Accept` media type or a function of your own, so that the router can pick the route registered for that version.*
 
 - [Versioning](#versioning)
   - [Usage](#usage)
   - [Constants](#constants)
-  - [`Versioning` Fields](#versioning-fields)
+  - [`Options` Fields](#options-fields)
     - [Type](#type)
     - [Key](#key)
     - [DefaultVersion](#defaultversion)
     - [Extractor](#extractor)
-  - [`Versioning` Methods](#versioning-methods)
-    - [GetVersion](#getversion)
-    - [GetTypeString](#gettypestring)
+  - [Functions](#functions)
+    - [Version](#version)
+    - [TypeString](#typestring)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
@@ -30,8 +32,8 @@ import (
 
 func main() {
 	app := core.New()
-	app.EnableVersioning(versioning.Versioning{
-		Type:           versioning.MediaType,
+	app.EnableVersioning(&versioning.Options{
+		Type:           versioning.TypeMediaType,
 		Key:            "v",
 		DefaultVersion: "1",
 	})
@@ -44,24 +46,24 @@ A request with `Accept: application/json;v=2` is routed to version `2`; one with
 
 | Name | Type | Value |
 |---|---|---|
-| `QueryVersion` | `int` | `1`: the version is a query parameter |
-| `HeaderVersion` | `int` | `2`: the version is a request header |
-| `CustomVersion` | `int` | `3`: the version comes from `Extractor` |
-| `MediaType` | `int` | `4`: the version is a parameter of the `Accept` header |
+| `TypeQuery` | `Type` | `1`: the version is a query parameter |
+| `TypeHeader` | `Type` | `2`: the version is a request header |
+| `TypeCustom` | `Type` | `3`: the version comes from `Extractor` |
+| `TypeMediaType` | `Type` | `4`: the version is a parameter of the `Accept` header |
 | `NeutralVersion` | `string` | `"NEUTRAL"`: routes that answer for any version |
 
-`ExtractorHandler` is `func(*ctx.HTTPContext) string`.
+`Type` is an `int`. `ExtractorHandler` is `func(*ctx.HTTPContext) string`.
 
-## `Versioning` Fields
+## `Options` Fields
 
 ### Type
-Type: `int`
+Type: `Type`
 
 Default: `0` (no type: every request gets `DefaultVersion`)
 
 Required: `true`
 
-Where the version is read: `QueryVersion`, `HeaderVersion`, `CustomVersion` or `MediaType`.
+Where the version is read: `TypeQuery`, `TypeHeader`, `TypeCustom` or `TypeMediaType`.
 
 ### Key
 Type: `string`
@@ -70,7 +72,7 @@ Default: `"v"` (set by `core` when empty)
 
 Required: `false`
 
-The query key, the header name or the media type parameter name. Not used by `CustomVersion`.
+The query key, the header name or the media type parameter name. Not used by `TypeCustom`.
 
 ### DefaultVersion
 Type: `string`
@@ -86,27 +88,28 @@ Type: `ExtractorHandler`
 
 Default: `nil`
 
-Required: only for `CustomVersion`
+Required: only for `TypeCustom`
 
 Returns the version of a request.
 
 ```go
-versioning.Versioning{
-	Type: versioning.CustomVersion,
+versioning.Options{
+	Type: versioning.TypeCustom,
 	Extractor: func(c *ctx.HTTPContext) string {
 		return c.Header().Get("X-Client-Version")
 	},
 }
 ```
 
-## `Versioning` Methods
+## Functions
 
-### GetVersion
+### Version
 
-Returns the version of a request.
+`Version(o *Options, c *ctx.HTTPContext) string` returns the version of a request.
 
 #### Parameters
-1. `c` `*ctx.HTTPContext`: the request context.
+1. `o` `*Options`: the versioning options.
+2. `c` `*ctx.HTTPContext`: the request context.
 
 #### Returns
 1. `string`: the version, or `DefaultVersion`.
@@ -114,8 +117,8 @@ Returns the version of a request.
 #### Usage
 
 ```go
-v := &versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Api-Version", DefaultVersion: "1"}
-version := v.GetVersion(c)
+v := &versioning.Options{Type: versioning.TypeHeader, Key: "X-Api-Version", DefaultVersion: "1"}
+version := versioning.Version(v, c)
 ```
 
 #### Rules
@@ -141,9 +144,9 @@ version := v.GetVersion(c)
 - An unknown `Type` gives `DefaultVersion`.
 - No allocation for header, media type and custom; the query type allocates nothing once the context has parsed its query.
 
-### GetTypeString
+### TypeString
 
-Returns the name of `Type`, for logs.
+`TypeString(o *Options) string` returns the name of `o.Type`, for logs.
 
 #### Returns
 1. `string`: `query`, `header`, `custom`, `media_type`, or `""` for an unknown type.
@@ -151,13 +154,13 @@ Returns the name of `Type`, for logs.
 #### Usage
 
 ```go
-fmt.Println(v.GetTypeString())
+fmt.Println(versioning.TypeString(v))
 ```
 
 ## Performance notes
 
 - The media type scan cuts the header in place and compares names with `strings.EqualFold`: no split, no `Key + "="` concatenation per request.
-- `QueryVersion` makes the context parse the whole query on the first call of a request.
+- `TypeQuery` makes the context parse the whole query on the first call of a request.
 
 ## Benchmarks
 

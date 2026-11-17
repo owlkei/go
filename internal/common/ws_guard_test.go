@@ -180,11 +180,11 @@ func TestBuildWSGuardMiddleware_RejectPanicsForbidden(t *testing.T) {
 	if !ok {
 		t.Fatal(test.DiffMessage(rec, "an exception.Exception value", "B12: a rejection panics with an exception value"))
 	}
-	if ex.GetCode() != 403 {
-		t.Error(test.DiffMessage(ex.GetCode(), 403, "B12: code"))
+	if ex.Code() != 403 {
+		t.Error(test.DiffMessage(ex.Code(), 403, "B12: code"))
 	}
-	if ex.GetMessage() != "Access denied" {
-		t.Error(test.DiffMessage(ex.GetMessage(), "Access denied", "B12: message"))
+	if ex.Message() != "Access denied" {
+		t.Error(test.DiffMessage(ex.Message(), "Access denied", "B12: message"))
 	}
 	if ex.Error() != "Forbidden" {
 		t.Error(test.DiffMessage(ex.Error(), "Forbidden", "B12: Error()"))

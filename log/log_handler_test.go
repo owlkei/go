@@ -17,7 +17,7 @@ const (
 )
 
 func prettyOnce(msg string, args ...any) string {
-	logger, buf := newTestLog(PrettyFormat, LogOptions{})
+	logger, buf := newTestLog(FormatPretty, LogOptions{})
 	logger.Info(msg, args...)
 	return buf.String()
 }
@@ -27,7 +27,7 @@ func TestPretty_ContainsLevelLabels(t *testing.T) {
 	exit = func(int) {}
 	defer func() { exit = saved }()
 	for _, label := range []string{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"} {
-		logger, buf := newTestLog(PrettyFormat, LogOptions{})
+		logger, buf := newTestLog(FormatPretty, LogOptions{})
 		switch label {
 		case "DEBUG":
 			logger.Debug("msg")
@@ -320,7 +320,7 @@ func TestPretty_NonControlUnicodeKept(t *testing.T) {
 }
 
 func TestPretty_ForgedAccessLogPathIsOneRecord(t *testing.T) {
-	logger, buf := newTestLog(PrettyFormat, LogOptions{})
+	logger, buf := newTestLog(FormatPretty, LogOptions{})
 	logger.Info("GET /a%0A%1B[2K FAKE [admin login ok]"+"\n\x1b[2K FAKE [admin login ok]", "id", "x")
 	if n := strings.Count(buf.String(), "\n"); n != 3 {
 		t.Error(test.DiffMessage(n, 3, "F2: one record is an empty line, the header, one row and the end"))
@@ -329,7 +329,7 @@ func TestPretty_ForgedAccessLogPathIsOneRecord(t *testing.T) {
 
 func TestPretty_ConcurrentCalls_NoDataRace(t *testing.T) {
 	buf := &bytes.Buffer{}
-	logger := newLog(buf, false, &LogOptions{LogFormat: PrettyFormat, Level: DebugLevel})
+	logger := newLog(buf, false, &LogOptions{Format: FormatPretty, Level: LevelDebug})
 	const goroutines = 32
 	var wg sync.WaitGroup
 	wg.Add(goroutines)

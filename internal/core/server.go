@@ -30,19 +30,19 @@ const (
 )
 
 var (
-	errNotCreated        = errors.New("core: Create must be called before serving")
-	errAlreadyServing    = errors.New("core: app is already serving")
-	errStopped           = errors.New("core: app is stopped")
-	errTLSConfigOnListen = errors.New("core: TLSConfig is set: use ListenTLS, or Serve with your listener")
-	errH2CWithTLS        = errors.New("core: H2C applies to connections without TLS")
-	errNoCertificate     = errors.New("core: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates")
+	errNotCreated        = errors.New("ginject: Create must be called before serving")
+	errAlreadyServing    = errors.New("ginject: app is already serving")
+	errStopped           = errors.New("ginject: app is stopped")
+	errTLSConfigOnListen = errors.New("ginject: TLSConfig is set: use ListenTLS, or Serve with your listener")
+	errH2CWithTLS        = errors.New("ginject: IsH2C applies to connections without TLS")
+	errNoCertificate     = errors.New("ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates")
 )
 
 type ServerOptions struct {
 	ShutdownTimeout     time.Duration
 	MaxRequestBodyBytes int64
 	TLSConfig           *tls.Config
-	H2C                 bool
+	IsH2C               bool
 }
 
 type serverDefaults struct {
@@ -76,7 +76,7 @@ func (app *App) ListenTLS(port int, certFile, keyFile string, opts *ServerOption
 		return err
 	}
 	o := loadServerOptions(opts)
-	if o.H2C {
+	if o.IsH2C {
 		return errH2CWithTLS
 	}
 
@@ -86,7 +86,7 @@ func (app *App) ListenTLS(port int, certFile, keyFile string, opts *ServerOption
 		}
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return fmt.Errorf("core: load TLS certificate: %w", err)
+			return fmt.Errorf("ginject: load TLS certificate: %w", err)
 		}
 		if o.TLSConfig == nil {
 			o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -102,7 +102,7 @@ func (app *App) ListenTLS(port int, certFile, keyFile string, opts *ServerOption
 func (app *App) Serve(l net.Listener, opts *ServerOptions) error {
 	o := loadServerOptions(opts)
 	if o.TLSConfig != nil {
-		if o.H2C {
+		if o.IsH2C {
 			return errH2CWithTLS
 		}
 		if !hasCertificateSource(o.TLSConfig) {
@@ -213,7 +213,7 @@ func (app *App) listenAndServe(port int, opts ServerOptions) error {
 	address := net.JoinHostPort("", strconv.Itoa(port))
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("core: listen on %s: %w", address, err)
+		return fmt.Errorf("ginject: listen on %s: %w", address, err)
 	}
 	defer func() { _ = l.Close() }()
 
@@ -259,7 +259,7 @@ func (app *App) serve(l net.Listener, opts ServerOptions) error {
 		stopSignals()
 		app.markStopping()
 		_ = drain(server, opts.ShutdownTimeout)
-		err = fmt.Errorf("core: serve: %w", serveErr)
+		err = fmt.Errorf("ginject: serve: %w", serveErr)
 	}
 
 	app.runShutdownHooks()
@@ -286,7 +286,7 @@ func (app *App) newServer(opts ServerOptions, isTLS bool) *http.Server {
 	switch {
 	case isTLS:
 		protocols.SetHTTP2(allowsHTTP2(opts.TLSConfig))
-	case opts.H2C:
+	case opts.IsH2C:
 		protocols.SetUnencryptedHTTP2(true)
 	}
 
@@ -415,7 +415,7 @@ func drain(server *http.Server, timeout time.Duration) error {
 	}
 	_ = server.Close()
 
-	return fmt.Errorf("core: shutdown timed out after %v", timeout)
+	return fmt.Errorf("ginject: shutdown timed out after %v", timeout)
 }
 
 func (app *App) runShutdownHooks() {

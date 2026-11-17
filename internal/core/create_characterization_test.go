@@ -66,7 +66,7 @@ func (c z1VersionedController) READ_report_BY_id_VERSION_2() string { return "by
 func TestCreate_Characterization_Versions(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		app := New()
-		app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
+		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
 		app.Create(NewModuleBuilder().Controllers(z1VersionedController{}).Build())
 
 		cases := []struct {

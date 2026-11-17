@@ -60,7 +60,7 @@ func (instance injectedController) READ_fields() string {
 
 func injectedApp(t *testing.T) (ginject.App, log.Logger) {
 	t.Helper()
-	logger := log.NewLog(&log.LogOptions{Level: log.ErrorLevel})
+	logger := log.NewLog(&log.LogOptions{Level: log.LevelError})
 	app := ginject.New()
 	app.SetLogger(logger)
 	app.Create(ginject.ModuleBuilder().Providers(loggerProvider{}).Controllers(injectedController{}).Build())

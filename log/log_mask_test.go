@@ -255,7 +255,7 @@ type maskUserTagged struct {
 }
 
 func maskedJSON(rules []string, msg string, args ...any) string {
-	logger, buf := newTestLog(JSONFormat, LogOptions{MaskFields: rules})
+	logger, buf := newTestLog(FormatJSON, LogOptions{MaskFields: rules})
 	logger.Info(msg, args...)
 	return buf.String()
 }
@@ -430,7 +430,7 @@ func TestWrapLogger_BuiltInWithoutFieldsIsSame(t *testing.T) {
 }
 
 func TestWrapLogger_BuiltInWithFieldsMasksOnce(t *testing.T) {
-	logger, buf := newTestLog(JSONFormat, LogOptions{})
+	logger, buf := newTestLog(FormatJSON, LogOptions{})
 	wrapped := WrapLogger(logger, []string{"password"})
 	wrapped.Info("x", "password", "s1", "u", maskUser{Name: "a", Password: "s2"})
 	out := buf.String()
@@ -441,7 +441,7 @@ func TestWrapLogger_BuiltInWithFieldsMasksOnce(t *testing.T) {
 
 func TestWrapLogger_BuiltInWithFieldsReachesWriterOnce(t *testing.T) {
 	w := &countingWriter{}
-	built := newLog(w, false, &LogOptions{LogFormat: JSONFormat, MaskFields: []string{"a"}})
+	built := newLog(w, false, &LogOptions{Format: FormatJSON, MaskFields: []string{"a"}})
 	WrapLogger(WrapLogger(built, []string{"b"}), []string{"c"}).Info("x", "a", 1, "b", 2, "c", 3)
 	if w.writes != 1 {
 		t.Error(test.DiffMessage(w.writes, 1, "M6: each call reaches the innermost logger once"))
@@ -565,7 +565,7 @@ func TestLog_FastPathEqualsGeneralPath(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 	for range 300 {
 		args := randomArgs(r)
-		for _, format := range []logFormat{JSONFormat, TextFormat} {
+		for _, format := range []Format{FormatJSON, FormatText} {
 			fastLogger, fast := newTestLog(format, LogOptions{})
 			slowLogger, slow := newTestLog(format, LogOptions{MaskFields: []string{"zzz-never-matches"}})
 			fastLogger.Info("m", args...)
@@ -584,8 +584,8 @@ func TestLog_FastPathEqualsGeneralPath_Pretty(t *testing.T) {
 	stamp := regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`)
 	for range 200 {
 		args := randomArgs(r)
-		fastLogger, fast := newTestLog(PrettyFormat, LogOptions{})
-		slowLogger, slow := newTestLog(PrettyFormat, LogOptions{MaskFields: []string{"zzz-never-matches"}})
+		fastLogger, fast := newTestLog(FormatPretty, LogOptions{})
+		slowLogger, slow := newTestLog(FormatPretty, LogOptions{MaskFields: []string{"zzz-never-matches"}})
 		fastLogger.Info("m", args...)
 		slowLogger.Info("m", args...)
 		if stamp.ReplaceAllString(fast.String(), "") != stamp.ReplaceAllString(slow.String(), "") {

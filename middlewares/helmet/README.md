@@ -35,12 +35,12 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/helmet"
 )
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(helmet.Helmet{
 		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:",
@@ -48,7 +48,7 @@ func main() {
 	})
 
 	app.Create(
-		core.NewModuleBuilder().Build(),
+		ginject.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -180,7 +180,7 @@ helmet.Helmet{StrictTransportSecurity: "max-age=63072000; includeSubDomains; pre
 
 ### NewMiddleware
 ```go
-func (instance Helmet) NewMiddleware() common.MiddlewareFn
+func (instance Helmet) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Builds every header value once; the framework calls it at `Create()`. It panics with
@@ -188,10 +188,10 @@ Builds every header value once; the framework calls it at `Create()`. It panics 
 
 ### Use
 ```go
-func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Makes `Helmet` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `Helmet` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules

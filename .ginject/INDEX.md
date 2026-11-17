@@ -90,8 +90,8 @@ package-reference.md (independent API reference)
 ## Core Framework Concepts (Quick Summary)
 
 ### 1. Module → Controller → Provider Pattern
-- **Module**: Composition root (controllers, providers, imports), built with `core.NewModuleBuilder()…Build()`
-- **Controller**: HTTP/WS handler container (embeds `common.HTTP` and/or `common.WS`)
+- **Module**: Composition root (controllers, providers, imports), built with `ginject.ModuleBuilder()…Build()`
+- **Controller**: HTTP/WS handler container (embeds `ginject.HTTP` and/or `ginject.WS`)
 - **Provider**: Injected business logic, constructed once per app
 
 ### 2. Request Lifecycle (the spec: [request-pipeline.md](request-pipeline.md) § 1)
@@ -111,14 +111,14 @@ error from a guard onwards → module exception filter → global exception filt
 ### 4. WebSocket Model
 - NOT streaming: RPC-over-WS with pub/sub
 - Each message = complete request/response cycle; middlewares run only at the handshake
-- Fanout via the injected `common.Publisher`
+- Fanout via the injected `ginject.Publisher`
 
 ### 5. Exception Handling
 - A panic from a guard onwards reaches the route's exception filters; a middleware panic gets the fixed error response
 - Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack, sampled: 1 stack per stack key per second, 10 per app per second)
 
 ### 6. Server and Lifecycle
-- `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*core.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `H2C`)
+- `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*ginject.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `H2C`)
 - Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`, then `OnShutdown` hooks in reverse init order
 - One logger API: `app.SetLogger(l)` (any `log.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
 - Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
@@ -149,7 +149,7 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md#decision-tree-how-do-i-implement-this-feature)
 
 **Steps**:
-1. Embed `common.HTTP` in controller
+1. Embed `ginject.HTTP` in controller
 2. Create method: `READ()` / `CREATE()` / etc.
 3. Add parameters (injected automatically)
 4. Register in `ModuleBuilder().Controllers(...)`
@@ -181,10 +181,10 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md)
 
 **Steps**:
-1. Call `app.EnableWS(&core.WSOptions{Path: "/ws"})` before `app.Create()`
-2. Embed `common.WS` in controller
+1. Call `app.EnableWS(&ginject.WSOptions{Path: "/ws"})` before `app.Create()`
+2. Embed `ginject.WS` in controller
 3. Create method: `SUBSCRIBE_chat_PERSON_ANY()` (see [websocket-system.md](websocket-system.md))
-4. Inject `common.Publisher` for fanout
+4. Inject `ginject.Publisher` for fanout
 5. Call `publisher.Publish(topic, data)`
 
 ### "I need to handle errors"

@@ -56,7 +56,7 @@ func InjectProvidersIntoHTTPInterceptors(i *Interceptor, r *HTTP, cb func(int, r
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid interceptor: %v.%s must be func(*ctx.HTTPContext, *aggregation.Aggregation) any to be bound as a HTTP interceptor",
+				"invalid interceptor: %v.%s must be func(ginject.HTTPContext, ginject.Aggregation) any to be bound as a HTTP interceptor",
 				interceptableType,
 				InterceptorMethodName,
 			)))

@@ -55,33 +55,31 @@ Bind `proxy` first, before every middleware that reads the client:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
 
 type WhoController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance WhoController) NewController() core.Controller {
+func (instance WhoController) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance WhoController) READ_who(c *ctx.HTTPContext) string {
+func (instance WhoController) READ_who(c ginject.HTTPContext) string {
 	return proxy.ClientIP(c.Request).String() + " " + proxy.Scheme(c.Request) + " " + proxy.Host(c.Request)
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 
 	app.BindGlobalMiddlewares(proxy.Proxy{
 		TrustedProxies: []string{"10.0.0.0/8"},
 	})
 
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Controllers(WhoController{}).
 			Build(),
 	)
@@ -133,17 +131,17 @@ proxy.Proxy{TrustedHops: 1}
 ### Header
 Type: `proxy.Header`
 
-Default: `proxy.XForwarded`
+Default: `proxy.HeaderXForwarded`
 
 Required: `false`
 
-The header family your proxies write. `XForwarded` reads `X-Forwarded-For`, `X-Forwarded-Proto`
-and `X-Forwarded-Host` (what nearly every proxy writes). `Forwarded` reads the standard
+The header family your proxies write. `HeaderXForwarded` reads `X-Forwarded-For`, `X-Forwarded-Proto`
+and `X-Forwarded-Host` (what nearly every proxy writes). `HeaderForwarded` reads the standard
 `Forwarded` header of RFC 7239 (`for=`, `proto=`, `host=`). The other family is never read, because
 mixing them lets a client add entries the proxy does not overwrite.
 
 ```go
-proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: proxy.Forwarded}
+proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, Header: proxy.HeaderForwarded}
 ```
 
 ### IsHostForwarded
@@ -153,8 +151,8 @@ Default: `false`
 
 Required: `false`
 
-Reads the host the client asked for from `X-Forwarded-Host` (with `XForwarded`) or from `host=`
-(with `Forwarded`). Turn it on only when every trusted proxy sets that header itself and never
+Reads the host the client asked for from `X-Forwarded-Host` (with `HeaderXForwarded`) or from `host=`
+(with `HeaderForwarded`). Turn it on only when every trusted proxy sets that header itself and never
 passes a client's value through. Many proxy setups don't: the common nginx configuration sets
 `Host` and leaves `X-Forwarded-Host` to the client. A host the client chooses ends up in your
 redirects, links and password reset mails, so it is off by default and `proxy.Host` returns
@@ -172,8 +170,8 @@ proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}
 
 | Name | Type | Meaning |
 |---|---|---|
-| `XForwarded` | `Header` | `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`. The zero value |
-| `Forwarded` | `Header` | `Forwarded` (RFC 7239) |
+| `HeaderXForwarded` | `Header` | `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`. The zero value |
+| `HeaderForwarded` | `Header` | `Forwarded` (RFC 7239) |
 
 ## Functions
 
@@ -218,7 +216,7 @@ port.
 
 ### NewMiddleware
 ```go
-func (instance Proxy) NewMiddleware() common.MiddlewareFn
+func (instance Proxy) NewMiddleware() ginject.MiddlewareFn
 ```
 
 Validates the options and compiles them once. The framework calls it for you at `Create()`. It
@@ -228,10 +226,10 @@ entries, and for `TrustedHops` outside 1-16.
 
 ### Use
 ```go
-func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next ctx.Next)
+func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
 ```
 
-Makes `Proxy` a `common.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `Proxy` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Configure your proxy

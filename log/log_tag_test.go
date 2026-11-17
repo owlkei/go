@@ -165,7 +165,7 @@ func TestWrapLogger_CustomLoggerAutomaticallyBenefits(t *testing.T) {
 
 func TestPretty_TaggedUnexportedFieldIncluded(t *testing.T) {
 	p := tagPerson{Age: 10, name: "Joh", School: "MIT", policy: "ok"}
-	logger, buf := newTestLog(PrettyFormat, LogOptions{})
+	logger, buf := newTestLog(FormatPretty, LogOptions{})
 	logger.Info("test", "person", p)
 
 	out := buf.String()

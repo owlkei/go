@@ -161,9 +161,9 @@ func runCatchChain(conn *WSConnection, ws *WS, c *ctx.WSContext, pattern string,
 
 func replyException(conn *WSConnection, id string, ex exception.Exception) {
 	reply(conn, TypeError, id, ctx.Map{
-		"code":    ex.GetCode(),
+		"code":    ex.Code(),
 		"error":   ex.Error(),
-		"message": ex.GetMessage(),
+		"message": ex.Message(),
 	})
 }
 

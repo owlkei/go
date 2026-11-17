@@ -52,17 +52,16 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/guards/throttler"
 )
 
 type LoginController struct {
-	common.HTTP
-	common.Guard
+	ginject.HTTP
+	ginject.Guard
 }
 
-func (instance LoginController) NewController() core.Controller {
+func (instance LoginController) NewController() ginject.Controller {
 	instance.BindGuard(throttler.Throttler{
 		Limit: 10,
 		TTL:   time.Minute,
@@ -75,9 +74,9 @@ func (instance LoginController) CREATE_login() string {
 }
 
 func main() {
-	app := core.New()
+	app := ginject.New()
 	app.Create(
-		core.NewModuleBuilder().
+		ginject.ModuleBuilder().
 			Controllers(LoginController{}).
 			Build(),
 	)
@@ -142,19 +141,19 @@ throttler.Throttler{TTL: 30 * time.Second}
 
 Type: `Strategy`
 
-Default: `FixedWindow`
+Default: `StrategyFixedWindow`
 
 Required: `false`
 
 The counting algorithm. See [Constants](#constants). An unknown value panics at `Create()`.
 
 ```go
-throttler.Throttler{Strategy: throttler.TokenBucket}
+throttler.Throttler{Strategy: throttler.StrategyTokenBucket}
 ```
 
 ### KeyFunc
 
-Type: `func(*ctx.HTTPContext) string`
+Type: `func(ginject.HTTPContext) string`
 
 Default: the client IP (see [How the client is identified](#how-the-client-is-identified))
 
@@ -167,7 +166,7 @@ whatever the client sends.
 
 ```go
 throttler.Throttler{
-	KeyFunc: func(c *ctx.HTTPContext) string {
+	KeyFunc: func(c ginject.HTTPContext) string {
 		if user := c.Request.Header.Get("X-User-ID"); user != "" {
 			return "user:" + user
 		}
@@ -180,7 +179,7 @@ throttler.Throttler{
 
 Type: `cache.Cache`
 
-Default: a `memorycache.MemoryCache` bounded to 32,768 entries, one per throttler
+Default: a `cache.NewMemoryCache` store bounded to 32,768 entries, one per throttler
 
 Required: `false`
 
@@ -191,7 +190,7 @@ app down with its store.
 
 ```go
 throttler.Throttler{
-	Backend: memorycache.NewMemoryCache(&memorycache.MemoryCacheOptions{MaxEntries: 262144}),
+	Backend: cache.NewMemoryCache(&cache.MemoryCacheOptions{MaxEntries: 262144}),
 }
 ```
 
@@ -199,9 +198,9 @@ throttler.Throttler{
 
 | Constant | Behavior | Use it for |
 |---|---|---|
-| `FixedWindow` (default) | Counts requests per window of `TTL`; the count resets at each window start. One atomic `Incr` per request. | Most routes. A client can make up to twice `Limit` across a window boundary. |
-| `SlidingWindow` | Weights the previous window's count by the part of it still inside the last `TTL`, plus the current count. Refused requests are not counted. | Routes where the boundary burst matters (login, password reset). |
-| `TokenBucket` | A bucket of `Limit` tokens refills continuously over `TTL`; each request takes one. | Allowing short bursts while keeping a steady average rate. |
+| `StrategyFixedWindow` (default) | Counts requests per window of `TTL`; the count resets at each window start. One atomic `Incr` per request. | Most routes. A client can make up to twice `Limit` across a window boundary. |
+| `StrategySlidingWindow` | Weights the previous window's count by the part of it still inside the last `TTL`, plus the current count. Refused requests are not counted. | Routes where the boundary burst matters (login, password reset). |
+| `StrategyTokenBucket` | A bucket of `Limit` tokens refills continuously over `TTL`; each request takes one. | Allowing short bursts while keeping a steady average rate. |
 
 ## `Throttler` Methods
 
@@ -213,16 +212,16 @@ Applies the defaults and returns the compiled guard. Ginject calls it for you wh
 **Signature**
 
 ```go
-func (instance Throttler) NewGuard() common.Guarder
+func (instance Throttler) NewGuard() any
 ```
 
 **Returns**
 
-- 1st value: `common.Guarder`: the compiled guard, with `CanActivate(*ctx.HTTPContext) bool`
+- 1st value: `any`: the compiled guard, a value with `CanActivate(ginject.HTTPContext) bool`
 
 **Rules**
 
-- A zero `Throttler` limits to 100 requests per minute with `FixedWindow`
+- A zero `Throttler` limits to 100 requests per minute with `StrategyFixedWindow`
 - Creating a guard and serving requests starts no goroutine
 - The guard allows a request (`true`) or panics with `exception.TooManyRequestsException` (429)
 - With one key and one window, any number of concurrent requests get exactly `Limit` allowed, with
@@ -284,11 +283,11 @@ refusing new clients, which a flood of new keys would otherwise lock out.
   evicted key starts again with a full budget. For routes where that matters (logins, password
   resets), pass a `KeyFunc` that charges something the client can't multiply, such as the account
   name, or a larger `Backend`.
-- **Several instances with one shared `Backend`.** `FixedWindow` counts with the backend's `Incr`,
-  so it is exact across instances when the backend's `Incr` is atomic. `SlidingWindow` and
-  `TokenBucket` read the stored value, compute and write it back; the lock that makes this exact
+- **Several instances with one shared `Backend`.** `StrategyFixedWindow` counts with the backend's `Incr`,
+  so it is exact across instances when the backend's `Incr` is atomic. `StrategySlidingWindow` and
+  `StrategyTokenBucket` read the stored value, compute and write it back; the lock that makes this exact
   exists in one process only. Two instances that update one key at the same moment can each
-  allow a request that together exceed `Limit`. Use `FixedWindow` with a shared backend, or accept
+  allow a request that together exceed `Limit`. Use `StrategyFixedWindow` with a shared backend, or accept
   a small overshoot under contention.
 
 ## Throttler or loadshed

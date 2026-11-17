@@ -11,7 +11,7 @@ import (
 )
 
 type devtoolBuilder struct {
-	versioning *versioning.Versioning
+	versioning *versioning.Options
 
 	globalExceptionFilters []any
 	globalMiddlewares      []common.MiddlewareFn
@@ -75,7 +75,7 @@ func (devtoolBuilder *devtoolBuilder) AddInterceptors(
 	return devtoolBuilder
 }
 
-func (devtoolBuilder *devtoolBuilder) AddVersioning(versioning *versioning.Versioning) *devtoolBuilder {
+func (devtoolBuilder *devtoolBuilder) AddVersioning(versioning *versioning.Options) *devtoolBuilder {
 	devtoolBuilder.versioning = versioning
 
 	return devtoolBuilder

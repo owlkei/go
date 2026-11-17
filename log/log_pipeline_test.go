@@ -125,7 +125,7 @@ func goroutinesAtMost(base int) bool {
 func TestPipeline_ValueChangedAfterCallNotSeen(t *testing.T) {
 	w := newHoldWriter()
 	t.Cleanup(w.openAll)
-	l, s := asyncLogger(t, w, LogOptions{LogFormat: JSONFormat})
+	l, s := asyncLogger(t, w, LogOptions{Format: FormatJSON})
 	m := map[string]any{"k": "before"}
 	list := []string{"before"}
 	text := "before"
@@ -153,7 +153,7 @@ func (c pipeCountingValuer) LogValue() slog.Value {
 func TestPipeline_LogValueResolvedDuringCall(t *testing.T) {
 	w := newHoldWriter()
 	t.Cleanup(w.openAll)
-	l, _ := asyncLogger(t, w, LogOptions{LogFormat: JSONFormat})
+	l, _ := asyncLogger(t, w, LogOptions{Format: FormatJSON})
 	calls := 0
 	l.Info("m", "v", pipeCountingValuer{&calls})
 	if calls != 1 {
@@ -170,8 +170,8 @@ func TestPipeline_TwoLoggersShareOrder(t *testing.T) {
 		w.openAll()
 		s.StopAsync(time.Minute)
 	})
-	a := newLogSink(s, false, &LogOptions{LogFormat: JSONFormat})
-	b := newLogSink(s, false, &LogOptions{LogFormat: TextFormat})
+	a := newLogSink(s, false, &LogOptions{Format: FormatJSON})
+	b := newLogSink(s, false, &LogOptions{Format: FormatText})
 	for i := range 200 {
 		if i%2 == 0 {
 			a.Info("n", "n", i)
@@ -197,7 +197,7 @@ func TestPipeline_TwoLoggersShareOrder(t *testing.T) {
 func TestPipeline_ConcurrentWritersWholeRecords(t *testing.T) {
 	w := newHoldWriter()
 	t.Cleanup(w.openAll)
-	l, s := asyncLogger(t, w, LogOptions{LogFormat: JSONFormat})
+	l, s := asyncLogger(t, w, LogOptions{Format: FormatJSON})
 	const goroutines, per = 16, 250
 	var wg sync.WaitGroup
 	for g := range goroutines {
@@ -240,7 +240,7 @@ func TestPipeline_ConcurrentWritersWholeRecords(t *testing.T) {
 func textOverhead(t *testing.T) int {
 	t.Helper()
 	buf := &bytes.Buffer{}
-	l := newLogSink(logpipe.New(buf), false, &LogOptions{LogFormat: TextFormat})
+	l := newLogSink(logpipe.New(buf), false, &LogOptions{Format: FormatText})
 	l.Info("a")
 	return buf.Len() - 1
 }
@@ -248,7 +248,7 @@ func textOverhead(t *testing.T) int {
 func textLineOfLength(t *testing.T, total int) string {
 	t.Helper()
 	buf := &bytes.Buffer{}
-	l := newLogSink(logpipe.New(buf), false, &LogOptions{LogFormat: TextFormat})
+	l := newLogSink(logpipe.New(buf), false, &LogOptions{Format: FormatText})
 	l.Info(strings.Repeat("a", total-textOverhead(t)))
 	return buf.String()
 }
@@ -274,7 +274,7 @@ func TestPipeline_LongRecordTruncated(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
-	jsonLogger := newLogSink(logpipe.New(buf), false, &LogOptions{LogFormat: JSONFormat})
+	jsonLogger := newLogSink(logpipe.New(buf), false, &LogOptions{Format: FormatJSON})
 	jsonLogger.Info("m", "k", strings.Repeat("y", 200000))
 	jsonLogger.Info("next")
 	lines := strings.SplitAfter(buf.String(), "\n")
@@ -289,7 +289,7 @@ func TestPipeline_LongRecordTruncated(t *testing.T) {
 	}
 
 	prettyBuf := &bytes.Buffer{}
-	pretty := newLogSink(logpipe.New(prettyBuf), false, &LogOptions{LogFormat: PrettyFormat})
+	pretty := newLogSink(logpipe.New(prettyBuf), false, &LogOptions{Format: FormatPretty})
 	pretty.Info("m", "k", strings.Repeat("y", 200000))
 	if got := prettyBuf.String(); len(got) > maxRecord || !strings.HasSuffix(got, ansiReset+"...[TRUNCATED]\n") {
 		t.Error(test.DiffMessage(len(got), "<= 65536, a color reset then ...[TRUNCATED]", "P3: Pretty resets the color before the marker"))
@@ -299,9 +299,9 @@ func TestPipeline_LongRecordTruncated(t *testing.T) {
 func TestPipeline_TruncateOnRuneBoundary(t *testing.T) {
 	const maxRecord = 64 << 10
 	for pad := range 8 {
-		for _, format := range []logFormat{JSONFormat, TextFormat, PrettyFormat} {
+		for _, format := range []Format{FormatJSON, FormatText, FormatPretty} {
 			buf := &bytes.Buffer{}
-			l := newLogSink(logpipe.New(buf), false, &LogOptions{LogFormat: format})
+			l := newLogSink(logpipe.New(buf), false, &LogOptions{Format: format})
 			l.Info(strings.Repeat("a", pad) + strings.Repeat("😀", 30000))
 			out := buf.String()
 			if !utf8.ValidString(out) || len(out) > maxRecord || !strings.HasSuffix(out, "...[TRUNCATED]\n") {
@@ -313,10 +313,10 @@ func TestPipeline_TruncateOnRuneBoundary(t *testing.T) {
 
 func TestPipeline_DropReportRecord(t *testing.T) {
 	big := strings.Repeat("x", 60000)
-	for _, format := range []logFormat{JSONFormat, TextFormat} {
+	for _, format := range []Format{FormatJSON, FormatText} {
 		w := newHoldWriter()
 		t.Cleanup(w.openAll)
-		l, s := asyncLogger(t, w, LogOptions{LogFormat: format, Level: DebugLevel})
+		l, s := asyncLogger(t, w, LogOptions{Format: format, Level: LevelDebug})
 		const total = 26
 		for i := range total {
 			if i%2 == 0 {
@@ -331,7 +331,7 @@ func TestPipeline_DropReportRecord(t *testing.T) {
 		}
 		out := w.String()
 		var report *regexp.Regexp
-		if format == JSONFormat {
+		if format == FormatJSON {
 			report = regexp.MustCompile(`"level":"WARN","msg":"LogDropped","debug":(\d+),"info":(\d+)\}`)
 		} else {
 			report = regexp.MustCompile(`level=WARN msg=LogDropped debug=(\d+) info=(\d+)`)
@@ -355,8 +355,8 @@ func TestNewLog_StdoutSinkSynchronousWithoutApp(t *testing.T) {
 	defer restore()
 	runtime.GC()
 	base := runtime.NumGoroutine()
-	a := NewLog(&LogOptions{LogFormat: JSONFormat})
-	b := NewLog(&LogOptions{LogFormat: TextFormat})
+	a := NewLog(&LogOptions{Format: FormatJSON})
+	b := NewLog(&LogOptions{Format: FormatText})
 	for i := range 100 {
 		a.Info("a", "i", i)
 		if !strings.Contains(buf.String(), `"i":`+strconv.Itoa(i)+"}") {
@@ -380,7 +380,7 @@ func TestNewLog_AsyncOnceStdoutSinkStarted(t *testing.T) {
 	logpipe.Stdout().StartAsync()
 	defer logpipe.Stdout().StopAsync(time.Minute)
 	defer w.openAll()
-	l := NewLog(&LogOptions{LogFormat: JSONFormat})
+	l := NewLog(&LogOptions{Format: FormatJSON})
 	within(t, "P5: a built-in logger does not wait for stdout in asynchronous mode", func() {
 		for i := range 20 {
 			l.Info("held", "i", i)
@@ -439,7 +439,7 @@ func (e *exitProbe) install(t *testing.T) {
 
 func TestFatal_FlushesThenExits(t *testing.T) {
 	w := &syncBuf{}
-	l, _ := asyncLogger(t, w, LogOptions{LogFormat: JSONFormat})
+	l, _ := asyncLogger(t, w, LogOptions{Format: FormatJSON})
 	probe := newExitProbe(w.String)
 	probe.install(t)
 	l.Info("one")
@@ -469,7 +469,7 @@ func fatalOnStuckOutput(t *testing.T, async bool) {
 			s.StopAsync(time.Minute)
 		}
 	})
-	l := newLogSink(s, false, &LogOptions{LogFormat: JSONFormat})
+	l := newLogSink(s, false, &LogOptions{Format: FormatJSON})
 	probe := newExitProbe(nil)
 	probe.install(t)
 	returned := make(chan struct{})
@@ -516,7 +516,7 @@ func TestWrapLogger_FatalFlushesStdoutSink(t *testing.T) {
 	defer restore()
 	logpipe.Stdout().StartAsync()
 	defer logpipe.Stdout().StopAsync(time.Minute)
-	builtin := NewLog(&LogOptions{LogFormat: JSONFormat})
+	builtin := NewLog(&LogOptions{Format: FormatJSON})
 	builtin.Info("before-fatal")
 	var seen string
 	adapter := &fatalAdapter{fromAdapter: &fromAdapter{}, onFatal: func() { seen = buf.String() }}

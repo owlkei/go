@@ -35,7 +35,7 @@
   - [Benchmarks](#benchmarks)
 
 The package is internal: only code in the Ginject module can import it. Users read the IDs through
-`c.GetID()`, the `X-Request-Id` and `Traceparent` response headers, the access log and (from design
+`c.ID()`, the `X-Request-Id` and `Traceparent` response headers, the access log and (from design
 0012) the scoped logger.
 
 ## Key Features
@@ -107,7 +107,7 @@ goroutine, at any time after the request. Never write to it and never copy it.
 - Default: `""` on a message scope
 - Required: no
 
-16 hex characters, always fresh: the request ID (`X-Request-Id`, `c.GetID()`) and the request's span
+16 hex characters, always fresh: the request ID (`X-Request-Id`, `c.ID()`) and the request's span
 ID. On a WebSocket handshake it is the connection ID.
 
 ### Connection

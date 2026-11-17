@@ -23,7 +23,7 @@ type ConfigModuleOptions struct {
 	IsIgnoreEnvFile   bool
 	IsOverride        bool
 	IsExpandVariables bool
-	ENVFilePaths      []string
+	EnvFilePaths      []string
 	Loads             []ConfigLoadFn
 	Hooks             []ConfigHookFn
 	OnInit            ConfigOnInitFn
@@ -33,11 +33,11 @@ func loadConfigOptions(opts *ConfigModuleOptions) *ConfigModuleOptions {
 	if opts == nil {
 		opts = &ConfigModuleOptions{}
 	}
-	if opts.IsIgnoreEnvFile && len(opts.ENVFilePaths) > 0 {
+	if opts.IsIgnoreEnvFile && len(opts.EnvFilePaths) > 0 {
 		failConfig("IsIgnoreEnvFile is set with ENVFilePaths")
 	}
 
-	envFilePaths := opts.ENVFilePaths
+	envFilePaths := opts.EnvFilePaths
 	if len(envFilePaths) == 0 && !opts.IsIgnoreEnvFile {
 		defaultPath := defaultENVFilePath()
 		if _, err := os.Stat(defaultPath); !errors.Is(err, fs.ErrNotExist) {
@@ -50,7 +50,7 @@ func loadConfigOptions(opts *ConfigModuleOptions) *ConfigModuleOptions {
 		IsIgnoreEnvFile:   opts.IsIgnoreEnvFile,
 		IsOverride:        opts.IsOverride,
 		IsExpandVariables: opts.IsExpandVariables,
-		ENVFilePaths:      envFilePaths,
+		EnvFilePaths:      envFilePaths,
 		Loads:             opts.Loads,
 		Hooks:             opts.Hooks,
 		OnInit:            opts.OnInit,
@@ -89,9 +89,9 @@ func mergeInto(valuesByKey map[string]any, isOverride bool, envs ...map[string]a
 
 func Register(opts *ConfigModuleOptions) *core.Module {
 	configOptions := loadConfigOptions(opts)
-	envs := make([]map[string]any, 0, len(configOptions.ENVFilePaths)+len(configOptions.Loads))
+	envs := make([]map[string]any, 0, len(configOptions.EnvFilePaths)+len(configOptions.Loads))
 
-	for _, path := range configOptions.ENVFilePaths {
+	for _, path := range configOptions.EnvFilePaths {
 		dotENVMap, err := loadDotEnv(path, configOptions.IsExpandVariables)
 		if err != nil {
 			failConfig(err.Error())
@@ -109,7 +109,7 @@ func Register(opts *ConfigModuleOptions) *core.Module {
 
 	valuesByKey := loadOSEnv()
 	mergeInto(valuesByKey, configOptions.IsOverride, envs...)
-	configService := ConfigService{State: newConfigState(configOptions.ENVFilePaths, valuesByKey)}
+	configService := ConfigService{State: newConfigState(configOptions.EnvFilePaths, valuesByKey)}
 
 	for _, hookFn := range configOptions.Hooks {
 		hookFn(configService)

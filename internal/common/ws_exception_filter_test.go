@@ -107,8 +107,8 @@ func TestRunWSCatchChain_InvokesCatch(t *testing.T) {
 	if gotEx == nil {
 		t.Fatal(test.DiffMessage(nil, "non-nil exception", "RunWSCatchChain must invoke the catch function"))
 	}
-	if gotEx.GetMessage() != "boom" {
-		t.Error(test.DiffMessage(gotEx.GetMessage(), "boom", "the recovered value must be normalized before being passed to Catch"))
+	if gotEx.Message() != "boom" {
+		t.Error(test.DiffMessage(gotEx.Message(), "boom", "the recovered value must be normalized before being passed to Catch"))
 	}
 }
 
@@ -155,7 +155,7 @@ func TestRunWSCatchChain_FirstFilterHandles(t *testing.T) {
 	if gotCtx != c {
 		t.Error(test.DiffMessage(gotCtx, c, "B18: the filter receives the request context"))
 	}
-	if gotEx == nil || gotEx.GetCode() != http.StatusNotFound || gotEx.GetMessage() != "nope" {
+	if gotEx == nil || gotEx.Code() != http.StatusNotFound || gotEx.Message() != "nope" {
 		t.Error(test.DiffMessage(gotEx, "404 nope", "B18: the filter receives the normalized exception"))
 	}
 	if secondCalls != 0 {
@@ -172,7 +172,7 @@ func TestRunWSCatchChain_PanicValueGoesToNextFilter(t *testing.T) {
 		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
 	}, exception.NotFoundException("nope"))
 
-	if got == nil || got.GetCode() != http.StatusNotFound || got.GetMessage() != "nope" {
+	if got == nil || got.Code() != http.StatusNotFound || got.Message() != "nope" {
 		t.Error(test.DiffMessage(got, "404 nope", "B19: a re-thrown value keeps its code"))
 	}
 }
@@ -186,11 +186,11 @@ func TestRunWSCatchChain_PanicPointerKeepsCode(t *testing.T) {
 		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
 	}, exception.NotFoundException("nope"))
 
-	if got == nil || got.GetCode() != http.StatusNotFound {
+	if got == nil || got.Code() != http.StatusNotFound {
 		t.Error(test.DiffMessage(got, "404", "B19, B21: a re-thrown pointer keeps its status code"))
 	}
-	if got != nil && got.GetMessage() != "nope" {
-		t.Error(test.DiffMessage(got.GetMessage(), "nope", "B19, B21: a re-thrown pointer keeps its message"))
+	if got != nil && got.Message() != "nope" {
+		t.Error(test.DiffMessage(got.Message(), "nope", "B19, B21: a re-thrown pointer keeps its message"))
 	}
 }
 
@@ -203,7 +203,7 @@ func TestRunWSCatchChain_PanicErrorGoesToNextFilter(t *testing.T) {
 		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
 	}, "boom")
 
-	if got == nil || got.GetCode() != http.StatusInternalServerError || got.GetMessage() != "filter broke" {
+	if got == nil || got.Code() != http.StatusInternalServerError || got.Message() != "filter broke" {
 		t.Error(test.DiffMessage(got, "500 filter broke", "B19: an error panic becomes a 500 for the next filter"))
 	}
 }
@@ -217,7 +217,7 @@ func TestRunWSCatchChain_NilPanicGoesToNextFilter(t *testing.T) {
 		func(_ *ctx.WSContext, ex *exception.Exception) { got = ex },
 	}, "boom")
 
-	if got == nil || got.GetCode() != http.StatusInternalServerError {
+	if got == nil || got.Code() != http.StatusInternalServerError {
 		t.Error(test.DiffMessage(got, "a 500", "B19: panic(nil) is still handed to the next filter"))
 	}
 }

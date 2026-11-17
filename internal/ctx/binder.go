@@ -12,7 +12,7 @@ const (
 	TagBind = "bind"
 )
 
-var ErrBindTarget = errors.New("ctx: bind target must be a struct")
+var ErrBindTarget = errors.New("ginject: bind target must be a struct")
 
 type Binder struct {
 	typ    reflect.Type

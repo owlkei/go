@@ -37,7 +37,7 @@ func (ccInterceptor) Intercept(_ *ctx.HTTPContext, agg *aggregation.Aggregation)
 type ccFilter struct{}
 
 func (ccFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	c.Status(ex.GetCode()).Text("cc:" + ex.GetMessage())
+	c.Status(ex.Code()).Text("cc:" + ex.Message())
 }
 
 type ccController struct {

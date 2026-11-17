@@ -1,5 +1,7 @@
 # Routing
 
+Internal package: applications declare routes with controller method names (`READ_users_BY_id`) instead.
+
 *Package `routing` holds the HTTP router of Ginject: it registers routes with their handler chains at bootstrap and matches each request to one route by method, version and path.*
 
 - [Routing](#routing)
@@ -362,7 +364,7 @@ route, keys := routing.ParseToParamKey("/users/{userId}/friends/{friendId}/")
 - Request paths are walked as they are: no copy, no normalization. `path.Clean` runs only when the path starts with `.` or contains `/.` (the only inputs it changes besides slashes, which the walk ignores). A test compares both over 10,000 random paths.
 - One route tree per (method, version), found by a linear scan of a short slice; the trie end holds the `*RouterItem`, so there is no pattern-keyed lookup and no struct copy.
 - Fully static routes also sit in a map per tree keyed by the canonical path; the request path minus one trailing slash is probed first. A static child is always the first candidate of the trie, so the map gives the same answer (tested against the trie alone over 10,000 random paths).
-- Parameter values are substrings of the request path, appended to the caller's buffer at the end of the match (a new slice only when the buffer is too small). `core` passes `c.ParamValues[:0]`, so a parameter route allocates nothing for its values on a warm context.
+- Parameter values are substrings of the request path, appended to the caller's buffer at the end of the match (a new slice only when the buffer is too small). `core` passes `ctx.HTTPParamValues(c)[:0]`, so a parameter route allocates nothing for its values on a warm context.
 - `PatternToMethodRouteVersion` and `ParseToParamKey` parse by index, without regexps.
 
 ## Benchmarks
