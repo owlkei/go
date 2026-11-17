@@ -212,7 +212,7 @@ event, ok := common.ParseWSFuncNameToEvent("SUBSCRIBE_chat_ANY_message")
 
 #### Rules
 - `SUBSCRIBE_message` → `message`; `SUBSCRIBE_chat_message` → `chat.message`; `SUBSCRIBE_a_b_c` → `a.b.c`.
-- `ANY` is `*`: `SUBSCRIBE_chat_ANY` → `chat.*`; `SUBSCRIBE_ANY` → `*`.
+- `ANY` is `*`: `SUBSCRIBE_chat_ANY` → `chat.*` (one segment after `chat`); `SUBSCRIBE_ANY` → `*` (single-segment topics). See `pattern/MATCHING.md`.
 - Segments are lower-cased: `SUBSCRIBE_Chat_Message` → `chat.message`.
 - `READ_users`, `CREATE_orders`, `""`, `SUBSCRIBE`, `SUBSCRIBE_` and `lowercase_message` are not events (`false`).
 

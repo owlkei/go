@@ -1028,7 +1028,7 @@ func main() {
 
 Event names come from the method name: the words after `SUBSCRIBE`, lower-cased and joined with
 `.`. `ANY` is a wildcard `*`. `SUBSCRIBE_chat_message` handles the topic `chat.message`, and
-`SUBSCRIBE_chat_ANY` handles `chat.room1`, `chat.room2` and every other `chat.` topic.
+`SUBSCRIBE_chat_ANY` handles `chat.room1`, `chat.room2` and every other topic with one segment after `chat` (not `chat.room1.typing`).
 
 ### Messages
 

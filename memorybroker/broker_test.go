@@ -48,7 +48,7 @@ func TestWildcardGlobal_ReceivesAllTopics(t *testing.T) {
 	b := newBroker(t)
 
 	var topics []string
-	_, err := b.Subscribe("*", func(m *Message) { topics = append(topics, m.Topic) })
+	_, err := b.Subscribe("**", func(m *Message) { topics = append(topics, m.Topic) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,16 +107,16 @@ func TestWildcardPrefix_FansOutAcrossOverlappingDepths(t *testing.T) {
 	b := newBroker(t)
 
 	var shallow, deep int
-	_, _ = b.Subscribe("chat.*", func(_ *Message) { shallow++ })
-	_, _ = b.Subscribe("chat.room.*", func(_ *Message) { deep++ })
+	_, _ = b.Subscribe("chat.**", func(_ *Message) { shallow++ })
+	_, _ = b.Subscribe("chat.room.**", func(_ *Message) { deep++ })
 
 	_ = b.Publish("chat.room.5", nil)
 
 	if shallow != 1 {
-		t.Error(test.DiffMessage(shallow, 1, "chat.* should also receive a publish to chat.room.5"))
+		t.Error(test.DiffMessage(shallow, 1, "chat.** should also receive a publish to chat.room.5"))
 	}
 	if deep != 1 {
-		t.Error(test.DiffMessage(deep, 1, "chat.room.* should receive a publish to chat.room.5"))
+		t.Error(test.DiffMessage(deep, 1, "chat.room.** should receive a publish to chat.room.5"))
 	}
 }
 
@@ -748,7 +748,7 @@ func TestMultipleSubscribers_SameMessage(t *testing.T) {
 func TestSubscribe_SuffixWildcard_MatchesDeepTopics(t *testing.T) {
 	b := newBroker(t)
 	var received []string
-	_, _ = b.Subscribe("user.*", func(m *Message) { received = append(received, m.Topic) })
+	_, _ = b.Subscribe("user.**", func(m *Message) { received = append(received, m.Topic) })
 
 	_ = b.Publish("user.created", nil)
 	_ = b.Publish("user.profile.updated", nil)
@@ -756,7 +756,7 @@ func TestSubscribe_SuffixWildcard_MatchesDeepTopics(t *testing.T) {
 	_ = b.Publish("order.created", nil)
 
 	if len(received) != 3 {
-		t.Error(test.DiffMessage(len(received), 3, "user.* should now greedily match 3 deep topics"))
+		t.Error(test.DiffMessage(len(received), 3, "user.** should match 3 deep topics"))
 	}
 }
 
@@ -775,31 +775,31 @@ func TestSubscribe_SuffixWildcard_DoesNotMatchParent(t *testing.T) {
 func TestSubscribe_SuffixWildcard_MatchesMultipleLevels(t *testing.T) {
 	b := newBroker(t)
 	var count int
-	_, _ = b.Subscribe("user.*", func(*Message) { count++ })
+	_, _ = b.Subscribe("user.**", func(*Message) { count++ })
 
 	_ = b.Publish("user.created", nil)
 	_ = b.Publish("user.profile.updated", nil)
 
 	if count != 2 {
-		t.Error(test.DiffMessage(count, 2, "user.* should now match any depth beyond the prefix, not just one level"))
+		t.Error(test.DiffMessage(count, 2, "user.** should match any depth beyond the prefix"))
 	}
 }
 
 func TestSubscribe_Global_MatchesAll(t *testing.T) {
 	b := newBroker(t)
 	var count int
-	_, _ = b.Subscribe("*", func(*Message) { count++ })
+	_, _ = b.Subscribe("**", func(*Message) { count++ })
 
 	_ = b.Publish("a", nil)
 	_ = b.Publish("a.b", nil)
 	_ = b.Publish("a.b.c", nil)
 
 	if count != 3 {
-		t.Error(test.DiffMessage(count, 3, "* alone should match every published topic"))
+		t.Error(test.DiffMessage(count, 3, "** alone should match every published topic"))
 	}
 }
 
-func TestSubscribe_BackwardCompat_StarAlias(t *testing.T) {
+func TestSubscribe_StarAlone_MatchesOneSegment(t *testing.T) {
 	b := newBroker(t)
 	var count int
 	_, _ = b.Subscribe("*", func(*Message) { count++ })
@@ -807,8 +807,8 @@ func TestSubscribe_BackwardCompat_StarAlias(t *testing.T) {
 	_ = b.Publish("a.b.c", nil)
 	_ = b.Publish("x", nil)
 
-	if count != 2 {
-		t.Error(test.DiffMessage(count, 2, "* alone should match every topic regardless of depth"))
+	if count != 1 {
+		t.Error(test.DiffMessage(count, 1, "* alone should match single-segment topics only"))
 	}
 }
 
@@ -830,7 +830,7 @@ func TestSubscribe_Complex_MiddleWildcard(t *testing.T) {
 func TestSubscribe_Complex_MiddleAndTrailingWildcard(t *testing.T) {
 	b := newBroker(t)
 	var received []string
-	_, _ = b.Subscribe("tenant.*.user.*", func(m *Message) { received = append(received, m.Topic) })
+	_, _ = b.Subscribe("tenant.*.user.**", func(m *Message) { received = append(received, m.Topic) })
 
 	_ = b.Publish("tenant.1.user.created", nil)
 	_ = b.Publish("tenant.abc.user.profile.updated", nil)
@@ -838,6 +838,25 @@ func TestSubscribe_Complex_MiddleAndTrailingWildcard(t *testing.T) {
 	_ = b.Publish("tenant.1.user", nil)
 
 	if len(received) != 2 {
-		t.Error(test.DiffMessage(len(received), 2, "tenant.*.user.* should match 2 topics"))
+		t.Error(test.DiffMessage(len(received), 2, "tenant.*.user.** should match 2 topics"))
+	}
+}
+
+func TestUnsubscribe_EveryKindStopsDelivery(t *testing.T) {
+	for _, topic := range []string{"user.created", "**", "user.**", "user.*", "*.created"} {
+		b := newBroker(t)
+		count := 0
+		sub, err := b.Subscribe(topic, func(*Message) { count++ })
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = b.Publish("user.created", nil)
+		if err := b.Unsubscribe(sub); err != nil {
+			t.Fatal(err)
+		}
+		_ = b.Publish("user.created", nil)
+		if count != 1 {
+			t.Error(test.DiffMessage(count, 1, "deliveries to "+topic+" before and after Unsubscribe"))
+		}
 	}
 }

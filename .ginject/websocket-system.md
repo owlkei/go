@@ -292,10 +292,14 @@ Topic: "users.created"
 | Pattern | Matches | Doesn't Match |
 |---------|---------|---------------|
 | `users.created` | `users.created` | `users.updated`, `products.created` |
-| `users.*` | `users.created`, `users.updated` | `users`, `products.created` |
+| `users.*` | `users.created`, `users.updated` | `users`, `users.a.b`, `products.created` |
+| `users.**` | `users.created`, `users.a.b` | `users` |
 | `*.created` | `users.created`, `products.created` | `users.updated`, `created` |
 | `users.*.details` | `users.123.details` | `users.details`, `users.123.456.details` |
-| `*` | Any topic | (nothing) |
+| `*` | single-segment topics (`users`) | `users.created` |
+| `**` | Any topic | (nothing) |
+
+`SUBSCRIBE_chat_ANY` registers `chat.*`, so it handles one segment after `chat` only. The method-name DSL has no token for `**` yet (WebSocket roadmap).
 
 ---
 

@@ -27,7 +27,7 @@ func BenchmarkPublishWildcard(b *testing.B) {
 
 	noop := func(_ *Message) {}
 	for i := 0; i < 100; i++ {
-		_, _ = br.Subscribe("*", noop)
+		_, _ = br.Subscribe("**", noop)
 	}
 
 	b.ResetTimer()
@@ -44,8 +44,8 @@ func BenchmarkPublishMixed(b *testing.B) {
 	noop := func(_ *Message) {}
 	for i := 0; i < 10; i++ {
 		_, _ = br.Subscribe("mixed.topic", noop)
-		_, _ = br.Subscribe("mixed.*", noop)
-		_, _ = br.Subscribe("*", noop)
+		_, _ = br.Subscribe("mixed.**", noop)
+		_, _ = br.Subscribe("**", noop)
 	}
 
 	b.ResetTimer()

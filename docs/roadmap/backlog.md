@@ -165,6 +165,18 @@ Found 2026-11-17 while rewriting the main README (not fixed; the WebSocket roadm
 - The goroutine that drops dead WebSocket connections never stops, even after `Stop()`.
 - `Publisher.Publish` silently drops every payload after the first.
 
+## Glob topic syntax in the WebSocket layer (for the WebSocket roadmap)
+
+Decided 2026-11-18: `pattern` now uses the glob syntax of `main`'s D-030 (`*` one segment, a trailing
+`**` one or more). The WebSocket layer follows only partly, and the owner accepted the break until
+the WebSocket roadmap:
+- `SUBSCRIBE_chat_ANY` still registers `chat.*`, now one segment after `chat` (was one or more), and
+  `SUBSCRIBE_ANY` registers `*`, now single-segment topics only (was every topic). The method-name
+  DSL needs a token for `**`.
+- Topics from clients and `Publish` are not validated: reject empty segments (`a..b`, `b.`), limit
+  segment characters to `A-Z a-z 0-9 _ -` and bound the length, so the edge cases of
+  `pattern/README.md` › Edge cases never reach the matcher.
+
 ## `loadshed` and long-lived requests (found in roadmap 0006)
 
 Every request in flight holds one slot of the concurrency limit for its whole life, so a few SSE

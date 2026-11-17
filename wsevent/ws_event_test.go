@@ -43,13 +43,13 @@ func TestWSEvent_MatchWildcardPattern(t *testing.T) {
 
 func TestWSEvent_MatchWildcardMultipleSegments(t *testing.T) {
 	r := wsevent.NewWSEvent()
-	r.Add("chat.to.*", wsevent.WSEventItem{Handler: "wildcard-handler"})
+	r.Add("chat.to.**", wsevent.WSEventItem{Handler: "wildcard-handler"})
 
 	value, pattern, ok := r.Match("chat.to.user2.thread.5")
 	if !ok {
 		t.Fatal(test.DiffMessage(ok, true, "topic should match a trailing wildcard pattern across multiple segments"))
 	}
-	if value.Handler != "wildcard-handler" || pattern != "chat.to.*" {
+	if value.Handler != "wildcard-handler" || pattern != "chat.to.**" {
 		t.Error(test.DiffMessage(value.Handler, "wildcard-handler", "unexpected value/pattern for multi-segment wildcard match"))
 	}
 }
@@ -217,14 +217,14 @@ func TestWSEvent_AddInjectableHandlerPanicsOnNonFunc(t *testing.T) {
 
 func TestWSEvent_MatchGlobalPattern(t *testing.T) {
 	r := wsevent.NewWSEvent()
-	r.Add("*", wsevent.WSEventItem{Handler: "global-handler"})
+	r.Add("**", wsevent.WSEventItem{Handler: "global-handler"})
 
 	value, pattern, ok := r.Match("anything.at.all")
 	if !ok {
 		t.Fatal(test.DiffMessage(ok, true, "any topic should match a global pattern"))
 	}
-	if value.Handler != "global-handler" || pattern != "*" {
-		t.Error(test.DiffMessage([]any{value.Handler, pattern}, []any{"global-handler", "*"}, "unexpected value/pattern for global match"))
+	if value.Handler != "global-handler" || pattern != "**" {
+		t.Error(test.DiffMessage([]any{value.Handler, pattern}, []any{"global-handler", "**"}, "unexpected value/pattern for global match"))
 	}
 }
 

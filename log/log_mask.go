@@ -175,7 +175,7 @@ func orArgs(out, args []any) []any {
 
 func (c *converter) arg(key string, v any) (any, bool) {
 	if isScalar(v) {
-		if c.leafMasked(c.root(key)) {
+		if c.masked(c.root(key)) {
 			return maskPlaceholder, true
 		}
 		return v, false
@@ -228,7 +228,7 @@ func (c *converter) value(path string, v any, depth int, nodes *int) (any, bool)
 	}
 	*nodes++
 	if isScalar(v) {
-		if c.leafMasked(path) {
+		if c.masked(path) {
 			return maskPlaceholder, true
 		}
 		return v, false
@@ -264,7 +264,7 @@ func (c *converter) reflectValue(path string, rv reflect.Value, depth int, nodes
 		if info.text {
 			return c.text(path, rv, depth, nodes)
 		}
-		if c.exactMasked(path) {
+		if c.masked(path) {
 			return maskPlaceholder, true
 		}
 		if k := rv.Kind(); k != reflect.Pointer && k != reflect.Interface {
@@ -290,14 +290,14 @@ func (c *converter) reflectValue(path string, rv reflect.Value, depth int, nodes
 }
 
 func (c *converter) leaf(path string) (any, bool) {
-	if c.leafMasked(path) {
+	if c.masked(path) {
 		return maskPlaceholder, true
 	}
 	return nil, false
 }
 
 func (c *converter) text(path string, rv reflect.Value, depth int, nodes *int) (any, bool) {
-	if c.leafMasked(path) {
+	if c.masked(path) {
 		return maskPlaceholder, true
 	}
 	k := rv.Kind()
@@ -454,6 +454,9 @@ func (c *converter) sliceValue(path string, rv reflect.Value, depth int, nodes *
 func (c *converter) slogValue(path string, v slog.Value, depth int, nodes *int) (slog.Value, bool) {
 	switch v.Kind() {
 	case slog.KindGroup:
+		if c.masked(path) {
+			return slog.StringValue(maskPlaceholder), true
+		}
 		attrs := v.Group()
 		var out []slog.Attr
 		for i, a := range attrs {
@@ -477,23 +480,13 @@ func (c *converter) slogValue(path string, v slog.Value, depth int, nodes *int) 
 		}
 		return slog.AnyValue(out), true
 	}
-	if c.leafMasked(path) {
+	if c.masked(path) {
 		return slog.StringValue(maskPlaceholder), true
 	}
 	return v, false
 }
 
-func (c *converter) exactMasked(path string) bool {
-	for i := range c.rules {
-		r := &c.rules[i]
-		if r.exact && (path == r.name || strings.HasSuffix(path, r.suffix)) {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *converter) leafMasked(path string) bool {
+func (c *converter) masked(path string) bool {
 	for i := range c.rules {
 		r := &c.rules[i]
 		if r.exact {
@@ -502,8 +495,15 @@ func (c *converter) leafMasked(path string) bool {
 			}
 			continue
 		}
-		if r.pattern.Match(path) {
-			return true
+		for p := path; ; {
+			if r.pattern.Match(p) {
+				return true
+			}
+			dot := strings.IndexByte(p, '.')
+			if dot < 0 {
+				break
+			}
+			p = p[dot+1:]
 		}
 	}
 	return false

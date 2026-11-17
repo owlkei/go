@@ -1,6 +1,6 @@
 # Pattern
 
-*Package `pattern` matches dotted topic names (`user.created`, `tenant.abc.user.updated`) against patterns with `*` wildcards. Ginject uses it for WebSocket event names, the topics of `memorybroker`, and the wildcard rules of log masking.*
+*Package `pattern` matches dotted topic names (`user.created`, `tenant.abc.user.updated`) against glob-style patterns: `*` is one segment, a trailing `**` is one or more. Ginject uses it for WebSocket event names, the topics of `memorybroker`, and the log's `MaskFields`.*
 
 - [Pattern](#pattern)
   - [Key features](#key-features)
@@ -12,17 +12,17 @@
     - [Match](#match)
     - [Kind](#kind)
     - [SimplePrefix](#simpleprefix)
-    - [Raw, IsExact, IsGlobal](#raw-isexact-isglobal)
+    - [Raw and IsExact](#raw-and-isexact)
   - [Kind values](#kind-values)
   - [Edge cases](#edge-cases)
   - [Benchmarks](#benchmarks)
 
 ## Key features
 
-- Four kinds of pattern, picked once by `NewPattern`: exact, global (`*`), a trailing wildcard (`user.*`) and any other mix (`tenant.*.user.*`).
-- `Match` never allocates, whatever the kind.
-- A `Pattern` is a small value: copy it, compare its `Kind`, keep it in a slice.
-- Callers that index many patterns use `Kind` and `SimplePrefix` to skip `Match` for most of them (an exact pattern in a map, a trailing wildcard in a map by prefix).
+- Two wildcards, as in `.gitignore` and the common message brokers: `*` for exactly one segment, a trailing `**` for one or more.
+- `Match` never allocates, and stops at the first segment that differs, so a long hostile topic costs no more than its first mismatch.
+- `NewPattern` doesn't allocate for exact, global and trailing-`**` patterns.
+- Callers that index many patterns use `Kind` and `SimplePrefix` to skip `Match` for most of them: an exact pattern in a map, a trailing-`**` pattern in a map by prefix.
 
 ## Usage
 
@@ -36,10 +36,10 @@ import (
 )
 
 func main() {
-	p := pattern.NewPattern("tenant.*.user.*")
-	fmt.Println(p.Match("tenant.abc.user.created"))
-	fmt.Println(p.Match("tenant.abc.user"))
-	fmt.Println(pattern.NewPattern("user.*").SimplePrefix())
+	fmt.Println(pattern.NewPattern("chat.*").Match("chat.room1"))
+	fmt.Println(pattern.NewPattern("chat.*").Match("chat.room1.typing"))
+	fmt.Println(pattern.NewPattern("chat.**").Match("chat.room1.typing"))
+	fmt.Println(pattern.NewPattern("chat.**").SimplePrefix())
 }
 ```
 
@@ -48,25 +48,20 @@ Output:
 ```console
 true
 false
-user
+true
+chat
 ```
 
 ## Syntax
 
-A pattern and a topic are split into segments at each `.`. A segment of the pattern that is exactly `*` is a wildcard. Any other segment, including one that only contains a `*` (`a*`, `**`), must equal the topic's segment byte for byte. Matching is case-sensitive.
+A pattern and a topic are split into segments at each `.`. Matching is case-sensitive.
 
-| Pattern | Matches | Does not match |
-|---|---|---|
-| `user.created` | `user.created` | `user.updated`, `user.created.extra`, `user` |
-| `*` | every topic, the empty one included | |
-| `user.*` | `user.created`, `user.profile.updated` | `user`, `userx.created`, `order.created` |
-| `*.created` | `user.created`, `order.created` | `a.b.created`, `user.updated` |
-| `tenant.*.user.created` | `tenant.1.user.created` | `tenant.1.2.user.created`, `tenant.user.created` |
-| `tenant.*.user.*` | `tenant.1.user.created`, `tenant.1.user.profile.updated` | `tenant.1.user`, `tenant.1.admin.created` |
+- `*` as a whole segment matches exactly one segment, in any position.
+- `**` as the last segment matches one or more segments. `chat.**` doesn't match `chat`.
+- `**` alone matches every topic. `*` alone matches single-segment topics only.
+- Everything else is literal text: `*` inside a segment (`a*b`), `**` in any position but the last (`a.**.b`), and `>`.
 
-- A `*` segment in any position but the last matches exactly one segment.
-- A `*` as the last segment matches one or more segments.
-- `*` alone matches any topic.
+Every rule with its examples is in [MATCHING.md](MATCHING.md). A test generates that file from `Match` itself and fails when it is out of date, so it is always the actual behavior. To regenerate it, run `go test ./pattern -run TestMatchingTableIsUpToDate -update-matching`.
 
 ## Functions
 
@@ -78,8 +73,8 @@ func NewPattern(raw string) Pattern
 
 Parses `raw` and picks its [kind](#kind-values). It never fails: every string is a valid pattern.
 
-- Exact, global and trailing wildcard patterns don't allocate. Other patterns allocate their list of segments once.
-- The returned `Pattern` refers to `raw`; it keeps no other state and is safe for concurrent use.
+- Exact, global and trailing-`**` patterns don't allocate. Other patterns allocate their list of segments once.
+- The returned `Pattern` refers to `raw`. It keeps no other state and is safe for concurrent use.
 
 ## Pattern methods
 
@@ -105,39 +100,36 @@ Returns the kind `NewPattern` picked, see [Kind values](#kind-values).
 func (p Pattern) SimplePrefix() string
 ```
 
-For a `KindSuffixWildcard` pattern, the part before the trailing `.*` (`user.*` gives `user`). A topic matches such a pattern when it starts with that prefix and a `.`, followed by at least one byte. For every other kind it returns `""`.
+For a `KindSuffixWildcard` pattern, the part before the trailing `.**` (`user.**` gives `user`). A topic matches such a pattern when it starts with that prefix and a `.`, followed by at least one byte. For every other kind it returns `""`.
 
-### Raw, IsExact, IsGlobal
+### Raw and IsExact
 
 ```go
 func (p Pattern) Raw() string
 func (p Pattern) IsExact() bool
-func (p Pattern) IsGlobal() bool
 ```
 
-`Raw` returns the string given to `NewPattern`. `IsExact` and `IsGlobal` are shorthands for `Kind() == KindExact` and `Kind() == KindGlobal`.
+`Raw` returns the string given to `NewPattern`. `IsExact` is a shorthand for `Kind() == KindExact`.
 
 ## Kind values
 
 | Kind | Pattern | How `Match` decides |
 |---|---|---|
-| `KindExact` | no `*` segment (`user.created`) | string equality |
-| `KindGlobal` | `*` | always true |
-| `KindSuffixWildcard` | one `*`, as the last segment (`user.*`, `a.b.*`) | a prefix check |
-| `KindComplex` | any other `*` (`*.created`, `tenant.*.user.*`) | segment by segment, without splitting the topic |
+| `KindExact` | no wildcard (`user.created`, `a*b`, `a.**.b`) | string equality |
+| `KindGlobal` | `**` | always true |
+| `KindSuffixWildcard` | literal segments, then a trailing `**` (`user.**`, `a.b.**`) | a prefix check |
+| `KindComplex` | any other wildcard (`*`, `user.*`, `*.created`, `tenant.*.user.**`) | segment by segment, in place |
 
 ## Edge cases
 
-Empty segments (two dots in a row, a leading or trailing dot) are segments like any other:
+Topics should not hold empty segments (two dots in a row, a leading or a trailing dot). If one does, the empty segment is a segment like any other, except after a trailing-`**` prefix:
 
 | Pattern | Topic | Match |
 |---|---|---|
-| `user.*` | `user.` | no: nothing follows the prefix |
-| `user.*` | `user..x` | yes |
+| `chat.**` | `chat.` | no: nothing follows the prefix |
+| `chat.*.**` | `chat.room1.` | yes |
 | `*.created` | `.created` | yes: the first segment is empty |
-| `a.*.b` | `a..b` | yes |
 | `""` (empty) | `""` | yes |
-| `""` (empty) | `a` | no |
 
 ## Benchmarks
 
@@ -145,13 +137,14 @@ Empty segments (two dots in a row, a leading or trailing dot) are segments like 
 
 | Benchmark | ns/op | B/op | allocs/op |
 |---|---|---|---|
-| `NewPattern_Exact` | 12.5 | 0 | 0 |
-| `NewPattern_SuffixWildcard` | 12.5 | 0 | 0 |
-| `NewPattern_Complex` | 68.4 | 64 | 1 |
+| `NewPattern_Exact` | 20.8 | 0 | 0 |
+| `NewPattern_SuffixWildcard` | 31.1 | 0 | 0 |
+| `NewPattern_Complex` | 84.8 | 64 | 1 |
 | `Match_Exact` | 3.9 | 0 | 0 |
-| `Match_Global` | 3.7 | 0 | 0 |
-| `Match_SuffixWildcard_OneSegment` | 6.0 | 0 | 0 |
-| `Match_SuffixWildcard_Miss` | 6.1 | 0 | 0 |
-| `Match_SuffixWildcard_DeepTopic` | 5.1 | 0 | 0 |
-| `Match_Complex_3Seg` | 36.9 | 0 | 0 |
-| `Match_Complex_MiddleAndTrailing` | 30.1 | 0 | 0 |
+| `Match_Global` | 4.9 | 0 | 0 |
+| `Match_SuffixWildcard_OneSegment` | 6.8 | 0 | 0 |
+| `Match_SuffixWildcard_Miss` | 6.8 | 0 | 0 |
+| `Match_SuffixWildcard_DeepTopic` | 5.3 | 0 | 0 |
+| `Match_Complex_3Seg` | 50.7 | 0 | 0 |
+| `Match_Complex_MiddleAndTrailing` | 38.9 | 0 | 0 |
+| `Match_Complex_LongHostileTopic` | 15.7 | 0 | 0 |

@@ -70,22 +70,58 @@ func TestWrapLogger_MultiSegmentExactRule_MatchesOnlyItsOwnSuffix(t *testing.T) 
 	}
 }
 
-func TestWrapLogger_WildcardRule_MasksNestedLeavesKeepsStructure(t *testing.T) {
-	cap := &capturingLogger{}
-	l := WrapLogger(cap, []string{"password.*"})
-	l.Info("test", "password", map[string]any{
-		"person": map[string]any{
-			"value": "secret",
-		},
-	})
-
-	password := cap.args()[1].(map[string]any)
-	person, ok := password["person"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected password.person to remain a map, got %T", password["person"])
+func TestWrapLogger_WildcardRule_MasksMatchingNodeWhole(t *testing.T) {
+	for _, rule := range []string{"password.*", "password.**"} {
+		cap := &capturingLogger{}
+		WrapLogger(cap, []string{rule}).Info("test", "password", map[string]any{
+			"person": map[string]any{"value": "secret"},
+		})
+		password := cap.args()[1].(map[string]any)
+		if password["person"] != maskPlaceholder {
+			t.Error(test.DiffMessage(password["person"], maskPlaceholder, rule+" should mask password.person whole, children included"))
+		}
 	}
-	if person["value"] != maskPlaceholder {
-		t.Error(test.DiffMessage(person["value"], maskPlaceholder, "password.* should mask the nested leaf value"))
+}
+
+func TestWrapLogger_WildcardRule_OneSegmentOrMore(t *testing.T) {
+	value := map[string]any{"card": map[string]any{"cvv": "1"}}
+	cases := []struct {
+		rule string
+		want any
+	}{
+		{"user.*.cvv", maskPlaceholder},
+		{"user.**", maskPlaceholder},
+		{"user.*.*.cvv", "1"},
+	}
+	for _, c := range cases {
+		cap := &capturingLogger{}
+		WrapLogger(cap, []string{c.rule}).Info("test", "user", value)
+		user := cap.args()[1].(map[string]any)
+		got := user["card"]
+		if card, ok := got.(map[string]any); ok {
+			got = card["cvv"]
+		}
+		if got != c.want {
+			t.Error(test.DiffMessage(got, c.want, "rule "+c.rule+" on user.card.cvv"))
+		}
+	}
+}
+
+func TestWrapLogger_WildcardRule_MatchesAnySuffixOfThePath(t *testing.T) {
+	cap := &capturingLogger{}
+	WrapLogger(cap, []string{"card.*"}).Info("test", "user", map[string]any{"card": map[string]any{"cvv": "1", "brand": "visa"}})
+	card := cap.args()[1].(map[string]any)["card"].(map[string]any)
+	if card["cvv"] != maskPlaceholder || card["brand"] != maskPlaceholder {
+		t.Error(test.DiffMessage(card, map[string]any{"cvv": maskPlaceholder, "brand": maskPlaceholder}, "card.* masks user.card.cvv through the suffix card.cvv"))
+	}
+}
+
+func TestWrapLogger_WildcardRule_MasksSlogGroupWhole(t *testing.T) {
+	cap := &capturingLogger{}
+	WrapLogger(cap, []string{"user.*"}).Info("test", slog.Group("user", slog.Group("card", slog.String("cvv", "1"))))
+	got := cap.args()[0].(slog.Attr).Value.Group()[0]
+	if got.Value.String() != maskPlaceholder {
+		t.Error(test.DiffMessage(got.Value.String(), maskPlaceholder, "user.* masks the group user.card whole"))
 	}
 }
 
@@ -117,7 +153,7 @@ func TestWrapLogger_TaggedStructUnderWildcardRule(t *testing.T) {
 		Value string `log:"value"`
 	}
 	cap := &capturingLogger{}
-	l := WrapLogger(cap, []string{"password.*"})
+	l := WrapLogger(cap, []string{"person.*"})
 	l.Info("test", "password", map[string]any{"person": Person{Value: "secret"}})
 
 	password := cap.args()[1].(map[string]any)

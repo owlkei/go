@@ -310,7 +310,12 @@ The built-in JSON logger writes `{"time":"…","level":"INFO","msg":"SignedIn","
 
 ## Masking
 
-A value's path is its key, then the keys under it joined by `.` (`user.password`). Elements of a slice or array have the path of the slice. A matched value is replaced by `[REDACTED]`. Matching ignores ASCII case.
+A value's path is its key, then the keys under it joined by `.` (`user.password`). Elements of a slice or array have the path of the slice. Matching ignores ASCII case.
+
+Rules use the syntax of the [`pattern`](../pattern/README.md) package: segments separated by `.`, where `*` matches exactly one segment and a trailing `**` matches one or more.
+
+- **A rule matches any end of the path.** The rule is compared with the whole path, then with the path without its first segment, and so on: `card.*` matches `user.card.cvv` through `card.cvv`. A match needs whole segments.
+- **A match replaces the value whole.** A struct, map, slice or `slog.Group` whose path matches becomes `[REDACTED]`, children included.
 
 | Rule | Path | Masked |
 |---|---|---|
@@ -318,10 +323,13 @@ A value's path is its key, then the keys under it joined by `.` (`user.password`
 | `password` | `mypassword`, `userpassword` | no |
 | `user.password` | `user.password`, `a.user.password` | yes |
 | `user.password` | `admin.password` | no |
-| `password.*` | `password.person.value` | yes, the leaves under it; the structure is kept |
-| `password.*` | `password` | no |
+| `password.*` | `password.person` | yes, the value whole, so `password.person.value` too |
+| `password.*` | `password` | no: `*` needs one segment |
+| `card.*` | `user.card.cvv` | yes, through the end `card.cvv` |
+| `user.*.cvv` | `user.card.cvv` | yes |
+| `user.**` | `user.card`, `user.card.cvv` | yes |
+| `user.*.*.cvv` | `user.card.cvv` | no: two segments wanted, one present |
 
-- A rule without `*` that matches a struct, map or slice replaces it whole.
 - Masking reaches struct fields, map values, slice and array elements, `slog.Attr` arguments and the attributes of a `slog.Group`, at any depth up to the limits below.
 - A tagged field is matched by its tag name.
 - An error, a `Stringer` or a `LogValuer` is masked only when its own path matches; its text is never searched.

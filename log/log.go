@@ -280,7 +280,7 @@ func isPlainField(v string) bool {
 }
 
 func (l *logger) masked(key string) bool {
-	return len(l.conv.rules) > 0 && l.conv.leafMasked(lowerASCII(key))
+	return len(l.conv.rules) > 0 && l.conv.masked(lowerASCII(key))
 }
 
 func (l *logger) log(level slog.Level, msg string, args []any) {

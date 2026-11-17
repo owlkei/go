@@ -4,6 +4,11 @@ import (
 	"strings"
 )
 
+const (
+	singleWildcard = "*"
+	multiWildcard  = "**"
+)
+
 type Kind uint8
 
 const (
@@ -21,21 +26,41 @@ type Pattern struct {
 }
 
 func NewPattern(raw string) Pattern {
-	if raw == "*" {
+	if raw == multiWildcard {
 		return Pattern{raw: raw, kind: KindGlobal}
 	}
-	if !hasWildSegment(raw) {
+	prefix, last, found := cutLast(raw)
+	hasSingle := hasSingleWildcard(prefix)
+	if !hasSingle && (last != multiWildcard || !found) && last != singleWildcard {
 		return Pattern{raw: raw, kind: KindExact}
 	}
-	if n := len(raw); n >= 2 && raw[n-2:] == ".*" && !hasWildSegment(raw[:n-2]) {
-		return Pattern{raw: raw, kind: KindSuffixWildcard, dotted: raw[:n-1]}
+	if found && last == multiWildcard && !hasSingle && !hasMultiWildcard(prefix) {
+		return Pattern{raw: raw, kind: KindSuffixWildcard, dotted: raw[:len(prefix)+1]}
 	}
 	return Pattern{raw: raw, segments: strings.Split(raw, "."), kind: KindComplex}
 }
 
-func hasWildSegment(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '*' && (i == 0 || s[i-1] == '.') && (i == len(s)-1 || s[i+1] == '.') {
+func cutLast(raw string) (prefix, last string, found bool) {
+	i := strings.LastIndexByte(raw, '.')
+	if i < 0 {
+		return "", raw, false
+	}
+	return raw[:i], raw[i+1:], true
+}
+
+func hasSingleWildcard(s string) bool {
+	return hasSegment(s, singleWildcard)
+}
+
+func hasMultiWildcard(s string) bool {
+	return hasSegment(s, multiWildcard)
+}
+
+func hasSegment(s, seg string) bool {
+	for s != "" {
+		var cur string
+		cur, s, _ = strings.Cut(s, ".")
+		if cur == seg {
 			return true
 		}
 	}
@@ -74,29 +99,28 @@ func (p Pattern) IsExact() bool {
 	return p.kind == KindExact
 }
 
-func (p Pattern) IsGlobal() bool {
-	return p.kind == KindGlobal
-}
-
 func (p Pattern) matchSegments(topic string) bool {
-	rest, done := topic, false
+	rest, exhausted := topic, false
 	last := len(p.segments) - 1
-	for i, want := range p.segments {
-		if done {
+	for i, seg := range p.segments {
+		if exhausted {
 			return false
 		}
-		if want == "*" && i == last {
+		if seg == multiWildcard && i == last {
 			return true
 		}
-		seg := rest
-		if j := strings.IndexByte(rest, '.'); j >= 0 {
-			seg, rest = rest[:j], rest[j+1:]
-		} else {
-			done = true
-		}
-		if want != "*" && want != seg {
+		var current string
+		current, rest, exhausted = cutSegment(rest)
+		if seg != singleWildcard && seg != current {
 			return false
 		}
 	}
-	return done
+	return exhausted
+}
+
+func cutSegment(s string) (current, rest string, exhausted bool) {
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		return s[:i], s[i+1:], false
+	}
+	return s, "", true
 }
