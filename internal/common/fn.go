@@ -209,7 +209,7 @@ func ToWSEventName(s string) string {
 
 func httpHandlerTargets(r *HTTP, handlers []any, category string, layerType reflect.Type) handlerTargets {
 	return resolveHandlerTargets(handlers, category, layerType, func(fnName string) (string, bool) {
-		pattern, ok := r.FuncNameToPatternMap[fnName]
+		pattern, ok := r.funcNameToPatternMap[fnName]
 		return pattern, ok
 	}, func(fnName string) bool {
 		_, ok := ParseWSFuncNameToEvent(fnName)

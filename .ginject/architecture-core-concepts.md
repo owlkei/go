@@ -160,7 +160,7 @@ callOnReady()              then the app is marked created
 ```
 1. App.ServeHTTP(w, r)
    └─ a request with a body: r.Body = http.MaxBytesReader(w, r.Body, cap) (cap > 0)
-   └─ app.ctxPool.Get() → *httpExchange (context + tracking writer), c.Init(&ex.writer, r)
+   └─ app.ctxPool.Get() → *httpExchange (context + tracking writer), ctx.HTTPInit(c, &ex.writer, r)
       (Init builds the trace scope with tracecontext.NewRequest and sets c.Request = r.WithContext(scope ctx))
    └─ ex.scope = ScopeOf(c.Request.Context()); X-Request-Id + Traceparent set from scope.Headers(); Tracer.Enabled() asked once
 2. HTTP.handleRequest (the only defer / recover)
@@ -170,7 +170,7 @@ callOnReady()              then the app is marked created
    └─ panics routed per request-pipeline.md § 1
 3. Result written by its kind (core/README.md › Results)
 4. With a listener: the complete event (Code = the status written)
-5. app.releaseCtx(ex): c.Reset() (keeps slice capacity), back to the pool
+5. app.releaseCtx(ex): ctx.HTTPReset(c) (keeps slice capacity), back to the pool
 ```
 
 **Performance**: measured numbers are in `core/README.md` › Benchmarks (a static route is about 0.9 µs and 7 allocations).
@@ -210,7 +210,7 @@ type HTTPContext struct {
     *http.Request              // Raw request
     http.ResponseWriter        // Raw response writer
     
-    scope *tracecontext.Scope  // trace scope built in Init; GetID() = scope.Request (16 lowercase hex)
+    scope *tracecontext.Scope  // trace scope built in HTTPInit; ID() = scope.Request (16 lowercase hex)
     
     body Body                  // Parsed request body
     form Form                  // Form data
@@ -218,29 +218,36 @@ type HTTPContext struct {
     query Query                // Query parameters
     header Header              // Headers
     param Param                // Path parameters
-    aggregations []*aggregation.Aggregation // AddAggregation / Aggregations, per request
-    ParamKeys map[string][]int // Indices of dynamic path params
-    ParamValues []string       // Values of dynamic path params
+    aggregations []*aggregation.Aggregation // ctx.HTTPAddAggregation / HTTPAggregations, per request
+    paramKeys map[string][]int // Indices of dynamic path params (ctx.HTTPSetParams)
+    paramValues []string       // Values of dynamic path params (ctx.HTTPParamValues)
     
-    Next Next                  // Middleware chain continuation
-    Code int                   // HTTP status code (defaults to http.StatusOK)
-    Timestamp time.Time        // Request start time
+    next Next                  // Middleware chain continuation (ctx.HTTPNext / HTTPSetNext)
+    code int                   // HTTP status code, defaults to http.StatusOK (ctx.HTTPCode / HTTPSetCode, Status)
+    timestamp time.Time        // Request start time (ctx.HTTPTimestamp)
 }
 ```
+
+Hook rule (design 0017 D3): what `core` needs from a context and users must not touch is a package
+function of `internal/ctx` (`ctx.HTTPReset(c)`), never a method or exported field, which would stay
+reachable through the root alias `ginject.HTTPContext`. The same holds for `aggregation`
+(`aggregation.SetMainData(a, d)`, `Aggregate(a)`, `Name`, `InterceptorData`, `IsMainHandlerCalled`)
+and the `common` embeds (`common.HTTPRouterMap(h)`, `common.AddHandlerToRouterMap(h, …)`,
+`common.InjectProvidersIntoHTTPGuards(g, …)`).
 
 **No `Deadline` field, `SetDeadline()`, or `IsDeadlineExceeded()` method exist on `HTTPContext`** — verified absent from `ctx/http_context.go`. Do not generate code that calls them. There is no per-request deadline API in this framework; the only timeouts are server-level (`http.Server.ReadTimeout`/`WriteTimeout`/etc., fixed by the serving call, `core/server.go` — see invariant #8 below).
 
 **Lifecycle**:
 1. Allocated from pool via `app.ctxPool.Get()`
-2. Initialized via `c.Init(w, r)`
+2. Initialized via `ctx.HTTPInit(c, w, r)`
 3. Used throughout request processing
-4. Reset via `c.Reset()` which clears all fields (no reference to the request, writer or parsed input survives); the scope pointer is dropped, never the scope: a kept `c.Context()` still reads its IDs
+4. Reset via `ctx.HTTPReset(c)` which clears all fields (no reference to the request, writer or parsed input survives); the scope pointer is dropped, never the scope: a kept `c.Context()` still reads its IDs
 5. Returned to pool via `app.ctxPool.Put(c)` for reuse
 
 **Operations**:
-- `Status(code) *HTTPContext` — sets `c.Code`; chainable, call before `JSON`/`Text` since they write using whatever `Code` was last set
-- `Text(data string, args ...any)` / `JSON(data any, args ...any)` / `JSONP(data any, args ...any)` — write response using the current `Code`; a `JSON` encoding error panics with a 500 exception before anything is written
-- `Redirect(url)` — HTTP redirect with `Code` when it is 3xx, else 301
+- `Status(code) *HTTPContext` — sets the status code; chainable, call before `JSON`/`Text` since they write using whatever code was last set
+- `Text(data string, args ...any)` / `JSON(data any, args ...any)` / `JSONP(data any, args ...any)` — write response using the current status code; a `JSON` encoding error panics with a 500 exception before anything is written
+- `Redirect(url)` — HTTP redirect with the status code when it is 3xx, else 301
 
 ### 3.2 WSContext Structure
 
@@ -248,7 +255,7 @@ type HTTPContext struct {
 ```go
 type WSContext struct {
     *websocket.Conn            // Raw WebSocket connection
-    scope *tracecontext.Scope  // message scope built in Init; GetID() = scope.Message
+    scope *tracecontext.Scope  // message scope built in WSInit; ID() = scope.Message
     ctx context.Context        // the message context (carries the scope); SetContext keeps the scope nearest
     
     wsPayload *WSPayload       // Parsed incoming message
@@ -355,7 +362,7 @@ HTTP response written (or WS message sent)
 
 **Filter Interface**:
 ```go
-type ExceptionFilterable any // matched by its method:
+any // bound as any, matched by its method:
 // Catch(*ctx.HTTPContext, *exception.Exception)
 ```
 

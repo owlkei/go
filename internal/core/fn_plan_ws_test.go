@@ -57,8 +57,8 @@ func (planWSBadCtl) Unknown(c *ctx.WSContext, n int) {}
 
 func planWSContext() *ctx.WSContext {
 	c := ctx.NewWSContext()
-	c.Init(&websocket.Conn{})
-	c.SetWSPayload(ctx.WSPayload{"k": "v"})
+	ctx.WSInit(c, &websocket.Conn{})
+	ctx.WSSetPayload(c, ctx.WSPayload{"k": "v"})
 	return c
 }
 
@@ -102,7 +102,7 @@ func TestWSHandlerPlan_InjectsNext(t *testing.T) {
 	planResetState(t)
 	h := &planWSCtl{}
 	c := planWSContext()
-	c.Next = func() { planNextCalls++ }
+	ctx.WSSetNext(c, func() { planNextCalls++ })
 	planWS(t, h, "WNext", nil).invoke(c, &trace.Tracer{})
 	if planNextCalls != 1 {
 		t.Error(test.DiffMessage(planNextCalls, 1, "B1, B8: ctx.Next acts on c.Next"))
@@ -125,7 +125,7 @@ func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	recv, method := planMethod(t, h, "WAll")
 	plan := newWSHandlerPlan(recv, method, nil, planCtr)
 	c := planWSContext()
-	c.Next = func() { planNextCalls++ }
+	ctx.WSSetNext(c, func() { planNextCalls++ })
 
 	planPipeCalls = nil
 	handler := recv.MethodByName(method.Name)
@@ -141,7 +141,7 @@ func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 		case reflect.TypeOf(ctx.WSPayload(nil)):
 			args[i] = reflect.ValueOf(c.WSPayload())
 		case reflect.TypeOf(func() {}):
-			args[i] = reflect.ValueOf(c.Next)
+			args[i] = reflect.ValueOf(ctx.WSNext(c))
 		case reflect.TypeOf((*common.Publisher)(nil)).Elem():
 			args[i] = reflect.ValueOf(pub)
 		default:
@@ -266,8 +266,8 @@ func TestWSHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
 		t.Fatal(test.DiffMessage(len(got), 1, "B13: one pipe event for one pipe"))
 	}
 	e := got[0]
-	if e.ID != c.GetID() || e.ID == "" {
-		t.Error(test.DiffMessage(e.ID, c.GetID(), "B13: ID"))
+	if e.ID != c.ID() || e.ID == "" {
+		t.Error(test.DiffMessage(e.ID, c.ID(), "B13: ID"))
 	}
 	if want := reflect.TypeOf(recWSPayloadPipe{}).String(); e.Name != want {
 		t.Error(test.DiffMessage(e.Name, want, "B13: Name is the parameter type"))

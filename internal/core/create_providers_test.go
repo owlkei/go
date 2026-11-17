@@ -20,10 +20,10 @@ func (p pvOnceProvider) NewProvider() Provider {
 func TestProviders_ConstructedOncePerApp(t *testing.T) {
 	pvBuilt.Store(0)
 
-	shared := ModuleBuilder().Providers(pvOnceProvider{}).Build()
-	left := ModuleBuilder().Imports(shared).Providers(pvOnceProvider{}).Build()
-	right := ModuleBuilder().Imports(shared).Providers(pvOnceProvider{}).Build()
-	mustCreate(t, New(), ModuleBuilder().Imports(left, right).Providers(pvOnceProvider{}).Build())
+	shared := NewModuleBuilder().Providers(pvOnceProvider{}).Build()
+	left := NewModuleBuilder().Imports(shared).Providers(pvOnceProvider{}).Build()
+	right := NewModuleBuilder().Imports(shared).Providers(pvOnceProvider{}).Build()
+	mustCreate(t, New(), NewModuleBuilder().Imports(left, right).Providers(pvOnceProvider{}).Build())
 
 	if got := pvBuilt.Load(); got != 1 {
 		t.Error(test.DiffMessage(got, int64(1), "P1: a provider type is constructed once per app, however many modules list it"))
@@ -49,7 +49,7 @@ func (p pvTagReader) NewProvider() Provider {
 func TestProviders_DependenciesFirst_SameModule(t *testing.T) {
 	pvSeen = createRecorder{}
 
-	mustCreate(t, New(), ModuleBuilder().Providers(pvTagReader{}, pvTagProvider{}).Build())
+	mustCreate(t, New(), NewModuleBuilder().Providers(pvTagReader{}, pvTagProvider{}).Build())
 
 	if got := sprint(pvSeen.list()); got != "[reader:built]" {
 		t.Error(test.DiffMessage(got, "[reader:built]", "P2: a dependency declared later is constructed first and injected as built"))
@@ -71,9 +71,9 @@ func (p pvChainC) NewProvider() Provider { pvChain.add("C"); return p }
 func TestProviders_DependenciesFirst_AcrossModules(t *testing.T) {
 	pvChain = createRecorder{}
 
-	leaf := ModuleBuilder().Providers(pvChainA{}).Build()
-	middle := ModuleBuilder().Imports(leaf).Providers(pvChainB{}).Build()
-	root := ModuleBuilder().Imports(middle).Providers(pvChainC{}).Build()
+	leaf := NewModuleBuilder().Providers(pvChainA{}).Build()
+	middle := NewModuleBuilder().Imports(leaf).Providers(pvChainB{}).Build()
+	root := NewModuleBuilder().Imports(middle).Providers(pvChainC{}).Build()
 	mustCreate(t, New(), root)
 
 	if got := sprint(pvChain.list()); got != "[A B C]" {
@@ -100,10 +100,10 @@ func (p pvGlobalUser) NewProvider() Provider {
 func TestProviders_GlobalInjectedConstructed(t *testing.T) {
 	pvGlobalSeen = createRecorder{}
 
-	user := ModuleBuilder().Providers(pvGlobalUser{}).Build()
-	global := ModuleBuilder().Providers(pvGlobalDep{}).Build()
+	user := NewModuleBuilder().Providers(pvGlobalUser{}).Build()
+	global := NewModuleBuilder().Providers(pvGlobalDep{}).Build()
 	global.IsGlobal = true
-	mustCreate(t, New(), ModuleBuilder().Imports(user, global).Build())
+	mustCreate(t, New(), NewModuleBuilder().Imports(user, global).Build())
 
 	if got := sprint(pvGlobalSeen.list()); got != "[user:built]" {
 		t.Error(test.DiffMessage(got, "[user:built]", "P3: a global provider injected into a module that does not import it is the constructed one"))
@@ -113,8 +113,8 @@ func TestProviders_GlobalInjectedConstructed(t *testing.T) {
 func TestProviders_RootProviderInjectedConstructed(t *testing.T) {
 	pvGlobalSeen = createRecorder{}
 
-	user := ModuleBuilder().Providers(pvGlobalUser{}).Build()
-	mustCreate(t, New(), ModuleBuilder().Imports(user).Providers(pvGlobalDep{}).Build())
+	user := NewModuleBuilder().Providers(pvGlobalUser{}).Build()
+	mustCreate(t, New(), NewModuleBuilder().Imports(user).Providers(pvGlobalDep{}).Build())
 
 	if got := sprint(pvGlobalSeen.list()); got != "[user:built]" {
 		t.Error(test.DiffMessage(got, "[user:built]", "P3: a root provider injected into an imported module is the constructed one"))
@@ -140,13 +140,13 @@ func (p pvDeepUser) NewProvider() Provider {
 func TestProviders_GlobalAtDepthTwo(t *testing.T) {
 	pvDeepSeen = createRecorder{}
 
-	global := ModuleBuilder().Providers(pvDeepDep{}).Build()
+	global := NewModuleBuilder().Providers(pvDeepDep{}).Build()
 	global.IsGlobal = true
-	holder := ModuleBuilder().Imports(global).Build()
-	user := ModuleBuilder().Providers(pvDeepUser{}).Build()
+	holder := NewModuleBuilder().Imports(global).Build()
+	user := NewModuleBuilder().Providers(pvDeepUser{}).Build()
 
 	text, panicked := createPanicText(func() {
-		New().Create(ModuleBuilder().Imports(holder, user).Build())
+		New().Create(NewModuleBuilder().Imports(holder, user).Build())
 	})
 	if panicked {
 		t.Fatal(test.DiffMessage(text, "no panic", "P4: a global module imported below the root is visible to every module"))
@@ -166,7 +166,7 @@ func (p pvUnresolvedUser) NewProvider() Provider { return p }
 
 func TestProviders_UnresolvedPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(ModuleBuilder().Providers(pvUnresolvedUser{}).Build())
+		New().Create(NewModuleBuilder().Providers(pvUnresolvedUser{}).Build())
 	})
 
 	want := "dependency injection: can't resolve dependency 'core.pvUnresolvedDep' of the provider"
@@ -183,7 +183,7 @@ func (p pvHiddenUser) NewProvider() Provider { return p }
 
 func TestProviders_UnexportedFieldPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(ModuleBuilder().Providers(pvHiddenUser{}, pvUnresolvedDep{}).Build())
+		New().Create(NewModuleBuilder().Providers(pvHiddenUser{}, pvUnresolvedDep{}).Build())
 	})
 
 	want := "dependency injection: can't set value to unexported 'hidden' field of the core.pvHiddenUser provider"

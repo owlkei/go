@@ -23,9 +23,9 @@ func verApp(t *testing.T, defaultVersion string) *App {
 	t.Helper()
 	lcReset(t)
 	app := New()
-	app.EnableVersioning(versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version", DefaultVersion: defaultVersion})
+	app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version", DefaultVersion: defaultVersion})
 	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
-	app.Create(ModuleBuilder().Controllers(verController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(verController{}).Build())
 	return app
 }
 

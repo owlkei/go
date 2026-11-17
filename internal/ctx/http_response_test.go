@@ -89,7 +89,7 @@ func TestHTTPContext_TextStatusFromCode(t *testing.T) {
 	c, w := newResponseContext("/")
 	c.Status(http.StatusAccepted).Text("queued")
 	if w.Code != http.StatusAccepted {
-		t.Error(test.DiffMessage(w.Code, http.StatusAccepted, "B29: Text should write c.Code"))
+		t.Error(test.DiffMessage(w.Code, http.StatusAccepted, "B29: Text should write HTTPCode(c)"))
 	}
 }
 
@@ -150,7 +150,7 @@ func TestHTTPContext_JSON(t *testing.T) {
 			t.Error(test.DiffMessage(got, []string{"application/json"}, "B30: JSON of "+name+" should set exactly one Content-Type value"))
 		}
 		if w.Code != http.StatusOK {
-			t.Error(test.DiffMessage(w.Code, http.StatusOK, "B30: JSON of "+name+" should write c.Code"))
+			t.Error(test.DiffMessage(w.Code, http.StatusOK, "B30: JSON of "+name+" should write HTTPCode(c)"))
 		}
 	}
 }
@@ -160,7 +160,7 @@ func TestHTTPContext_JSONStatusFromCode(t *testing.T) {
 	c.Status(http.StatusCreated)
 	jsonOK(t, c, Map{"ok": true})
 	if w.Code != http.StatusCreated {
-		t.Error(test.DiffMessage(w.Code, http.StatusCreated, "B30: JSON should write c.Code"))
+		t.Error(test.DiffMessage(w.Code, http.StatusCreated, "B30: JSON should write HTTPCode(c)"))
 	}
 }
 
@@ -213,7 +213,7 @@ func TestHTTPContext_JSONAppenderWithStatus(t *testing.T) {
 	c.Status(http.StatusBadRequest)
 	jsonOK(t, c, jsonAppenderValue{body: `{"error":"x"}`})
 	if w.Code != http.StatusBadRequest || w.Body.String() != `{"error":"x"}` {
-		t.Error(test.DiffMessage([2]any{w.Code, w.Body.String()}, [2]any{http.StatusBadRequest, `{"error":"x"}`}, "B30: JSON of a JSONAppender should write c.Code"))
+		t.Error(test.DiffMessage([2]any{w.Code, w.Body.String()}, [2]any{http.StatusBadRequest, `{"error":"x"}`}, "B30: JSON of a JSONAppender should write HTTPCode(c)"))
 	}
 }
 
@@ -332,7 +332,7 @@ func TestHTTPContext_JSONP(t *testing.T) {
 		t.Error(test.DiffMessage(got, []string{"text/javascript; charset=utf-8"}, "B31: JSONP should set the JavaScript Content-Type"))
 	}
 	if w.Code != http.StatusOK {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "B31: JSONP should write c.Code"))
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "B31: JSONP should write HTTPCode(c)"))
 	}
 }
 
@@ -341,7 +341,7 @@ func TestHTTPContext_JSONPStatusAndRawString(t *testing.T) {
 	c.Status(http.StatusCreated)
 	jsonpOK(t, c, `{"rate":"100%"}`)
 	if w.Code != http.StatusCreated {
-		t.Error(test.DiffMessage(w.Code, http.StatusCreated, "B31: JSONP should write c.Code"))
+		t.Error(test.DiffMessage(w.Code, http.StatusCreated, "B31: JSONP should write HTTPCode(c)"))
 	}
 	expected := `/**/ typeof cb === 'function' && cb({"rate":"100%"});`
 	if w.Body.String() != expected {

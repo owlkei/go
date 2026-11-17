@@ -40,7 +40,7 @@ func main() {
 	app.BindGlobalMiddlewares(compress.Compress{})
 
 	app.Create(
-		core.ModuleBuilder().Build(),
+		core.NewModuleBuilder().Build(),
 	)
 }
 ```

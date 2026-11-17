@@ -122,7 +122,7 @@ wants its own response writes it and returns without `next()`.
   filters (module bound last first, global bound last first, the built-in one last), the SERVE index.
 - `next` is one closure and one flag per request (only when a middleware exists), so a `next` kept
   from an earlier request cannot continue a later one. Routes without middleware get a shared no-op
-  `c.Next`.
+  `next` (`ctx.HTTPSetNext`).
 - Every layer receives the same `*responseWriter` as `c.ResponseWriter`; it forwards `Flush`,
   `Hijack`, `ReadFrom` and `Unwrap` (for `http.ResponseController`) and must not be used after the
   request returns: `runHooks` sets its inner writer to nil, so a late write gets `errResponseEnded`
@@ -223,7 +223,7 @@ are `panic(&prebuiltException)` (1.2). Production order: `loadshed`, `proxy`, `h
 
 ### 3.1 Guard Interface
 
-`Guarder` is declared as `type Guarder any` (common/guard.go) — there is NO compile-time interface. The framework matches the method by name and signature (a type assertion to an unexported interface, then the method value, so a guard call costs no reflection) and requires it to match this func type exactly:
+A guard is bound as `any` (common/guard.go) — there is NO compile-time interface. The framework matches the method by name and signature (a type assertion to an unexported interface, then the method value, so a guard call costs no reflection) and requires it to match this func type exactly:
 ```go
 type HTTPCanActivate = func(*ctx.HTTPContext) bool
 ```
@@ -253,7 +253,7 @@ if panic:
 
 ### 3.3 Guard Registration
 
-`Guarder` is an interface — bind a struct implementing `CanActivate`, not a bare func:
+A guard is a value — bind a struct implementing `CanActivate`, not a bare func:
 
 ```go
 type AuthGuard struct{}
@@ -285,7 +285,7 @@ func (c UserController) NewController() Controller {
 
 ### 4.1 Interceptor Interface
 
-`Interceptable` is declared as `type Interceptable any` (common/interceptor.go) — matched by method name and signature against this func shape, not a compile-time interface:
+An interceptor is bound as `any` (common/interceptor.go) — matched by method name and signature against this func shape, not a compile-time interface:
 ```go
 type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 ```
@@ -297,16 +297,16 @@ type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 
 ### 4.2 Intercept() Execution
 
-`Intercept` runs once, before the handler, with a fresh `*aggregation.Aggregation` whose `Name` is
-the interceptor's name; `core` adds it to the context first (`c.AddAggregation`) and stores the return
-value in `aggregation.InterceptorData`. `c.Aggregations()` lists them in execution order. `Reset`
+`Intercept` runs once, before the handler, with a fresh `*aggregation.Aggregation` whose `aggregation.Name` is
+the interceptor's name; `core` adds it to the context first (`ctx.HTTPAddAggregation`) and stores the return
+value with `aggregation.SetInterceptorData`. `ctx.HTTPAggregations(c)` lists them in execution order. `ctx.HTTPReset`
 empties the list and keeps its capacity (one allocation per interceptor per request: the
 aggregation).
 
 ```
 Intercept(httpCtx, aggregation) called before the handler
-    ├─ returns aggregation.Pipe(ops...)  → IsMainHandlerCalled = true: the next interceptor, then the
-    │                                      handler; afterwards SetMainData(data) and Aggregate()
+    ├─ returns aggregation.Pipe(ops...)  → IsMainHandlerCalled(a) = true: the next interceptor, then the
+    │                                      handler; afterwards SetMainData(a, data) and Aggregate(a)
     │                                      apply ops in Pipe argument order
     └─ returns without Pipe              → no later interceptor and no handler run; the returned
                                            value is the data, the operators of the interceptors
@@ -320,16 +320,15 @@ Operators that are created (`Transform`, `Tap`, `Filter`) but not passed to `Pip
 
 ```go
 type Aggregation struct {
-    InterceptorData     any    // what Intercept returned
-    Name                string
-    IsMainHandlerCalled bool   // set by Pipe
-    // main data and piped operators are unexported
+    // no exported field; read by package functions:
+    // aggregation.InterceptorData(a) (what Intercept returned), aggregation.Name(a),
+    // aggregation.IsMainHandlerCalled(a) (set by Pipe); main data and piped operators
 }
 ```
 
 ### 4.4 Interceptor Registration
 
-`Interceptable` is an interface — bind a struct implementing `Intercept`, not a bare func:
+An interceptor is a value — bind a struct implementing `Intercept`, not a bare func:
 
 ```go
 type TimestampInterceptor struct{}
@@ -369,7 +368,7 @@ func (c UserController) NewController() Controller {
 
 ### 5.1 Exception Filter Interface
 
-`ExceptionFilterable` is declared as `type ExceptionFilterable any` (common/exception_filter.go) — matched by method name and signature against this func shape. Note the parameter order: `*ctx.HTTPContext` comes FIRST, `*exception.Exception` SECOND (common/http_exception_filter.go):
+An exception filter is bound as `any` (common/exception_filter.go) — matched by method name and signature against this func shape. Note the parameter order: `*ctx.HTTPContext` comes FIRST, `*exception.Exception` SECOND (common/http_exception_filter.go):
 ```go
 type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
 ```
@@ -424,7 +423,7 @@ app.BindGlobalExceptionFilters(globalHTTPExceptionFilter{})
 
 **Route-Specific Filter**:
 
-`ExceptionFilterable` is `any` — bind a struct implementing `Catch(*ctx.HTTPContext, *exception.Exception)`, not a bare func, and note `httpCtx` comes first:
+An exception filter is `any` — bind a struct implementing `Catch(*ctx.HTTPContext, *exception.Exception)`, not a bare func, and note `httpCtx` comes first:
 
 ```go
 type UserErrorFilter struct{}

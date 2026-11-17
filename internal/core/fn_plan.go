@@ -124,7 +124,7 @@ func (p *handlerPipe[C]) resolveTraced(c C, ev *trace.Tracer, transport string, 
 	defer func() {
 		d := time.Since(start)
 		*elapsed += d
-		ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StagePipe, p.name, transport, d))
+		ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.ID(), trace.StagePipe, p.name, transport, d))
 	}()
 	return p.resolve(c)
 }
@@ -286,7 +286,7 @@ func resolveHTTPArg(a *handlerArg[*ctx.HTTPContext], c *ctx.HTTPContext) reflect
 	case handlerArgRedirect:
 		return reflect.ValueOf(c.Redirect)
 	case handlerArgNext:
-		return reflect.ValueOf(c.Next)
+		return reflect.ValueOf(ctx.HTTPNext(c))
 	case handlerArgFixed:
 		return a.fixed
 	}
@@ -321,7 +321,7 @@ func (p *httpHandlerPlan) invokeTraced(c *ctx.HTTPContext, ev *trace.Tracer, in 
 		}
 	}
 	defer func() {
-		ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StageHandler, p.name, trace.TransportHTTP, time.Since(start)-pipes))
+		ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.ID(), trace.StageHandler, p.name, trace.TransportHTTP, time.Since(start)-pipes))
 	}()
 	return p.fn.Call(in)
 }
@@ -350,7 +350,7 @@ func resolveWSArg(a *handlerArg[*ctx.WSContext], c *ctx.WSContext) reflect.Value
 	case handlerArgWSPayload:
 		return reflect.ValueOf(c.WSPayload())
 	case handlerArgNext:
-		return reflect.ValueOf(c.Next)
+		return reflect.ValueOf(ctx.WSNext(c))
 	case handlerArgFixed:
 		return a.fixed
 	}

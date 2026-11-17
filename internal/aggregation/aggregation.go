@@ -3,13 +3,13 @@ package aggregation
 const inlineOperatorCount = 4
 
 type Aggregation struct {
-	InterceptorData     any
+	interceptorData     any
 	mainData            any
-	Name                string
+	name                string
 	extraOperators      []Operator
 	inlineOperators     [inlineOperatorCount]Operator
 	operatorCount       int
-	IsMainHandlerCalled bool
+	isMainHandlerCalled bool
 }
 
 func NewAggregation() *Aggregation {
@@ -17,7 +17,7 @@ func NewAggregation() *Aggregation {
 }
 
 func (a *Aggregation) Pipe(operators ...Operator) any {
-	a.IsMainHandlerCalled = true
+	a.isMainHandlerCalled = true
 	a.operatorCount = len(operators)
 	if len(operators) <= inlineOperatorCount {
 		copy(a.inlineOperators[:], operators)
@@ -29,9 +29,28 @@ func (a *Aggregation) Pipe(operators ...Operator) any {
 	return nil
 }
 
-func (a *Aggregation) SetMainData(d any) *Aggregation {
+func SetMainData(a *Aggregation, d any) {
 	a.mainData = d
-	return a
+}
+
+func Name(a *Aggregation) string {
+	return a.name
+}
+
+func SetName(a *Aggregation, name string) {
+	a.name = name
+}
+
+func InterceptorData(a *Aggregation) any {
+	return a.interceptorData
+}
+
+func SetInterceptorData(a *Aggregation, data any) {
+	a.interceptorData = data
+}
+
+func IsMainHandlerCalled(a *Aggregation) bool {
+	return a.isMainHandlerCalled
 }
 
 func (a *Aggregation) operators() []Operator {
@@ -41,7 +60,7 @@ func (a *Aggregation) operators() []Operator {
 	return a.inlineOperators[:a.operatorCount]
 }
 
-func (a *Aggregation) Aggregate() any {
+func Aggregate(a *Aggregation) any {
 	for _, operator := range a.operators() {
 		switch operator.kind {
 		case operatorTransform:

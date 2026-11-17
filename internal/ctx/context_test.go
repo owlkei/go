@@ -21,8 +21,7 @@ func isLowerHex(s string) bool {
 
 type minimalContext struct{}
 
-func (minimalContext) Reset()                   {}
-func (minimalContext) GetID() string            { return "" }
+func (minimalContext) ID() string               { return "" }
 func (minimalContext) Context() context.Context { return context.Background() }
 
 var (
@@ -38,9 +37,9 @@ func TestContext_InterfaceMethods(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	slices.Sort(names)
-	want := []string{"Context", "GetID", "Reset"}
+	want := []string{"Context", "ID"}
 	if !slices.Equal(names, want) {
-		t.Error(test.DiffMessage(names, want, "ctx.Context is Reset, GetID and Context, SetID is removed"))
+		t.Error(test.DiffMessage(names, want, "B18: ctx.Context is ID and Context; Reset is a hook function"))
 	}
 }
 

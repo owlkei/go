@@ -8,16 +8,16 @@ func (c *HTTPContext) Param() Param {
 	}
 
 	total := 0
-	for _, indexes := range c.ParamKeys {
+	for _, indexes := range c.paramKeys {
 		total += len(indexes)
 	}
 	values := make([]string, 0, total)
-	param := make(Param, len(c.ParamKeys))
-	for key, indexes := range c.ParamKeys {
+	param := make(Param, len(c.paramKeys))
+	for key, indexes := range c.paramKeys {
 		start := len(values)
 		for _, i := range indexes {
-			if i >= 0 && i < len(c.ParamValues) {
-				values = append(values, c.ParamValues[i])
+			if i >= 0 && i < len(c.paramValues) {
+				values = append(values, c.paramValues[i])
 			}
 		}
 		if end := len(values); end > start {

@@ -66,8 +66,8 @@ func BenchmarkHTTPContext_BodyJSON(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		reader.Reset(payload)
-		c.Init(w, r)
+		HTTPInit(c, w, r)
 		c.Body()
-		c.Reset()
+		HTTPReset(c)
 	}
 }

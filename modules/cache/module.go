@@ -27,7 +27,7 @@ func Register(opts *CacheModuleOptions) *core.Module {
 		Backend: backend,
 	}
 
-	module := core.ModuleBuilder().
+	module := core.NewModuleBuilder().
 		Providers(svc).
 		Build()
 

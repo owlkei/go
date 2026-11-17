@@ -219,13 +219,13 @@ func TestServeHTTP_HandlerSeesResponseIDs(t *testing.T) {
 	app := lcApp(t)
 	var handlerID, headerID string
 	lcSetHandler(func(c *ctx.HTTPContext) any {
-		handlerID = c.GetID()
+		handlerID = c.ID()
 		headerID = c.ResponseWriter.Header().Get(ctx.RequestID)
 		return "H"
 	})
 	w := lcServe(app, http.MethodGet, "/ok")
 	if handlerID == "" || handlerID != headerID || handlerID != w.Header().Get(ctx.RequestID) {
-		t.Error(test.DiffMessage([]string{handlerID, headerID}, w.Header().Get(ctx.RequestID), "S1, S7: c.GetID() is the X-Request-Id of the response"))
+		t.Error(test.DiffMessage([]string{handlerID, headerID}, w.Header().Get(ctx.RequestID), "S1, S7: c.ID() is the X-Request-Id of the response"))
 	}
 }
 
@@ -347,7 +347,7 @@ func TestScope_ConcurrentRequestsIsolated(t *testing.T) {
 	lcSetHandler(func(c *ctx.HTTPContext) any {
 		s := tracecontext.ScopeOf(c.Context())
 		incoming := c.Request.Header.Get("Traceparent")
-		if s == nil || s.Request != c.GetID() || s.Request != c.ResponseWriter.Header().Get(ctx.RequestID) ||
+		if s == nil || s.Request != c.ID() || s.Request != c.ResponseWriter.Header().Get(ctx.RequestID) ||
 			s.TraceID != incoming[3:35] || s.Parent != incoming[36:52] {
 			wrong.Add(1)
 		}

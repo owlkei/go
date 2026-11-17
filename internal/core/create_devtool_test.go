@@ -18,7 +18,7 @@ func TestDevtool_WithoutVersioning(t *testing.T) {
 	app.EnableDevtool()
 
 	text, panicked := createPanicText(func() {
-		app.Create(ModuleBuilder().Controllers(dvController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(dvController{}).Build())
 	})
 	if panicked {
 		t.Fatal(test.DiffMessage(text, "no panic", "D1: EnableDevtool without EnableVersioning does not panic"))
@@ -39,9 +39,9 @@ func TestDevtool_WithoutVersioning(t *testing.T) {
 func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		app := New()
-		app.EnableVersioning(versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
+		app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
 		app.EnableDevtool()
-		app.Create(ModuleBuilder().Controllers(dvController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(dvController{}).Build())
 
 		if app.devtool == nil || len(app.devtool.Controller.Http) != 1 {
 			t.Fatal(test.DiffMessage(app.devtool, "a snapshot with one HTTP entry", "D1: the snapshot is built"))

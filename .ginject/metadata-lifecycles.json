@@ -130,7 +130,7 @@
         "from": "POOLED",
         "to": "INITIALIZED",
         "stage": "ServeHTTP()",
-        "action": "if r.Body is not nil / http.NoBody and the cap > 0: r.Body = http.MaxBytesReader(w, r.Body, cap); c.Init(&ex.writer, r)",
+        "action": "if r.Body is not nil / http.NoBody and the cap > 0: r.Body = http.MaxBytesReader(w, r.Body, cap); ctx.HTTPInit(c, &ex.writer, r)",
         "effects": [
           "the cap is an atomic.Int64: 10 MiB, or ServerOptions.MaxRequestBodyBytes of the serving call (negative = off)",
           "Request ID generated, X-Request-Id set",
@@ -176,7 +176,7 @@
         "stage": "Cleanup",
         "action": "app.releaseCtx(ex)",
         "effects": [
-          "ex.reset(): c.Reset() clears all fields but keeps the capacity of ParamValues and the aggregation list (dropped over 64), the response writer points at nothing",
+          "ex.reset(): ctx.HTTPReset(c) clears all fields but keeps the capacity of the parameter values and the aggregation list (dropped over 64), the response writer points at nothing",
           "Exchange returned to pool for reuse (not after an http.ErrAbortHandler re-panic)"
         ]
       }

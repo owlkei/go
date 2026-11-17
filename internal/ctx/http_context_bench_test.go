@@ -36,8 +36,8 @@ func BenchmarkHTTPContext_Init(b *testing.B) {
 	r := httptest.NewRequest("GET", "/", nil)
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(w, r)
-		c.Reset()
+		HTTPInit(c, w, r)
+		HTTPReset(c)
 	}
 }
 
@@ -47,9 +47,9 @@ func BenchmarkHTTPContext_Reset(b *testing.B) {
 	r := httptest.NewRequest("GET", "/", nil)
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(w, r)
-		c.ParamKeys = nil
-		c.Reset()
+		HTTPInit(c, w, r)
+		c.paramKeys = nil
+		HTTPReset(c)
 	}
 }
 
@@ -138,8 +138,8 @@ func BenchmarkHTTPContext_Init_Traceparent(b *testing.B) {
 	w := httptest.NewRecorder()
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(w, r)
-		c.Reset()
+		HTTPInit(c, w, r)
+		HTTPReset(c)
 	}
 }
 
@@ -148,7 +148,7 @@ func BenchmarkReset_WithInterceptor(b *testing.B) {
 	c := newTestHTTPContext()
 	b.ReportAllocs()
 	for b.Loop() {
-		c.AddAggregation(a)
-		c.Reset()
+		HTTPAddAggregation(c, a)
+		HTTPReset(c)
 	}
 }

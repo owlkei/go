@@ -77,7 +77,7 @@ func (instance LoginController) CREATE_login() string {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Controllers(LoginController{}).
 			Build(),
 	)

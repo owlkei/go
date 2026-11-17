@@ -50,7 +50,7 @@ func serveWithRole(app *App, path, role string) int {
 
 func TestApp_SameGuardTypeDifferentConfig(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Controllers(roleAlphaController{}, roleBetaController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(roleAlphaController{}, roleBetaController{}).Build())
 
 	cases := []struct {
 		path, role string
@@ -86,7 +86,7 @@ func TestApp_GuardBoundToNonRoutePanics(t *testing.T) {
 	var rec any
 	func() {
 		defer func() { rec = recover() }()
-		app.Create(ModuleBuilder().Controllers(nonRouteGuardController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(nonRouteGuardController{}).Build())
 	}()
 
 	if rec == nil {
@@ -131,7 +131,7 @@ func (c rethrowController) READ_gone() string {
 func TestApp_FilterRethrowKeepsCode(t *testing.T) {
 	rethrowCalls = 0
 	app := New()
-	app.Create(ModuleBuilder().Controllers(rethrowController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(rethrowController{}).Build())
 
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/gone", nil))

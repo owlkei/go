@@ -16,7 +16,7 @@ func TestInjectProvidersIntoWSExceptionFilters_Empty(t *testing.T) {
 	e := &ExceptionFilter{}
 	ws := buildWS(map[string]string{"message": "ON_message"})
 
-	items := e.InjectProvidersIntoWSExceptionFilters(ws, noopCB, testConstruct)
+	items := InjectProvidersIntoWSExceptionFilters(e, ws, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound filters → empty result"))
 	}
@@ -31,7 +31,7 @@ func TestInjectProvidersIntoWSExceptionFilters_ApplyAll(t *testing.T) {
 		"status":  "ON_status",
 	})
 
-	items := e.InjectProvidersIntoWSExceptionFilters(ws, noopCB, testConstruct)
+	items := InjectProvidersIntoWSExceptionFilters(e, ws, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "filter with no handlers applies to all WS patterns"))
 	}
@@ -50,7 +50,7 @@ func TestInjectProvidersIntoWSExceptionFilters_HandlerIsCallableCatch(t *testing
 	e.BindExceptionFilter(mockWSExFilter{})
 
 	ws := buildWS(map[string]string{"message": "ON_message"})
-	items := e.InjectProvidersIntoWSExceptionFilters(ws, noopCB, testConstruct)
+	items := InjectProvidersIntoWSExceptionFilters(e, ws, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -70,7 +70,7 @@ func TestInjectProvidersIntoWSExceptionFilters_NoCatch_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "filter with no Catch method must panic"))
 		}
 	}()
-	e.InjectProvidersIntoWSExceptionFilters(ws, noopCB, testConstruct)
+	InjectProvidersIntoWSExceptionFilters(e, ws, noopCB, testConstruct)
 }
 
 func TestAsWSExceptionFilter_Valid(t *testing.T) {

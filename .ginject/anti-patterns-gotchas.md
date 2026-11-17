@@ -106,7 +106,7 @@ func (c UserController) READ(httpCtx *ctx.HTTPContext) {
 ```go
 func (c UserController) READ(httpCtx *ctx.HTTPContext) {
     // Use httpCtx only within request
-    return httpCtx.GetID()  // Use locally
+    return httpCtx.ID()  // Use locally
     // After function returns, httpCtx released to pool
 }
 ```
@@ -302,7 +302,7 @@ publisher.Publish("event", data)
 var MyModule = func() *core.Module {
     var counter = 0  // MUTABLE STATE!
     
-    return core.ModuleBuilder().
+    return core.NewModuleBuilder().
         Providers(
             CounterService{counter: &counter},  // Shared mutable
         ).
@@ -321,7 +321,7 @@ var MyModule = func() *core.Module {
 ```go
 // Option 1: Create new module each time
 func NewMyModule() *core.Module {
-    return core.ModuleBuilder().
+    return core.NewModuleBuilder().
         Providers(
             CounterService{counter: 0},
         ).
@@ -330,7 +330,7 @@ func NewMyModule() *core.Module {
 
 // Option 2: Make counter immutable
 var MyModule = func() *core.Module {
-    return core.ModuleBuilder().
+    return core.NewModuleBuilder().
         Providers(
             CounterService{counter: 0},  // Immutable
         ).

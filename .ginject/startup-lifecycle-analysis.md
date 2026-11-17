@@ -131,7 +131,7 @@ connections are not drained: they end when the process exits.
 
 ```go
 var CacheModule = func() *core.Module {
-	m := core.ModuleBuilder().Providers(CacheService{}).Build()
+	m := core.NewModuleBuilder().Providers(CacheService{}).Build()
 	m.OnInit = func() {
 		go client.Connect("redis://...")
 	}

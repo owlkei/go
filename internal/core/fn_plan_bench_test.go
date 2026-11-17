@@ -45,9 +45,8 @@ func (benchPlanCtl) PayloadPipe(benchWSDTO) {}
 
 func benchPlanContext() *ctx.HTTPContext {
 	c := benchHTTPContext("/?name=ann&page=2")
-	c.Init(c.ResponseWriter, c.Request)
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"7"}
+	ctx.HTTPInit(c, c.ResponseWriter, c.Request)
+	ctx.HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"7"})
 	return c
 }
 
@@ -126,8 +125,8 @@ func benchWSPlan(b *testing.B, name string) *wsHandlerPlan {
 
 func benchWSContext() *ctx.WSContext {
 	c := ctx.NewWSContext()
-	c.Init(&websocket.Conn{})
-	c.SetWSPayload(ctx.WSPayload{"topic": "chat"})
+	ctx.WSInit(c, &websocket.Conn{})
+	ctx.WSSetPayload(c, ctx.WSPayload{"topic": "chat"})
 	return c
 }
 

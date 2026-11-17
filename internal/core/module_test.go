@@ -74,7 +74,7 @@ func (p mtOrderedProviderB) NewProvider() Provider {
 func TestCreate_ProviderHoisting_DependencyConstructedBeforeDependent(t *testing.T) {
 	mtConstructOrder = nil
 
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Providers(mtOrderedProviderB{}, mtOrderedProviderA{}).
 		Build()
 
@@ -97,10 +97,10 @@ func (p mtOnceProvider) NewProvider() Provider {
 func TestCreate_ProviderConstructedOnce_AcrossDuplicateStaticImports(t *testing.T) {
 	mtOnceConstructCount = 0
 
-	child := ModuleBuilder().Providers(mtOnceProvider{}).Build()
-	parentA := ModuleBuilder().Imports(child).Build()
-	parentB := ModuleBuilder().Imports(child).Build()
-	root := ModuleBuilder().Imports(parentA, parentB).Build()
+	child := NewModuleBuilder().Providers(mtOnceProvider{}).Build()
+	parentA := NewModuleBuilder().Imports(child).Build()
+	parentB := NewModuleBuilder().Imports(child).Build()
+	root := NewModuleBuilder().Imports(parentA, parentB).Build()
 
 	mustCreate(t, New(), root)
 
@@ -118,10 +118,10 @@ type mtGlobalSubConsumer struct{ G mtGlobalSubProvider }
 func (p mtGlobalSubConsumer) NewProvider() Provider { return p }
 
 func TestCreate_StaticSubmoduleGlobalProvider_VisibleToOtherModules(t *testing.T) {
-	global := ModuleBuilder().Providers(mtGlobalSubProvider{}).Build()
+	global := NewModuleBuilder().Providers(mtGlobalSubProvider{}).Build()
 	global.IsGlobal = true
-	consumer := ModuleBuilder().Providers(mtGlobalSubConsumer{}).Build()
-	root := ModuleBuilder().Imports(global, consumer).Build()
+	consumer := NewModuleBuilder().Providers(mtGlobalSubConsumer{}).Build()
+	root := NewModuleBuilder().Imports(global, consumer).Build()
 
 	app := New()
 	mustCreate(t, app, root)
@@ -140,7 +140,7 @@ type mtDynMissingProvider struct{}
 func (p mtDynMissingProvider) NewProvider() Provider { return p }
 
 func mtDynamicModuleNeedingProvider(_ mtDynMissingProvider) *Module {
-	return ModuleBuilder().Build()
+	return NewModuleBuilder().Build()
 }
 
 func TestCreate_DynamicModule_MissingGlobalDependencyPanics(t *testing.T) {
@@ -150,7 +150,7 @@ func TestCreate_DynamicModule_MissingGlobalDependencyPanics(t *testing.T) {
 		}
 	}()
 
-	root := ModuleBuilder().Imports(mtDynamicModuleNeedingProvider).Build()
+	root := NewModuleBuilder().Imports(mtDynamicModuleNeedingProvider).Build()
 	New().Create(root)
 }
 
@@ -165,7 +165,7 @@ type mtUnexportedFieldProvider struct {
 func (p mtUnexportedFieldProvider) NewProvider() Provider { return p }
 
 func TestCreate_ProviderInjection_UnexportedFieldPanics(t *testing.T) {
-	m := ModuleBuilder().Providers(mtUnexportedFieldProvider{}).Build()
+	m := NewModuleBuilder().Providers(mtUnexportedFieldProvider{}).Build()
 
 	text, panicked := createPanicText(func() { New().Create(m) })
 	if !panicked || !strings.Contains(text, "dependency injection: can't set value to unexported 'hidden' field") {
@@ -179,10 +179,10 @@ func (c mtDedupController) NewController() Controller { return c }
 func (c mtDedupController) READ_mtdedup() string      { return "ok" }
 
 func TestCreate_StaticModuleControllerDedup_AcrossSharedImport(t *testing.T) {
-	child := ModuleBuilder().Controllers(mtDedupController{}).Build()
-	parentA := ModuleBuilder().Imports(child).Build()
-	parentB := ModuleBuilder().Imports(child).Build()
-	root := ModuleBuilder().Imports(parentA, parentB).Build()
+	child := NewModuleBuilder().Controllers(mtDedupController{}).Build()
+	parentA := NewModuleBuilder().Imports(child).Build()
+	parentB := NewModuleBuilder().Imports(child).Build()
+	root := NewModuleBuilder().Imports(parentA, parentB).Build()
 
 	app := New()
 	text, panicked := createPanicText(func() { app.Create(root) })
@@ -256,10 +256,10 @@ func (e mtExFilterOneField) Catch(_ *ctx.HTTPContext, _ *exception.Exception) {
 }
 
 func mtPriorityRoot(controller Controller) (*Module, *Module) {
-	global := ModuleBuilder().Providers(mtGlobalOnlyProvider{Source: "global"}).Build()
+	global := NewModuleBuilder().Providers(mtGlobalOnlyProvider{Source: "global"}).Build()
 	global.IsGlobal = true
-	consumer := ModuleBuilder().Providers(mtLocalProvider{}).Controllers(controller).Build()
-	return ModuleBuilder().Imports(global, consumer).Build(), global
+	consumer := NewModuleBuilder().Providers(mtLocalProvider{}).Controllers(controller).Build()
+	return NewModuleBuilder().Imports(global, consumer).Build(), global
 }
 
 func mtAssertPriorityChain(t *testing.T, seen mtPriorityGuard, app *App, label string) {
@@ -287,7 +287,7 @@ func (c mtPrefixedController) NewController() Controller   { return c }
 func (c mtPrefixedController) READ_mtprefixtarget() string { return "ok" }
 
 func TestCreate_HTTPMainHandler_RegisteredWithModulePrefix(t *testing.T) {
-	m := ModuleBuilder().Controllers(mtPrefixedController{}).Build()
+	m := NewModuleBuilder().Controllers(mtPrefixedController{}).Build()
 	m.Prefix("v1")
 
 	app := New()
@@ -338,7 +338,7 @@ func (c mtGuardUnexportedController) READ_mtguardunexported() string { return "o
 
 func TestCreate_HTTPGuardInjection_UnexportedFieldPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(ModuleBuilder().Controllers(mtGuardUnexportedController{}).Build())
+		New().Create(NewModuleBuilder().Controllers(mtGuardUnexportedController{}).Build())
 	})
 	if !panicked {
 		t.Error(test.DiffMessage(text, "panic", "guard with an unexported field should panic during injection"))
@@ -358,7 +358,7 @@ func (c mtGuardUnresolvedController) READ_mtguardunresolved() string { return "o
 
 func TestCreate_HTTPGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(ModuleBuilder().Controllers(mtGuardUnresolvedController{}).Build())
+		New().Create(NewModuleBuilder().Controllers(mtGuardUnresolvedController{}).Build())
 	})
 	if !panicked {
 		t.Error(test.DiffMessage(text, "panic", "guard field with an unresolved provider dependency should panic"))
@@ -379,7 +379,7 @@ func (c mtMiddlewareController) READ_mtmiddleware() string { return "ok" }
 func TestCreate_HTTPMiddlewareInjection_LocalProviderRegistered(t *testing.T) {
 	mtSimpleMiddlewareSeen = mtSimpleMiddleware{}
 
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtMiddlewareController{}).
 		Build()
@@ -409,7 +409,7 @@ func (c mtInterceptorController) READ_mtinterceptor() string { return "ok" }
 func TestCreate_HTTPInterceptorInjection_LocalProviderRegistered(t *testing.T) {
 	mtSimpleInterceptorSeen = mtSimpleInterceptor{}
 
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtInterceptorController{}).
 		Build()
@@ -436,7 +436,7 @@ func (c mtExFilterSingleController) READ_mtexfiltersingle() string { panic("boom
 func TestCreate_HTTPExceptionFilter_SingleController_Registered(t *testing.T) {
 	mtExFilterSeen = createRecorder{}
 
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtExFilterSingleController{}).
 		Build()
@@ -474,7 +474,7 @@ func (c mtExFilterMultiController1) READ_mtexfilterbugc1() string { panic("boom"
 func TestCreate_HTTPExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T) {
 	mtExFilterSeen = createRecorder{}
 
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtExFilterMultiController0{}, mtExFilterMultiController1{}).
 		Build()
@@ -561,7 +561,7 @@ func (c mtWSMainController) NewController() Controller         { return c }
 func (c mtWSMainController) SUBSCRIBE_mtwsmainhandler() string { return "ok" }
 
 func TestCreate_WSMainHandler_Registered(t *testing.T) {
-	app := mtWSApp(t, ModuleBuilder().Controllers(mtWSMainController{}).Build())
+	app := mtWSApp(t, NewModuleBuilder().Controllers(mtWSMainController{}).Build())
 
 	if reply := mtWSSubscribe(t, app, "mtwsmainhandler"); reply.Type != TypeAck {
 		t.Error(test.DiffMessage(reply.Type, TypeAck, "the event of the WS main handler can be subscribed"))
@@ -622,7 +622,7 @@ func TestCreate_WSGuardInjection_UnexportedFieldPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
 		app := New()
 		app.EnableWS(&WSOptions{Path: "/ws"})
-		app.Create(ModuleBuilder().Controllers(mtWSGuardUnexportedController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(mtWSGuardUnexportedController{}).Build())
 	})
 	if !panicked {
 		t.Error(test.DiffMessage(text, "panic", "WS guard with an unexported field should panic during injection"))
@@ -644,7 +644,7 @@ func TestCreate_WSGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
 		app := New()
 		app.EnableWS(&WSOptions{Path: "/ws"})
-		app.Create(ModuleBuilder().Controllers(mtWSGuardUnresolvedController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(mtWSGuardUnresolvedController{}).Build())
 	})
 	if !panicked {
 		t.Error(test.DiffMessage(text, "panic", "WS guard field with an unresolved provider dependency should panic"))
@@ -674,7 +674,7 @@ func (c mtWSInterceptorController) SUBSCRIBE_mtwsinterceptor() string { return "
 func TestCreate_WSInterceptorInjection_LocalProviderRegistered(t *testing.T) {
 	mtSimpleInterceptorWSSeen = mtSimpleInterceptorWS{}
 
-	app := mtWSApp(t, ModuleBuilder().
+	app := mtWSApp(t, NewModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtWSInterceptorController{}).
 		Build())
@@ -729,7 +729,7 @@ func (c mtWSExFilterController1) SUBSCRIBE_mtwsexfilterc1() string { return "ok"
 func TestCreate_WSExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.T) {
 	mtWSExFilterSeen = createRecorder{}
 
-	app := mtWSApp(t, ModuleBuilder().
+	app := mtWSApp(t, NewModuleBuilder().
 		Providers(mtLocalProvider{}).
 		Controllers(mtWSExFilterController0{}, mtWSExFilterController1{}).
 		Build())
@@ -758,7 +758,7 @@ func TestCreate_ConcurrentInvocation_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			m := ModuleBuilder().
+			m := NewModuleBuilder().
 				Providers(mtConcurrentProvider{}).
 				Controllers(mtConcurrentController{}).
 				Build()

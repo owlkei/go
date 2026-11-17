@@ -65,22 +65,22 @@
             },
             {
               "name": "BindGlobalGuards",
-              "signature": "BindGlobalGuards(guarders ...common.Guarder) *App",
+              "signature": "BindGlobalGuards(guards ...any) *App",
               "purpose": "Guards for every route and event"
             },
             {
               "name": "BindGlobalInterceptors",
-              "signature": "BindGlobalInterceptors(interceptors ...common.Interceptable) *App",
+              "signature": "BindGlobalInterceptors(interceptors ...any) *App",
               "purpose": "Interceptors for every route and event"
             },
             {
               "name": "BindGlobalExceptionFilters",
-              "signature": "BindGlobalExceptionFilters(exceptionFilters ...common.ExceptionFilterable) *App",
+              "signature": "BindGlobalExceptionFilters(exceptionFilters ...any) *App",
               "purpose": "Exception filters for every route and event"
             },
             {
               "name": "EnableVersioning",
-              "signature": "EnableVersioning(v versioning.Versioning) *App",
+              "signature": "EnableVersioning(opts *versioning.Versioning) *App",
               "purpose": "Route versioning"
             },
             {
@@ -121,11 +121,11 @@
           ]
         },
         "ModuleBuilder": {
-          "description": "Fluent API for building modules: core.ModuleBuilder() returns the unexported *moduleBuilder",
+          "description": "Fluent API for building modules: core.NewModuleBuilder() (ginject.ModuleBuilder()) returns a new *core.ModuleBuilder",
           "methods": [
-            "Imports(modules ...any) *moduleBuilder - *Module values or module funcs (func(...) *core.Module)",
-            "Providers(providers ...Provider) *moduleBuilder",
-            "Controllers(controllers ...Controller) *moduleBuilder",
+            "Imports(modules ...any) *ModuleBuilder - *Module values or module funcs (func(...) *core.Module)",
+            "Providers(providers ...Provider) *ModuleBuilder",
+            "Controllers(controllers ...Controller) *ModuleBuilder",
             "Build() *Module"
           ],
           "notes": "No Export or IsGlobal builder methods exist: set m.IsGlobal on the built module."
@@ -169,13 +169,11 @@
         "HTTPContext": {
           "description": "HTTP request context (pooled)",
           "methods": [
-            "Init(ResponseWriter, *Request)",
-            "Status(code int) *HTTPContext - sets c.Code; chain with JSON/Text",
+            "Status(code int) *HTTPContext - sets the status code; chain with JSON/Text",
             "Text(data string, args ...any)",
             "JSON(data any, args ...any) - string = raw JSON, JSONAppender = own bytes, else encoding/json; encode error panics 500 and writes nothing",
             "JSONP(data any, args ...any) - sanitized callback, nosniff, falls back to JSON",
-            "AddAggregation(*aggregation.Aggregation) / Aggregations() []*aggregation.Aggregation",
-            "GetID() string",
+            "ID() string",
             "Body() Body - lazily parses JSON body; on http.MaxBytesError panics exception.RequestEntityTooLargeException (413), not a raw error"
           ],
           "notes": "No SetDeadline()/IsDeadlineExceeded()/Deadline field exist on HTTPContext — do not invent per-request deadline APIs. See metadata-concurrency-model.json's cancellation_handling for the real (server-level-only) timeout model."
@@ -183,9 +181,8 @@
         "WSContext": {
           "description": "WebSocket request context (pooled)",
           "methods": [
-            "Init(*websocket.Conn)",
-            "WSPayload() *WSPayload",
-            "GetID() string"
+            "WSPayload() WSPayload",
+            "ID() string"
           ]
         }
       },
@@ -214,14 +211,14 @@
     "common": {
       "responsibility": "Pipeline interfaces and embedded controller types",
       "notes": [
-        "Guarder, Interceptable, and ExceptionFilterable are declared as `any`, NOT compile-time Go interfaces. Shape is checked at bind time by method name and signature (a type assertion to an unexported interface, then the method value; no reflection per call) against the func-type aliases below. A layer bound to a method that is not a handler of the controller panics at Create(). A bound value missing the method panics with a *ShapeError (GuardShapeError / InterceptorShapeError / ExceptionFilterShapeError).",
+        "Guards, interceptors and exception filters are bound as `any` (no named type), NOT compile-time Go interfaces. Shape is checked at bind time by method name and signature (a type assertion to an unexported interface, then the method value; no reflection per call) against the func-type aliases below. A layer bound to a method that is not a handler of the controller panics at Create(). A bound value missing the method panics with a *ShapeError (GuardShapeError / InterceptorShapeError / ExceptionFilterShapeError).",
         "MiddlewareFn IS a real interface (requires a Use method) — different from the other three."
       ],
       "interfaces": {
         "MiddlewareFn": "interface { Use(*http.Request, http.ResponseWriter, ctx.Next) } — real interface; Use = func(*http.Request, http.ResponseWriter, ctx.Next) is the matching func alias",
-        "Guarder": "any; checked against HTTPCanActivate = func(*ctx.HTTPContext) bool via method name \"CanActivate\"",
-        "Interceptable": "any; checked against HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any via method name \"Intercept\"",
-        "ExceptionFilterable": "any; checked against HTTPCatch = func(*ctx.HTTPContext, *exception.Exception) via method name \"Catch\" — NOTE: HTTPContext is the FIRST parameter, Exception is SECOND",
+        "guard": "any; checked against HTTPCanActivate = func(*ctx.HTTPContext) bool via method name \"CanActivate\"",
+        "interceptor": "any; checked against HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any via method name \"Intercept\"",
+        "exception filter": "any; checked against HTTPCatch = func(*ctx.HTTPContext, *exception.Exception) via method name \"Catch\" — NOTE: HTTPContext is the FIRST parameter, Exception is SECOND",
         "Logger": "interface { Debug(msg string, args ...any); Info(...); Warn(...); Error(...); Fatal(...) } — no Log()/LogStructured() methods exist",
         "Publisher": "interface { Publish(topic string, payload ...any) error } — payload is variadic, not a single `data any`"
       },

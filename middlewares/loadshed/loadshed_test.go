@@ -3,6 +3,7 @@ package loadshed
 import (
 	"context"
 	"errors"
+	"github.com/dangduoc08/ginject"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -286,7 +287,7 @@ func TestLoadShed_ReleasedAtWSHandshake(t *testing.T) {
 	app.SetLogger(silentLogger{})
 	shed := LoadShed{MaxInFlight: 1, MaxQueue: -1}
 	app.EnableWS(&core.WSOptions{Path: "/ws"}, shed)
-	app.Create(core.ModuleBuilder().Build())
+	app.Create(ginject.ModuleBuilder().Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
@@ -308,7 +309,7 @@ func TestLoadShed_RefusedWSHandshake(t *testing.T) {
 	app.EnableWS(&core.WSOptions{Path: "/ws"}, LoadShed{MaxInFlight: 1, MaxQueue: -1}, terminalMiddleware(func(w http.ResponseWriter, r *http.Request, next func()) {
 		panic(exception.ForbiddenException("no"))
 	}))
-	app.Create(core.ModuleBuilder().Build())
+	app.Create(ginject.ModuleBuilder().Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"

@@ -12,7 +12,7 @@ func TestInjectProvidersIntoWSGuards_Empty(t *testing.T) {
 	g := &Guard{}
 	ws := buildWS(map[string]string{"message": "ON_message"})
 
-	items := g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
+	items := InjectProvidersIntoWSGuards(g, ws, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound guards → empty result"))
 	}
@@ -27,7 +27,7 @@ func TestInjectProvidersIntoWSGuards_ApplyAll(t *testing.T) {
 		"status":  "ON_status",
 	})
 
-	items := g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
+	items := InjectProvidersIntoWSGuards(g, ws, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "guard with no handlers applies to all WS patterns"))
 	}
@@ -46,7 +46,7 @@ func TestInjectProvidersIntoWSGuards_HandlerIsCallableCanActivate(t *testing.T) 
 	g.BindGuard(denyWSGuarder{})
 
 	ws := buildWS(map[string]string{"message": "ON_message"})
-	items := g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
+	items := InjectProvidersIntoWSGuards(g, ws, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -70,7 +70,7 @@ func TestInjectProvidersIntoWSGuards_NoCanActivate_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "guard with no CanActivate method must panic"))
 		}
 	}()
-	g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
+	InjectProvidersIntoWSGuards(g, ws, noopCB, testConstruct)
 }
 
 func TestInjectProvidersIntoWSGuards_WrongReturnType_Panics(t *testing.T) {
@@ -83,7 +83,7 @@ func TestInjectProvidersIntoWSGuards_WrongReturnType_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "CanActivate returning non-bool must panic"))
 		}
 	}()
-	g.InjectProvidersIntoWSGuards(ws, noopCB, testConstruct)
+	InjectProvidersIntoWSGuards(g, ws, noopCB, testConstruct)
 }
 
 func TestAsWSGuard_Valid(t *testing.T) {
@@ -113,7 +113,7 @@ func TestAsWSGuard_WrongShape(t *testing.T) {
 func TestBuildWSGuardMiddleware_AllowedCallsNext(t *testing.T) {
 	called := false
 	c := &ctx.WSContext{}
-	c.Next = func() { called = true }
+	ctx.WSSetNext(c, func() { called = true })
 
 	mw := BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return true })
 	mw(c)
@@ -144,7 +144,7 @@ func recoverGuardRejectionWS(mw func(*ctx.WSContext), c *ctx.WSContext) (rec any
 func TestBuildWSGuardMiddleware_AllowCallsNextOnce(t *testing.T) {
 	calls := 0
 	c := &ctx.WSContext{}
-	c.Next = func() { calls++ }
+	ctx.WSSetNext(c, func() { calls++ })
 
 	mw := BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return true })
 	if rec := recoverGuardRejectionWS(mw, c); rec != nil {
@@ -158,7 +158,7 @@ func TestBuildWSGuardMiddleware_AllowCallsNextOnce(t *testing.T) {
 
 func TestBuildWSGuardMiddleware_PassesTheContextToTheGuard(t *testing.T) {
 	c := &ctx.WSContext{}
-	c.Next = func() {}
+	ctx.WSSetNext(c, func() {})
 	var got *ctx.WSContext
 
 	BuildWSGuardMiddleware(func(arg *ctx.WSContext) bool {
@@ -194,7 +194,7 @@ func TestBuildWSGuardMiddleware_RejectPanicsForbidden(t *testing.T) {
 func TestBuildWSGuardMiddleware_RejectDoesNotCallNext(t *testing.T) {
 	calls := 0
 	c := &ctx.WSContext{}
-	c.Next = func() { calls++ }
+	ctx.WSSetNext(c, func() { calls++ })
 
 	recoverGuardRejectionWS(BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return false }), c)
 

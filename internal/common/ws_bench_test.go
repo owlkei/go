@@ -13,7 +13,7 @@ func BenchmarkAddHandlerToEventMap(b *testing.B) {
 	for b.Loop() {
 		ws := &WS{}
 		for _, fn := range fns {
-			ws.AddHandlerToEventMap(fn, nil)
+			AddHandlerToEventMap(ws, fn, nil)
 		}
 	}
 }

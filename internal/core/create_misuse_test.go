@@ -23,7 +23,7 @@ func msExpectPanic(t *testing.T, rule, want string, fn func()) {
 
 func msCreated() *App {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 	return app
 }
 
@@ -40,7 +40,7 @@ func TestCreate_NilModulePanics(t *testing.T) {
 func TestCreate_TwicePanics(t *testing.T) {
 	app := msCreated()
 	msExpectPanic(t, "M2", "invalid app: Create called twice", func() {
-		app.Create(ModuleBuilder().Build())
+		app.Create(NewModuleBuilder().Build())
 	})
 }
 
@@ -75,7 +75,7 @@ func TestApp_BindGlobalExceptionFiltersAfterCreatePanics(t *testing.T) {
 func TestApp_EnableVersioningAfterCreatePanics(t *testing.T) {
 	app := msCreated()
 	msExpectPanic(t, "M3", "invalid app: EnableVersioning must be called before Create", func() {
-		app.EnableVersioning(versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
+		app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
 	})
 }
 
@@ -107,10 +107,10 @@ func TestApp_ConfigurationBeforeCreateDoesNotPanic(t *testing.T) {
 		app.BindGlobalMiddlewares(msMiddleware{}).
 			BindGlobalGuards(isoGuard{Role: "ms-before"}).
 			BindGlobalInterceptors(z1Interceptor{Name: "ms-before"}).
-			EnableVersioning(versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
+			EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
 			EnableDevtool().
 			EnableAccessLog()
-		app.Create(ModuleBuilder().Controllers(hkController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(hkController{}).Build())
 	})
 	if panicked {
 		t.Error(test.DiffMessage(text, "no panic", "M3: configuration before Create is fine"))

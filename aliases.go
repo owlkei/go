@@ -46,7 +46,9 @@ type (
 	Versioning = versioning.Versioning
 )
 
-var ModuleBuilder = core.ModuleBuilder
+func ModuleBuilder() *core.ModuleBuilder {
+	return core.NewModuleBuilder()
+}
 
 func New() App {
 	return core.New()

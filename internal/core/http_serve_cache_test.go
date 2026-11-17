@@ -57,7 +57,7 @@ func scApp(t *testing.T, setup func(*App)) *App {
 	if setup != nil {
 		setup(app)
 	}
-	app.Create(ModuleBuilder().Controllers(scController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(scController{}).Build())
 	return app
 }
 

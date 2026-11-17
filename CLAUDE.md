@@ -125,7 +125,7 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
 
 - **Provider**: any struct implementing `NewProvider() Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
 - **Controller**: any struct implementing `NewController() Controller`. Must embed `common.HTTP` (HTTP) and/or `common.WS` (WebSocket) to register routes. There is no `common.REST`.
-- **Module**: built with `core.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()`. Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`core/README.md` › Modules and lifecycle).
+- **Module**: built with `core.NewModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()`. Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`core/README.md` › Modules and lifecycle).
 - **App**: created via `core.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `core.ServerOptions`, `core/README.md` › Server).
 
 ### REST Route Convention
@@ -154,8 +154,8 @@ App-wide bindings: `app.BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalI
 
 Contracts:
 - Middleware is a real interface, `common.MiddlewareFn`: `Use(*http.Request, http.ResponseWriter, ctx.Next)`.
-- Guards, interceptors and exception filters are **not** interfaces: `common.Guarder`, `Interceptable`
-  and `ExceptionFilterable` are `any`. The framework matches the method by name and signature
+- Guards, interceptors and exception filters are **not** interfaces: they are bound as `any` (no named
+  type stands for them). The framework matches the method by name and signature
   (`GuardMethodName = "CanActivate"`, `"Intercept"`, `"Catch"`) through an unexported interface, which
   differs for HTTP and WS (`common/http_*.go`, `common/ws_*.go`); a wrong shape panics at startup
   (`GuardShapeError` and friends), and so does a layer bound to a method that is not a handler of the
@@ -177,7 +177,7 @@ All types are re-exported from the root `ginject` package (`aliases.go`).
 
 ### Modules: Static vs Dynamic
 
-- **Static modules**: `var Module = func() *core.Module { return core.ModuleBuilder()....Build() }` — pass the func itself to `Imports(...)`; the framework builds it once.
+- **Static modules**: `var Module = func() *core.Module { return core.NewModuleBuilder()....Build() }` — pass the func itself to `Imports(...)`; the framework builds it once.
 - **Dynamic modules**: a package-level `Register(opts *<X>ModuleOptions) *core.Module` that returns a configured module (every built-in module, e.g. `config.Register(&config.ConfigModuleOptions{...})`).
 
 ### Built-in Modules (`modules/`)

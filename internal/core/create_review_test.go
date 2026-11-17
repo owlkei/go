@@ -16,7 +16,7 @@ func (p rvDep) NewProvider() Provider {
 }
 
 func rvGlobal() *Module {
-	m := ModuleBuilder().Providers(rvDep{}).Build()
+	m := NewModuleBuilder().Providers(rvDep{}).Build()
 	m.IsGlobal = true
 	return m
 }
@@ -24,7 +24,7 @@ func rvGlobal() *Module {
 func rvFuncModule(seen *createRecorder) func(d rvDep) *Module {
 	return func(d rvDep) *Module {
 		seen.add("func:" + d.Value)
-		return ModuleBuilder().Build()
+		return NewModuleBuilder().Build()
 	}
 }
 
@@ -37,7 +37,7 @@ func rvCreate(t *testing.T, root *Module, rule string) {
 
 func TestModuleFunc_SeesGlobalImportedAfterIt(t *testing.T) {
 	rec := &createRecorder{}
-	root := ModuleBuilder().Imports(rvFuncModule(rec), rvGlobal()).Build()
+	root := NewModuleBuilder().Imports(rvFuncModule(rec), rvGlobal()).Build()
 
 	rvCreate(t, root, "H1: a module func sees a global module imported after it")
 
@@ -48,7 +48,7 @@ func TestModuleFunc_SeesGlobalImportedAfterIt(t *testing.T) {
 
 func TestModuleFunc_SeesGlobalImportedBeforeIt(t *testing.T) {
 	rec := &createRecorder{}
-	root := ModuleBuilder().Imports(rvGlobal(), rvFuncModule(rec)).Build()
+	root := NewModuleBuilder().Imports(rvGlobal(), rvFuncModule(rec)).Build()
 
 	rvCreate(t, root, "H1: a module func sees a global module imported before it")
 
@@ -59,8 +59,8 @@ func TestModuleFunc_SeesGlobalImportedBeforeIt(t *testing.T) {
 
 func TestModuleFunc_SeesGlobalNestedInSiblingImports(t *testing.T) {
 	rec := &createRecorder{}
-	sibling := ModuleBuilder().Imports(ModuleBuilder().Imports(rvGlobal()).Build()).Build()
-	root := ModuleBuilder().Imports(rvFuncModule(rec), sibling).Build()
+	sibling := NewModuleBuilder().Imports(NewModuleBuilder().Imports(rvGlobal()).Build()).Build()
+	root := NewModuleBuilder().Imports(rvFuncModule(rec), sibling).Build()
 
 	rvCreate(t, root, "H1: a module func sees a global nested deep in a sibling's imports")
 
@@ -71,8 +71,8 @@ func TestModuleFunc_SeesGlobalNestedInSiblingImports(t *testing.T) {
 
 func TestModuleFunc_SeesGlobalNestedInSiblingImportedFirst(t *testing.T) {
 	rec := &createRecorder{}
-	sibling := ModuleBuilder().Imports(ModuleBuilder().Imports(rvGlobal()).Build()).Build()
-	root := ModuleBuilder().Imports(sibling, rvFuncModule(rec)).Build()
+	sibling := NewModuleBuilder().Imports(NewModuleBuilder().Imports(rvGlobal()).Build()).Build()
+	root := NewModuleBuilder().Imports(sibling, rvFuncModule(rec)).Build()
 
 	rvCreate(t, root, "H1: a module func sees a global nested in an earlier sibling")
 
@@ -94,9 +94,9 @@ func TestModuleFunc_RootProviderBuiltAfterRootOnInit(t *testing.T) {
 	rvOrder = createRecorder{}
 	f := func(_ rvOrderDep) *Module {
 		rvOrder.add("func")
-		return ModuleBuilder().Build()
+		return NewModuleBuilder().Build()
 	}
-	root := ModuleBuilder().Imports(f).Providers(rvOrderDep{}).Build()
+	root := NewModuleBuilder().Imports(f).Providers(rvOrderDep{}).Build()
 	root.OnInit = rvOrder.hook("root")
 
 	rvCreate(t, root, "M2: Create succeeds")
@@ -110,12 +110,12 @@ func TestModuleFunc_GlobalProviderBuiltAfterOwnerOnInit(t *testing.T) {
 	rvOrder = createRecorder{}
 	f := func(_ rvOrderDep) *Module {
 		rvOrder.add("func")
-		return ModuleBuilder().Build()
+		return NewModuleBuilder().Build()
 	}
-	global := ModuleBuilder().Providers(rvOrderDep{}).Build()
+	global := NewModuleBuilder().Providers(rvOrderDep{}).Build()
 	global.IsGlobal = true
 	global.OnInit = rvOrder.hook("global")
-	root := ModuleBuilder().Imports(global, f).Build()
+	root := NewModuleBuilder().Imports(global, f).Build()
 
 	rvCreate(t, root, "M2: Create succeeds")
 
@@ -180,7 +180,7 @@ func TestStop_SecondCallerWaitsWhileHooksRun_NotServing(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var finished atomic.Bool
-	m := ModuleBuilder().Build()
+	m := NewModuleBuilder().Build()
 	m.OnShutdown = func() {
 		close(entered)
 		<-release
@@ -213,7 +213,7 @@ func TestStop_SecondCallerWaitsWhileHooksRun_Serving(t *testing.T) {
 func TestStop_FromInsideShutdownHookReturnsAtOnce(t *testing.T) {
 	returned := make(chan struct{})
 	app := New()
-	m := ModuleBuilder().Build()
+	m := NewModuleBuilder().Build()
 	m.OnShutdown = func() {
 		app.Stop()
 		close(returned)

@@ -23,7 +23,7 @@ func (w *panicBenchWriter) WriteHeader(int)             {}
 
 func BenchmarkServeHTTP_PanicFlood(b *testing.B) {
 	app := New().SetLogger(&mockLogger{})
-	app.Create(ModuleBuilder().Controllers(panicBenchController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(panicBenchController{}).Build())
 	defer app.Stop()
 	r := httptest.NewRequest(http.MethodGet, "/boom", nil)
 	w := &panicBenchWriter{header: http.Header{}}
@@ -36,7 +36,7 @@ func BenchmarkServeHTTP_PanicFlood(b *testing.B) {
 
 func BenchmarkServeHTTP_PanicFlood_Parallel(b *testing.B) {
 	app := New().SetLogger(&mockLogger{})
-	app.Create(ModuleBuilder().Controllers(panicBenchController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(panicBenchController{}).Build())
 	defer app.Stop()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {

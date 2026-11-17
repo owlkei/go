@@ -115,7 +115,7 @@ func (instance HelloController) READ_hello_BY_name(param ctx.Param) ctx.Map {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Controllers(HelloController{}).
 			Providers(GreetingService{}).
 			Build(),
@@ -192,7 +192,7 @@ func (instance HealthController) READ_health() string {
 
 func TestHealth(t *testing.T) {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(HealthController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(HealthController{}).Build())
 
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
@@ -209,7 +209,7 @@ layers and logger.
 ### Module
 
 A module groups controllers and providers, and imports other modules. Build one with
-`core.ModuleBuilder()`:
+`core.NewModuleBuilder()`:
 
 ```go
 package main
@@ -242,12 +242,12 @@ func (instance UserController) READ_users() []string {
 	return instance.UserService.FindAll()
 }
 
-var UserModule = core.ModuleBuilder().
+var UserModule = core.NewModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}).
 	Build()
 
-var AppModule = core.ModuleBuilder().
+var AppModule = core.NewModuleBuilder().
 	Imports(UserModule).
 	Build().
 	Prefix("api")
@@ -293,7 +293,7 @@ func (instance Database) NewProvider() core.Provider {
 
 func NewDatabaseModule(configService config.ConfigService) *core.Module {
 	url, _ := configService.Get("DATABASE_URL").(string)
-	module := core.ModuleBuilder().
+	module := core.NewModuleBuilder().
 		Providers(Database{URL: url}).
 		Build()
 	module.IsGlobal = true
@@ -319,7 +319,7 @@ func (instance StatusController) READ_status() bool {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
 				NewDatabaseModule,
@@ -417,7 +417,7 @@ func (instance ProductController) DELETE_products_BY_id(param ctx.Param) string 
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(ProductController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(ProductController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -522,7 +522,7 @@ func (instance OrderController) CREATE_orders(body ctx.Body, w http.ResponseWrit
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(OrderController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(OrderController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -599,7 +599,7 @@ func (instance JobController) READ_jobs_BY_id(c *ctx.HTTPContext) {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(JobController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(JobController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -690,7 +690,7 @@ func (instance ReportController) READ_reports() []string {
 func main() {
 	app := core.New()
 	app.BindGlobalMiddlewares(RequestLogMiddleware{})
-	app.Create(core.ModuleBuilder().Controllers(ReportController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(ReportController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -760,7 +760,7 @@ func (instance AccountController) READ_account() string {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Imports(config.Register(&config.ConfigModuleOptions{IsGlobal: true})).
 			Controllers(AccountController{}).
 			Build(),
@@ -826,7 +826,7 @@ func (instance TagController) READ_tags() []string {
 func main() {
 	app := core.New()
 	app.BindGlobalInterceptors(EnvelopeInterceptor{})
-	app.Create(core.ModuleBuilder().Controllers(TagController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(TagController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -885,7 +885,7 @@ func (instance BookController) READ_books_BY_id(param ctx.Param) string {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(BookController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(BookController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -964,7 +964,7 @@ func (instance SignupController) CREATE_users(user CreateUserBody) ctx.Map {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(SignupController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(SignupController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1019,7 +1019,7 @@ func (instance ChatController) SUBSCRIBE_chat_ANY(payload ctx.WSPayload) ctx.Map
 func main() {
 	app := core.New()
 	app.EnableWS(&core.WSOptions{Path: "ws"})
-	app.Create(core.ModuleBuilder().Controllers(ChatController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1098,7 +1098,7 @@ func (instance ChatController) SUBSCRIBE_chat_ANY(payload ctx.WSPayload) ctx.WSP
 func main() {
 	app := core.New()
 	app.EnableWS(&core.WSOptions{Path: "ws"})
-	app.Create(core.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1163,7 +1163,7 @@ func main() {
 		Key:            "X-Api-Version",
 		DefaultVersion: "1",
 	})
-	app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1219,7 +1219,7 @@ func (instance AssetController) SERVE_ANY_OF_assets(c *ctx.HTTPContext) string {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(AssetController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(AssetController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1283,7 +1283,7 @@ func (instance InfoController) READ_info() string {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{
 					IsGlobal:          true,
@@ -1355,7 +1355,7 @@ func (instance ProfileController) READ_profiles_BY_id(c *ctx.HTTPContext) string
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Imports(cache.Register(&cache.CacheModuleOptions{IsGlobal: true})).
 			Controllers(ProfileController{}).
 			Build(),
@@ -1421,7 +1421,7 @@ func (instance AccountController) READ_profile(c *ctx.HTTPContext) int {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(AccountController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(AccountController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1557,7 +1557,7 @@ func main() {
 	app.BindGlobalGuards(throttler.Throttler{Limit: 300, TTL: time.Minute})
 
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Controllers(HelloController{}).
 			Build(),
 	)
@@ -1624,7 +1624,7 @@ func (instance InvoiceController) READ_invoices() string {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(InvoiceController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(InvoiceController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}

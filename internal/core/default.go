@@ -8,7 +8,7 @@ import (
 type globalHTTPExceptionFilter struct{}
 
 func (g globalHTTPExceptionFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	c.Code = writeErrorResponse(c.ResponseWriter, ex)
+	ctx.HTTPSetCode(c, writeErrorResponse(c.ResponseWriter, ex))
 }
 
 type globalWSExceptionFilter struct{}

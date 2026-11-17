@@ -39,13 +39,13 @@ var testConstruct = func(obj any, constructor string) any {
 
 func buildHTTP(fnToRoute map[string]string) *HTTP {
 	r := &HTTP{
-		PatternToFuncNameMap: make(map[string]string, len(fnToRoute)),
-		FuncNameToPatternMap: make(map[string]string, len(fnToRoute)),
+		patternToFuncNameMap: make(map[string]string, len(fnToRoute)),
+		funcNameToPatternMap: make(map[string]string, len(fnToRoute)),
 	}
 	for fn, route := range fnToRoute {
 		p := routing.MethodRouteVersionToPattern("GET", route, "")
-		r.PatternToFuncNameMap[p] = fn
-		r.FuncNameToPatternMap[fn] = p
+		HTTPPatternToFuncNameMap(r)[p] = fn
+		HTTPFuncNameToPatternMap(r)[fn] = p
 	}
 	return r
 }
@@ -66,12 +66,12 @@ func TestBindExceptionFilter_Chaining(t *testing.T) {
 	if ret != e {
 		t.Error(test.DiffMessage(ret, e, "BindExceptionFilter should return self"))
 	}
-	if len(e.ExceptionFilterHandlers) != 1 {
-		t.Error(test.DiffMessage(len(e.ExceptionFilterHandlers), 1, "one handler after one bind"))
+	if len(e.exceptionFilterHandlers) != 1 {
+		t.Error(test.DiffMessage(len(e.exceptionFilterHandlers), 1, "one handler after one bind"))
 	}
 	e.BindExceptionFilter(mockExFilter{})
-	if len(e.ExceptionFilterHandlers) != 2 {
-		t.Error(test.DiffMessage(len(e.ExceptionFilterHandlers), 2, "two handlers after two binds"))
+	if len(e.exceptionFilterHandlers) != 2 {
+		t.Error(test.DiffMessage(len(e.exceptionFilterHandlers), 2, "two handlers after two binds"))
 	}
 }
 

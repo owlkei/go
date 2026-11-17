@@ -30,12 +30,12 @@ type HTTPContext struct {
 	header       Header
 	param        Param
 	aggregations []*aggregation.Aggregation
-	ParamKeys    map[string][]int
-	ParamValues  []string
+	paramKeys    map[string][]int
+	paramValues  []string
 
-	Next      Next
-	Code      int
-	Timestamp time.Time
+	next      Next
+	code      int
+	timestamp time.Time
 }
 
 const (
@@ -46,29 +46,29 @@ const (
 
 func NewHTTPContext() *HTTPContext {
 	return &HTTPContext{
-		Code: http.StatusOK,
+		code: http.StatusOK,
 	}
 }
 
-func (c *HTTPContext) Init(w http.ResponseWriter, r *http.Request) {
-	c.Timestamp = time.Now()
+func HTTPInit(c *HTTPContext, w http.ResponseWriter, r *http.Request) {
+	c.timestamp = time.Now()
 	c.ResponseWriter = w
-	scopeContext, scope := tracecontext.NewRequest(r.Context(), r.Header, c.Timestamp)
+	scopeContext, scope := tracecontext.NewRequest(r.Context(), r.Header, c.timestamp)
 	c.scope = scope
 	c.Request = r.WithContext(scopeContext)
 }
 
-func (c *HTTPContext) GetID() string {
+func (c *HTTPContext) ID() string {
 	if c.scope == nil {
 		return ""
 	}
 	return c.scope.Request
 }
 
-func (c *HTTPContext) Reset() {
-	paramValues := keepCapacity(c.ParamValues)
+func HTTPReset(c *HTTPContext) {
+	paramValues := keepCapacity(c.paramValues)
 	aggregations := keepCapacity(c.aggregations)
-	*c = HTTPContext{Code: http.StatusOK, ParamValues: paramValues, aggregations: aggregations}
+	*c = HTTPContext{code: http.StatusOK, paramValues: paramValues, aggregations: aggregations}
 }
 
 const keptCapacityLimit = 64
@@ -81,22 +81,51 @@ func keepCapacity[T any](values []T) []T {
 	return values[:0]
 }
 
-func (c *HTTPContext) AddAggregation(a *aggregation.Aggregation) {
+func HTTPAddAggregation(c *HTTPContext, a *aggregation.Aggregation) {
 	c.aggregations = append(c.aggregations, a)
 }
 
-func (c *HTTPContext) Aggregations() []*aggregation.Aggregation {
+func HTTPAggregations(c *HTTPContext) []*aggregation.Aggregation {
 	return c.aggregations
 }
 
+func HTTPSetParams(c *HTTPContext, keys map[string][]int, values []string) {
+	c.paramKeys = keys
+	c.paramValues = values
+}
+
+func HTTPParamValues(c *HTTPContext) []string {
+	return c.paramValues
+}
+
+func HTTPNext(c *HTTPContext) Next {
+	return c.next
+}
+
+func HTTPSetNext(c *HTTPContext, next Next) {
+	c.next = next
+}
+
+func HTTPCode(c *HTTPContext) int {
+	return c.code
+}
+
+func HTTPSetCode(c *HTTPContext, code int) {
+	c.code = code
+}
+
+func HTTPTimestamp(c *HTTPContext) *time.Time {
+	return &c.timestamp
+}
+
 func (c *HTTPContext) Status(code int) *HTTPContext {
-	c.Code = code
+	c.code = code
 	return c
 }
 
 func (c *HTTPContext) Text(data string, args ...any) {
 	c.ResponseWriter.Header()["Content-Type"] = []string{textPlainUTF8}
-	c.ResponseWriter.WriteHeader(c.Code)
+	c.ResponseWriter.WriteHeader(c.code)
 	writeText(c.ResponseWriter, data, args)
 }
 
@@ -111,7 +140,7 @@ func writeText(w io.Writer, data string, args []any) {
 func (c *HTTPContext) JSON(data any, args ...any) {
 	body := encodeJSON(data, args)
 	c.ResponseWriter.Header()["Content-Type"] = []string{applicationJSON}
-	c.ResponseWriter.WriteHeader(c.Code)
+	c.ResponseWriter.WriteHeader(c.code)
 	_, _ = c.ResponseWriter.Write(body)
 }
 
@@ -135,15 +164,15 @@ func (c *HTTPContext) JSONP(data any, args ...any) {
 	h := c.ResponseWriter.Header()
 	h["Content-Type"] = []string{textJavaScriptUTF8}
 	h["X-Content-Type-Options"] = []string{"nosniff"}
-	c.ResponseWriter.WriteHeader(c.Code)
+	c.ResponseWriter.WriteHeader(c.code)
 	_, _ = c.ResponseWriter.Write(out)
 }
 
 func (c *HTTPContext) Redirect(url string) {
-	if c.Code < http.StatusMultipleChoices || c.Code >= http.StatusBadRequest {
-		c.Code = http.StatusMovedPermanently
+	if c.code < http.StatusMultipleChoices || c.code >= http.StatusBadRequest {
+		c.code = http.StatusMovedPermanently
 	}
-	http.Redirect(c.ResponseWriter, c.Request, url, c.Code)
+	http.Redirect(c.ResponseWriter, c.Request, url, c.code)
 }
 
 func encodeJSON(data any, args []any) []byte {

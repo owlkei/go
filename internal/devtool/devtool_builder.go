@@ -13,10 +13,10 @@ import (
 type devtoolBuilder struct {
 	versioning *versioning.Versioning
 
-	globalExceptionFilters []common.ExceptionFilterable
+	globalExceptionFilters []any
 	globalMiddlewares      []common.MiddlewareFn
-	globalGuarders         []common.Guarder
-	globalInterceptors     []common.Interceptable
+	globalGuarders         []any
+	globalInterceptors     []any
 
 	moduleExceptionFilters []common.HTTPLayer
 	moduleMiddlewares      []common.HTTPLayer
@@ -36,7 +36,7 @@ func DevtoolBuilder() *devtoolBuilder {
 }
 
 func (devtoolBuilder *devtoolBuilder) AddExceptionFilters(
-	globalExceptionFilters []common.ExceptionFilterable,
+	globalExceptionFilters []any,
 	moduleExceptionFilters []common.HTTPLayer,
 ) *devtoolBuilder {
 	devtoolBuilder.globalExceptionFilters = append(devtoolBuilder.globalExceptionFilters, globalExceptionFilters...)
@@ -56,7 +56,7 @@ func (devtoolBuilder *devtoolBuilder) AddMiddlewares(
 }
 
 func (devtoolBuilder *devtoolBuilder) AddGuarders(
-	globalGuarders []common.Guarder,
+	globalGuarders []any,
 	moduleGuarders []common.HTTPLayer,
 ) *devtoolBuilder {
 	devtoolBuilder.globalGuarders = append(devtoolBuilder.globalGuarders, globalGuarders...)
@@ -66,7 +66,7 @@ func (devtoolBuilder *devtoolBuilder) AddGuarders(
 }
 
 func (devtoolBuilder *devtoolBuilder) AddInterceptors(
-	globalInterceptors []common.Interceptable,
+	globalInterceptors []any,
 	moduleInterceptors []common.HTTPLayer,
 ) *devtoolBuilder {
 	devtoolBuilder.globalInterceptors = append(devtoolBuilder.globalInterceptors, globalInterceptors...)
@@ -94,7 +94,7 @@ func (devtoolBuilder *devtoolBuilder) AddHTTPMainHandlers(httpMainHandlers []com
 func (devtoolBuilder *devtoolBuilder) createGlobalHTTPLayers() ([]*Layer, []*Layer, []*Layer, []*Layer) {
 	globalExceptionFilters := slice.Map(
 		devtoolBuilder.globalExceptionFilters,
-		func(el common.ExceptionFilterable, i int) *Layer {
+		func(el any, i int) *Layer {
 			return &Layer{
 				Name:  reflect.TypeOf(el).String(),
 				Scope: LayerScope_GLOBAL_SCOPE,
@@ -114,7 +114,7 @@ func (devtoolBuilder *devtoolBuilder) createGlobalHTTPLayers() ([]*Layer, []*Lay
 
 	globalGuarders := slice.Map(
 		devtoolBuilder.globalGuarders,
-		func(el common.Guarder, i int) *Layer {
+		func(el any, i int) *Layer {
 			return &Layer{
 				Name:  reflect.TypeOf(el).String(),
 				Scope: LayerScope_GLOBAL_SCOPE,
@@ -124,7 +124,7 @@ func (devtoolBuilder *devtoolBuilder) createGlobalHTTPLayers() ([]*Layer, []*Lay
 
 	globalInterceptors := slice.Map(
 		devtoolBuilder.globalInterceptors,
-		func(el common.Interceptable, i int) *Layer {
+		func(el any, i int) *Layer {
 			return &Layer{
 				Name:  reflect.TypeOf(el).String(),
 				Scope: LayerScope_GLOBAL_SCOPE,

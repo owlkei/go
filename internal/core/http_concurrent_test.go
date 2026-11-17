@@ -72,7 +72,7 @@ type ccCase struct {
 func TestServeHTTP_ConcurrentAllPaths_NoRace(t *testing.T) {
 	app := New()
 	app.SetLogger(&mockLogger{})
-	app.Create(ModuleBuilder().Controllers(ccController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(ccController{}).Build())
 
 	cases := []ccCase{
 		{http.MethodGet, "/ok", [2]string{}, http.StatusOK, "ok>t"},

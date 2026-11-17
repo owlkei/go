@@ -9,8 +9,9 @@
   - [Security](#security)
   - [`HTTPContext`](#httpcontext)
     - [Fields](#fields)
-    - [NewHTTPContext, Init and Reset](#newhttpcontext-init-and-reset)
-    - [GetID and Context](#getid-and-context)
+    - [NewHTTPContext, HTTPInit and HTTPReset](#newhttpcontext-httpinit-and-httpreset)
+    - [Framework hooks](#framework-hooks)
+    - [ID and Context](#id-and-context)
     - [Status](#status)
     - [Text](#text)
     - [JSON](#json)
@@ -22,7 +23,7 @@
     - [Query](#query)
     - [Header](#header)
     - [Param](#param)
-    - [AddAggregation and Aggregations](#addaggregation-and-aggregations)
+    - [HTTPAddAggregation and HTTPAggregations](#httpaddaggregation-and-httpaggregations)
   - [`WSContext`](#wscontext)
   - [Request data types](#request-data-types)
     - [Body methods](#body-methods)
@@ -77,13 +78,13 @@ func (instance SearchController) NewController() core.Controller {
 
 func (instance SearchController) READ_search(c *ctx.HTTPContext, q ctx.Query) ctx.Map {
 	dto := q.BindValue(SearchDTO{}).(SearchDTO)
-	return ctx.Map{"term": dto.Term, "page": dto.Page, "request": c.GetID()}
+	return ctx.Map{"term": dto.Term, "page": dto.Page, "request": c.ID()}
 }
 
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Controllers(SearchController{}).
 			Build(),
 	)
@@ -97,8 +98,8 @@ func main() {
 
 ## Concurrency and lifetime
 
-- A context belongs to one request and one goroutine. `core` takes it from a pool, calls `Init`, runs the pipeline, calls `Reset` and puts it back. Don't keep the context, or anything that aliases it (`ParamValues`, `Aggregations()`), after the request ends.
-- `GetID` is a pure read after `Init`: goroutines started by a handler may log it.
+- A context belongs to one request and one goroutine. `core` takes it from a pool, calls `HTTPInit`, runs the pipeline, calls `HTTPReset` and puts it back. Don't keep the context, or anything that aliases it (`HTTPParamValues`, `HTTPAggregations`), after the request ends.
+- `ID` is a pure read after `HTTPInit`: goroutines started by a handler may log it.
 - `c.Context()` outlives the request: a goroutine that keeps it (or a context derived from it) still reads the request's IDs after the handler returned, after the pooled context was reused and after the request was cancelled. Pass `c.Context()` to services and goroutines, never `c` itself.
 - A `*Binder` is immutable and safe for concurrent use. `BinderOf` may be called from any goroutine.
 
@@ -117,92 +118,73 @@ func main() {
 #### Request
 Type: `*http.Request` (embedded)
 
-The request. `Init` sets it to a copy of the request it receives, whose context carries the request's trace scope; the request passed in is not modified.
+The request. `HTTPInit` sets it to a copy of the request it receives, whose context carries the request's trace scope; the request passed in is not modified.
 
 #### ResponseWriter
 Type: `http.ResponseWriter` (embedded)
 
-The response writer. Set by `Init`.
+The response writer. Set by `HTTPInit`.
 
-#### ParamKeys
-Type: `map[string][]int`
+These are the only exported fields. The route parameters, the middlewares' `next`, the status code and the start time are unexported fields that `core` reaches through the hooks below; a handler sets the status with `Status` and receives `next` as a `ctx.Next` parameter.
 
-Default: `nil`
+### NewHTTPContext, HTTPInit and HTTPReset
 
-Route parameter names and their indexes in `ParamValues`. Written by the router.
+`NewHTTPContext() *HTTPContext` returns a context whose status code is `200`.
 
-#### ParamValues
-Type: `[]string`
+`HTTPInit(c *HTTPContext, w http.ResponseWriter, r *http.Request)` sets the start time, `ResponseWriter`, the request's trace scope and `Request` (`r.WithContext` of a context that carries the scope), and nothing else. The scope holds the request ID, the trace ID (continued from a valid incoming `traceparent`, or new and made from the start time) and the caller's ID (`upstream`).
 
-Default: `nil`
-
-Route parameter values. Written by the router into this slice's own backing array; valid only during the request (`Param()` copies them). Don't keep the slice after the request: the pooled context reuses it.
-
-#### Next
-Type: `Next`
-
-Default: `nil`
-
-The `next` of the request's middlewares: it only says "continue". `core` sets it per request (a shared no-op on routes without middleware).
-
-#### Code
-Type: `int`
-
-Default: `200`
-
-The status code that `Text`, `JSON`, `JSONP` and `Redirect` write.
-
-#### Timestamp
-Type: `time.Time`
-
-The time `Init` ran.
-
-### NewHTTPContext, Init and Reset
-
-`NewHTTPContext() *HTTPContext` returns a context with `Code` set to `200`.
-
-`Init(w http.ResponseWriter, r *http.Request)` sets `Timestamp`, `ResponseWriter`, the request's trace scope and `Request` (`r.WithContext` of a context that carries the scope), and nothing else. The scope holds the request ID, the trace ID (continued from a valid incoming `traceparent`, or new and made from `Timestamp`) and the caller's ID (`upstream`).
-
-`Reset()` drops every reference the context holds (request, writer, parsed input, parameters, aggregations, `Next`) and sets `Code` back to `200`. It keeps the capacity of `ParamValues` and of the aggregation list, with every element cleared, so the next request appends without allocating; a slice whose capacity is over 64 is dropped.
+`HTTPReset(c *HTTPContext)` drops every reference the context holds (request, writer, parsed input, parameters, aggregations, `next`) and sets the status code back to `200`. It keeps the capacity of the parameter values and of the aggregation list, with every element cleared, so the next request appends without allocating; a slice whose capacity is over 64 is dropped.
 
 ```go
 c := ctx.NewHTTPContext()
-c.Init(w, r)
-defer c.Reset()
+ctx.HTTPInit(c, w, r)
+defer ctx.HTTPReset(c)
 ```
 
 #### Rules
-- `Code` is `200` after `NewHTTPContext` and after `Reset`; `Init` doesn't change it.
-- After `Reset`, the context equals `NewHTTPContext()` in every field except the capacity of `ParamValues` and of the aggregation list: both have length 0 and every element of their backing arrays is zero.
+- `HTTPCode(c)` is `200` after `NewHTTPContext` and after `HTTPReset`; `HTTPInit` doesn't change it.
+- After `HTTPReset`, the context equals `NewHTTPContext()` in every field except the capacity of the parameter values and of the aggregation list: both have length 0 and every element of their backing arrays is zero.
 - A capacity of up to 64 is kept; over 64 the slice is dropped (`nil`).
-- `AddAggregation` on a warm context allocates nothing.
-- A context reused after `Reset` has no trace of the previous request: ID, code, body, form, files, query, header, parameters, aggregations and `Next`.
-- `Init` leaves `r` unchanged and keeps the values, deadline and cancellation of `r.Context()` in `c.Context()`.
+- `HTTPAddAggregation` on a warm context allocates nothing.
+- A context reused after `HTTPReset` has no trace of the previous request: ID, code, body, form, files, query, header, parameters, aggregations and `next`.
+- `HTTPInit` leaves `r` unchanged and keeps the values, deadline and cancellation of `r.Context()` in `c.Context()`.
 
-### GetID and Context
+### Framework hooks
 
-`GetID() string` returns the request ID, which `core` also sends as the `X-Request-Id` response header. `Context() context.Context` (promoted from `Request`) returns the request's context, which carries the trace scope that loggers and `trace.Transport` (outbound `net/http` calls) read.
+What `core` needs from a context and a handler must not touch is a package-level function, not a method: a method would stay reachable through the root alias `ginject.HTTPContext`, a function of an `internal/` package is not. Each one is a leaf the compiler inlines, so it costs what the field access it replaces cost.
+
+| Function | Does |
+|----------|------|
+| `HTTPSetParams(c, keys map[string][]int, values []string)` | Sets the route parameter names (with their indexes in `values`) and values, as the router matched them. `values` is the router's buffer: valid only during the request (`Param()` copies them) |
+| `HTTPParamValues(c) []string` | The parameter values; `core` passes `HTTPParamValues(c)[:0]` to the router so a match reuses the kept capacity |
+| `HTTPNext(c) Next` / `HTTPSetNext(c, next Next)` | The `next` of the request's middlewares: it only says "continue". `core` sets it per request (a shared no-op on routes without middleware). `nil` on a new context |
+| `HTTPCode(c) int` / `HTTPSetCode(c, code int)` | The status code that `Text`, `JSON`, `JSONP` and `Redirect` write. `Status` sets the same value |
+| `HTTPTimestamp(c) *time.Time` | The time `HTTPInit` ran; zero before. Never `nil`: it points into the context |
+
+### ID and Context
+
+`ID() string` returns the request ID, which `core` also sends as the `X-Request-Id` response header. `Context() context.Context` (promoted from `Request`) returns the request's context, which carries the trace scope that loggers and `trace.Transport` (outbound `net/http` calls) read.
 
 ```go
 func (ctl UsersController) READ(c *ctx.HTTPContext) string {
-	go audit(c.Context(), c.GetID())
+	go audit(c.Context(), c.ID())
 	return "ok"
 }
 ```
 
 #### Rules
-- The ID is 16 lowercase hexadecimal characters; it is `""` before `Init` and after `Reset`.
+- The ID is 16 lowercase hexadecimal characters; it is `""` before `HTTPInit` and after `HTTPReset`.
 - Neither the `X-Request-Id` nor the `traceparent` request header sets it; a valid `traceparent` only continues the trace ID, and a valid `X-Request-Id` becomes the scope's upstream.
-- `c.Context()` and `c.Request.Context()` carry the same scope; a context kept after `Reset` and reuse still reads the first request's IDs.
+- `c.Context()` and `c.Request.Context()` carry the same scope; a context kept after `HTTPReset` and reuse still reads the first request's IDs.
 - IDs of contexts used concurrently are unique and never mix.
 
 ### Status
 
-`Status(code int) *HTTPContext` sets `Code` and returns the context, so it chains: `c.Status(201).JSON(data)`.
+`Status(code int) *HTTPContext` sets the status code and returns the context, so it chains: `c.Status(201).JSON(data)`.
 
 ### Text
 
-`Text(data string, args ...any)` writes `Content-Type: text/plain; charset=utf-8`, the status `Code` and `data`.
+`Text(data string, args ...any)` writes `Content-Type: text/plain; charset=utf-8`, the status code and `data`.
 
 #### Parameters
 1. `data` `string`: the body, or a format string when `args` are given.
@@ -222,7 +204,7 @@ c.Text("hello %s", "joe")
 
 ### JSON
 
-`JSON(data any, args ...any)` writes `Content-Type: application/json`, the status `Code` and the encoded `data`.
+`JSON(data any, args ...any)` writes `Content-Type: application/json`, the status code and the encoded `data`.
 
 #### Parameters
 1. `data` `any`: a raw JSON `string`, a `JSONAppender`, or any value `encoding/json` can encode.
@@ -262,7 +244,7 @@ c.JSON(`{"greeting":"%s"}`, "hi")
 `Redirect(url string)` answers with `http.Redirect`.
 
 #### Rules
-- The status is `Code` when it is 3xx, else `301`; `Code` then holds the status sent.
+- The status is the status code when it is 3xx, else `301`; the status code then holds the status sent.
 - The `Location` header is the given URL.
 
 ```go
@@ -325,36 +307,38 @@ c.Status(http.StatusSeeOther).Redirect(next)
 
 ### Param
 
-`Param() Param` returns the route parameters built from `ParamKeys` and `ParamValues`, once per request.
+`Param() Param` returns the route parameters set by `HTTPSetParams`, once per request.
 
 #### Rules
-- Values follow the order of each key's indexes and are copied: the map stays valid when the router reuses `ParamValues`, and writing to it never writes to `ParamValues`.
+- Values follow the order of each key's indexes and are copied: the map stays valid when the router reuses the values, and writing to it never writes to them.
 - Appending to one parameter never overwrites another's values.
-- An index outside `ParamValues` is skipped.
+- An index outside the values is skipped.
 - `Param` never returns `nil`.
 
-### AddAggregation and Aggregations
+### HTTPAddAggregation and HTTPAggregations
 
-`AddAggregation(a *aggregation.Aggregation)` appends to the request's aggregation list; `Aggregations() []*aggregation.Aggregation` returns it.
+`HTTPAddAggregation(c, a *aggregation.Aggregation)` appends to the request's aggregation list; `HTTPAggregations(c) []*aggregation.Aggregation` returns it.
 
 #### Rules
 - The list keeps the order of the calls and is empty on a new context.
-- `Reset` empties it: a reused context starts with no aggregation.
+- `HTTPReset` empties it: a reused context starts with no aggregation.
 
 ## `WSContext`
 
-The context of a WebSocket message. It embeds `*websocket.Conn` and has the fields `Next Next` and `Timestamp time.Time`.
+The context of a WebSocket message. It embeds `*websocket.Conn`, its only exported field. Methods are what a handler uses; the `WS…` functions are the framework hooks (same rule as `HTTPContext`).
 
-| Method | Description |
+| Method or function | Description |
 |--------|-------------|
 | `NewWSContext() *WSContext` | Returns an empty context. |
-| `Init(conn *websocket.Conn)` | Sets `Timestamp`, the connection and the message's trace scope: a 16-character message ID, the connection's trace ID and the connection ID (the handshake's request ID) as its parent. Without a connection, a request or a scope on it (`Init(nil)`), the message starts its own trace and has no connection. |
-| `Reset()` | Zeroes every field except `Timestamp`: ID, connection, payload, context, send function, aggregations and `Next`. |
-| `GetID() string` | The message ID; `""` before `Init` and after `Reset`. Every message has its own, and it never changes after `Init`. |
-| `WSPayload() WSPayload` / `SetWSPayload(p WSPayload)` | The message payload; `nil` before `SetWSPayload`. |
-| `Send(data any)` / `SetSend(fn func(data any))` | Sends through the function set by `SetSend`; does nothing without one. |
-| `Context() context.Context` / `SetContext(ctx context.Context)` | After `Init`, the message context: it carries the message scope and is done when the connection's handler returns; it keeps its IDs after `Reset` and after the connection closed. `context.Background()` before `Init` (unless `SetContext` set one) and after `Reset`. `SetContext` keeps the message scope: a context derived from the message context is stored as it is, any other is wrapped so the message scope stays the nearest, and `nil` is ignored. |
-| `AddAggregation(a *aggregation.Aggregation)` / `Aggregations() []*aggregation.Aggregation` | Same rules as `HTTPContext`. |
+| `WSInit(c, conn *websocket.Conn)` | Sets the start time, the connection and the message's trace scope: a 16-character message ID, the connection's trace ID and the connection ID (the handshake's request ID) as its parent. Without a connection, a request or a scope on it (`WSInit(c, nil)`), the message starts its own trace and has no connection. |
+| `WSReset(c)` | Zeroes every field except the start time: ID, connection, payload, context, send function, aggregations and `next`. |
+| `ID() string` | The message ID; `""` before `WSInit` and after `WSReset`. Every message has its own, and it never changes after `WSInit`. |
+| `WSTimestamp(c) time.Time` | The time `WSInit` ran. |
+| `WSNext(c) Next` / `WSSetNext(c, next Next)` | The `next` of the message's middlewares; `nil` on a new context and after `WSReset`. |
+| `WSPayload() WSPayload` / `WSSetPayload(c, p WSPayload)` | The message payload; `nil` before `WSSetPayload`. |
+| `Send(data any)` / `WSSetSend(c, fn func(data any))` | Sends through the function set by `WSSetSend`; does nothing without one. |
+| `Context() context.Context` / `SetContext(ctx context.Context)` | After `WSInit`, the message context: it carries the message scope and is done when the connection's handler returns; it keeps its IDs after `WSReset` and after the connection closed. `context.Background()` before `WSInit` (unless `SetContext` set one) and after `WSReset`. `SetContext` keeps the message scope: a context derived from the message context is stored as it is, any other is wrapped so the message scope stays the nearest, and `nil` is ignored. |
+| `WSAddAggregation(c, a *aggregation.Aggregation)` / `WSAggregations(c) []*aggregation.Aggregation` | Same rules as `HTTPContext`. |
 
 ## Request data types
 
@@ -545,10 +529,9 @@ An uploaded file bound by `File.Bind`.
 
 | Name | Definition |
 |------|------------|
-| `Context` | `interface { Reset(); GetID() string; Context() context.Context }`, implemented by both contexts. |
+| `Context` | `interface { ID() string; Context() context.Context }`, implemented by both contexts. |
 | `JSONAppender` | `interface { AppendJSON(dst []byte) []byte }`: a value that writes its own JSON. |
 | `Map` | `map[string]any`. |
-| `ErrFunc` | `func(error)`. |
 | `HTTPHandler` | `func(*HTTPContext)`. |
 | `WSHandler` | `func(*WSContext)`. |
 | `Next` | `func()`. |
@@ -565,8 +548,8 @@ An uploaded file bound by `File.Bind`.
 - **Field level capacity.** The plan counts the field levels of nested struct fields, so `Bind` allocates the slice once.
 - **Response headers** are assigned to the header map directly (`h["Content-Type"] = []string{…}`), without `Header.Set`'s canonicalization.
 - **JSON.** A `Map` or `map[string]any` is encoded through a pointer, which `encoding/json` serves a few percent faster; every other value is passed as is. A `JSONAppender` skips `encoding/json`.
-- **Kept capacity.** `Reset` keeps the backing arrays of `ParamValues` and the aggregation list (up to 64 elements, cleared), so a warm context appends without allocating: `AddAggregation` plus `Reset` costs about 17 ns and 0 allocations.
-- **Trace scope.** `Init` builds the request scope once (the 55-byte `traceparent` string and one context value that holds the scope, together 240 B) and copies the request with `r.WithContext` (about 320 B), so middleware that only sees `*http.Request` reads the same IDs: about 220 ns and 3 allocations per request. A WebSocket message costs one scope (2 allocations, 240 B). Nothing is pooled: the scope must outlive the request.
+- **Kept capacity.** `HTTPReset` keeps the backing arrays of the parameter values and the aggregation list (up to 64 elements, cleared), so a warm context appends without allocating: `HTTPAddAggregation` plus `HTTPReset` costs about 17 ns and 0 allocations.
+- **Trace scope.** `HTTPInit` builds the request scope once (the 55-byte `traceparent` string and one context value that holds the scope, together 240 B) and copies the request with `r.WithContext` (about 320 B), so middleware that only sees `*http.Request` reads the same IDs: about 220 ns and 3 allocations per request. A WebSocket message costs one scope (2 allocations, 240 B). Nothing is pooled: the scope must outlive the request.
 - **Numbers** go through `num.F64ToAnyNumOK`, whose boxed result allocates for values that are not small integers.
 
 ## Benchmarks

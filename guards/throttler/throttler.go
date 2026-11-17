@@ -13,7 +13,6 @@ import (
 
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/memorycache"
@@ -75,7 +74,7 @@ type result struct {
 	resetAt   int64
 }
 
-func (instance Throttler) NewGuard() common.Guarder {
+func (instance Throttler) NewGuard() any {
 	return loadThrottlerOptions(&instance)
 }
 

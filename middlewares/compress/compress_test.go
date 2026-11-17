@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"github.com/dangduoc08/ginject"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -77,7 +78,7 @@ func TestCompress_RoundTrip_ThroughRoute(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Compress{})
-	app.Create(core.ModuleBuilder().Controllers(bigController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(bigController{}).Build())
 	w := serve(app, request(http.MethodGet, "/big", "Accept-Encoding", "gzip"))
 	res, body := resultOf(t, w)
 	if res.Header.Get("Content-Encoding") != "gzip" {
@@ -481,7 +482,7 @@ func TestCompress_ServeFileKeepsReadFrom(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Compress{})
-	app.Create(core.ModuleBuilder().Controllers(fileController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(fileController{}).Build())
 
 	for _, name := range []string{"logo.png", "small.html"} {
 		w := &readerFromWriter{header: http.Header{}}

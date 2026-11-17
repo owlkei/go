@@ -14,9 +14,9 @@ func BenchmarkHTTPContext_FormURLEncoded(b *testing.B) {
 	for b.Loop() {
 		r := httptest.NewRequest("POST", "/", strings.NewReader("foo=bar&baz=qux"))
 		r.Header.Set("Content-Type", applicationXWWWFormUrlencoded)
-		c.Init(w, r)
+		HTTPInit(c, w, r)
 		n += len(c.Form())
-		c.Reset()
+		HTTPReset(c)
 	}
 	if n == 0 {
 		b.Fatal("Form should not be empty")

@@ -378,8 +378,8 @@ func (c *container) bindHTTPController(controller Controller) {
 		methodName := controllerType.Method(j).Name
 
 		handler := controllerValue.Method(j).Interface()
-		http.AddHandlerToRouterMap(modulePrefixes, methodName, handler)
-		if pattern, ok := http.FuncNameToPatternMap[methodName]; ok {
+		common.AddHandlerToRouterMap(&http, modulePrefixes, methodName, handler)
+		if pattern, ok := common.HTTPFuncNameToPatternMap(&http)[methodName]; ok {
 			c.addRoute(pattern, methodName)
 		}
 	}
@@ -389,9 +389,9 @@ func (c *container) bindHTTPController(controller Controller) {
 	c.bindHTTPGuards(controller, controllerType, controllerPath, &http)
 	c.bindHTTPInterceptors(controller, controllerType, controllerPath, &http)
 
-	planByName := make(map[string]*httpHandlerPlan, len(http.RouterMap))
-	for pattern, handler := range http.RouterMap {
-		name := http.PatternToFuncNameMap[pattern]
+	planByName := make(map[string]*httpHandlerPlan, len(common.HTTPRouterMap(&http)))
+	for pattern, handler := range common.HTTPRouterMap(&http) {
+		name := common.HTTPPatternToFuncNameMap(&http)[pattern]
 		plan, ok := planByName[name]
 		if !ok {
 			method, _ := controllerType.MethodByName(name)
@@ -420,7 +420,7 @@ func (c *container) bindHTTPExceptionFilters(controller Controller, controllerTy
 	}
 
 	exceptionFilter := reflect.ValueOf(controller).FieldByName(fieldNameByRole["exceptionFilter"]).Interface().(common.ExceptionFilter)
-	items := exceptionFilter.InjectProvidersIntoHTTPExceptionFilters(http, buildFieldInjectionCallback("exceptionFilter", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoHTTPExceptionFilters(&exceptionFilter, http, buildFieldInjectionCallback("exceptionFilter", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.httpExceptionFilters = append(c.httpExceptionFilters, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
@@ -433,7 +433,7 @@ func (c *container) bindHTTPMiddlewares(controller Controller, controllerType re
 	}
 
 	middleware := reflect.ValueOf(controller).FieldByName(fieldNameByRole["middleware"]).Interface().(common.Middleware)
-	items := middleware.InjectProvidersIntoHTTPMiddlewares(http, buildFieldInjectionCallback("middleware function", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoHTTPMiddlewares(&middleware, http, buildFieldInjectionCallback("middleware function", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.httpMiddlewares = append(c.httpMiddlewares, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
@@ -446,7 +446,7 @@ func (c *container) bindHTTPGuards(controller Controller, controllerType reflect
 	}
 
 	guard := reflect.ValueOf(controller).FieldByName(fieldNameByRole["guard"]).Interface().(common.Guard)
-	items := guard.InjectProvidersIntoHTTPGuards(http, buildFieldInjectionCallback("guarder", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoHTTPGuards(&guard, http, buildFieldInjectionCallback("guarder", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.httpGuards = append(c.httpGuards, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
@@ -459,7 +459,7 @@ func (c *container) bindHTTPInterceptors(controller Controller, controllerType r
 	}
 
 	interceptor := reflect.ValueOf(controller).FieldByName(fieldNameByRole["interceptor"]).Interface().(common.Interceptor)
-	items := interceptor.InjectProvidersIntoHTTPInterceptors(http, buildFieldInjectionCallback("interceptor", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoHTTPInterceptors(&interceptor, http, buildFieldInjectionCallback("interceptor", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.httpInterceptors = append(c.httpInterceptors, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
@@ -493,7 +493,7 @@ func (c *container) bindWSController(controller Controller) {
 		method := controllerType.Method(j)
 
 		handler := controllerValue.Method(j).Interface()
-		ws.AddHandlerToEventMap(method.Name, handler)
+		common.AddHandlerToEventMap(&ws, method.Name, handler)
 		if eventName, ok := common.ParseWSFuncNameToEvent(method.Name); ok {
 			c.addEvent(eventName, method.Name)
 			methodByEvent[eventName] = method
@@ -504,7 +504,7 @@ func (c *container) bindWSController(controller Controller) {
 	c.bindWSInterceptors(controller, controllerType, &ws)
 	c.bindWSExceptionFilters(controller, controllerType, &ws)
 
-	for eventName, handler := range ws.EventMap {
+	for eventName, handler := range common.WSEventMap(&ws) {
 		c.wsPlanByEvent[eventName] = newWSHandlerPlan(controllerValue, methodByEvent[eventName], c.providerByKey, c)
 
 		c.wsMainHandlers = append(c.wsMainHandlers, common.WSLayer{
@@ -520,7 +520,7 @@ func (c *container) bindWSGuards(controller Controller, controllerType reflect.T
 	}
 
 	guard := reflect.ValueOf(controller).FieldByName(fieldNameByRole["guard"]).Interface().(common.Guard)
-	items := guard.InjectProvidersIntoWSGuards(ws, buildFieldInjectionCallback("guarder", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoWSGuards(&guard, ws, buildFieldInjectionCallback("guarder", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.wsGuards = append(c.wsGuards, common.WSLayer{
@@ -537,7 +537,7 @@ func (c *container) bindWSInterceptors(controller Controller, controllerType ref
 	}
 
 	interceptor := reflect.ValueOf(controller).FieldByName(fieldNameByRole["interceptor"]).Interface().(common.Interceptor)
-	items := interceptor.InjectProvidersIntoWSInterceptors(ws, buildFieldInjectionCallback("interceptor", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoWSInterceptors(&interceptor, ws, buildFieldInjectionCallback("interceptor", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.wsInterceptors = append(c.wsInterceptors, common.WSLayer{
@@ -554,7 +554,7 @@ func (c *container) bindWSExceptionFilters(controller Controller, controllerType
 	}
 
 	exceptionFilter := reflect.ValueOf(controller).FieldByName(fieldNameByRole["exceptionFilter"]).Interface().(common.ExceptionFilter)
-	items := exceptionFilter.InjectProvidersIntoWSExceptionFilters(ws, buildFieldInjectionCallback("exceptionFilter", c.providerByKey, c), c.construct)
+	items := common.InjectProvidersIntoWSExceptionFilters(&exceptionFilter, ws, buildFieldInjectionCallback("exceptionFilter", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
 		c.wsExceptionFilters = append(c.wsExceptionFilters, common.WSLayer{

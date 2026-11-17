@@ -153,9 +153,8 @@ func planRequestContext() *ctx.HTTPContext {
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-Probe", "p")
 	c := ctx.NewHTTPContext()
-	c.Init(httptest.NewRecorder(), r)
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"7"}
+	ctx.HTTPInit(c, httptest.NewRecorder(), r)
+	ctx.HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"7"})
 	return c
 }
 
@@ -441,7 +440,7 @@ func (h *planCtl) HAll(c *ctx.HTTPContext, r *http.Request, w http.ResponseWrite
 	next()
 	nextSeen := planNextCalls
 	redirect("/x")
-	h.got = []any{c, r, w, body, form, query, header, param, file, nextSeen, c.Code, pub, cp, bp, fp, qp, hp, pp, filep}
+	h.got = []any{c, r, w, body, form, query, header, param, file, nextSeen, ctx.HTTPCode(c), pub, cp, bp, fp, qp, hp, pp, filep}
 	return 202, "all"
 }
 
@@ -563,7 +562,7 @@ func TestHTTPHandlerPlan_InjectsNext(t *testing.T) {
 	planResetState(t)
 	h := &planCtl{}
 	c := planRequestContext()
-	c.Next = func() { planNextCalls++ }
+	ctx.HTTPSetNext(c, func() { planNextCalls++ })
 	planInvoke(planHTTP(t, h, "HNext", nil), c)
 	if planNextCalls != 1 {
 		t.Error(test.DiffMessage(planNextCalls, 1, "B1, B8: ctx.Next acts on c.Next"))
@@ -627,7 +626,7 @@ func TestHTTPHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	recv, method := planMethod(t, h, "HAll")
 	plan := newHTTPHandlerPlan(recv, method, providers, planCtr)
 	c := planRequestContext()
-	c.Next = func() { planNextCalls++ }
+	ctx.HTTPSetNext(c, func() { planNextCalls++ })
 
 	planPipeCalls = nil
 	refResults := planReferenceHTTP(t, recv, method.Name, providers, c)
@@ -714,7 +713,7 @@ func planReferenceArg(t testing.TB, at reflect.Type, providers map[string]Provid
 	case refFileT:
 		return reflect.ValueOf(c.File())
 	case refNextT:
-		return reflect.ValueOf(c.Next)
+		return reflect.ValueOf(ctx.HTTPNext(c))
 	case refRedirectT:
 		return reflect.ValueOf(c.Redirect)
 	case refPublisherT:
@@ -1006,7 +1005,7 @@ func TestHTTPHandlerPlan_ExceptionFromAccessorPropagates(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.Body = http.MaxBytesReader(w, r.Body, 4)
 	c := ctx.NewHTTPContext()
-	c.Init(w, r)
+	ctx.HTTPInit(c, w, r)
 
 	rec := planPanicOf(func() { planInvoke(plan, c) })
 	ex, ok := planExceptionOf(rec)
@@ -1084,7 +1083,7 @@ func TestHTTPHandlerPlan_PipeMetadataContextTypeIsHTTP(t *testing.T) {
 	h := &planCtl{}
 	plan := planHTTP(t, h, "HAll", planProviders())
 	c := planRequestContext()
-	c.Next = func() {}
+	ctx.HTTPSetNext(c, func() {})
 	planInvoke(plan, c)
 	if len(planPipeCalls) != 7 {
 		t.Fatal(test.DiffMessage(len(planPipeCalls), 7, "fixture: seven pipes"))
@@ -1210,7 +1209,7 @@ func TestHTTPHandlerPlan_TracedEqualsUntraced(t *testing.T) {
 	plan := planHTTP(t, h, "HAll", planProviders())
 
 	c := planRequestContext()
-	c.Next = func() { planNextCalls++ }
+	ctx.HTTPSetNext(c, func() { planNextCalls++ })
 	untraced := plan.invoke(c, &trace.Tracer{})
 	gotUntraced := h.got
 	pipesUntraced := planPipeCalls
@@ -1248,8 +1247,8 @@ func TestHTTPHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
 		t.Fatal(test.DiffMessage(len(got), 1, "B13: one pipe event for one pipe"))
 	}
 	e := got[0]
-	if e.ID != c.GetID() || e.ID == "" {
-		t.Error(test.DiffMessage(e.ID, c.GetID(), "B13: ID"))
+	if e.ID != c.ID() || e.ID == "" {
+		t.Error(test.DiffMessage(e.ID, c.ID(), "B13: ID"))
 	}
 	if want := reflect.TypeOf(slowPipe{}).String(); e.Name != want {
 		t.Error(test.DiffMessage(e.Name, want, "B13: Name is the parameter type"))
@@ -1333,8 +1332,8 @@ func TestHTTPHandlerPlan_EmitsStageHandler(t *testing.T) {
 	if e.Name != "HOne" {
 		t.Error(test.DiffMessage(e.Name, "HOne", "B14: Name is the method name"))
 	}
-	if e.ID != c.GetID() || e.ID == "" {
-		t.Error(test.DiffMessage(e.ID, c.GetID(), "B14: ID"))
+	if e.ID != c.ID() || e.ID == "" {
+		t.Error(test.DiffMessage(e.ID, c.ID(), "B14: ID"))
 	}
 	if e.Transport != trace.TransportHTTP {
 		t.Error(test.DiffMessage(e.Transport, trace.TransportHTTP, "T7: the handler event carries its Transport"))

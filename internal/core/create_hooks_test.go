@@ -9,7 +9,7 @@ import (
 )
 
 func hkModule(rec *createRecorder, name string, imports ...any) *Module {
-	m := ModuleBuilder().Imports(imports...).Build()
+	m := NewModuleBuilder().Imports(imports...).Build()
 	m.OnInit = rec.hook("init:" + name)
 	m.OnReady = rec.hook("ready:" + name)
 	m.OnShutdown = rec.hook("shutdown:" + name)
@@ -69,9 +69,9 @@ func (p hkProvider) NewProvider() Provider {
 func TestHooks_OnInitBeforeOwnProviders(t *testing.T) {
 	hkEvents = createRecorder{}
 
-	child := ModuleBuilder().Providers(hkProvider{}).Build()
+	child := NewModuleBuilder().Providers(hkProvider{}).Build()
 	child.OnInit = func() { hkEvents.add("init:child") }
-	root := ModuleBuilder().Imports(child).Build()
+	root := NewModuleBuilder().Imports(child).Build()
 	root.OnInit = func() { hkEvents.add("init:root") }
 	mustCreate(t, New(), root)
 
@@ -90,7 +90,7 @@ func TestHooks_OnReadySameOrderAfterWiring(t *testing.T) {
 		rec.add("ready:root")
 		seen = append(seen, app.Get(hkProvider{}) != nil)
 	}
-	rootWithProvider := ModuleBuilder().Imports(root).Providers(hkProvider{}).Build()
+	rootWithProvider := NewModuleBuilder().Imports(root).Providers(hkProvider{}).Build()
 	rootWithProvider.OnReady = func() {
 		rec.add("ready:outer")
 		seen = append(seen, app.Get(hkProvider{}) != nil)
@@ -206,7 +206,7 @@ func (c hkController) READ_hk() string           { return "hk" }
 func TestHooks_OnReadySeesRoutes(t *testing.T) {
 	app := New()
 	var code int
-	root := ModuleBuilder().Controllers(hkController{}).Build()
+	root := NewModuleBuilder().Controllers(hkController{}).Build()
 	root.OnReady = func() { code = createGet(app, "/hk").Code }
 	mustCreate(t, app, root)
 

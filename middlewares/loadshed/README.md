@@ -70,7 +70,7 @@ func main() {
 	app.BindGlobalMiddlewares(loadshed.LoadShed{})
 
 	app.Create(
-		core.ModuleBuilder().Build(),
+		core.NewModuleBuilder().Build(),
 	)
 
 	app.Listen(8080, nil)

@@ -15,11 +15,11 @@ type WSContext struct {
 	scope *tracecontext.Scope
 	ctx   context.Context
 
-	Next Next
+	next Next
 
 	payload      WSPayload
 	aggregations []*aggregation.Aggregation
-	Timestamp    time.Time
+	timestamp    time.Time
 
 	send func(data any)
 }
@@ -28,10 +28,10 @@ func NewWSContext() *WSContext {
 	return &WSContext{}
 }
 
-func (c *WSContext) Init(conn *websocket.Conn) {
-	c.Timestamp = time.Now()
+func WSInit(c *WSContext, conn *websocket.Conn) {
+	c.timestamp = time.Now()
 	c.Conn = conn
-	c.ctx, c.scope = tracecontext.NewMessage(connectionContext(conn), c.Timestamp)
+	c.ctx, c.scope = tracecontext.NewMessage(connectionContext(conn), c.timestamp)
 }
 
 func connectionContext(conn *websocket.Conn) context.Context {
@@ -45,32 +45,44 @@ func connectionContext(conn *websocket.Conn) context.Context {
 	return r.Context()
 }
 
-func (c *WSContext) GetID() string {
+func (c *WSContext) ID() string {
 	if c.scope == nil {
 		return ""
 	}
 	return c.scope.Message
 }
 
-func (c *WSContext) Reset() {
+func WSReset(c *WSContext) {
 	c.scope = nil
 	c.ctx = nil
-	c.Next = nil
+	c.next = nil
 	c.Conn = nil
 	c.payload = nil
 	c.aggregations = nil
 	c.send = nil
 }
 
-func (c *WSContext) AddAggregation(a *aggregation.Aggregation) {
+func WSAddAggregation(c *WSContext, a *aggregation.Aggregation) {
 	c.aggregations = append(c.aggregations, a)
 }
 
-func (c *WSContext) Aggregations() []*aggregation.Aggregation {
+func WSAggregations(c *WSContext) []*aggregation.Aggregation {
 	return c.aggregations
 }
 
-func (c *WSContext) SetSend(fn func(data any)) {
+func WSNext(c *WSContext) Next {
+	return c.next
+}
+
+func WSSetNext(c *WSContext, next Next) {
+	c.next = next
+}
+
+func WSTimestamp(c *WSContext) time.Time {
+	return c.timestamp
+}
+
+func WSSetSend(c *WSContext, fn func(data any)) {
 	c.send = fn
 }
 
@@ -84,7 +96,7 @@ func (c *WSContext) WSPayload() WSPayload {
 	return c.payload
 }
 
-func (c *WSContext) SetWSPayload(p WSPayload) {
+func WSSetPayload(c *WSContext, p WSPayload) {
 	c.payload = p
 }
 

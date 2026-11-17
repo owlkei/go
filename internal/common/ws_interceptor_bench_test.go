@@ -15,7 +15,7 @@ func BenchmarkInjectProvidersIntoWSInterceptors_ApplyAll(b *testing.B) {
 		ic.BindInterceptor(mockWSInterceptable{})
 		ic.BindInterceptor(mockWSInterceptable{})
 		ic.BindInterceptor(mockWSInterceptable{})
-		ic.InjectProvidersIntoWSInterceptors(ws, benchCB, testConstruct)
+		InjectProvidersIntoWSInterceptors(ic, ws, benchCB, testConstruct)
 	}
 }
 
@@ -48,8 +48,8 @@ func BenchmarkBuildWSInterceptMiddleware(b *testing.B) {
 	})
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Reset()
-		c.Next = next
+		ctx.WSReset(c)
+		ctx.WSSetNext(c, next)
 		mw(c)
 	}
 }

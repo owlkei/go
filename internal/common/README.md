@@ -13,7 +13,6 @@
     - [ToWSEventName](#towseventname)
   - [`HTTP` Controller Embed](#http-controller-embed)
     - [Prefix](#prefix)
-    - [GetPrefixes](#getprefixes)
     - [AddHandlerToRouterMap](#addhandlertoroutermap)
   - [`WS` Controller Embed](#ws-controller-embed)
     - [AddHandlerToEventMap](#addhandlertoeventmap)
@@ -115,7 +114,7 @@ func (instance UserController) DELETE_users_BY_id(param ctx.Param) string {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Controllers(UserController{}).
 			Build(),
 	)
@@ -258,28 +257,15 @@ name := common.ToWSEventName("/message/")
 
 ## `HTTP` Controller Embed
 
-`HTTP` makes a controller an HTTP controller. `core` fills its maps at `Create()`.
+`HTTP` makes a controller an HTTP controller. Its only method is `Prefix` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `ginject.HTTP`.
 
-### PatternToFuncNameMap
-Type: `map[string]string`
+| Function | Returns |
+|----------|---------|
+| `HTTPPatternToFuncNameMap(h *HTTP) map[string]string` | Route pattern → method name, one entry per route of the controller |
+| `HTTPFuncNameToPatternMap(h *HTTP) map[string]string` | Method name → route pattern; the binding targets of HTTP layers are looked up here |
+| `HTTPRouterMap(h *HTTP) map[string]any` | Route pattern → the handler value |
 
-Required: `false`
-
-Route pattern → method name, one entry per route of the controller.
-
-### FuncNameToPatternMap
-Type: `map[string]string`
-
-Required: `false`
-
-Method name → route pattern; the binding targets of HTTP layers are looked up here.
-
-### RouterMap
-Type: `map[string]any`
-
-Required: `false`
-
-Route pattern → the handler value.
+Each map is `nil` until `AddHandlerToRouterMap` adds a route.
 
 Related types:
 - `Prefix` (`Value string`, `Handlers []any`): one call of `HTTP.Prefix`.
@@ -313,32 +299,49 @@ instance.Prefix("v1", instance.READ_users)
 - `Prefix("/api")` gives `/api/users/` for `/users/`, without a double slash.
 - A prefix bound to `READ_users` changes `READ_users` only.
 
-### GetPrefixes
+### AddHandlerToRouterMap
 
-Returns the prefixes as `prefix → handler name` maps; `"*"` stands for every route.
+`AddHandlerToRouterMap(h *HTTP, modulePrefixes []string, fnName string, handler any)` registers a method as a route when its name parses as one (`core` calls it at `Create()`). The controller's prefixes apply first: the unexported `getPrefixes` lists them as `prefix → handler name` maps, `"*"` standing for every route (`Prefix("/api")` gives `[{"/api/": "*"}]`; a prefix with two handlers gives two entries; no prefix gives an empty slice).
 
-#### Returns
-- 1st value: `[]map[string]string`
+#### Parameters
+- 1st parameter: `*HTTP`
 
-- Description: One map per prefix and handler, empty when there is none
+- Description: The controller's embed
+
+- 2nd parameter: `[]string`
+
+- Description: Module prefixes, outermost last
+
+- 3rd parameter: `string`
+
+- Description: The method name
+
+- 4th parameter: `any`
+
+- Description: The handler value
 
 #### Usage
 
 ```go
-prefixes := instance.GetPrefixes()
+common.AddHandlerToRouterMap(&instance.HTTP, nil, "READ_items", handler)
 ```
 
 #### Rules
-- `Prefix("/api")` gives `[{"/api/": "*"}]`; a prefix with two handlers gives two entries with their names; no prefix gives an empty slice.
+- `READ_items` adds one route: `HTTPPatternToFuncNameMap(h)["/items/||/[GET]/"]` is `READ_items`.
+- It never panics: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
 
-### AddHandlerToRouterMap
+## `WS` Controller Embed
 
-Registers a method as a route when its name parses as one (`core` calls it at `Create()`).
+`WS` makes a controller a WebSocket controller. It has no exported method or field: `WSEventMap(ws *WS) map[string]any` returns its event name → handler map (`nil` until an event is added). `WSLayer` (`Handler any`, `EventName`, `Name` `string`) is a layer bound to one event.
+
+### AddHandlerToEventMap
+
+`AddHandlerToEventMap(ws *WS, fnName string, handler any)` registers a `SUBSCRIBE_…` method as an event (`core` calls it at `Create()`).
 
 #### Parameters
-- 1st parameter: `[]string`
+- 1st parameter: `*WS`
 
-- Description: Module prefixes, outermost last
+- Description: The controller's embed
 
 - 2nd parameter: `string`
 
@@ -351,34 +354,7 @@ Registers a method as a route when its name parses as one (`core` calls it at `C
 #### Usage
 
 ```go
-instance.AddHandlerToRouterMap(nil, "READ_items", handler)
-```
-
-#### Rules
-- `READ_items` adds one route: `PatternToFuncNameMap["/items/||/[GET]/"]` is `READ_items`.
-- It never panics: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
-
-## `WS` Controller Embed
-
-`WS` makes a controller a WebSocket controller. `EventMap` (`map[string]any`) holds event name → handler. `WSLayer` (`Handler any`, `EventName`, `Name` `string`) is a layer bound to one event.
-
-### AddHandlerToEventMap
-
-Registers a `SUBSCRIBE_…` method as an event (`core` calls it at `Create()`).
-
-#### Parameters
-- 1st parameter: `string`
-
-- Description: The method name
-
-- 2nd parameter: `any`
-
-- Description: The handler value
-
-#### Usage
-
-```go
-instance.AddHandlerToEventMap("SUBSCRIBE_chat_ANY", handler)
+common.AddHandlerToEventMap(&instance.WS, "SUBSCRIBE_chat_ANY", handler)
 ```
 
 #### Rules
@@ -388,7 +364,7 @@ instance.AddHandlerToEventMap("SUBSCRIBE_chat_ANY", handler)
 
 ## Layers
 
-Each layer is an embed with one `Bind…` method that returns its receiver, so calls chain. Bind a struct value that has the layer's method. The optional constructor is called once per configuration and app, by `core` (see [Binding targets](#binding-targets)); its result is the instance that runs.
+Each layer is an embed with one `Bind…` method that returns its receiver, so calls chain, and no exported field (the bound list is unexported). Guards, interceptors and exception filters are `any`, checked by method shape at `Create()`: no named interface type stands for them. Bind a struct value that has the layer's method. The optional constructor is called once per configuration and app, by `core` (see [Binding targets](#binding-targets)); its result is the instance that runs.
 
 ### Middleware
 
@@ -399,44 +375,41 @@ type MiddlewareFn interface {
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)
 ```
 
-`BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware` on the `Middleware` embed (field `MiddlewareHandlers`). Optional constructor: `NewMiddleware`. `InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb, construct)` builds the `[]MiddlewareItem` that `core` registers. Middleware is an HTTP concept: a WebSocket connection runs only the middlewares given to `core`'s `EnableWS`, once, at the handshake, and no middleware runs per message.
+`BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware` on the `Middleware` embed. Optional constructor: `NewMiddleware`. `InjectProvidersIntoHTTPMiddlewares(m *Middleware, r *HTTP, cb, construct)` builds the `[]MiddlewareItem` that `core` registers. Middleware is an HTTP concept: a WebSocket connection runs only the middlewares given to `core`'s `EnableWS`, once, at the handshake, and no middleware runs per message.
 
 ### Guard
 
 ```go
-type Guarder any
 type HTTPCanActivate = func(*ctx.HTTPContext) bool
 type WSCanActivate = func(*ctx.WSContext) bool
 const GuardMethodName = "CanActivate"
 ```
 
-Write `CanActivate(*ctx.HTTPContext) bool` (HTTP) or `CanActivate(*ctx.WSContext) bool` (WS). `BindGuard(guarder Guarder, handlers ...any) *Guard` on the `Guard` embed (field `GuardHandlers`). Optional constructor: `NewGuard`. `InjectProvidersIntoHTTPGuards` / `InjectProvidersIntoWSGuards` build the `[]GuardItem`. A guard that returns `false` answers 403 (see [Exceptions in the pipeline](#exceptions-in-the-pipeline)).
+Write `CanActivate(*ctx.HTTPContext) bool` (HTTP) or `CanActivate(*ctx.WSContext) bool` (WS). `BindGuard(guard any, handlers ...any) *Guard` on the `Guard` embed. Optional constructor: `NewGuard`. `InjectProvidersIntoHTTPGuards(g, r, cb, construct)` / `InjectProvidersIntoWSGuards(g, ws, cb, construct)` build the `[]GuardItem`. A guard that returns `false` answers 403 (see [Exceptions in the pipeline](#exceptions-in-the-pipeline)).
 
 ### Interceptor
 
 ```go
-type Interceptable any
 type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
 type WSIntercept = func(*ctx.WSContext, *aggregation.Aggregation) any
 const InterceptorMethodName = "Intercept"
 ```
 
-Write `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` or its WS form. Return `a.Pipe(operators...)` to run the handler and transform its result; return anything else to answer with that value instead. `BindInterceptor(interceptable Interceptable, handlers ...any) *Interceptor` on the `Interceptor` embed (field `InterceptorHandlers`). Optional constructor: `NewInterceptor`. `InjectProvidersIntoHTTPInterceptors` / `InjectProvidersIntoWSInterceptors` build the `[]InterceptorItem`.
+Write `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` or its WS form. Return `a.Pipe(operators...)` to run the handler and transform its result; return anything else to answer with that value instead. `BindInterceptor(interceptor any, handlers ...any) *Interceptor` on the `Interceptor` embed. Optional constructor: `NewInterceptor`. `InjectProvidersIntoHTTPInterceptors(i, r, cb, construct)` / `InjectProvidersIntoWSInterceptors(i, ws, cb, construct)` build the `[]InterceptorItem`.
 
 ### ExceptionFilter
 
 ```go
-type ExceptionFilterable any
 type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
 type WSCatch = func(*ctx.WSContext, *exception.Exception)
 const ExceptionFilterMethodName = "Catch"
 ```
 
-Write `Catch(*ctx.HTTPContext, *exception.Exception)` (context first) or its WS form. `BindExceptionFilter(exceptionFilterable ExceptionFilterable, handlers ...any) *ExceptionFilter` on the `ExceptionFilter` embed (field `ExceptionFilterHandlers`). Optional constructor: `NewExceptionFilter`. `InjectProvidersIntoHTTPExceptionFilters` / `InjectProvidersIntoWSExceptionFilters` build the `[]ExceptionFilterItem`.
+Write `Catch(*ctx.HTTPContext, *exception.Exception)` (context first) or its WS form. `BindExceptionFilter(exceptionFilter any, handlers ...any) *ExceptionFilter` on the `ExceptionFilter` embed. Optional constructor: `NewExceptionFilter`. `InjectProvidersIntoHTTPExceptionFilters(e, r, cb, construct)` / `InjectProvidersIntoWSExceptionFilters(e, ws, cb, construct)` build the `[]ExceptionFilterItem`.
 
 ### Binding targets
 
-The seven `InjectProvidersInto…(r *HTTP | ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any)` functions run at `Create()`: they make a new instance of each bound layer, call `cb` once per field so `core` injects providers, pass it to `construct` with the constructor's name (`NewGuard`, `NewMiddleware`, `NewInterceptor`, `NewExceptionFilter`), check the shape of what it returns and return one item per bound route or event. `core` keeps the instances per app: equal configurations (same type, `reflect.DeepEqual`) share one instance, different ones get their own, and a layer without the constructor is used as given.
+The seven `InjectProvidersInto…(layer, r *HTTP | ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any)` functions run at `Create()`: they make a new instance of each bound layer, call `cb` once per field so `core` injects providers, pass it to `construct` with the constructor's name (`NewGuard`, `NewMiddleware`, `NewInterceptor`, `NewExceptionFilter`), check the shape of what it returns and return one item per bound route or event. `core` keeps the instances per app: equal configurations (same type, `reflect.DeepEqual`) share one instance, different ones get their own, and a layer without the constructor is used as given.
 
 #### Rules
 - No handlers: one item per route (HTTP) or event (WS) of the controller.
@@ -493,8 +466,8 @@ mw := common.BuildWSGuardMiddleware(canActivate)
 
 #### Rules
 - The guard gets the request's context.
-- `true` calls `c.Next()` once.
-- `false` does not call `c.Next()` and panics an `exception.Exception` value with code 403, message `"Access denied"` and `Error() == "Forbidden"`. Every rejection is an equal value, and each recovered copy is its own.
+- `true` calls `ctx.WSNext(c)()` once.
+- `false` does not call it and panics an `exception.Exception` value with code 403, message `"Access denied"` and `Error() == "Forbidden"`. Every rejection is an equal value, and each recovered copy is its own.
 
 ### BuildWSInterceptMiddleware
 
@@ -521,9 +494,9 @@ mw := common.BuildWSInterceptMiddleware("EnvelopeInterceptor", intercept)
 ```
 
 #### Rules
-- It creates one new aggregation with `Name` set and `IsMainHandlerCalled == false`, adds it to the context (`c.Aggregations()` lists it before the interceptor runs), calls the interceptor once with it, stores the result in `InterceptorData`, then calls `c.Next()` once, also when the interceptor never called `Pipe`.
+- It creates one new aggregation with `aggregation.Name` set and `aggregation.IsMainHandlerCalled` `false`, adds it to the context (`ctx.WSAggregations(c)` lists it before the interceptor runs), calls the interceptor once with it, stores the result with `aggregation.SetInterceptorData`, then calls `ctx.WSNext(c)()` once, also when the interceptor never called `Pipe`.
 - Two interceptors on one request leave two distinct aggregations in execution order; the same middleware run twice appends a second one.
-- A panic in the interceptor propagates, `c.Next()` is not called, and the aggregation is already in the list.
+- A panic in the interceptor propagates, `next` is not called, and the aggregation is already in the list.
 - `c.Request` is never replaced.
 - A context reused after `Reset` starts with no aggregation.
 
@@ -652,7 +625,7 @@ The pipe's key, one of the key constants above (`"body"`, `"query"`, …).
 ## Performance notes
 
 - **Compiled method values.** The `As…` functions assert the layer to a small unexported interface and return its method value, so a guard, interceptor or filter call is a plain closure call: about 4 ns and 0 allocations, where the reflection stub it replaces took about 400 ns and 1 allocation.
-- **Interceptor state on the context.** The interceptor middleware adds its aggregation to the request's context list (`c.AddAggregation`) instead of copying the `http.Request` with a new `context.WithValue`: about 95 ns and 2 allocations (the aggregation and the list, which `Reset` drops), where the old path took about 340 to 640 ns. `core` also no longer looks the list up in the request's `context.Context`, which saved one boxed key per request on every route.
+- **Interceptor state on the context.** The interceptor middleware adds its aggregation to the request's context list (`ctx.WSAddAggregation`) instead of copying the `http.Request` with a new `context.WithValue`: about 95 ns and 2 allocations (the aggregation and the list, which `ctx.WSReset` drops), where the old path took about 340 to 640 ns. `core` also no longer looks the list up in the request's `context.Context`, which saved one boxed key per request on every route.
 - **Catch chain as a loop.** One small function with the `recover` wraps each filter call, and the chain iterates instead of recursing. A re-thrown pointer is returned as is (0 allocations, about 11 ns for the chain), and a plain error builds its 500 with 1 allocation: an error that has no `Unwrap` or `As` method can't hold an exception, so `errors.As` is skipped for it.
 - **Shared 403.** A rejected WS guard panics one package-level exception value; an allowed guard costs about 2 ns.
 

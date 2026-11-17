@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
+	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -607,7 +608,7 @@ func TestProxy_InApp_HandlerReadsClient(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true})
-	app.Create(core.ModuleBuilder().Controllers(whoController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(whoController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/who", nil)
 	r.RemoteAddr = "10.0.0.7:5000"
@@ -634,7 +635,7 @@ func TestProxy_InApp_ResolutionDoesNotLeakToNextRequest(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Proxy{TrustedProxies: []string{"10.0.0.0/8"}})
-	app.Create(core.ModuleBuilder().Controllers(whoController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(whoController{}).Build())
 
 	first := httptest.NewRequest(http.MethodGet, "/who", nil)
 	first.RemoteAddr = "10.0.0.7:5000"

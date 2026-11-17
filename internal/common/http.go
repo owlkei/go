@@ -49,9 +49,9 @@ type HTTPLayer struct {
 
 type HTTP struct {
 	prefixes             []Prefix
-	PatternToFuncNameMap map[string]string
-	FuncNameToPatternMap map[string]string
-	RouterMap            map[string]any
+	patternToFuncNameMap map[string]string
+	funcNameToPatternMap map[string]string
+	routerMap            map[string]any
 }
 
 type Prefix struct {
@@ -60,26 +60,26 @@ type Prefix struct {
 }
 
 func (r *HTTP) addToRouters(fnName, route, version, method string, injectableHandler any) {
-	if r.RouterMap == nil {
-		r.RouterMap = make(map[string]any)
+	if r.routerMap == nil {
+		r.routerMap = make(map[string]any)
 	}
 
-	if r.PatternToFuncNameMap == nil {
-		r.PatternToFuncNameMap = map[string]string{}
+	if r.patternToFuncNameMap == nil {
+		r.patternToFuncNameMap = map[string]string{}
 	}
 
-	if r.FuncNameToPatternMap == nil {
-		r.FuncNameToPatternMap = map[string]string{}
+	if r.funcNameToPatternMap == nil {
+		r.funcNameToPatternMap = map[string]string{}
 	}
 
 	pattern := routing.MethodRouteVersionToPattern(method, route, version)
 
-	r.RouterMap[pattern] = injectableHandler
-	r.PatternToFuncNameMap[pattern] = fnName
-	r.FuncNameToPatternMap[fnName] = pattern
+	r.routerMap[pattern] = injectableHandler
+	r.patternToFuncNameMap[pattern] = fnName
+	r.funcNameToPatternMap[fnName] = pattern
 }
 
-func (r *HTTP) GetPrefixes() []map[string]string {
+func (r *HTTP) getPrefixes() []map[string]string {
 	prefixes := make([]map[string]string, 0, len(r.prefixes))
 
 	for _, prefixConf := range r.prefixes {
@@ -121,8 +121,8 @@ func (r *HTTP) Prefix(v string, handlers ...any) *HTTP {
 	return r
 }
 
-func (r *HTTP) AddHandlerToRouterMap(modulePrefixes []string, fnName string, handler any) {
-	prefixes := r.GetPrefixes()
+func AddHandlerToRouterMap(r *HTTP, modulePrefixes []string, fnName string, handler any) {
+	prefixes := r.getPrefixes()
 
 	httpMethod, route, version := ParseFuncNameToURL(fnName)
 	if httpMethod != "" {
@@ -133,4 +133,16 @@ func (r *HTTP) AddHandlerToRouterMap(modulePrefixes []string, fnName string, han
 
 		r.addToRouters(fnName, route, version, httpMethod, handler)
 	}
+}
+
+func HTTPPatternToFuncNameMap(h *HTTP) map[string]string {
+	return h.patternToFuncNameMap
+}
+
+func HTTPFuncNameToPatternMap(h *HTTP) map[string]string {
+	return h.funcNameToPatternMap
+}
+
+func HTTPRouterMap(h *HTTP) map[string]any {
+	return h.routerMap
 }

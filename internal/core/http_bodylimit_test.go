@@ -30,7 +30,7 @@ func (ctl bodyProbeController) READ_probe(c *ctx.HTTPContext) string {
 func bodyProbe(t *testing.T, mutate func(*http.Request)) string {
 	t.Helper()
 	app := New()
-	app.Create(ModuleBuilder().Controllers(bodyProbeController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(bodyProbeController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/probe", nil)
 	if mutate != nil {

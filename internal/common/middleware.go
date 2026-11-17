@@ -33,7 +33,7 @@ type middlewareHandler struct {
 }
 
 type Middleware struct {
-	MiddlewareHandlers []middlewareHandler
+	middlewareHandlers []middlewareHandler
 }
 
 func (m *Middleware) BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) *Middleware {
@@ -42,14 +42,14 @@ func (m *Middleware) BindMiddleware(middlewareFn MiddlewareFn, handlers ...any) 
 		handlers:     handlers,
 	}
 
-	m.MiddlewareHandlers = append(m.MiddlewareHandlers, middlewareHandler)
+	m.middlewareHandlers = append(m.middlewareHandlers, middlewareHandler)
 	return m
 }
 
-func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []MiddlewareItem {
-	middlewareItemArr := make([]MiddlewareItem, 0, len(r.PatternToFuncNameMap)*len(m.MiddlewareHandlers))
+func InjectProvidersIntoHTTPMiddlewares(m *Middleware, r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []MiddlewareItem {
+	middlewareItemArr := make([]MiddlewareItem, 0, len(r.patternToFuncNameMap)*len(m.middlewareHandlers))
 
-	for _, middlewareHandler := range m.MiddlewareHandlers {
+	for _, middlewareHandler := range m.middlewareHandlers {
 		middlewarerType := reflect.TypeOf(middlewareHandler.middlewareFn)
 		middlewarerValue := reflect.ValueOf(middlewareHandler.middlewareFn)
 		newMiddleware := reflect.New(middlewarerType)
@@ -64,7 +64,7 @@ func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, re
 
 		targets := httpHandlerTargets(r, middlewareHandler.handlers, "middleware", middlewarerType)
 
-		for pattern := range r.PatternToFuncNameMap {
+		for pattern := range r.patternToFuncNameMap {
 			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
@@ -78,7 +78,7 @@ func (m *Middleware) InjectProvidersIntoHTTPMiddlewares(r *HTTP, cb func(int, re
 						Common: CommonItem{
 							Handler:         middlewareHandler.middlewareFn.Use,
 							Name:            middlewarerType.String(),
-							MainHandlerName: r.PatternToFuncNameMap[pattern],
+							MainHandlerName: r.patternToFuncNameMap[pattern],
 						},
 					},
 				})

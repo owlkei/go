@@ -26,7 +26,3 @@ func (m *Module) Prefix(prefix string) *Module {
 
 	return m
 }
-
-func (m *Module) ID() string {
-	return m.id
-}

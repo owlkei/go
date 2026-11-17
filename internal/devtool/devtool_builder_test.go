@@ -29,7 +29,7 @@ func buildSnapshot() *Devtool {
 	return DevtoolBuilder().
 		AddExceptionFilters(nil, nil).
 		AddMiddlewares(nil, nil).
-		AddGuarders([]common.Guarder{snapshotGlobalGuard{}}, nil).
+		AddGuarders([]any{snapshotGlobalGuard{}}, nil).
 		AddInterceptors(nil, nil).
 		AddVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"}).
 		AddHTTPMainHandlers([]common.HTTPLayer{{

@@ -26,7 +26,7 @@ func newTestWSBare(t testing.TB) *WS {
 		return c
 	}
 	ws.releaseCtx = func(c *ctx.WSContext) {
-		c.Reset()
+		ctx.WSReset(c)
 	}
 	ws.resolveAndCallHandler = func(_ string, f any, c *ctx.WSContext) []reflect.Value {
 		args := make([]reflect.Value, reflect.TypeOf(f).NumIn())
@@ -482,7 +482,7 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchInCountAndOrder(t *testing
 		}
 	})
 	ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
+		ev.Emit(trace.Event{ID: c.ID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
 	}
 
 	pattern := "chat.to.*"
@@ -544,7 +544,7 @@ func TestDispatchWSEvent_InterceptorPrePostEventsMatchWhenShortCircuited(t *test
 		}
 	})
 	ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
+		ev.Emit(trace.Event{ID: c.ID(), Stage: trace.StagePostInterceptor, Name: name, Transport: trace.TransportWS, Duration: duration})
 	}
 
 	pattern := "chat.to.*"
@@ -607,12 +607,12 @@ func TestDispatchWSEvent_EmitsCompleteWithWSTransport(t *testing.T) {
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
 		ev.Emit(trace.Event{
-			ID:        c.GetID(),
+			ID:        c.ID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportWS,
 			Operation: operation,
 			Target:    target,
-			Duration:  time.Since(c.Timestamp),
+			Duration:  time.Since(ctx.WSTimestamp(c)),
 		})
 	}
 
@@ -671,7 +671,7 @@ func TestDispatchWSEvent_CompleteIDMatchesGuardEventID(t *testing.T) {
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
+		ev.Emit(trace.Event{ID: c.ID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
 	}
 
 	pattern := "chat.to.*"
@@ -719,7 +719,7 @@ func TestDispatchWSEvent_CompleteFiresOnGuardDenial(t *testing.T) {
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
+		ev.Emit(trace.Event{ID: c.ID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
 	}
 
 	pattern := "chat.to.*"
@@ -763,7 +763,7 @@ func TestDispatchWSEvent_CompleteFiresOnHandlerPanic(t *testing.T) {
 		}
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
-		ev.Emit(trace.Event{ID: c.GetID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
+		ev.Emit(trace.Event{ID: c.ID(), Stage: trace.StageComplete, Transport: trace.TransportWS, Operation: operation, Target: target})
 	}
 
 	pattern := "chat.to.*"
@@ -807,12 +807,12 @@ func TestHandleSubscribe_EmitsCompleteWithWSTransport(t *testing.T) {
 	})
 	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {
 		ev.Emit(trace.Event{
-			ID:        c.GetID(),
+			ID:        c.ID(),
 			Stage:     trace.StageComplete,
 			Transport: trace.TransportWS,
 			Operation: operation,
 			Target:    target,
-			Duration:  time.Since(c.Timestamp),
+			Duration:  time.Since(ctx.WSTimestamp(c)),
 		})
 	}
 

@@ -34,9 +34,9 @@ func isoExpect(t *testing.T, app *App, target string, code int, rule string) {
 
 func TestTwoApps_EachAnswersItsRoutes(t *testing.T) {
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Controllers(isoAlphaController{}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Controllers(isoAlphaController{}).Build())
 	appB := New()
-	mustCreate(t, appB, ModuleBuilder().Controllers(isoBetaController{}).Build())
+	mustCreate(t, appB, NewModuleBuilder().Controllers(isoBetaController{}).Build())
 
 	isoExpect(t, appA, "/alpha", http.StatusOK, "I1: the first app answers its route")
 	isoExpect(t, appA, "/beta", http.StatusNotFound, "I1: the first app does not answer the other app's route")
@@ -50,9 +50,9 @@ func (c isoPingController) NewController() Controller { return c }
 func (c isoPingController) READ_ping() string         { return "pong" }
 
 func isoPrefixedRoot() *Module {
-	child := ModuleBuilder().Controllers(isoPingController{}).Build()
+	child := NewModuleBuilder().Controllers(isoPingController{}).Build()
 	child.Prefix("v1")
-	root := ModuleBuilder().Imports(child).Build()
+	root := NewModuleBuilder().Imports(child).Build()
 	root.Prefix("api")
 	return root
 }
@@ -85,8 +85,8 @@ func (p isoStateProvider) NewProvider() Provider {
 func TestTwoApps_ProvidersConstructedPerApp(t *testing.T) {
 	isoBuilt.Store(0)
 
-	mustCreate(t, New(), ModuleBuilder().Providers(isoStateProvider{}).Build())
-	mustCreate(t, New(), ModuleBuilder().Providers(isoStateProvider{}).Build())
+	mustCreate(t, New(), NewModuleBuilder().Providers(isoStateProvider{}).Build())
+	mustCreate(t, New(), NewModuleBuilder().Providers(isoStateProvider{}).Build())
 
 	if got := isoBuilt.Load(); got != 2 {
 		t.Error(test.DiffMessage(got, int64(2), "I2: NewProvider runs once per app for a provider type present in both"))
@@ -95,9 +95,9 @@ func TestTwoApps_ProvidersConstructedPerApp(t *testing.T) {
 
 func TestTwoApps_ProviderStateNotShared(t *testing.T) {
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Providers(isoStateProvider{}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Providers(isoStateProvider{}).Build())
 	appB := New()
-	mustCreate(t, appB, ModuleBuilder().Providers(isoStateProvider{}).Build())
+	mustCreate(t, appB, NewModuleBuilder().Providers(isoStateProvider{}).Build())
 
 	a, okA := appA.Get(isoStateProvider{}).(isoStateProvider)
 	b, okB := appB.Get(isoStateProvider{}).(isoStateProvider)
@@ -128,7 +128,7 @@ func (c isoCountedController) READ_counted() string { return "counted" }
 
 func TestTwoApps_SameRootModule(t *testing.T) {
 	isoControllerBuilt.Store(0)
-	root := ModuleBuilder().Controllers(isoCountedController{}).Build()
+	root := NewModuleBuilder().Controllers(isoCountedController{}).Build()
 
 	appA := New()
 	mustCreate(t, appA, root)
@@ -143,12 +143,12 @@ func TestTwoApps_SameRootModule(t *testing.T) {
 }
 
 func TestTwoApps_SharedImportedModuleValue(t *testing.T) {
-	shared := ModuleBuilder().Controllers(isoAlphaController{}).Build()
+	shared := NewModuleBuilder().Controllers(isoAlphaController{}).Build()
 
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Imports(shared).Controllers(isoBetaController{}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Imports(shared).Controllers(isoBetaController{}).Build())
 	appB := New()
-	mustCreate(t, appB, ModuleBuilder().Imports(shared).Build())
+	mustCreate(t, appB, NewModuleBuilder().Imports(shared).Build())
 
 	isoExpect(t, appA, "/alpha", http.StatusOK, "I3: the first app answers the shared module's route")
 	isoExpect(t, appA, "/beta", http.StatusOK, "I3: the first app answers its own route")
@@ -160,19 +160,19 @@ func TestTwoApps_ModuleFuncCalledOncePerApp(t *testing.T) {
 	var calls atomic.Int64
 	moduleFunc := func() *Module {
 		calls.Add(1)
-		return ModuleBuilder().Controllers(isoAlphaController{}).Build()
+		return NewModuleBuilder().Controllers(isoAlphaController{}).Build()
 	}
 
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Imports(moduleFunc).Build())
+	mustCreate(t, appA, NewModuleBuilder().Imports(moduleFunc).Build())
 	if got := calls.Load(); got != 1 {
 		t.Error(test.DiffMessage(got, int64(1), "I3: the module func is called once by the first app"))
 	}
 
 	appB := New()
-	left := ModuleBuilder().Imports(moduleFunc).Build()
-	right := ModuleBuilder().Imports(moduleFunc).Build()
-	mustCreate(t, appB, ModuleBuilder().Imports(left, right).Build())
+	left := NewModuleBuilder().Imports(moduleFunc).Build()
+	right := NewModuleBuilder().Imports(moduleFunc).Build()
+	mustCreate(t, appB, NewModuleBuilder().Imports(left, right).Build())
 	if got := calls.Load(); got != 2 {
 		t.Error(test.DiffMessage(got, int64(2), "I3: the module func is called once more by the second app, once however many modules import it"))
 	}
@@ -182,9 +182,9 @@ func TestTwoApps_ModuleFuncCalledOncePerApp(t *testing.T) {
 }
 
 func TestCreate_DoesNotWriteModule(t *testing.T) {
-	child := ModuleBuilder().Providers(isoStateProvider{}).Controllers(isoAlphaController{}).Build()
+	child := NewModuleBuilder().Providers(isoStateProvider{}).Controllers(isoAlphaController{}).Build()
 	child.Prefix("v1")
-	root := ModuleBuilder().Imports(child).Providers(isoPlainProvider{}).Controllers(isoBetaController{}).Build()
+	root := NewModuleBuilder().Imports(child).Providers(isoPlainProvider{}).Controllers(isoBetaController{}).Build()
 	root.Prefix("api")
 
 	beforeRoot := createDump(reflect.ValueOf(root))
@@ -216,10 +216,10 @@ func TestTwoApps_LoggerInjectedPerApp(t *testing.T) {
 
 	appA := New()
 	appA.SetLogger(recA)
-	mustCreate(t, appA, ModuleBuilder().Providers(isoLogProvider{}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Providers(isoLogProvider{}).Build())
 	appB := New()
 	appB.SetLogger(recB)
-	mustCreate(t, appB, ModuleBuilder().Providers(isoLogProvider{}).Build())
+	mustCreate(t, appB, NewModuleBuilder().Providers(isoLogProvider{}).Build())
 
 	if got := len(recA.named("provider-ready")); got != 1 {
 		t.Error(test.DiffMessage(got, 1, "I4: the first app's provider logs through the first app's logger"))
@@ -241,9 +241,9 @@ func TestTwoApps_PublisherPerApp(t *testing.T) {
 	var seenA, seenB atomic.Int64
 
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Controllers(isoPubController{}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Controllers(isoPubController{}).Build())
 	appB := New()
-	mustCreate(t, appB, ModuleBuilder().Controllers(isoPubController{}).Build())
+	mustCreate(t, appB, NewModuleBuilder().Controllers(isoPubController{}).Build())
 
 	if _, err := appA.broker.Subscribe("iso.topic", func(*memorybroker.Message) { seenA.Add(1) }); err != nil {
 		t.Fatal(err)
@@ -277,11 +277,11 @@ func (p isoNeedsGlobalProvider) NewProvider() Provider { return p }
 
 func TestTwoApps_GlobalProviderNotVisibleAcross(t *testing.T) {
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Providers(isoGlobalProvider{Tag: "a"}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "a"}).Build())
 
 	appB := New()
 	text, panicked := createPanicText(func() {
-		appB.Create(ModuleBuilder().Providers(isoNeedsGlobalProvider{}).Build())
+		appB.Create(NewModuleBuilder().Providers(isoNeedsGlobalProvider{}).Build())
 	})
 
 	if !panicked {
@@ -302,8 +302,8 @@ func TestTwoApps_SameRouteNoConflict(t *testing.T) {
 	appB := New()
 
 	text, panicked := createPanicText(func() {
-		appA.Create(ModuleBuilder().Controllers(isoDupController{}).Build())
-		appB.Create(ModuleBuilder().Controllers(isoDupController{}).Build())
+		appA.Create(NewModuleBuilder().Controllers(isoDupController{}).Build())
+		appB.Create(NewModuleBuilder().Controllers(isoDupController{}).Build())
 	})
 	if panicked {
 		t.Fatal(test.DiffMessage(text, "no panic", "I6: two apps may declare the same route"))
@@ -322,7 +322,7 @@ func TestTwoApps_SameEventNoConflict(t *testing.T) {
 		for range 2 {
 			app := New()
 			app.EnableWS(&WSOptions{Path: "/ws"})
-			app.Create(ModuleBuilder().Controllers(isoWSController{}).Build())
+			app.Create(NewModuleBuilder().Controllers(isoWSController{}).Build())
 		}
 	})
 	if panicked {
@@ -343,7 +343,7 @@ func (c isoConflictB) READ_clash() string        { return "b" }
 func TestCreate_RouteConflictInsideOneApp(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			New().Create(ModuleBuilder().Controllers(isoConflictA{}, isoConflictB{}).Build())
+			New().Create(NewModuleBuilder().Controllers(isoConflictA{}, isoConflictB{}).Build())
 		})
 		want := "route conflict: READ_clash method is conflicted with READ_clash method"
 		if !panicked || !strings.Contains(text, want) {
@@ -367,7 +367,7 @@ func TestCreate_EventConflictInsideOneApp(t *testing.T) {
 		text, panicked := createPanicText(func() {
 			app := New()
 			app.EnableWS(&WSOptions{Path: "/ws"})
-			app.Create(ModuleBuilder().Controllers(isoEventA{}, isoEventB{}).Build())
+			app.Create(NewModuleBuilder().Controllers(isoEventA{}, isoEventB{}).Build())
 		})
 		want := "event conflict: SUBSCRIBE_clash event is conflicted with SUBSCRIBE_clash event"
 		if !panicked || !strings.Contains(text, want) {
@@ -402,9 +402,9 @@ func TestTwoApps_LayersConstructedPerApp(t *testing.T) {
 	isoGuardBuilt.Store(0)
 
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Controllers(isoGuardedController{}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Controllers(isoGuardedController{}).Build())
 	appB := New()
-	mustCreate(t, appB, ModuleBuilder().Controllers(isoGuardedController{}).Build())
+	mustCreate(t, appB, NewModuleBuilder().Controllers(isoGuardedController{}).Build())
 
 	if got := isoGuardBuilt.Load(); got != 2 {
 		t.Error(test.DiffMessage(got, int64(2), "I7: NewGuard runs once per app for one type and configuration"))
@@ -417,7 +417,7 @@ func TestTwoApps_GlobalLayersConstructedPerApp(t *testing.T) {
 	for range 2 {
 		app := New()
 		app.BindGlobalGuards(isoGuard{Role: "iso-global-per-app"})
-		mustCreate(t, app, ModuleBuilder().Build())
+		mustCreate(t, app, NewModuleBuilder().Build())
 	}
 
 	if got := isoGuardBuilt.Load(); got != 2 {
@@ -452,7 +452,7 @@ func TestCreate_EqualLayerConfigurationsShareInstance(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		isoGuardBuilt.Store(0)
 
-		New().Create(ModuleBuilder().Controllers(isoGuardedSame{}, isoGuardedOther{}).Build())
+		New().Create(NewModuleBuilder().Controllers(isoGuardedSame{}, isoGuardedOther{}).Build())
 
 		if got := isoGuardBuilt.Load(); got != 2 {
 			t.Error(test.DiffMessage(got, int64(2), "I7: inside one app equal configurations share one instance and different ones get their own"))
@@ -470,9 +470,9 @@ func (c isoConcurrentController) NewController() Controller { return c }
 func (c isoConcurrentController) READ_concurrent() string   { return "ok" }
 
 func TestCreate_TwoAppsConcurrently_NoRace(t *testing.T) {
-	shared := ModuleBuilder().Providers(isoConcurrentProvider{}).Controllers(isoConcurrentController{}).Build()
-	root := ModuleBuilder().Imports(shared).Build()
-	other := ModuleBuilder().Imports(shared).Build()
+	shared := NewModuleBuilder().Providers(isoConcurrentProvider{}).Controllers(isoConcurrentController{}).Build()
+	root := NewModuleBuilder().Imports(shared).Build()
+	other := NewModuleBuilder().Imports(shared).Build()
 
 	const n = 8
 	var wg sync.WaitGroup
@@ -506,7 +506,7 @@ func TestGet_BeforeCreateIsNil(t *testing.T) {
 
 func TestGet_UnknownTypeIsNil(t *testing.T) {
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Providers(isoPlainProvider{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Providers(isoPlainProvider{}).Build())
 
 	if got := app.Get(isoGlobalProvider{}); got != nil {
 		t.Error(test.DiffMessage(got, nil, "I9: Get of a type the app does not have is nil"))
@@ -515,9 +515,9 @@ func TestGet_UnknownTypeIsNil(t *testing.T) {
 
 func TestGet_ReturnsThisAppsInstance(t *testing.T) {
 	appA := New()
-	mustCreate(t, appA, ModuleBuilder().Providers(isoGlobalProvider{Tag: "a"}).Build())
+	mustCreate(t, appA, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "a"}).Build())
 	appB := New()
-	mustCreate(t, appB, ModuleBuilder().Providers(isoGlobalProvider{Tag: "b"}).Build())
+	mustCreate(t, appB, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "b"}).Build())
 
 	a, _ := appA.Get(isoGlobalProvider{}).(isoGlobalProvider)
 	b, _ := appB.Get(isoGlobalProvider{}).(isoGlobalProvider)
@@ -528,7 +528,7 @@ func TestGet_ReturnsThisAppsInstance(t *testing.T) {
 
 func TestGet_ConcurrentAfterCreate_NoRace(t *testing.T) {
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Providers(isoGlobalProvider{Tag: "x"}).Controllers(isoConcurrentController{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "x"}).Controllers(isoConcurrentController{}).Build())
 
 	const n = 16
 	var wg sync.WaitGroup

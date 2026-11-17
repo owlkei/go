@@ -39,7 +39,7 @@ func main() {
 	app := core.New()
 	app.SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
 	app.EnableAccessLog()
-	app.Create(core.ModuleBuilder().Build())
+	app.Create(core.NewModuleBuilder().Build())
 	_ = app.Listen(8080, nil)
 }
 ```

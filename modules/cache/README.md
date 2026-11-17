@@ -63,7 +63,7 @@ func (instance VisitController) READ_visits() map[string]int64 {
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Imports(cache.Register(nil)).
 			Controllers(VisitController{}).
 			Build(),

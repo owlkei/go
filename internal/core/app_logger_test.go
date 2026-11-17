@@ -13,7 +13,7 @@ func TestLogger_DefaultIsNotNil(t *testing.T) {
 	if app.Logger() == nil {
 		t.Fatal(test.DiffMessage(nil, "a logger", "G1: Logger is never nil before Create"))
 	}
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	if app.Logger() == nil {
 		t.Fatal(test.DiffMessage(nil, "a logger", "G1: Logger is never nil after Create"))
 	}
@@ -26,7 +26,7 @@ func TestLogger_SameValueEachCall(t *testing.T) {
 		t.Error(test.DiffMessage(second, first, "G1: Logger returns the same value on every call before Create"))
 	}
 
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	if third := app.Logger(); third != first {
 		t.Error(test.DiffMessage(third, first, "G1: Create does not replace the default logger"))
 	}
@@ -39,7 +39,7 @@ func TestSetLogger_LogsReachCustomLogger(t *testing.T) {
 	if got := app.SetLogger(rec); got != app {
 		t.Error(test.DiffMessage(got, app, "G2: SetLogger returns the app"))
 	}
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Logger().Info("hello", "k", "v")
 
 	if got := len(rec.named("hello")); got != 1 {
@@ -51,7 +51,7 @@ func TestSetLogger_InjectedFieldsUseIt(t *testing.T) {
 	rec := &createLogger{}
 	app := New()
 	app.SetLogger(rec)
-	mustCreate(t, app, ModuleBuilder().Providers(isoLogProvider{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Providers(isoLogProvider{}).Build())
 
 	if got := len(rec.named("provider-ready")); got != 1 {
 		t.Error(test.DiffMessage(got, 1, "G2: a log.Logger field is injected with the app's logger"))
@@ -67,7 +67,7 @@ func TestSetLogger_CustomLoggerGetsTagsAndMasking(t *testing.T) {
 	rec := &createLogger{}
 	app := New()
 	app.SetLogger(rec)
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 
 	app.Logger().Info("tagged", "s", secret{Value: "visible", skip: "hidden"})
 
@@ -91,7 +91,7 @@ func TestSetLogger_WrappedLoggerGetsMasking(t *testing.T) {
 	rec := &createLogger{}
 	app := New()
 	app.SetLogger(log.WrapLogger(rec, []string{"password"}))
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 
 	app.Logger().Info("masked", "password", "secret")
 
@@ -106,7 +106,7 @@ func TestSetLogger_WrappedLoggerNotWrappedAgain(t *testing.T) {
 	wrapped := log.WrapLogger(rec, nil)
 	app := New()
 	app.SetLogger(wrapped)
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 
 	if got := app.Logger(); got != wrapped {
 		t.Error(test.DiffMessage(got, wrapped, "G3: a logger from log.WrapLogger is used as it is"))
@@ -115,7 +115,7 @@ func TestSetLogger_WrappedLoggerNotWrappedAgain(t *testing.T) {
 	built := log.NewLog(nil)
 	other := New()
 	other.SetLogger(built)
-	mustCreate(t, other, ModuleBuilder().Build())
+	mustCreate(t, other, NewModuleBuilder().Build())
 	if got := other.Logger(); got != built {
 		t.Error(test.DiffMessage(got, built, "G3: a logger from log.NewLog is used as it is"))
 	}

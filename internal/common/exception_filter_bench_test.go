@@ -12,15 +12,15 @@ import (
 
 func buildBenchHTTP(n int) *HTTP {
 	r := &HTTP{
-		PatternToFuncNameMap: make(map[string]string, n),
-		FuncNameToPatternMap: make(map[string]string, n),
+		patternToFuncNameMap: make(map[string]string, n),
+		funcNameToPatternMap: make(map[string]string, n),
 	}
 	for i := range n {
 		fn := fmt.Sprintf("READ_resource%d", i)
 		route := fmt.Sprintf("/resource%d/", i)
 		p := routing.MethodRouteVersionToPattern("GET", route, "")
-		r.PatternToFuncNameMap[p] = fn
-		r.FuncNameToPatternMap[fn] = p
+		HTTPPatternToFuncNameMap(r)[p] = fn
+		HTTPFuncNameToPatternMap(r)[fn] = p
 	}
 	return r
 }

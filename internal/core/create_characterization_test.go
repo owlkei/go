@@ -28,7 +28,7 @@ func (c z1Controller) READ_files_ANY() string              { return "glob" }
 func TestCreate_Characterization_Routes(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		app := New()
-		app.Create(ModuleBuilder().Controllers(z1Controller{}).Build())
+		app.Create(NewModuleBuilder().Controllers(z1Controller{}).Build())
 
 		cases := []struct {
 			method, target string
@@ -66,8 +66,8 @@ func (c z1VersionedController) READ_report_BY_id_VERSION_2() string { return "by
 func TestCreate_Characterization_Versions(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		app := New()
-		app.EnableVersioning(versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
-		app.Create(ModuleBuilder().Controllers(z1VersionedController{}).Build())
+		app.EnableVersioning(&versioning.Versioning{Type: versioning.HeaderVersion, Key: "X-Version"})
+		app.Create(NewModuleBuilder().Controllers(z1VersionedController{}).Build())
 
 		cases := []struct {
 			target, version string
@@ -108,9 +108,9 @@ func (c z1OwnController) READ_own() string          { return "own" }
 
 func TestCreate_Characterization_NestedPrefixes(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
-		child := ModuleBuilder().Controllers(z1PrefixedController{}).Build()
+		child := NewModuleBuilder().Controllers(z1PrefixedController{}).Build()
 		child.Prefix("v1")
-		root := ModuleBuilder().Imports(child).Controllers(z1OwnController{}).Build()
+		root := NewModuleBuilder().Imports(child).Controllers(z1OwnController{}).Build()
 		root.Prefix("api")
 
 		app := New()
@@ -190,7 +190,7 @@ func TestCreate_Characterization_LayerOrderPerRoute(t *testing.T) {
 		app.BindGlobalMiddlewares(z1Middleware{Name: "g1"}, z1Middleware{Name: "g2"})
 		app.BindGlobalGuards(z1Guard{Name: "g1"})
 		app.BindGlobalInterceptors(z1Interceptor{Name: "g1"})
-		app.Create(ModuleBuilder().Controllers(z1LayeredController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(z1LayeredController{}).Build())
 
 		w := createGet(app, "/layered")
 		if w.Code != http.StatusOK || w.Body.String() != "ok" {
@@ -231,10 +231,10 @@ func (p z1ProvRootDep) NewProvider() Provider { z1Built.add("rootDep"); return p
 
 func TestCreate_Characterization_ProviderConstructionOrder(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
-		shared := ModuleBuilder().Providers(z1ProvShared{}).Build()
-		modA := ModuleBuilder().Imports(shared).Providers(z1ProvLeafA{}).Build()
-		modB := ModuleBuilder().Imports(shared).Providers(z1ProvLeafB{}).Build()
-		root := ModuleBuilder().Imports(modA, modB).Providers(z1ProvRoot{}, z1ProvRootDep{}).Build()
+		shared := NewModuleBuilder().Providers(z1ProvShared{}).Build()
+		modA := NewModuleBuilder().Imports(shared).Providers(z1ProvLeafA{}).Build()
+		modB := NewModuleBuilder().Imports(shared).Providers(z1ProvLeafB{}).Build()
+		root := NewModuleBuilder().Imports(modA, modB).Providers(z1ProvRoot{}, z1ProvRootDep{}).Build()
 
 		New().Create(root)
 

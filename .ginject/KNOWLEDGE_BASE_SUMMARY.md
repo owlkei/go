@@ -191,7 +191,7 @@ Verify: Guard MUST return bool, never panic
 
 **Step 3: Reference APIs**
 ```
-Read: package-reference.md → common package → Guarder interface
+Read: package-reference.md → common package → guard shape
 Check: CanActivate(*ctx.HTTPContext) bool signature
 ```
 

@@ -29,7 +29,7 @@ func TestApp_LookalikeParameterPanicsAtCreate(t *testing.T) {
 	app := New()
 
 	rec := planPanicOf(func() {
-		app.Create(ModuleBuilder().Controllers(appLookalikeController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(appLookalikeController{}).Build())
 	})
 
 	want := planUnresolved("func(*ctx.HTTPContext) string", 0)
@@ -59,7 +59,7 @@ func (c appResultController) READ_wrongpipe(p nilPipe) string {
 func serveResult(t *testing.T, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	app := New()
-	app.Create(ModuleBuilder().Controllers(appResultController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(appResultController{}).Build())
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 	return w
@@ -160,7 +160,7 @@ func handlerEventNames(t *testing.T, path string) []string {
 			names = append(names, te.Name)
 		}
 	})
-	app.Create(ModuleBuilder().Controllers(appServeController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(appServeController{}).Build())
 
 	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 

@@ -25,22 +25,22 @@ type parsedModuleFile struct {
 	ok   bool
 }
 
-type moduleBuilder struct {
+type ModuleBuilder struct {
 	imports     []any
 	providers   []Provider
 	controllers []Controller
 }
 
-func ModuleBuilder() *moduleBuilder {
-	return &moduleBuilder{}
+func NewModuleBuilder() *ModuleBuilder {
+	return &ModuleBuilder{}
 }
 
-func (m *moduleBuilder) Imports(modules ...any) *moduleBuilder {
+func (m *ModuleBuilder) Imports(modules ...any) *ModuleBuilder {
 	m.imports = append(m.imports, modules...)
 	return m
 }
 
-func (m *moduleBuilder) getModuleType() ([]*Module, []any) {
+func (m *ModuleBuilder) getModuleType() ([]*Module, []any) {
 	staticModules := make([]*Module, 0, len(m.imports))
 	var dynamicModules []any
 	var errors []string
@@ -70,17 +70,17 @@ func isDynamicModule(moduleType string) bool {
 	return strings.HasPrefix(moduleType, "func(") && strings.HasSuffix(moduleType, "*core.Module")
 }
 
-func (m *moduleBuilder) Providers(providers ...Provider) *moduleBuilder {
+func (m *ModuleBuilder) Providers(providers ...Provider) *ModuleBuilder {
 	m.providers = append(m.providers, providers...)
 	return m
 }
 
-func (m *moduleBuilder) Controllers(controllers ...Controller) *moduleBuilder {
+func (m *ModuleBuilder) Controllers(controllers ...Controller) *ModuleBuilder {
 	m.controllers = append(m.controllers, controllers...)
 	return m
 }
 
-func (m *moduleBuilder) Build() *Module {
+func (m *ModuleBuilder) Build() *Module {
 	staticModules, dynamicModules := m.getModuleType()
 
 	module := &Module{

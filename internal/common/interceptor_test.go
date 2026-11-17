@@ -29,12 +29,12 @@ func TestBindInterceptor_Chaining(t *testing.T) {
 	if ret != i {
 		t.Error(test.DiffMessage(ret, i, "BindInterceptor should return self"))
 	}
-	if len(i.InterceptorHandlers) != 1 {
-		t.Error(test.DiffMessage(len(i.InterceptorHandlers), 1, "one handler after one bind"))
+	if len(i.interceptorHandlers) != 1 {
+		t.Error(test.DiffMessage(len(i.interceptorHandlers), 1, "one handler after one bind"))
 	}
 	i.BindInterceptor(mockInterceptable{})
-	if len(i.InterceptorHandlers) != 2 {
-		t.Error(test.DiffMessage(len(i.InterceptorHandlers), 2, "two handlers after two binds"))
+	if len(i.interceptorHandlers) != 2 {
+		t.Error(test.DiffMessage(len(i.interceptorHandlers), 2, "two handlers after two binds"))
 	}
 }
 

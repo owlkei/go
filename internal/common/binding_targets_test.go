@@ -80,7 +80,7 @@ func sortedNames(names []string) []string {
 func httpGuardsTargets(handlers ...any) []string {
 	l := &Guard{}
 	l.BindGuard(mockGuarder{}, handlers...)
-	items := l.InjectProvidersIntoHTTPGuards(bindRoutes(), noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPGuards(l, bindRoutes(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.HTTP.Common.MainHandlerName)
@@ -91,7 +91,7 @@ func httpGuardsTargets(handlers ...any) []string {
 func wsGuardsTargets(handlers ...any) []string {
 	l := &Guard{}
 	l.BindGuard(mockWSGuarder{}, handlers...)
-	items := l.InjectProvidersIntoWSGuards(bindEvents(), noopCB, testConstruct)
+	items := InjectProvidersIntoWSGuards(l, bindEvents(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.WS.EventName)
@@ -178,7 +178,7 @@ func TestInjectProvidersIntoWSGuards_NonFuncHandlerPanics(t *testing.T) {
 func httpInterceptorsTargets(handlers ...any) []string {
 	l := &Interceptor{}
 	l.BindInterceptor(mockInterceptable{}, handlers...)
-	items := l.InjectProvidersIntoHTTPInterceptors(bindRoutes(), noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPInterceptors(l, bindRoutes(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.HTTP.Common.MainHandlerName)
@@ -189,7 +189,7 @@ func httpInterceptorsTargets(handlers ...any) []string {
 func wsInterceptorsTargets(handlers ...any) []string {
 	l := &Interceptor{}
 	l.BindInterceptor(mockWSInterceptable{}, handlers...)
-	items := l.InjectProvidersIntoWSInterceptors(bindEvents(), noopCB, testConstruct)
+	items := InjectProvidersIntoWSInterceptors(l, bindEvents(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.WS.EventName)
@@ -260,7 +260,7 @@ func TestInjectProvidersIntoWSInterceptors_NonHandlerPanics(t *testing.T) {
 func httpExceptionFiltersTargets(handlers ...any) []string {
 	l := &ExceptionFilter{}
 	l.BindExceptionFilter(mockExFilter{}, handlers...)
-	items := l.InjectProvidersIntoHTTPExceptionFilters(bindRoutes(), noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPExceptionFilters(l, bindRoutes(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.HTTP.Common.MainHandlerName)
@@ -271,7 +271,7 @@ func httpExceptionFiltersTargets(handlers ...any) []string {
 func wsExceptionFiltersTargets(handlers ...any) []string {
 	l := &ExceptionFilter{}
 	l.BindExceptionFilter(mockWSExFilter{}, handlers...)
-	items := l.InjectProvidersIntoWSExceptionFilters(bindEvents(), noopCB, testConstruct)
+	items := InjectProvidersIntoWSExceptionFilters(l, bindEvents(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.WS.EventName)
@@ -342,7 +342,7 @@ func TestInjectProvidersIntoWSExceptionFilters_NonHandlerPanics(t *testing.T) {
 func httpMiddlewaresTargets(handlers ...any) []string {
 	l := &Middleware{}
 	l.BindMiddleware(mockMiddlewareFn{}, handlers...)
-	items := l.InjectProvidersIntoHTTPMiddlewares(bindRoutes(), noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPMiddlewares(l, bindRoutes(), noopCB, testConstruct)
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.HTTP.Common.MainHandlerName)

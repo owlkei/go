@@ -12,9 +12,9 @@ func BenchmarkHTTPContext_Query(b *testing.B) {
 	var n int
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(w, r)
+		HTTPInit(c, w, r)
 		n += len(c.Query())
-		c.Reset()
+		HTTPReset(c)
 	}
 	if n == 0 {
 		b.Fatal("Query should not be empty")

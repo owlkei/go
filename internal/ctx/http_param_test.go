@@ -9,8 +9,7 @@ import (
 
 func TestHTTPContext_Param(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"id": {0}, "name": {1}}
-	c.ParamValues = []string{"42", "joe"}
+	HTTPSetParams(c, map[string][]int{"id": {0}, "name": {1}}, []string{"42", "joe"})
 
 	p := c.Param()
 	if p.Get("id") != "42" {
@@ -23,8 +22,7 @@ func TestHTTPContext_Param(t *testing.T) {
 
 func TestHTTPContext_ParamIsCached(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"42"}
+	HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"42"})
 
 	p1 := c.Param()
 	p1.Set("id", "mutated")
@@ -93,28 +91,26 @@ func TestParam_Bind(t *testing.T) {
 
 func TestHTTPContext_ParamValuesAreCopied(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"id": {0}, "tags": {1, 2}}
-	c.ParamValues = []string{"42", "a", "b"}
+	HTTPSetParams(c, map[string][]int{"id": {0}, "tags": {1, 2}}, []string{"42", "a", "b"})
 
 	p := c.Param()
 
-	c.ParamValues[0] = "changed"
-	c.ParamValues[1] = "changed"
-	c.ParamValues = c.ParamValues[:0]
+	c.paramValues[0] = "changed"
+	c.paramValues[1] = "changed"
+	c.paramValues = c.paramValues[:0]
 	if p.Get("id") != "42" || len(p["tags"]) != 2 || p["tags"][0] != "a" || p["tags"][1] != "b" {
 		t.Error(test.DiffMessage(p, Param{"id": {"42"}, "tags": {"a", "b"}}, "B33: Param should stay valid when the router reuses its slice"))
 	}
 
 	p["tags"][0] = "mutated"
-	if c.ParamValues[:3][1] == "mutated" {
-		t.Error(test.DiffMessage(c.ParamValues[:3][1], "changed", "B33: writing to a Param value should not write to ParamValues"))
+	if c.paramValues[:3][1] == "mutated" {
+		t.Error(test.DiffMessage(c.paramValues[:3][1], "changed", "B33: writing to a Param value should not write to ParamValues"))
 	}
 }
 
 func TestParam_AddDoesNotCorruptSiblingKey(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"a": {0}, "b": {1}, "c": {2, 3}}
-	c.ParamValues = []string{"1", "2", "3", "4"}
+	HTTPSetParams(c, map[string][]int{"a": {0}, "b": {1}, "c": {2, 3}}, []string{"1", "2", "3", "4"})
 
 	p := c.Param()
 	p.Add("a", "x")
@@ -129,8 +125,7 @@ func TestParam_AddDoesNotCorruptSiblingKey(t *testing.T) {
 
 func TestHTTPContext_ParamMultipleValuesKeepOrder(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"a": {2, 0}}
-	c.ParamValues = []string{"x", "y", "z"}
+	HTTPSetParams(c, map[string][]int{"a": {2, 0}}, []string{"x", "y", "z"})
 	got := c.Param()["a"]
 	if !reflect.DeepEqual(got, []string{"z", "x"}) {
 		t.Error(test.DiffMessage(got, []string{"z", "x"}, "B33: values should follow the order of ParamKeys"))
@@ -139,8 +134,7 @@ func TestHTTPContext_ParamMultipleValuesKeepOrder(t *testing.T) {
 
 func TestHTTPContext_ParamIndexOutOfRangeIsSkipped(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"id": {0}, "bad": {5}, "neg": {-1}, "mix": {0, 9}}
-	c.ParamValues = []string{"42"}
+	HTTPSetParams(c, map[string][]int{"id": {0}, "bad": {5}, "neg": {-1}, "mix": {0, 9}}, []string{"42"})
 
 	var p Param
 	if !noPanic(t, "B35 Param with indexes outside ParamValues", func() { p = c.Param() }) {
@@ -168,8 +162,7 @@ func TestHTTPContext_ParamWithoutKeysIsEmptyNotNil(t *testing.T) {
 
 func TestParam_BindValueFromRequest(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"42"}
+	HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"42"})
 	got := c.Param().BindValue(paramBindDTO{})
 	if dto, ok := got.(paramBindDTO); !ok || dto.ID != "42" {
 		t.Error(test.DiffMessage(got, paramBindDTO{ID: "42"}, "BindValue should bind the request's parameters"))

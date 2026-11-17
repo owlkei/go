@@ -75,8 +75,8 @@ func TestParseWSFnNameToEvent_CaseNormalization(t *testing.T) {
 func TestAddToEventMap_InitMaps(t *testing.T) {
 	ws := &WS{}
 	ws.addToEventMap("ON_message", "message", nil)
-	if ws.EventMap == nil {
-		t.Error(test.DiffMessage(ws.EventMap, "non-nil", "EventMap initialized"))
+	if WSEventMap(ws) == nil {
+		t.Error(test.DiffMessage(WSEventMap(ws), "non-nil", "EventMap initialized"))
 	}
 	if ws.funcNameByEvent == nil {
 		t.Error(test.DiffMessage(ws.funcNameByEvent, "non-nil", "funcNameByEvent initialized"))
@@ -86,8 +86,8 @@ func TestAddToEventMap_InitMaps(t *testing.T) {
 func TestAddToEventMap_StoresEntries(t *testing.T) {
 	ws := &WS{}
 	ws.addToEventMap("ON_message", "message", "handler")
-	if ws.EventMap["message"] != "handler" {
-		t.Error(test.DiffMessage(ws.EventMap["message"], "handler", "EventMap entry"))
+	if WSEventMap(ws)["message"] != "handler" {
+		t.Error(test.DiffMessage(WSEventMap(ws)["message"], "handler", "EventMap entry"))
 	}
 	if ws.funcNameByEvent["message"] != "ON_message" {
 		t.Error(test.DiffMessage(ws.funcNameByEvent["message"], "ON_message", "funcNameByEvent entry"))
@@ -96,13 +96,13 @@ func TestAddToEventMap_StoresEntries(t *testing.T) {
 
 func TestAddHandlerToEventMap_Stores(t *testing.T) {
 	ws := &WS{}
-	ws.AddHandlerToEventMap("SUBSCRIBE_message", nil)
-	if ws.EventMap == nil {
-		t.Error(test.DiffMessage(ws.EventMap, "non-nil", "EventMap created"))
+	AddHandlerToEventMap(ws, "SUBSCRIBE_message", nil)
+	if WSEventMap(ws) == nil {
+		t.Error(test.DiffMessage(WSEventMap(ws), "non-nil", "EventMap created"))
 		return
 	}
 	eventName := "message"
-	if _, ok := ws.EventMap[eventName]; !ok {
+	if _, ok := WSEventMap(ws)[eventName]; !ok {
 		t.Error(test.DiffMessage("missing", eventName, "event stored in EventMap"))
 	}
 	if ws.funcNameByEvent[eventName] != "SUBSCRIBE_message" {
@@ -112,8 +112,8 @@ func TestAddHandlerToEventMap_Stores(t *testing.T) {
 
 func TestAddHandlerToEventMap_WildcardStores(t *testing.T) {
 	ws := &WS{}
-	ws.AddHandlerToEventMap("SUBSCRIBE_chat_ANY", nil)
-	if _, ok := ws.EventMap["chat.*"]; !ok {
+	AddHandlerToEventMap(ws, "SUBSCRIBE_chat_ANY", nil)
+	if _, ok := WSEventMap(ws)["chat.*"]; !ok {
 		t.Error(test.DiffMessage("missing", "chat.*", "wildcard event stored"))
 	}
 	if ws.funcNameByEvent["chat.*"] != "SUBSCRIBE_chat_ANY" {
@@ -123,19 +123,19 @@ func TestAddHandlerToEventMap_WildcardStores(t *testing.T) {
 
 func TestAddHandlerToEventMap_IgnoresNonWS(t *testing.T) {
 	ws := &WS{}
-	ws.AddHandlerToEventMap("READ_users", nil)
-	if len(ws.EventMap) != 0 {
-		t.Error(test.DiffMessage(len(ws.EventMap), 0, "non-WS fn should not be stored"))
+	AddHandlerToEventMap(ws, "READ_users", nil)
+	if len(WSEventMap(ws)) != 0 {
+		t.Error(test.DiffMessage(len(WSEventMap(ws)), 0, "non-WS fn should not be stored"))
 	}
 }
 
 func TestAddHandlerToEventMap_SameEventDoesNotPanic(t *testing.T) {
 	ws := &WS{}
-	ws.AddHandlerToEventMap("SUBSCRIBE_message", nil)
+	AddHandlerToEventMap(ws, "SUBSCRIBE_message", nil)
 	defer func() {
 		if r := recover(); r != nil {
 			t.Error(test.DiffMessage(r, "no panic", "conflicts are checked per app by core, AddHandlerToEventMap no longer panics"))
 		}
 	}()
-	ws.AddHandlerToEventMap("SUBSCRIBE_message", nil)
+	AddHandlerToEventMap(ws, "SUBSCRIBE_message", nil)
 }

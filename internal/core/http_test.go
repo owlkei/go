@@ -48,7 +48,7 @@ func newServeApp(t *testing.T) *App {
 	writeServeFile(t, filepath.Join(serveRoot, ".env"), "SECRET=1")
 
 	app := New()
-	app.Create(ModuleBuilder().Controllers(serveController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(serveController{}).Build())
 	return app
 }
 

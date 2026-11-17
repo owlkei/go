@@ -64,14 +64,14 @@ func serverConnWithScope(t *testing.T, traceparent string) (*websocket.Conn, *tr
 
 func TestWSContext_Init_NilConn(t *testing.T) {
 	c := NewWSContext()
-	if !noPanic(t, "W4: Init(nil)", func() { c.Init(nil) }) {
+	if !noPanic(t, "W4: Init(nil)", func() { WSInit(c, nil) }) {
 		return
 	}
 	s := tracecontext.ScopeOf(c.Context())
 	if s == nil {
 		t.Fatal(test.DiffMessage(s, "<a message scope>", "W4: a nil connection still gets a scope"))
 	}
-	if len(s.TraceID) != 32 || len(s.Message) != 16 || c.GetID() != s.Message {
+	if len(s.TraceID) != 32 || len(s.Message) != 16 || c.ID() != s.Message {
 		t.Error(test.DiffMessage([]any{s.TraceID, s.Message}, "<a new trace ID and a message ID>", "W4: a new trace and a message ID"))
 	}
 	if s.Connection != "" || s.Parent != "" {
@@ -81,7 +81,7 @@ func TestWSContext_Init_NilConn(t *testing.T) {
 
 func TestWSContext_Init_ConnWithoutRequest(t *testing.T) {
 	c := NewWSContext()
-	if !noPanic(t, "W4: a connection built by hand has no request", func() { c.Init(&websocket.Conn{}) }) {
+	if !noPanic(t, "W4: a connection built by hand has no request", func() { WSInit(c, &websocket.Conn{}) }) {
 		return
 	}
 	s := tracecontext.ScopeOf(c.Context())
@@ -95,7 +95,7 @@ func TestWSContext_Init_RequestWithoutScope(t *testing.T) {
 	defer cleanup()
 	_ = client
 	c := NewWSContext()
-	c.Init(server)
+	WSInit(c, server)
 	s := tracecontext.ScopeOf(c.Context())
 	if s == nil || s.Connection != "" || s.Parent != "" || len(s.TraceID) != 32 || len(s.Message) != 16 {
 		t.Error(test.DiffMessage(s, "<a scope with a new trace and no connection>", "W4: a parent without a scope gives a new trace ID"))
@@ -125,7 +125,7 @@ func newPlainConnPair(t *testing.T) (*websocket.Conn, *websocket.Conn, func()) {
 func TestWSContext_Init_ContextCarriesMessageScope(t *testing.T) {
 	conn, connScope, _ := serverConnWithScope(t, scopeHeader)
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 
 	s := tracecontext.ScopeOf(c.Context())
 	if s == nil {
@@ -140,8 +140,8 @@ func TestWSContext_Init_ContextCarriesMessageScope(t *testing.T) {
 	if s.Connection != connScope.Request || s.Parent != connScope.Request {
 		t.Error(test.DiffMessage([]string{s.Connection, s.Parent}, []string{connScope.Request, connScope.Request}, "W4: Connection and Parent are the connection ID"))
 	}
-	if c.GetID() != s.Message || len(s.Message) != 16 || s.Message == connScope.Request {
-		t.Error(test.DiffMessage(c.GetID(), "<a message ID, not the connection ID>", "W5: GetID is Scope.Message"))
+	if c.ID() != s.Message || len(s.Message) != 16 || s.Message == connScope.Request {
+		t.Error(test.DiffMessage(c.ID(), "<a message ID, not the connection ID>", "W5: GetID is Scope.Message"))
 	}
 	if s.Request != "" || s.Upstream != "" {
 		t.Error(test.DiffMessage([]string{s.Request, s.Upstream}, []string{"", ""}, "W4: Request and Upstream are empty"))
@@ -154,10 +154,10 @@ func TestWSContext_Init_ContextCarriesMessageScope(t *testing.T) {
 func TestWSContext_Init_TwoMessagesTwoIDs(t *testing.T) {
 	conn, _, _ := serverConnWithScope(t, "")
 	a, b := NewWSContext(), NewWSContext()
-	a.Init(conn)
-	b.Init(conn)
-	if a.GetID() == b.GetID() {
-		t.Error(test.DiffMessage(a.GetID(), "<a different ID>", "W6: every message has its own ID"))
+	WSInit(a, conn)
+	WSInit(b, conn)
+	if a.ID() == b.ID() {
+		t.Error(test.DiffMessage(a.ID(), "<a different ID>", "W6: every message has its own ID"))
 	}
 	if tracecontext.ScopeOf(a.Context()).TraceID != tracecontext.ScopeOf(b.Context()).TraceID {
 		t.Error(test.DiffMessage(tracecontext.ScopeOf(b.Context()).TraceID, tracecontext.ScopeOf(a.Context()).TraceID, "W4: messages of one connection share its trace"))
@@ -167,7 +167,7 @@ func TestWSContext_Init_TwoMessagesTwoIDs(t *testing.T) {
 func TestWSContext_Init_ContextDoneWhenHandlerReturns(t *testing.T) {
 	conn, _, release := serverConnWithScope(t, "")
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 	kept := c.Context()
 	select {
 	case <-kept.Done():
@@ -188,29 +188,29 @@ func TestWSContext_Init_ContextDoneWhenHandlerReturns(t *testing.T) {
 func TestWSContext_ContextScopeSurvivesResetAndClose(t *testing.T) {
 	conn, connScope, release := serverConnWithScope(t, "")
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 	kept := c.Context()
-	id := c.GetID()
+	id := c.ID()
 
-	c.Reset()
-	c.Init(conn)
+	WSReset(c)
+	WSInit(c, conn)
 	release()
 
 	s := tracecontext.ScopeOf(kept)
 	if s == nil || s.Message != id || s.Connection != connScope.Request {
 		t.Error(test.DiffMessage(s, id, "W8: a kept message context reads its IDs after Reset, reuse and close"))
 	}
-	if c.GetID() == id {
-		t.Error(test.DiffMessage(c.GetID(), "<the second message's ID>", "W8: the reused context has a new ID"))
+	if c.ID() == id {
+		t.Error(test.DiffMessage(c.ID(), "<the second message's ID>", "W8: the reused context has a new ID"))
 	}
 }
 
 func TestWSContext_SetContextKeepsScope(t *testing.T) {
 	conn, _, _ := serverConnWithScope(t, "")
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 	scope := tracecontext.ScopeOf(c.Context())
-	id := c.GetID()
+	id := c.ID()
 
 	type key struct{}
 	replacement := context.WithValue(context.Background(), key{}, "v")
@@ -222,15 +222,15 @@ func TestWSContext_SetContextKeepsScope(t *testing.T) {
 	if c.Context().Value(key{}) != "v" {
 		t.Error(test.DiffMessage(c.Context().Value(key{}), "v", "W7: the replacement's values stay readable"))
 	}
-	if c.GetID() != id {
-		t.Error(test.DiffMessage(c.GetID(), id, "W7: GetID never changes after Init"))
+	if c.ID() != id {
+		t.Error(test.DiffMessage(c.ID(), id, "W7: GetID never changes after Init"))
 	}
 }
 
 func TestWSContext_SetContextOtherScopeIsReplaced(t *testing.T) {
 	conn, _, _ := serverConnWithScope(t, "")
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 	scope := tracecontext.ScopeOf(c.Context())
 
 	other, otherScope := tracecontext.NewRequest(context.Background(), http.Header{}, time.Now())
@@ -243,7 +243,7 @@ func TestWSContext_SetContextOtherScopeIsReplaced(t *testing.T) {
 func TestWSContext_SetContextDerivedUnchanged(t *testing.T) {
 	conn, _, _ := serverConnWithScope(t, "")
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 
 	type key struct{}
 	derived := context.WithValue(c.Context(), key{}, "v")
@@ -256,7 +256,7 @@ func TestWSContext_SetContextDerivedUnchanged(t *testing.T) {
 func TestWSContext_SetContextNilKeepsScope(t *testing.T) {
 	conn, _, _ := serverConnWithScope(t, "")
 	c := NewWSContext()
-	c.Init(conn)
+	WSInit(c, conn)
 	scope := tracecontext.ScopeOf(c.Context())
 	var nilContext context.Context
 	if !noPanic(t, "W7: SetContext(nil)", func() { c.SetContext(nilContext) }) {
@@ -272,11 +272,11 @@ func TestWSContext_ContextBackgroundAfterReset(t *testing.T) {
 	if c.Context() != context.Background() {
 		t.Error(test.DiffMessage(c.Context(), context.Background(), "W5: before Init Context is Background"))
 	}
-	c.Init(nil)
+	WSInit(c, nil)
 	if c.Context() == context.Background() {
 		t.Error(test.DiffMessage(c.Context(), "<the message context>", "W5: after Init Context is no longer Background"))
 	}
-	c.Reset()
+	WSReset(c)
 	if c.Context() != context.Background() {
 		t.Error(test.DiffMessage(c.Context(), context.Background(), "W5: after Reset Context is Background again"))
 	}
@@ -297,10 +297,10 @@ func TestWSContext_Init_ConcurrentContextsIsolated(t *testing.T) {
 			var kept []context.Context
 			var ids []string
 			for i := 0; i < rounds; i++ {
-				c.Init(conn)
+				WSInit(c, conn)
 				kept = append(kept, c.Context())
-				ids = append(ids, c.GetID())
-				c.Reset()
+				ids = append(ids, c.ID())
+				WSReset(c)
 			}
 			for i, k := range kept {
 				if s := tracecontext.ScopeOf(k); s == nil || s.Message != ids[i] {

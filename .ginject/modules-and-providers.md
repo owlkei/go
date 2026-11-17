@@ -68,12 +68,12 @@ RootModule                    its providers are global
 ### 2.1 Static Module
 
 ```go
-var UserModule = core.ModuleBuilder().
+var UserModule = core.NewModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}, UserRepository{}).
 	Build()
 
-var AppModule = core.ModuleBuilder().
+var AppModule = core.NewModuleBuilder().
 	Imports(UserModule).
 	Build()
 ```
@@ -99,10 +99,10 @@ func (instance ReportService) NewProvider() core.Provider { return instance }
 
 func ReportModule(logger log.Logger) *core.Module {
 	logger.Info("ReportModule")
-	return core.ModuleBuilder().Providers(ReportService{}).Build()
+	return core.NewModuleBuilder().Providers(ReportService{}).Build()
 }
 
-var AppModule = core.ModuleBuilder().
+var AppModule = core.NewModuleBuilder().
 	Imports(UserModule, ReportModule).
 	Build()
 ```
@@ -228,7 +228,7 @@ recursive type and doesn't compile. Move shared logic into a third provider.
 
 ```go
 var InfraModule = func() *core.Module {
-	m := core.ModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
+	m := core.NewModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
 	m.IsGlobal = true
 	return m
 }()
@@ -272,17 +272,17 @@ the exact reverse.
 
 ```go
 var InfraModule = func() *core.Module {
-	m := core.ModuleBuilder().Providers(DatabasePool{}).Build()
+	m := core.NewModuleBuilder().Providers(DatabasePool{}).Build()
 	m.IsGlobal = true
 	return m
 }()
 
-var UserModule = core.ModuleBuilder().
+var UserModule = core.NewModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}, UserRepository{}).
 	Build()
 
-var AppModule = core.ModuleBuilder().
+var AppModule = core.NewModuleBuilder().
 	Imports(InfraModule, UserModule).
 	Build()
 ```

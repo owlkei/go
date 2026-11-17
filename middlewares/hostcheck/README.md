@@ -48,7 +48,7 @@ func main() {
 	)
 
 	app.Create(
-		core.ModuleBuilder().Build(),
+		core.NewModuleBuilder().Build(),
 	)
 }
 ```

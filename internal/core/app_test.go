@@ -54,27 +54,27 @@ func TestGetContextIDIgnoresRequestIDHeader(t *testing.T) {
 	c := ctx.NewHTTPContext()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set(ctx.RequestID, "test-id-123")
-	c.Init(httptest.NewRecorder(), r)
+	ctx.HTTPInit(c, httptest.NewRecorder(), r)
 
-	if c.GetID() == "test-id-123" {
-		t.Error(test.DiffMessage(c.GetID(), "<generated UUID, not the header value>", "Init must always generate its own ID and ignore the X-Request-Id header"))
+	if c.ID() == "test-id-123" {
+		t.Error(test.DiffMessage(c.ID(), "<generated UUID, not the header value>", "Init must always generate its own ID and ignore the X-Request-Id header"))
 	}
-	if c.GetID() == "" {
-		t.Error(test.DiffMessage(c.GetID(), "<non-empty UUID>", "Init must still generate an ID when a header is present"))
+	if c.ID() == "" {
+		t.Error(test.DiffMessage(c.ID(), "<non-empty UUID>", "Init must still generate an ID when a header is present"))
 	}
 }
 
 func TestGetContextIDGeneratesUUID(t *testing.T) {
 	c1 := ctx.NewHTTPContext()
-	c1.Init(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	ctx.HTTPInit(c1, httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	c2 := ctx.NewHTTPContext()
-	c2.Init(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	ctx.HTTPInit(c2, httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
-	if c1.GetID() == "" {
-		t.Error(test.DiffMessage(c1.GetID(), "non-empty UUID", "should generate UUID when header absent"))
+	if c1.ID() == "" {
+		t.Error(test.DiffMessage(c1.ID(), "non-empty UUID", "should generate UUID when header absent"))
 	}
-	if c1.GetID() == c2.GetID() {
-		t.Error(test.DiffMessage(c1.GetID(), "different UUID", "each call should produce a unique ID"))
+	if c1.ID() == c2.ID() {
+		t.Error(test.DiffMessage(c1.ID(), "different UUID", "each call should produce a unique ID"))
 	}
 }
 
@@ -123,7 +123,7 @@ func TestEnableDevtoolChaining(t *testing.T) {
 
 func TestServeHTTPNotFound(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/notfound", nil)
 	w := httptest.NewRecorder()
@@ -136,7 +136,7 @@ func TestServeHTTPNotFound(t *testing.T) {
 
 func TestServeHTTPSetsRequestIDHeader(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/notfound", nil)
 	w := httptest.NewRecorder()
@@ -149,7 +149,7 @@ func TestServeHTTPSetsRequestIDHeader(t *testing.T) {
 
 func TestServeHTTPSetsGeneratedRequestID(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	const clientID = "client-supplied-request-id"
 	r := httptest.NewRequest(http.MethodGet, "/notfound", nil)
@@ -179,7 +179,7 @@ func newBodyLimitApp(t *testing.T, limit int64) *App {
 
 	app := New()
 	app.maxRequestBodyBytes.Store(limit)
-	app.Create(ModuleBuilder().Controllers(bodyLimitController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(bodyLimitController{}).Build())
 
 	return app
 }
@@ -241,7 +241,7 @@ func TestServeHTTPBodyLimit_NegativeDisablesCap(t *testing.T) {
 
 func TestGetAfterCreate(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	got := app.Get(&mockProvider{})
 	if got != nil {
@@ -259,7 +259,7 @@ func TestSetLogger_ReturnsApp(t *testing.T) {
 
 func TestServeHTTPConcurrent_NoDataRace(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	const goroutines = 32
 	const requestsPerGoroutine = 50
@@ -303,7 +303,7 @@ func TestConcurrentAppCreate_NoDataRace(t *testing.T) {
 
 			app := New()
 			app.BindGlobalMiddlewares(raceGlobalMiddleware{})
-			app.Create(ModuleBuilder().
+			app.Create(NewModuleBuilder().
 				Providers(raceGlobalProvider{}).
 				Build())
 		}()
@@ -313,7 +313,7 @@ func TestConcurrentAppCreate_NoDataRace(t *testing.T) {
 
 func TestEnableVersioning_Chaining(t *testing.T) {
 	app := New()
-	result := app.EnableVersioning(versioning.Versioning{})
+	result := app.EnableVersioning(&versioning.Versioning{})
 	if result != app {
 		t.Error(test.DiffMessage(result, app, "EnableVersioning should return *App"))
 	}
@@ -340,7 +340,7 @@ func (c panicMiddlewareController) READ_panicmiddleware() string {
 func TestGlobalMiddlewarePanic_CaughtByExceptionFilter(t *testing.T) {
 	app := New()
 	app.BindGlobalMiddlewares(panicMiddleware{})
-	app.Create(ModuleBuilder().Controllers(panicMiddlewareController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(panicMiddlewareController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/panicmiddleware", nil)
 	w := httptest.NewRecorder()
@@ -367,7 +367,7 @@ func (c globalGuardController) READ_globalguard() string  { return "ok" }
 func TestGlobalGuard_DeniesHTTPRequest(t *testing.T) {
 	app := New()
 	app.BindGlobalGuards(denyGlobalGuard{})
-	app.Create(ModuleBuilder().Controllers(globalGuardController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(globalGuardController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/globalguard", nil)
 	w := httptest.NewRecorder()
@@ -387,7 +387,7 @@ func TestGlobalGuard_ShapelessGuardPanicsOnCreate(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "a global guard with no CanActivate method must panic at Create"))
 		}
 	}()
-	app.Create(ModuleBuilder().Controllers(globalGuardController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(globalGuardController{}).Build())
 }
 
 type traceMiddleware struct{}
@@ -438,7 +438,7 @@ func TestTrace_EmitsPerStageAndComplete(t *testing.T) {
 		stages = append(stages, te.Stage)
 	})
 
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/tracepipeline", nil)
 	w := httptest.NewRecorder()
@@ -504,7 +504,7 @@ func TestTrace_PipeStageExcludedFromHandlerDuration(t *testing.T) {
 		}
 	})
 
-	app.Create(ModuleBuilder().Controllers(tracePipeController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipeController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/tracepipe", nil)
 	w := httptest.NewRecorder()
@@ -556,7 +556,7 @@ func TestTrace_ExceptionFilterStageFiresOnPanic(t *testing.T) {
 		}
 	})
 
-	app.Create(ModuleBuilder().Controllers(tracePanicController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePanicController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/tracepanic", nil)
 	w := httptest.NewRecorder()
@@ -617,7 +617,7 @@ func TestTrace_PipePanicStillEmitsPipeEventAndReachesExceptionFilter(t *testing.
 		}
 	})
 
-	app.Create(ModuleBuilder().Controllers(tracePipePanicController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipePanicController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/tracepipepanic", nil)
 	w := httptest.NewRecorder()
@@ -679,7 +679,7 @@ func TestTrace_HandlerPanicAfterSuccessfulPipeStillExcludesPipeDuration(t *testi
 		}
 	})
 
-	app.Create(ModuleBuilder().Controllers(traceHandlerPanicAfterPipeController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(traceHandlerPanicAfterPipeController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/tracehandlerpanicafterpipe", nil)
 	w := httptest.NewRecorder()
@@ -758,7 +758,7 @@ func TestTrace_InterceptorPrePostEventsMatchInCountAndOrder(t *testing.T) {
 		}
 	})
 
-	app.Create(ModuleBuilder().Controllers(multiInterceptorController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(multiInterceptorController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/multiintercept", nil)
 	w := httptest.NewRecorder()
@@ -820,7 +820,7 @@ func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
 		}
 	})
 
-	app.Create(ModuleBuilder().Controllers(shortCircuitController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(shortCircuitController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/shortcircuit", nil)
 	w := httptest.NewRecorder()
@@ -847,7 +847,7 @@ func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
 
 func TestTrace_InterceptorNoListener_NoPostEventOverhead(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Controllers(multiInterceptorController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(multiInterceptorController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/multiintercept", nil)
 	w := httptest.NewRecorder()
@@ -878,7 +878,7 @@ func TestTrace_WSHandshakeEmitsStageCompleteWithHTTPTransport(t *testing.T) {
 	})
 
 	app.EnableWS(&WSOptions{Path: "/ws"}, traceMiddleware{})
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -936,7 +936,7 @@ func TestInitLogger_CustomLoggerAutomaticallyGetsTagBehavior(t *testing.T) {
 	capturing := &capturingMockLogger{}
 	app := New()
 	app.SetLogger(capturing)
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	app.Logger().Info("test", "s", secret{Value: "visible", skip: "hidden"})
 
@@ -956,7 +956,7 @@ func TestInitLogger_CustomLoggerAutomaticallyGetsMaskBehavior(t *testing.T) {
 	capturing := &capturingMockLogger{}
 	app := New()
 	app.SetLogger(log.WrapLogger(capturing, []string{"password"}))
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	app.Logger().Info("test", "password", "secret")
 
@@ -1011,7 +1011,7 @@ func (l *allCallsCapturingLogger) Error(msg string, args ...any) { l.capture(msg
 func (l *allCallsCapturingLogger) Fatal(msg string, args ...any) { l.capture(msg, args) }
 
 var testListenModule = func() *Module {
-	return ModuleBuilder().Build()
+	return NewModuleBuilder().Build()
 }
 
 func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
@@ -1037,7 +1037,7 @@ func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
 	app := New()
 	app.SetLogger(logger)
 
-	m := ModuleBuilder().Build()
+	m := NewModuleBuilder().Build()
 	m.Name = ""
 	app.Create(m)
 
@@ -1049,11 +1049,11 @@ func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
 }
 
 var testListenChildModule = func() *Module {
-	return ModuleBuilder().Build()
+	return NewModuleBuilder().Build()
 }
 
 var testListenParentModule = func() *Module {
-	return ModuleBuilder().Imports(testListenChildModule).Build()
+	return NewModuleBuilder().Imports(testListenChildModule).Build()
 }
 
 func TestListen_LogsNestedModuleNamesRecursively(t *testing.T) {
@@ -1087,7 +1087,7 @@ func TestInitDevtool_DoesNotSpawnAServerGoroutine(t *testing.T) {
 
 	app := New()
 	app.EnableDevtool()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	if app.devtool == nil {
 		t.Fatal("EnableDevtool must still build the devtool snapshot")
@@ -1181,4 +1181,28 @@ func TestLogBoostrapNoPanic(t *testing.T) {
 		}
 	}()
 	logBoostrap(8080)
+}
+
+func TestEnableVersioning_NilIsZeroOptions(t *testing.T) {
+	app := New()
+	result := app.EnableVersioning(nil)
+	if result != app {
+		t.Error(test.DiffMessage(result, app, "D7: EnableVersioning(nil) returns the app"))
+	}
+	if !app.http.isVersioningEnabled || app.http.versioning == nil {
+		t.Error(test.DiffMessage(app.http.isVersioningEnabled, true, "D7: nil options enable versioning with the zero options"))
+	}
+	if app.http.versioning != nil && app.http.versioning.Key != "v" {
+		t.Error(test.DiffMessage(app.http.versioning.Key, "v", "D7: nil options get the default key like zero options"))
+	}
+}
+
+func TestEnableVersioning_PointerIsNotRetained(t *testing.T) {
+	app := New()
+	opts := &versioning.Versioning{Key: "X-V"}
+	app.EnableVersioning(opts)
+	opts.Key = "changed"
+	if app.http.versioning.Key != "X-V" {
+		t.Error(test.DiffMessage(app.http.versioning.Key, "X-V", "D7: a later change of the caller's options does not change the app"))
+	}
 }

@@ -9,10 +9,9 @@ func BenchmarkHTTPContext_Param(b *testing.B) {
 	var n int
 	b.ReportAllocs()
 	for b.Loop() {
-		c.ParamKeys = keys
-		c.ParamValues = values
+		HTTPSetParams(c, keys, values)
 		n += len(c.Param())
-		c.Reset()
+		HTTPReset(c)
 	}
 	if n == 0 {
 		b.Fatal("Param should not be empty")

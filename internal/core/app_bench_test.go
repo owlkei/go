@@ -11,7 +11,7 @@ import (
 
 func BenchmarkServeHTTP(b *testing.B) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
 	w := httptest.NewRecorder()

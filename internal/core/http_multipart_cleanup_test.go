@@ -81,7 +81,7 @@ func TestMultipart_TempFilesRemovedAfterRequest(t *testing.T) {
 		app := New()
 		app.SetLogger(quietLogger{})
 		app.maxRequestBodyBytes.Store(64 << 20)
-		app.Create(ModuleBuilder().Controllers(multipartController{}).Build())
+		app.Create(NewModuleBuilder().Controllers(multipartController{}).Build())
 
 		body, contentType := largeMultipart(t)
 		r := httptest.NewRequest(http.MethodPost, route, body)

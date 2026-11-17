@@ -48,7 +48,7 @@ func TestGlobalWSExceptionFilterFullException(t *testing.T) {
 	c := ctx.NewWSContext()
 
 	var got any
-	c.SetSend(func(data any) { got = data })
+	ctx.WSSetSend(c, func(data any) { got = data })
 
 	ex := exception.PolicyViolationException("nope")
 	filter.Catch(c, &ex)
@@ -73,7 +73,7 @@ func TestGlobalWSExceptionFilterEmptyMessageFallsBackToDefault(t *testing.T) {
 	c := ctx.NewWSContext()
 
 	var got any
-	c.SetSend(func(data any) { got = data })
+	ctx.WSSetSend(c, func(data any) { got = data })
 
 	ex := exception.InternalServerErrorException("")
 	filter.Catch(c, &ex)

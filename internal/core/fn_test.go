@@ -52,8 +52,8 @@ func TestIsInjectedProvider(t *testing.T) {
 func TestSetStatusCodeInt(t *testing.T) {
 	c := newHTTPContext()
 	setStatusCode(c, reflect.ValueOf(http.StatusOK))
-	if c.Code != http.StatusOK {
-		t.Error(test.DiffMessage(c.Code, http.StatusOK, "setStatusCode reflect.Int"))
+	if ctx.HTTPCode(c) != http.StatusOK {
+		t.Error(test.DiffMessage(ctx.HTTPCode(c), http.StatusOK, "setStatusCode reflect.Int"))
 	}
 }
 
@@ -61,8 +61,8 @@ func TestSetStatusCodeInvalidInt(t *testing.T) {
 	c := newHTTPContext()
 	c.Status(http.StatusTeapot)
 	setStatusCode(c, reflect.ValueOf(9999))
-	if c.Code != http.StatusTeapot {
-		t.Error(test.DiffMessage(c.Code, http.StatusTeapot, "setStatusCode invalid int should not change status"))
+	if ctx.HTTPCode(c) != http.StatusTeapot {
+		t.Error(test.DiffMessage(ctx.HTTPCode(c), http.StatusTeapot, "setStatusCode invalid int should not change status"))
 	}
 }
 
@@ -70,8 +70,8 @@ func TestSetStatusCodeInterfaceValid(t *testing.T) {
 	c := newHTTPContext()
 	var v any = http.StatusCreated
 	setStatusCode(c, reflect.ValueOf(v))
-	if c.Code != http.StatusCreated {
-		t.Error(test.DiffMessage(c.Code, http.StatusCreated, "setStatusCode interface valid int"))
+	if ctx.HTTPCode(c) != http.StatusCreated {
+		t.Error(test.DiffMessage(ctx.HTTPCode(c), http.StatusCreated, "setStatusCode interface valid int"))
 	}
 }
 
@@ -80,8 +80,8 @@ func TestSetStatusCodeInterfaceInvalid(t *testing.T) {
 	c.Status(http.StatusTeapot)
 	var v any = "not-an-int"
 	setStatusCode(c, reflect.ValueOf(v))
-	if c.Code != http.StatusTeapot {
-		t.Error(test.DiffMessage(c.Code, http.StatusTeapot, "setStatusCode interface non-int should not change status"))
+	if ctx.HTTPCode(c) != http.StatusTeapot {
+		t.Error(test.DiffMessage(ctx.HTTPCode(c), http.StatusTeapot, "setStatusCode interface non-int should not change status"))
 	}
 }
 

@@ -40,7 +40,7 @@ func svApp(t *testing.T) *App {
 	svWrite(t, filepath.Join(svRoot, "sub", "x.txt"), "nested")
 
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Controllers(svNameAnyController{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Controllers(svNameAnyController{}).Build())
 	return app
 }
 
@@ -93,7 +93,7 @@ func TestServe_NameAnyTraversalIsRefused(t *testing.T) {
 
 func TestServe_NameAnyConflictsWithAnyOfName(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(ModuleBuilder().Controllers(svNameAnyController{}, svAnyOfController{}).Build())
+		New().Create(NewModuleBuilder().Controllers(svNameAnyController{}, svAnyOfController{}).Build())
 	})
 
 	want := "route conflict:"

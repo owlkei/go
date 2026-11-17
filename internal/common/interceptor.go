@@ -9,29 +9,27 @@ import (
 
 const InterceptorMethodName = "Intercept"
 
-type Interceptable any
-
 type InterceptorItem struct {
 	HTTP HTTPInterceptorItem
 	WS   WSInterceptorItem
 }
 
 type interceptorHandler struct {
-	interceptable Interceptable
+	interceptable any
 	handlers      []any
 }
 
 type Interceptor struct {
-	InterceptorHandlers []interceptorHandler
+	interceptorHandlers []interceptorHandler
 }
 
-func (i *Interceptor) BindInterceptor(interceptable Interceptable, handlers ...any) *Interceptor {
+func (i *Interceptor) BindInterceptor(interceptor any, handlers ...any) *Interceptor {
 	interceptorHandler := interceptorHandler{
-		interceptable: interceptable,
+		interceptable: interceptor,
 		handlers:      handlers,
 	}
 
-	i.InterceptorHandlers = append(i.InterceptorHandlers, interceptorHandler)
+	i.interceptorHandlers = append(i.interceptorHandlers, interceptorHandler)
 
 	return i
 }

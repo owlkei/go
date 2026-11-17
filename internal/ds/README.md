@@ -193,7 +193,7 @@ fmt.Println(tr.Len())
 - Each node keeps the parameter child, the wildcard child and a sorted glob list in their own fields; the map holds static segments only, so a segment costs one map lookup plus the globs, parameter and wildcard tried in order.
 - `Find` walks the path by index (no splitting, no copy) and recurses to backtrack; the depth is at most 64. Each node is reached at most once per call, so a lookup costs at most the size of the tree plus one glob test per glob child visited.
 - The segment count of a path is only computed when the path is longer than 128 bytes (a shorter path cannot hold 65 segments).
-- Captured values are written while the recursion unwinds into one slice taken at the matched end: the caller's buffer when its capacity is enough (`core` passes `c.ParamValues[:0]`, whose capacity the pooled context keeps), otherwise a new slice of the exact length. With a buffer a parameter match allocates nothing (about 80 ns against 130 ns before); a static match or a miss never allocates. The returned slice shares the buffer: it is valid until the owner reuses it.
+- Captured values are written while the recursion unwinds into one slice taken at the matched end: the caller's buffer when its capacity is enough (`core` passes `ctx.HTTPParamValues(c)[:0]`, whose capacity the pooled context keeps), otherwise a new slice of the exact length. With a buffer a parameter match allocates nothing (about 80 ns against 130 ns before); a static match or a miss never allocates. The returned slice shares the buffer: it is valid until the owner reuses it.
 
 ## Benchmarks
 

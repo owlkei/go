@@ -265,7 +265,7 @@ func lcNewApp(t *testing.T, cfg lcConfig) *App {
 	if !cfg.noGlobalFilters {
 		app.BindGlobalExceptionFilters(lcFilter{Name: "gf1"}, lcFilter{Name: "gf2"})
 	}
-	app.Create(ModuleBuilder().Controllers(lcController{}, lcBareController{}, lcMethodController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(lcController{}, lcBareController{}, lcMethodController{}).Build())
 	return app
 }
 
@@ -752,7 +752,7 @@ func TestLifecycle_WSHandshakeRunsOnlyWSMiddlewares(t *testing.T) {
 	app := New()
 	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
 	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"}, lcMiddleware{Name: "w2"})
-	app.Create(ModuleBuilder().Controllers(lcBareController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(lcBareController{}).Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
 
@@ -770,7 +770,7 @@ func TestLifecycle_WSHandshakeRefusedWithoutNext(t *testing.T) {
 	app := New()
 	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
 	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"}, lcMiddleware{Name: "w2"})
-	app.Create(ModuleBuilder().Controllers(lcBareController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(lcBareController{}).Build())
 	lcSetMiddleware("w1", func(http.ResponseWriter, *http.Request, ctx.Next) {})
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -787,7 +787,7 @@ func TestLifecycle_WSHandshakeRefusedByPanic(t *testing.T) {
 	lcReset(t)
 	app := New()
 	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"})
-	app.Create(ModuleBuilder().Controllers(lcBareController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(lcBareController{}).Build())
 	lcSetMiddleware("w1", lcPanicMiddleware("secret"))
 	server := httptest.NewServer(app)
 	defer server.Close()

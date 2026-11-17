@@ -96,7 +96,7 @@ func lyRun(t *testing.T, setup func(app *App)) {
 
 	app := New()
 	setup(app)
-	mustCreate(t, app, ModuleBuilder().Controllers(lyController{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Controllers(lyController{}).Build())
 	if w := createGet(app, "/ly"); w.Code != http.StatusOK {
 		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "the route answers"))
 	}

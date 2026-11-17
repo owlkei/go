@@ -97,13 +97,13 @@ func (s *srvStateT) hook(name string) func() {
 }
 
 var srvChildModule = func() *Module {
-	m := ModuleBuilder().Build()
+	m := NewModuleBuilder().Build()
 	m.OnShutdown = srvCur.hook("child")
 	return m
 }
 
 var srvRootModule = func() *Module {
-	m := ModuleBuilder().Imports(srvChildModule).Controllers(srvController{}).Build()
+	m := NewModuleBuilder().Imports(srvChildModule).Controllers(srvController{}).Build()
 	m.OnShutdown = srvCur.hook("root")
 	return m
 }
@@ -1734,7 +1734,7 @@ func TestChecklist_NoGoroutineLeak(t *testing.T) {
 
 func TestServeHTTP_WithoutServerUsesDefaultBodyCap(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Controllers(bodyLimitController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(bodyLimitController{}).Build())
 
 	payload := `{"k":"` + strings.Repeat("a", 10<<20) + `"}`
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))

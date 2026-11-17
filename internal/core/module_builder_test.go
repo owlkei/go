@@ -29,8 +29,8 @@ func TestIsDynamicModule(t *testing.T) {
 }
 
 func TestModuleBuilderImports(t *testing.T) {
-	child := ModuleBuilder().Build()
-	b := ModuleBuilder().Imports(child)
+	child := NewModuleBuilder().Build()
+	b := NewModuleBuilder().Imports(child)
 	if len(b.imports) != 1 {
 		t.Error(test.DiffMessage(len(b.imports), 1, "Imports length"))
 	}
@@ -38,7 +38,7 @@ func TestModuleBuilderImports(t *testing.T) {
 
 func TestModuleBuilderProviders(t *testing.T) {
 	p := &mockProvider{}
-	b := ModuleBuilder().Providers(p)
+	b := NewModuleBuilder().Providers(p)
 	if len(b.providers) != 1 {
 		t.Error(test.DiffMessage(len(b.providers), 1, "Providers length"))
 	}
@@ -46,7 +46,7 @@ func TestModuleBuilderProviders(t *testing.T) {
 
 func TestModuleBuilderControllers(t *testing.T) {
 	c := &mockController{}
-	b := ModuleBuilder().Controllers(c)
+	b := NewModuleBuilder().Controllers(c)
 	if len(b.controllers) != 1 {
 		t.Error(test.DiffMessage(len(b.controllers), 1, "Controllers length"))
 	}
@@ -55,9 +55,9 @@ func TestModuleBuilderControllers(t *testing.T) {
 func TestModuleBuilderBuild(t *testing.T) {
 	p := &mockProvider{}
 	c := &mockController{}
-	child := ModuleBuilder().Build()
+	child := NewModuleBuilder().Build()
 
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Imports(child).
 		Providers(p).
 		Controllers(c).
@@ -67,7 +67,7 @@ func TestModuleBuilderBuild(t *testing.T) {
 		t.Fatal(test.DiffMessage(nil, "*Module", "Build returned nil"))
 		return
 	}
-	if m.ID() == "" {
+	if m.id == "" {
 		t.Error(test.DiffMessage("", "non-empty id", "module ID should not be empty"))
 	}
 	if len(m.providers) != 1 {
@@ -82,9 +82,9 @@ func TestModuleBuilderBuild(t *testing.T) {
 }
 
 func TestGetModuleTypeStaticOnly(t *testing.T) {
-	child1 := ModuleBuilder().Build()
-	child2 := ModuleBuilder().Build()
-	b := ModuleBuilder().Imports(child1, child2)
+	child1 := NewModuleBuilder().Build()
+	child2 := NewModuleBuilder().Build()
+	b := NewModuleBuilder().Imports(child1, child2)
 
 	statics, dynamics := b.getModuleType()
 	if len(statics) != 2 {
@@ -101,17 +101,17 @@ func TestGetModuleTypeInvalidPanics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "invalid import should panic"))
 		}
 	}()
-	b := ModuleBuilder().Imports("not a module")
+	b := NewModuleBuilder().Imports("not a module")
 	b.getModuleType()
 }
 
 var testStaticModule = func() *Module {
-	return ModuleBuilder().Build()
+	return NewModuleBuilder().Build()
 }
 
 var (
-	testGroupedModuleA = func() *Module { return ModuleBuilder().Build() }
-	testGroupedModuleB = func() *Module { return ModuleBuilder().Build() }
+	testGroupedModuleA = func() *Module { return NewModuleBuilder().Build() }
+	testGroupedModuleB = func() *Module { return NewModuleBuilder().Build() }
 )
 
 func TestModuleBuilderBuildResolvesNameFromVarFuncLiteral(t *testing.T) {
@@ -133,7 +133,7 @@ func TestModuleBuilderBuildResolvesNameInGroupedVarDecl(t *testing.T) {
 }
 
 func testModuleFactory() *Module {
-	return ModuleBuilder().Build()
+	return NewModuleBuilder().Build()
 }
 
 var testFactoryBackedModule = testModuleFactory()
@@ -152,7 +152,7 @@ func TestModuleBuilderBuildFallsBackToFunctionNameWhenNoEnclosingVar(t *testing.
 }
 
 var testOuterModuleWithNestedFactoryImport = func() *Module {
-	return ModuleBuilder().Imports(testModuleFactory()).Build()
+	return NewModuleBuilder().Imports(testModuleFactory()).Build()
 }
 
 func TestModuleBuilderBuildDoesNotMisattributeNestedFactoryCallToOuterVar(t *testing.T) {
@@ -174,7 +174,7 @@ func TestModuleBuilderBuildDoesNotMisattributeNestedFactoryCallToOuterVar(t *tes
 }
 
 func TestModuleBuilderBuildResolvesNameFromEnclosingTestFunc(t *testing.T) {
-	m := ModuleBuilder().Build()
+	m := NewModuleBuilder().Build()
 	if m.Name != "core.TestModuleBuilderBuildResolvesNameFromEnclosingTestFunc" {
 		t.Error(test.DiffMessage(m.Name, "core.TestModuleBuilderBuildResolvesNameFromEnclosingTestFunc", "resolved module name"))
 	}
@@ -241,7 +241,7 @@ func TestModuleBuilderChaining(t *testing.T) {
 	p2 := &mockProvider{}
 	c1 := &mockController{}
 
-	b := ModuleBuilder().Providers(p1).Providers(p2).Controllers(c1)
+	b := NewModuleBuilder().Providers(p1).Providers(p2).Controllers(c1)
 	if len(b.providers) != 2 {
 		t.Error(test.DiffMessage(len(b.providers), 2, "chained providers"))
 	}

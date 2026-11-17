@@ -128,7 +128,7 @@ func newHTTPExchange() *httpExchange {
 
 func (ex *httpExchange) reset() {
 	ex.removeForm()
-	ex.HTTPContext.Reset()
+	ctx.HTTPReset(&ex.HTTPContext)
 	ex.writer.reset(nil)
 	ex.scope = nil
 	ex.filters = nil
@@ -260,14 +260,14 @@ func (http *HTTP) handleRequest(ex *httpExchange) {
 func (http *HTTP) match(c *ctx.HTTPContext, method, version string) (*httpRoute, bool) {
 	urlPath := c.URL.Path
 	if http.isVersioningEnabled && version == "" {
-		if item, values := http.route.Match(method, urlPath, versioning.NeutralVersion, c.ParamValues[:0]); item != nil {
+		if item, values := http.route.Match(method, urlPath, versioning.NeutralVersion, ctx.HTTPParamValues(c)[:0]); item != nil {
 			return http.bindRoute(c, item, values), false
 		}
-		item, _ := http.route.Match(method, urlPath, "", c.ParamValues[:0])
+		item, _ := http.route.Match(method, urlPath, "", ctx.HTTPParamValues(c)[:0])
 		return nil, item != nil
 	}
 
-	item, values := http.route.Match(method, urlPath, version, c.ParamValues[:0])
+	item, values := http.route.Match(method, urlPath, version, ctx.HTTPParamValues(c)[:0])
 	if item == nil {
 		item, values = http.route.Match(method, urlPath, versioning.NeutralVersion, values[:0])
 		if item == nil {
@@ -278,8 +278,7 @@ func (http *HTTP) match(c *ctx.HTTPContext, method, version string) (*httpRoute,
 }
 
 func (http *HTTP) bindRoute(c *ctx.HTTPContext, item *routing.RouterItem, values []string) *httpRoute {
-	c.ParamKeys = item.ParamKeys
-	c.ParamValues = values
+	ctx.HTTPSetParams(c, item.ParamKeys, values)
 	return http.routes[item.Index]
 }
 
@@ -289,13 +288,13 @@ func (http *HTTP) runMiddlewares(ex *httpExchange, route *httpRoute) bool {
 		module = route.middlewares
 	}
 	if len(http.globalMiddlewares) == 0 && len(module) == 0 {
-		ex.Next = noopNext
+		ctx.HTTPSetNext(&ex.HTTPContext, noopNext)
 		return true
 	}
 
 	proceed := false
 	next := func() { proceed = true }
-	ex.Next = next
+	ctx.HTTPSetNext(&ex.HTTPContext, next)
 	w := stdHTTP.ResponseWriter(&ex.writer)
 	for i := range http.globalMiddlewares {
 		if !http.runMiddleware(ex, &http.globalMiddlewares[i], w, next, &proceed) {
@@ -322,7 +321,7 @@ func (http *HTTP) runMiddleware(ex *httpExchange, m *httpMiddleware, w stdHTTP.R
 	ex.middlewareStart = time.Now()
 	m.use(ex.Request, w, next)
 	ex.middleware = nil
-	m.emit(http.tracer, ex.scope, ex.GetID(), time.Since(ex.middlewareStart), 0)
+	m.emit(http.tracer, ex.scope, ex.ID(), time.Since(ex.middlewareStart), 0)
 	return *proceed
 }
 
@@ -334,7 +333,7 @@ func (http *HTTP) answerNoRoute(ex *httpExchange, method, version string, isGone
 	urlPath := ex.URL.Path
 	mask := 0
 	for _, i := range http.allowIndexes {
-		if allowMethods[i] != method && http.hasRoute(allowMethods[i], urlPath, version, ex.ParamValues[:0]) {
+		if allowMethods[i] != method && http.hasRoute(allowMethods[i], urlPath, version, ctx.HTTPParamValues(&ex.HTTPContext)[:0]) {
 			mask |= 1 << i
 		}
 	}
@@ -358,7 +357,7 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 	c := &ex.HTTPContext
 	ex.filters = route.filters
 	if c.Method == stdHTTP.MethodPost {
-		c.Code = stdHTTP.StatusCreated
+		ctx.HTTPSetCode(c, stdHTTP.StatusCreated)
 	}
 
 	for i := range route.guards {
@@ -371,15 +370,15 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 
 	for i := range route.interceptors {
 		agg := aggregation.NewAggregation()
-		agg.Name = route.interceptors[i].name
-		c.AddAggregation(agg)
+		aggregation.SetName(agg, route.interceptors[i].name)
+		ctx.HTTPAddAggregation(c, agg)
 		value := http.runIntercept(ex, &route.interceptors[i], agg)
-		if !agg.IsMainHandlerCalled {
-			aggregations := c.Aggregations()
+		if !aggregation.IsMainHandlerCalled(agg) {
+			aggregations := ctx.HTTPAggregations(c)
 			http.writeResult(ex, route, reflect.ValueOf(http.runPosts(ex, aggregations[:len(aggregations)-1], value)))
 			return
 		}
-		agg.InterceptorData = value
+		aggregation.SetInterceptorData(agg, value)
 	}
 
 	results := route.plan.call(c, http.tracer, ex.traced)
@@ -393,7 +392,7 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 		result = results[1]
 	}
 
-	if aggregations := c.Aggregations(); len(aggregations) > 0 {
+	if aggregations := ctx.HTTPAggregations(c); len(aggregations) > 0 {
 		var data any
 		if result.IsValid() {
 			data = result.Interface()
@@ -409,7 +408,7 @@ func (http *HTTP) runGuard(ex *httpExchange, g *httpGuard) bool {
 	}
 	start := time.Now()
 	isAllowed := g.canActivate(&ex.HTTPContext)
-	http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StageGuard, g.name, trace.TransportHTTP, time.Since(start)))
+	http.tracer.Emit(stageEvent(ex.scope, ex.ID(), trace.StageGuard, g.name, trace.TransportHTTP, time.Since(start)))
 	return isAllowed
 }
 
@@ -419,21 +418,21 @@ func (http *HTTP) runIntercept(ex *httpExchange, i *httpInterceptor, agg *aggreg
 	}
 	start := time.Now()
 	value := i.intercept(&ex.HTTPContext, agg)
-	http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StagePreInterceptor, i.name, trace.TransportHTTP, time.Since(start)))
+	http.tracer.Emit(stageEvent(ex.scope, ex.ID(), trace.StagePreInterceptor, i.name, trace.TransportHTTP, time.Since(start)))
 	return value
 }
 
 func (http *HTTP) runPosts(ex *httpExchange, aggregations []*aggregation.Aggregation, data any) any {
 	for i := len(aggregations) - 1; i >= 0; i-- {
 		agg := aggregations[i]
-		agg.SetMainData(data)
+		aggregation.SetMainData(agg, data)
 		if !ex.traced {
-			data = agg.Aggregate()
+			data = aggregation.Aggregate(agg)
 			continue
 		}
 		start := time.Now()
-		data = agg.Aggregate()
-		http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StagePostInterceptor, agg.Name, trace.TransportHTTP, time.Since(start)))
+		data = aggregation.Aggregate(agg)
+		http.tracer.Emit(stageEvent(ex.scope, ex.ID(), trace.StagePostInterceptor, aggregation.Name(agg), trace.TransportHTTP, time.Since(start)))
 	}
 	return data
 }
@@ -572,7 +571,7 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 		return
 	}
 	if rec == stdHTTP.ErrAbortHandler {
-		ex.writer.runHooks(&ex.Timestamp)
+		ex.writer.runHooks(ctx.HTTPTimestamp(&ex.HTTPContext))
 		ex.removeForm()
 		panic(rec)
 	}
@@ -589,7 +588,7 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 	}
 	if m := ex.middleware; m != nil {
 		ex.middleware = nil
-		m.emit(http.tracer, ex.scope, ex.GetID(), time.Since(ex.middlewareStart), code)
+		m.emit(http.tracer, ex.scope, ex.ID(), time.Since(ex.middlewareStart), code)
 	}
 }
 
@@ -604,7 +603,7 @@ func (http *HTTP) catch(ex *httpExchange, rec any) {
 			return
 		}
 		if next == stdHTTP.ErrAbortHandler {
-			ex.writer.runHooks(&ex.Timestamp)
+			ex.writer.runHooks(ctx.HTTPTimestamp(&ex.HTTPContext))
 			ex.removeForm()
 			panic(next)
 		}
@@ -623,7 +622,7 @@ func (http *HTTP) runFilter(ex *httpExchange, f *httpFilter, e *exception.Except
 	}
 	start := time.Now()
 	next, isHandled := callCatch(&ex.HTTPContext, f.catch, e)
-	http.tracer.Emit(stageEvent(ex.scope, ex.GetID(), trace.StageExceptionFilter, f.name, trace.TransportHTTP, time.Since(start)))
+	http.tracer.Emit(stageEvent(ex.scope, ex.ID(), trace.StageExceptionFilter, f.name, trace.TransportHTTP, time.Since(start)))
 	return next, isHandled
 }
 
@@ -662,6 +661,6 @@ func (http *HTTP) logAfterResponse(ex *httpExchange, rec any) {
 
 func writeHTTPError(ex *httpExchange, e *exception.Exception) int {
 	code := writeErrorResponse(&ex.writer, e)
-	ex.Code = code
+	ctx.HTTPSetCode(&ex.HTTPContext, code)
 	return code
 }

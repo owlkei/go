@@ -115,7 +115,7 @@ func Register(opts *ConfigModuleOptions) *core.Module {
 		hookFn(configService)
 	}
 
-	module := core.ModuleBuilder().
+	module := core.NewModuleBuilder().
 		Providers(configService).
 		Build()
 

@@ -15,7 +15,7 @@ import (
 func TestPublisher_SharesBrokerWithWSConnmgr(t *testing.T) {
 	app := New()
 	app.EnableWS(&WSOptions{Path: "/ws"})
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	if *app.ws.connmgr.Broker != app.broker {
 		t.Error(test.DiffMessage(*app.ws.connmgr.Broker, app.broker, "WSConnmgr must use the same broker instance as the app's Publisher, or fan-out across transports won't reach WS subscribers"))
@@ -41,7 +41,7 @@ func (c publisherTestController) SUBSCRIBE_chat_ANY() ctx.Map {
 func TestPublisher_HTTPHandlerFansOutToWSSubscriber(t *testing.T) {
 	app := New()
 	app.EnableWS(&WSOptions{Path: "/ws"})
-	app.Create(ModuleBuilder().Controllers(publisherTestController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(publisherTestController{}).Build())
 
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -99,7 +99,7 @@ func (c publisherWSTestController) SUBSCRIBE_relay_ANY(publisher common.Publishe
 func TestPublisher_WSHandlerFansOutToOtherWSSubscriber(t *testing.T) {
 	app := New()
 	app.EnableWS(&WSOptions{Path: "/ws"})
-	app.Create(ModuleBuilder().Controllers(publisherWSTestController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(publisherWSTestController{}).Build())
 
 	server := httptest.NewServer(app)
 	defer server.Close()

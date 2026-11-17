@@ -17,17 +17,17 @@ func BenchmarkIsDynamicModule(b *testing.B) {
 func BenchmarkModuleBuilderBuild(b *testing.B) {
 	p := &mockProvider{}
 	c := &mockController{}
-	child := ModuleBuilder().Build()
+	child := NewModuleBuilder().Build()
 	for b.Loop() {
-		ModuleBuilder().Imports(child).Providers(p).Controllers(c).Build()
+		NewModuleBuilder().Imports(child).Providers(p).Controllers(c).Build()
 	}
 }
 
 func BenchmarkGetModuleType(b *testing.B) {
-	child1 := ModuleBuilder().Build()
-	child2 := ModuleBuilder().Build()
-	child3 := ModuleBuilder().Build()
-	builder := ModuleBuilder().Imports(child1, child2, child3)
+	child1 := NewModuleBuilder().Build()
+	child2 := NewModuleBuilder().Build()
+	child3 := NewModuleBuilder().Build()
+	builder := NewModuleBuilder().Imports(child1, child2, child3)
 	for b.Loop() {
 		builder.getModuleType()
 	}

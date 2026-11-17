@@ -13,9 +13,9 @@ func BenchmarkHTTPContext_Header(b *testing.B) {
 	var n int
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(w, r)
+		HTTPInit(c, w, r)
 		n += len(c.Header())
-		c.Reset()
+		HTTPReset(c)
 	}
 	if n == 0 {
 		b.Fatal("Header should not be empty")

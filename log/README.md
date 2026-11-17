@@ -58,7 +58,7 @@ func main() {
 		LogFormat:  log.JSONFormat,
 		MaskFields: []string{"password"},
 	}))
-	app.Create(core.ModuleBuilder().Build())
+	app.Create(core.NewModuleBuilder().Build())
 
 	app.Logger().Info("SignedIn", "user", User{Name: "duoc", Password: "secret"})
 }

@@ -42,7 +42,7 @@ Building calls neither the handler nor any `Transform`; the plan is immutable af
 | `*ctx.WSContext` | no | yes | `c` |
 | `*websocket.Conn` (`golang.org/x/net/websocket`) | no | yes | `c.Conn` |
 | `ctx.WSPayload` | no | yes | `c.WSPayload()` |
-| `ctx.Next` | yes | yes | `c.Next` |
+| `ctx.Next` | yes | yes | the middlewares' `next` (`ctx.HTTPNext(c)` / `ctx.WSNext(c)`) |
 | `common.Publisher` | yes | yes | stored value, fixed at build |
 | value type implementing an HTTP `*Pipeable` | yes | no | `Transform` result |
 | value type implementing `common.WSPayloadPipeable` | no | yes | `Transform` result |

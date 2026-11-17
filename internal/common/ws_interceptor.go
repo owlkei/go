@@ -28,10 +28,10 @@ func AsWSInterceptor(interceptable any) (WSIntercept, bool) {
 	return layer.Intercept, true
 }
 
-func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []InterceptorItem {
-	interceptorItemArr := make([]InterceptorItem, 0, len(ws.funcNameByEvent)*len(i.InterceptorHandlers))
+func InjectProvidersIntoWSInterceptors(i *Interceptor, ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []InterceptorItem {
+	interceptorItemArr := make([]InterceptorItem, 0, len(ws.funcNameByEvent)*len(i.interceptorHandlers))
 
-	for _, interceptorHandler := range i.InterceptorHandlers {
+	for _, interceptorHandler := range i.interceptorHandlers {
 		interceptableType := reflect.TypeOf(interceptorHandler.interceptable)
 		interceptableValue := reflect.ValueOf(interceptorHandler.interceptable)
 		newInterceptor := reflect.New(interceptableType)
@@ -42,7 +42,7 @@ func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, ref
 
 		newInterceptable := newInterceptor.Interface()
 		newInterceptable = construct(newInterceptable, "NewInterceptor")
-		interceptorHandler.interceptable = newInterceptable.(Interceptable)
+		interceptorHandler.interceptable = newInterceptable
 
 		intercept, ok := AsWSInterceptor(interceptorHandler.interceptable)
 		if !ok {
@@ -80,9 +80,9 @@ func (i *Interceptor) InjectProvidersIntoWSInterceptors(ws *WS, cb func(int, ref
 func BuildWSInterceptMiddleware(name string, interceptFn WSIntercept) ctx.WSHandler {
 	return func(c *ctx.WSContext) {
 		aggregationInstance := aggregation.NewAggregation()
-		aggregationInstance.Name = name
-		c.AddAggregation(aggregationInstance)
-		aggregationInstance.InterceptorData = interceptFn(c, aggregationInstance)
-		c.Next()
+		aggregation.SetName(aggregationInstance, name)
+		ctx.WSAddAggregation(c, aggregationInstance)
+		aggregation.SetInterceptorData(aggregationInstance, interceptFn(c, aggregationInstance))
+		ctx.WSNext(c)()
 	}
 }

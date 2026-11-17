@@ -111,7 +111,7 @@ func TestSetLogger_AcceptsFiveMethodAdapter(t *testing.T) {
 	if got := app.SetLogger(adapter); got != app {
 		t.Error(test.DiffMessage(got, app, "I1: SetLogger accepts a log.LogAdapter and returns the app"))
 	}
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Logger().Info("hello", "k", "v")
 	if len(rec.named("hello")) != 1 {
 		t.Error(test.DiffMessage(len(rec.named("hello")), 1, "I1: a type with five methods and no From works as the app's logger"))
@@ -131,7 +131,7 @@ func TestLogger_InjectedHasFrom(t *testing.T) {
 	app := New()
 	app.SetLogger(rec)
 	fromProviderSeen = nil
-	mustCreate(t, app, ModuleBuilder().Providers(fromProvider{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Providers(fromProvider{}).Build())
 	if fromProviderSeen == nil {
 		t.Fatal(test.DiffMessage(nil, "an injected logger", "I2: a log.Logger field is injected"))
 	}
@@ -149,7 +149,7 @@ func TestLogger_InjectedHasFrom(t *testing.T) {
 func TestLogger_BuiltinAppLoggerHasFrom(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Logger().From(scopedContext()).Info("scoped-builtin", "k", 1)
 	app.Stop()
 	if out := w.String(); !strings.Contains(out, "scoped-builtin") || !strings.Contains(out, scopeTraceID) {
@@ -162,7 +162,7 @@ func TestSetLogger_AdapterCalledDirectly(t *testing.T) {
 	w.hold()
 	rec := &createLogger{}
 	app := New().SetLogger(rec)
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	defer app.Stop()
 	defer w.openAll()
 	app.Logger().Info("direct")
@@ -175,7 +175,7 @@ func TestCreate_BootstrapLinesSynchronous(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
 	var seen string
-	root := ModuleBuilder().Build()
+	root := NewModuleBuilder().Build()
 	root.OnReady = func() {
 		app.Logger().Info("from-ready")
 		seen = w.String()
@@ -198,7 +198,7 @@ func TestCreate_BootstrapPanicLosesNoLine(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
 	_, panicked := createPanicText(func() {
-		app.Create(ModuleBuilder().Providers(bootstrapPanicProvider{}).Build())
+		app.Create(NewModuleBuilder().Providers(bootstrapPanicProvider{}).Build())
 	})
 	if !panicked {
 		t.Fatal(test.DiffMessage(false, true, "setup: the provider panics"))
@@ -211,7 +211,7 @@ func TestCreate_BootstrapPanicLosesNoLine(t *testing.T) {
 func TestCreate_SwitchesToAsync(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	w.hold()
 	withinCore(t, "M1: after Create a log call does not wait for stdout", func() {
 		for i := range 10 {
@@ -238,7 +238,7 @@ func openWhenEntered(w *coreHoldWriter) {
 func TestShutdown_FlushesAfterHooks(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
-	root := ModuleBuilder().Build()
+	root := NewModuleBuilder().Build()
 	root.OnShutdown = func() { app.Logger().Info("from-shutdown-hook") }
 	mustCreate(t, app, root)
 	w.hold()
@@ -252,7 +252,7 @@ func TestShutdown_FlushesAfterHooks(t *testing.T) {
 func TestStop_WithoutServeFlushes(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	w.hold()
 	app.Logger().Info("embedded")
 	openWhenEntered(w)
@@ -265,7 +265,7 @@ func TestStop_WithoutServeFlushes(t *testing.T) {
 func TestShutdown_LinesAfterStopSynchronous(t *testing.T) {
 	w := redirectStdout(t)
 	app := New()
-	mustCreate(t, app, ModuleBuilder().Build())
+	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Stop()
 	for i := range 20 {
 		line := "after-stop-" + strconv.Itoa(i)
@@ -279,8 +279,8 @@ func TestShutdown_LinesAfterStopSynchronous(t *testing.T) {
 func TestShutdown_AsyncCountedPerApp(t *testing.T) {
 	w := redirectStdout(t)
 	first, second := New(), New()
-	mustCreate(t, first, ModuleBuilder().Build())
-	mustCreate(t, second, ModuleBuilder().Build())
+	mustCreate(t, first, NewModuleBuilder().Build())
+	mustCreate(t, second, NewModuleBuilder().Build())
 	first.Stop()
 	w.hold()
 	withinCore(t, "M3: still asynchronous while one of two apps runs", func() {

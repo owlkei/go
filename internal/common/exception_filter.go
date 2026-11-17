@@ -11,29 +11,27 @@ import (
 
 const ExceptionFilterMethodName = "Catch"
 
-type ExceptionFilterable any
-
 type ExceptionFilterItem struct {
 	HTTP HTTPExceptionFilterItem
 	WS   WSExceptionFilterItem
 }
 
 type exceptionFilterHandler struct {
-	exceptionFilterable ExceptionFilterable
+	exceptionFilterable any
 	handlers            []any
 }
 
 type ExceptionFilter struct {
-	ExceptionFilterHandlers []exceptionFilterHandler
+	exceptionFilterHandlers []exceptionFilterHandler
 }
 
-func (e *ExceptionFilter) BindExceptionFilter(exceptionFilterable ExceptionFilterable, handlers ...any) *ExceptionFilter {
+func (e *ExceptionFilter) BindExceptionFilter(exceptionFilter any, handlers ...any) *ExceptionFilter {
 	exceptionFilterHandler := exceptionFilterHandler{
-		exceptionFilterable: exceptionFilterable,
+		exceptionFilterable: exceptionFilter,
 		handlers:            handlers,
 	}
 
-	e.ExceptionFilterHandlers = append(e.ExceptionFilterHandlers, exceptionFilterHandler)
+	e.exceptionFilterHandlers = append(e.exceptionFilterHandlers, exceptionFilterHandler)
 	return e
 }
 

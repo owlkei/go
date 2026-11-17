@@ -17,7 +17,7 @@ func (c cfByIDController) READ_cf_BY_name() string   { return "name" }
 func TestCreate_SameShapeDifferentParamNamesConflicts(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			New().Create(ModuleBuilder().Controllers(cfByIDController{}).Build())
+			New().Create(NewModuleBuilder().Controllers(cfByIDController{}).Build())
 		})
 		if !panicked || !strings.Contains(text, "route conflict") || !strings.Contains(text, "READ_cf_BY_id") || !strings.Contains(text, "READ_cf_BY_name") {
 			t.Error(test.DiffMessage(text, "route conflict: READ_cf_BY_… ... READ_cf_BY_…", "I6: two routes that differ only in parameter names conflict at bootstrap"))
@@ -36,7 +36,7 @@ func (c cfShapesController) READ_cfs_all() string            { return "d" }
 func TestCreate_DifferentShapesDoNotConflict(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			New().Create(ModuleBuilder().Controllers(cfShapesController{}).Build())
+			New().Create(NewModuleBuilder().Controllers(cfShapesController{}).Build())
 		})
 		if panicked {
 			t.Error(test.DiffMessage(text, "no panic", "I6: routes with a different shape, method or static segment do not conflict"))

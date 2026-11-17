@@ -33,10 +33,10 @@ func AsHTTPExceptionFilter(exceptionFilterable any) (HTTPCatch, bool) {
 	return layer.Catch, true
 }
 
-func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []ExceptionFilterItem {
-	exceptionFilterItemArr := make([]ExceptionFilterItem, 0, len(r.PatternToFuncNameMap)*len(e.ExceptionFilterHandlers))
+func InjectProvidersIntoHTTPExceptionFilters(e *ExceptionFilter, r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []ExceptionFilterItem {
+	exceptionFilterItemArr := make([]ExceptionFilterItem, 0, len(r.patternToFuncNameMap)*len(e.exceptionFilterHandlers))
 
-	for _, exceptionFilterHandler := range e.ExceptionFilterHandlers {
+	for _, exceptionFilterHandler := range e.exceptionFilterHandlers {
 		exceptionFilterableType := reflect.TypeOf(exceptionFilterHandler.exceptionFilterable)
 		exceptionFilterableValue := reflect.ValueOf(exceptionFilterHandler.exceptionFilterable)
 		newExceptionFilter := reflect.New(exceptionFilterableType)
@@ -47,7 +47,7 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 
 		newExceptionFilterable := newExceptionFilter.Interface()
 		newExceptionFilterable = construct(newExceptionFilterable, "NewExceptionFilter")
-		exceptionFilterHandler.exceptionFilterable = newExceptionFilterable.(ExceptionFilterable)
+		exceptionFilterHandler.exceptionFilterable = newExceptionFilterable
 
 		catch, ok := AsHTTPExceptionFilter(exceptionFilterHandler.exceptionFilterable)
 		if !ok {
@@ -64,7 +64,7 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 
 		targets := httpHandlerTargets(r, exceptionFilterHandler.handlers, "exception filter", exceptionFilterableType)
 
-		for pattern := range r.PatternToFuncNameMap {
+		for pattern := range r.patternToFuncNameMap {
 			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
@@ -78,7 +78,7 @@ func (e *ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(r *HTTP, cb fu
 						Common: CommonItem{
 							Handler:         catch,
 							Name:            exceptionFilterableType.String(),
-							MainHandlerName: r.PatternToFuncNameMap[pattern],
+							MainHandlerName: r.patternToFuncNameMap[pattern],
 						},
 					},
 				})

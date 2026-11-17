@@ -2,6 +2,7 @@ package hostcheck
 
 import (
 	"fmt"
+	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -265,7 +266,7 @@ func TestHostCheck_WebSocketHandshake(t *testing.T) {
 		app := core.New()
 		app.SetLogger(silentLogger{})
 		app.EnableWS(&core.WSOptions{Path: "/ws"}, HostCheck{Hosts: hosts})
-		app.Create(core.ModuleBuilder().Build())
+		app.Create(ginject.ModuleBuilder().Build())
 		return httptest.NewServer(app)
 	}
 	dial := func(server *httptest.Server) error {

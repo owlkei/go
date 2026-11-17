@@ -34,13 +34,13 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `Get(p Provider) any` | Look up an already-injected provider by type |
 | `ServeHTTP(w, r)` | HTTP handler (auto-called by Go stdlib) |
 | `BindGlobalMiddlewares(fn ...common.MiddlewareFn) *App` | Register global middleware |
-| `BindGlobalGuards(g ...common.Guarder) *App` | Register global guards |
-| `BindGlobalInterceptors(i ...common.Interceptable) *App` | Register global interceptors |
-| `BindGlobalExceptionFilters(f ...common.ExceptionFilterable) *App` | Register global exception filters |
+| `BindGlobalGuards(g ...any) *App` | Register global guards |
+| `BindGlobalInterceptors(i ...any) *App` | Register global interceptors |
+| `BindGlobalExceptionFilters(f ...any) *App` | Register global exception filters |
 | `EnableWS(cfg *WSOptions, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSOptions` argument**, not zero-arg |
 | `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
-| `EnableVersioning(v versioning.Versioning) *App` | Enable API versioning |
+| `EnableVersioning(opts *versioning.Versioning) *App` | Enable API versioning; `nil` = zero options, the options are copied |
 | `SetLogger(logger log.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
 | `Logger() log.Logger` | The app's logger; never `nil` (the built-in logger by default) |
 
@@ -122,8 +122,8 @@ Any struct implementing the respective method qualifies — no tags, no registra
 
 **Responsibility**: Request context objects and dependency types
 
-`ctx.Context` is `interface { Reset(); GetID() string; Context() context.Context }` (no `SetID`: the ID comes
-from the trace scope built in `Init`, design 0011).
+`ctx.Context` is `interface { ID() string; Context() context.Context }` (no `SetID`: the ID comes
+from the trace scope built in `ctx.HTTPInit`, design 0011).
 
 ### HTTPContext
 
@@ -132,29 +132,33 @@ type HTTPContext struct {
     *http.Request
     http.ResponseWriter
 
-    Next      Next
-    Code      int       // defaults to http.StatusOK
-    Timestamp time.Time
-    // body, form, file, query, header, param, ParamKeys, ParamValues are also present
+    // only exported fields; next, code (defaults to http.StatusOK), timestamp, body, form, file,
+    // query, header, param, paramKeys, paramValues are unexported and reached by ctx.HTTP… hooks
 }
 ```
+
+Framework hooks (package functions, design 0017 D3): `HTTPInit(c, w, r)`, `HTTPReset(c)`,
+`HTTPSetParams(c, keys, values)`, `HTTPParamValues(c)`, `HTTPNext(c)` / `HTTPSetNext(c, next)`,
+`HTTPCode(c)` / `HTTPSetCode(c, code)`, `HTTPTimestamp(c) *time.Time`, `HTTPAddAggregation(c, a)`,
+`HTTPAggregations(c)`; WS: `WSInit(c, conn)`, `WSReset(c)`, `WSNext` / `WSSetNext`, `WSTimestamp`,
+`WSSetSend`, `WSSetPayload`, `WSAddAggregation`, `WSAggregations`.
 
 **No `Deadline` field, no `SetDeadline()`, no `IsDeadlineExceeded()` method exist.** There is no per-request timeout API anywhere in this framework — only the server-level timeouts in `core.App`'s defaults table above.
 
 | Method | Signature | Notes |
 |--------|-----------|-------|
-| `Init` | `Init(w http.ResponseWriter, r *http.Request)` | No `InitWithMaxBodySize` variant exists. Builds the trace scope and sets `c.Request = r.WithContext(<scope ctx>)`: `c.Request != r` afterwards |
-| `Reset` | `Reset()` | Clears all fields for pool reuse |
-| `Status` | `Status(code int) *HTTPContext` | Sets `c.Code`; chainable — call BEFORE `JSON`/`Text`, since they write using whatever `Code` is current |
+| `ctx.HTTPInit` | `HTTPInit(c, w http.ResponseWriter, r *http.Request)` | A hook, not a method. Builds the trace scope and sets `c.Request = r.WithContext(<scope ctx>)`: `c.Request != r` afterwards |
+| `ctx.HTTPReset` | `HTTPReset(c)` | A hook. Clears all fields for pool reuse |
+| `Status` | `Status(code int) *HTTPContext` | Sets the status code; chainable — call BEFORE `JSON`/`Text`, since they write using whatever code is current |
 | `Text` | `Text(data string, args ...any)` | Formats only when `args` are given |
 | `JSON` | `JSON(data any, args ...any)` | A `string` is raw JSON (formatted only with `args`); a `JSONAppender` writes its own bytes; anything else goes through `encoding/json`. An encoding error panics with a 500 `exception.Exception` and writes nothing |
 | `JSONP` | `JSONP(data any, args ...any)` | Callback from the cached `Query()`, reduced to `[A-Za-z0-9_$.[]]` and 128 bytes; falls back to `JSON` when nothing is left; sends `X-Content-Type-Options: nosniff` |
-| `Redirect` | `Redirect(url string)` | Uses `c.Code` when it is 3xx, else 301 |
-| `GetID` | `GetID() string` | The scope's `Request`: 16 lowercase hex characters (`crypto/rand`), `""` before `Init` / after `Reset`; never from a header |
+| `Redirect` | `Redirect(url string)` | Uses the status code when it is 3xx, else 301 |
+| `ID` | `ID() string` | The scope's `Request`: 16 lowercase hex characters (`crypto/rand`), `""` before `HTTPInit` / after `HTTPReset`; never from a header |
 | `Context` | `Context() context.Context` (promoted from `*http.Request`) | Carries the trace scope (`tracecontext.ScopeOf`); outlives the request |
 | `Body` | `Body() Body` | Lazily parses a JSON body (`application/json` or `application/*+json`, case-insensitive), never `nil`; 400 `Invalid JSON body` / `Cannot read request body`, 413 on `*http.MaxBytesError` |
 | `Form` / `File` | `Form() Form` / `File() File` | One multipart parse shared by both; never `nil`; 400 `Invalid form body`, 413 over the limit; temp files removed after the request (`httpExchange.reset`) |
-| `AddAggregation` / `Aggregations` | `AddAggregation(a *aggregation.Aggregation)` / `Aggregations() []*aggregation.Aggregation` | Per-request list, cleared by `Reset` (same on `WSContext`) |
+| `ctx.HTTPAddAggregation` / `HTTPAggregations` | `HTTPAddAggregation(c, a *aggregation.Aggregation)` / `HTTPAggregations(c) []*aggregation.Aggregation` | Hooks. Per-request list, cleared by `HTTPReset` (`WSAddAggregation` / `WSAggregations` on `WSContext`) |
 
 Removed: the writer types `ctx.DataWriter`, `ctx.JSON`, `ctx.JSONP`, `ctx.Text` (`ctx/writer.go`).
 
@@ -172,21 +176,20 @@ wrapping `ErrBindTarget` when `s` is not a struct value.
 ```go
 type WSContext struct {
     *websocket.Conn
-    Next      Next
-    Timestamp time.Time
+    // only exported field; next, timestamp, payload, send… are reached by ctx.WS… hooks
 }
 ```
 
 | Method | Signature |
 |--------|-----------|
-| `Init` | `Init(conn *websocket.Conn)` — one parameter, NOT `(w, r)`; builds the message scope from `conn.Request().Context()` |
-| `GetID` | `GetID() string` — the message ID (`Scope.Message`), one per dispatch |
-| `Reset` | `Reset()` |
+| `ctx.WSInit` | `WSInit(c, conn *websocket.Conn)` — a hook; builds the message scope from `conn.Request().Context()` |
+| `ID` | `ID() string` — the message ID (`Scope.Message`), one per dispatch |
+| `ctx.WSReset` | `WSReset(c)` — a hook |
 | `WSPayload` | `WSPayload() WSPayload` — returns the map by value, NOT `*WSPayload` |
-| `SetWSPayload` | `SetWSPayload(p WSPayload)` |
+| `ctx.WSSetPayload` | `WSSetPayload(c, p WSPayload)` — a hook |
 | `Send` | `Send(data any)` |
-| `SetSend` | `SetSend(fn func(data any))` |
-| `Context` / `SetContext` | `Context() context.Context` / `SetContext(ctx context.Context)` — the message context after `Init` (done when the connection's handler returns); `SetContext` keeps the message scope nearest, ignores `nil` |
+| `ctx.WSSetSend` | `WSSetSend(c, fn func(data any))` — a hook |
+| `Context` / `SetContext` | `Context() context.Context` / `SetContext(ctx context.Context)` — the message context after `WSInit` (done when the connection's handler returns); `SetContext` keeps the message scope nearest, ignores `nil` |
 
 `type WSPayload map[string]any` — a map type, not a struct.
 
@@ -204,14 +207,14 @@ type WSContext struct {
 
 ### Cross-Cutting Concern Types
 
-**Only `MiddlewareFn` is a real, compile-time Go interface. `Guarder`, `Interceptable`, and `ExceptionFilterable` are all `type X any` — checked at bind time by method name and signature** (a type assertion to an unexported interface, then the method value), not the compiler:
+**Only `MiddlewareFn` is a real, compile-time Go interface. Guards, interceptors and exception filters are bound as `any` (no named type) — checked at bind time by method name and signature** (a type assertion to an unexported interface, then the method value), not the compiler:
 
 | Declared type | Real definition | Checked shape (func alias) | Bind-time check fails with |
 |---|---|---|---|
 | `MiddlewareFn` | `interface { Use(*http.Request, http.ResponseWriter, ctx.Next) }` | `Use = func(*http.Request, http.ResponseWriter, ctx.Next)` | compile error if no `Use` method |
-| `Guarder` | `any` | `HTTPCanActivate = func(*ctx.HTTPContext) bool`, method name `"CanActivate"` | `GuardShapeError` |
-| `Interceptable` | `any` | `HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any`, method name `"Intercept"` | `InterceptorShapeError` |
-| `ExceptionFilterable` | `any` | `HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)`, method name `"Catch"` | `ExceptionFilterShapeError` |
+| guard | `any` | `HTTPCanActivate = func(*ctx.HTTPContext) bool`, method name `"CanActivate"` | `GuardShapeError` |
+| interceptor | `any` | `HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any`, method name `"Intercept"` | `InterceptorShapeError` |
+| exception filter | `any` | `HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)`, method name `"Catch"` | `ExceptionFilterShapeError` |
 
 **`Catch`'s parameter order is `(*ctx.HTTPContext, *exception.Exception)` — HTTPContext FIRST.** A common mistake (present in older docs and even in the project's own `CLAUDE.md`) is writing `Catch(*exception.Exception, *ctx.HTTPContext)`, which fails the shape check.
 
@@ -248,13 +251,13 @@ There is no `Log()`/`LogStructured()` method on `Logger` — it mirrors slog-sty
 type UserController struct {
     common.HTTP              // required for HTTP routing
     common.Middleware        // optional: BindMiddleware(MiddlewareFn, handlers ...any) *Middleware
-    common.Guard             // optional: BindGuard(Guarder, handlers ...any) *Guard
-    common.Interceptor       // optional: BindInterceptor(Interceptable, handlers ...any) *Interceptor
-    common.ExceptionFilter   // optional: BindExceptionFilter(ExceptionFilterable, handlers ...any) *ExceptionFilter
+    common.Guard             // optional: BindGuard(any, handlers ...any) *Guard
+    common.Interceptor       // optional: BindInterceptor(any, handlers ...any) *Interceptor
+    common.ExceptionFilter   // optional: BindExceptionFilter(any, handlers ...any) *ExceptionFilter
 }
 ```
 
-`common.HTTP` itself only carries routing bookkeeping (`PatternToFuncNameMap`, `RouterMap`, etc.) — it has no `Middleware`/`Guard`/`Interceptor`/`ExceptionFilter` fields; those are separate embeds. `common.WS` follows the same pattern for WebSocket controllers (`funcNameByEvent`, `EventMap`).
+`common.HTTP` itself only carries unexported routing bookkeeping, read by `core` through `common.HTTPPatternToFuncNameMap(h)`, `HTTPFuncNameToPatternMap(h)`, `HTTPRouterMap(h)` — it has no `Middleware`/`Guard`/`Interceptor`/`ExceptionFilter` fields; those are separate embeds. `common.WS` follows the same pattern for WebSocket controllers (`funcNameByEvent`, `eventMap` read by `common.WSEventMap(ws)`).
 
 ### One Instance Per Configuration (per app)
 
@@ -566,27 +569,31 @@ func Transport(base http.RoundTripper) http.RoundTripper // design 0013; nil bas
 type Operator struct{ /* unexported: kind + function; the zero value is skipped */ }
 
 type Aggregation struct {
-    InterceptorData     any
-    Name                string
-    IsMainHandlerCalled bool
-    // mainData, operators are unexported
+    // no exported field: interceptorData, name, isMainHandlerCalled, mainData, operators
 }
 
 func NewAggregation() *Aggregation
+
+// framework hooks (package functions, design 0017 D3)
+func SetMainData(a *Aggregation, d any)
+func Aggregate(a *Aggregation) any
+func Name(a *Aggregation) string
+func SetName(a *Aggregation, name string)
+func InterceptorData(a *Aggregation) any
+func SetInterceptorData(a *Aggregation, data any)
+func IsMainHandlerCalled(a *Aggregation) bool
 ```
 
 **This bears no resemblance to older docs claiming `Data`/`Exception`/`Request`/`Response` fields — none of those exist.**
 
 | Method | Signature | Purpose |
 |--------|-----------|---------|
-| `SetMainData` | `SetMainData(d any) *Aggregation` | Sets the value operators transform |
 | `Transform` | `Transform(fn func(any) any) Operator` | Creates a transform step (registers nothing) |
 | `Tap` | `Tap(fn func(any) any) Operator` | Creates a side-effect step (return value discarded) |
 | `Filter` | `Filter(predicate func(any) bool) Operator` | Creates a filter step (predicate false → `Aggregate()` returns nil; `nil` data with a true predicate continues) |
-| `Pipe` | `Pipe(operators ...Operator) any` | Sets `IsMainHandlerCalled = true`, replaces the operators with exactly these (nil-function and zero operators skipped), returns nil; up to 4 operators stored inline without allocating |
-| `Aggregate` | `Aggregate() any` | Runs the piped operators over `mainData` in `Pipe` argument order, returns the final value |
+| `Pipe` | `Pipe(operators ...Operator) any` | Makes `IsMainHandlerCalled(a)` true, replaces the operators with exactly these (nil-function and zero operators skipped), returns nil; up to 4 operators stored inline without allocating |
 
-Used as the second parameter to `Interceptable`'s `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` (see `common` section). The framework calls `SetMainData(handlerResult)` then `Aggregate()` after the handler returns (`core/http.go`).
+Used as the second parameter of an interceptor's `Intercept(*ctx.HTTPContext, *aggregation.Aggregation) any` (see `common` section). The framework calls `aggregation.SetMainData(a, handlerResult)` then `aggregation.Aggregate(a)` (the piped operators over the main data in `Pipe` argument order) after the handler returns (`core/http.go`).
 
 ---
 
@@ -718,7 +725,7 @@ type Throttler struct {
     KeyFunc  func(*ctx.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
     Backend  cache.Cache                  // default: one memorycache per guard, MaxEntries 32,768 (CLOCK eviction)
 }
-func (instance Throttler) NewGuard() common.Guarder // the compiled *guard (CanActivate, inspect.Snapshotter)
+func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, inspect.Snapshotter)
 ```
 
 - Bind the `Throttler` value (`BindGuard(throttler.Throttler{...})`); `construct` calls `NewGuard` once.

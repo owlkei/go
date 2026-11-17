@@ -27,10 +27,10 @@ func AsWSGuard(guarder any) (WSCanActivate, bool) {
 	return layer.CanActivate, true
 }
 
-func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
-	guardItemArr := make([]GuardItem, 0, len(ws.funcNameByEvent)*len(g.GuardHandlers))
+func InjectProvidersIntoWSGuards(g *Guard, ws *WS, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
+	guardItemArr := make([]GuardItem, 0, len(ws.funcNameByEvent)*len(g.guardHandlers))
 
-	for _, guardHandler := range g.GuardHandlers {
+	for _, guardHandler := range g.guardHandlers {
 		guarderType := reflect.TypeOf(guardHandler.guarder)
 		guarderValue := reflect.ValueOf(guardHandler.guarder)
 		newGuard := reflect.New(guarderType)
@@ -41,7 +41,7 @@ func (g *Guard) InjectProvidersIntoWSGuards(ws *WS, cb func(int, reflect.Type, r
 
 		newGuarder := newGuard.Interface()
 		newGuarder = construct(newGuarder, "NewGuard")
-		guardHandler.guarder = newGuarder.(Guarder)
+		guardHandler.guarder = newGuarder
 
 		canActivate, ok := AsWSGuard(guardHandler.guarder)
 		if !ok {
@@ -81,6 +81,6 @@ func BuildWSGuardMiddleware(canActivateFn WSCanActivate) ctx.WSHandler {
 		if !canActivateFn(c) {
 			panic(accessDeniedException)
 		}
-		c.Next()
+		ctx.WSNext(c)()
 	}
 }

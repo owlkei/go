@@ -15,7 +15,7 @@ func BenchmarkInjectProvidersIntoWSExceptionFilters_ApplyAll(b *testing.B) {
 		e.BindExceptionFilter(mockWSExFilter{})
 		e.BindExceptionFilter(mockWSExFilter{})
 		e.BindExceptionFilter(mockWSExFilter{})
-		e.InjectProvidersIntoWSExceptionFilters(ws, benchCB, testConstruct)
+		InjectProvidersIntoWSExceptionFilters(e, ws, benchCB, testConstruct)
 	}
 }
 

@@ -49,9 +49,9 @@ type App struct {
 	isCreated      bool
 
 	globalMiddlewares      []common.MiddlewareFn
-	globalGuarders         []common.Guarder
-	globalInterceptors     []common.Interceptable
-	globalExceptionFilters []common.ExceptionFilterable
+	globalGuarders         []any
+	globalInterceptors     []any
+	globalExceptionFilters []any
 
 	broker memorybroker.Broker
 
@@ -113,7 +113,7 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ex := app.ctxPool.Get().(*httpExchange)
 	ex.writer.reset(w)
 	c := &ex.HTTPContext
-	c.Init(&ex.writer, r)
+	ctx.HTTPInit(c, &ex.writer, r)
 	ex.scope = tracecontext.ScopeOf(c.Request.Context())
 	requestID, traceparent := ex.scope.Headers()
 
@@ -127,13 +127,13 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h[traceparentHeader] = traceparent
 	ex.traced = app.tracer.Enabled()
 	app.http.handleRequest(ex)
-	ex.writer.runHooks(&c.Timestamp)
+	ex.writer.runHooks(ctx.HTTPTimestamp(c))
 	if ex.traced {
 		code := ex.writer.status()
 		if code == 0 {
 			code = http.StatusOK
 		}
-		e := completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, code, time.Since(c.Timestamp))
+		e := completeEvent(ex.scope, c.ID(), trace.TransportHTTP, c.Method, c.URL.Path, code, time.Since(*ctx.HTTPTimestamp(c)))
 		e.ClientIP = tracecontext.ClientIP(c.Request)
 		app.tracer.Emit(e)
 	}
@@ -155,9 +155,9 @@ func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, trac
 			wsCfg.Header[traceparentHeader] = traceparent
 			c.Status(http.StatusSwitchingProtocols)
 			err := app.ws.handshake(c)
-			ex.writer.runHooks(&c.Timestamp)
+			ex.writer.runHooks(ctx.HTTPTimestamp(c))
 			if app.tracer.Enabled() {
-				e := completeEvent(ex.scope, c.GetID(), trace.TransportHTTP, c.Method, c.URL.Path, c.Code, time.Since(c.Timestamp))
+				e := completeEvent(ex.scope, c.ID(), trace.TransportHTTP, c.Method, c.URL.Path, ctx.HTTPCode(c), time.Since(*ctx.HTTPTimestamp(c)))
 				e.ClientIP = tracecontext.ClientIP(c.Request)
 				app.tracer.Emit(e)
 			}
@@ -223,7 +223,7 @@ func (app *App) initWS() {
 		if !app.tracer.Enabled() {
 			return
 		}
-		app.tracer.Emit(completeEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.TransportWS, operation, target, 0, time.Since(c.Timestamp)))
+		app.tracer.Emit(completeEvent(tracecontext.ScopeOf(c.Context()), c.ID(), trace.TransportWS, operation, target, 0, time.Since(ctx.WSTimestamp(c))))
 	}
 }
 
@@ -300,7 +300,7 @@ func traceWSCatch(ev *trace.Tracer, name string, fn common.WSCatch) common.WSCat
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StageExceptionFilter, name, trace.TransportWS, time.Since(start)))
+			ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.ID(), trace.StageExceptionFilter, name, trace.TransportWS, time.Since(start)))
 		}()
 		fn(c, ex)
 	}
@@ -366,7 +366,7 @@ func traceWSHandler(ev *trace.Tracer, stage, name string, h ctx.WSHandler) ctx.W
 
 		start := time.Now()
 		defer func() {
-			ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), stage, name, trace.TransportWS, time.Since(start)))
+			ev.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.ID(), stage, name, trace.TransportWS, time.Since(start)))
 		}()
 		h(c)
 	}
@@ -378,7 +378,7 @@ func (app *App) initInterceptors() {
 			if !app.tracer.Enabled() {
 				return
 			}
-			app.tracer.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.GetID(), trace.StagePostInterceptor, name, trace.TransportWS, duration))
+			app.tracer.Emit(stageEvent(tracecontext.ScopeOf(c.Context()), c.ID(), trace.StagePostInterceptor, name, trace.TransportWS, duration))
 		}
 	}
 
@@ -436,25 +436,25 @@ func (app *App) releaseCtx(ex *httpExchange) {
 }
 
 func (app *App) releaseWSCtx(c *ctx.WSContext) {
-	c.Reset()
+	ctx.WSReset(c)
 	app.wsCtxPool.Put(c)
 }
 
-func (app *App) BindGlobalGuards(guarders ...common.Guarder) *App {
+func (app *App) BindGlobalGuards(guards ...any) *App {
 	app.mustBeBeforeCreate("BindGlobalGuards")
-	app.globalGuarders = append(app.globalGuarders, guarders...)
+	app.globalGuarders = append(app.globalGuarders, guards...)
 
 	return app
 }
 
-func (app *App) BindGlobalInterceptors(interceptors ...common.Interceptable) *App {
+func (app *App) BindGlobalInterceptors(interceptors ...any) *App {
 	app.mustBeBeforeCreate("BindGlobalInterceptors")
 	app.globalInterceptors = append(app.globalInterceptors, interceptors...)
 
 	return app
 }
 
-func (app *App) BindGlobalExceptionFilters(exceptionFilters ...common.ExceptionFilterable) *App {
+func (app *App) BindGlobalExceptionFilters(exceptionFilters ...any) *App {
 	app.mustBeBeforeCreate("BindGlobalExceptionFilters")
 	app.globalExceptionFilters = append(app.globalExceptionFilters, exceptionFilters...)
 
@@ -468,8 +468,12 @@ func (app *App) BindGlobalMiddlewares(middlewares ...common.MiddlewareFn) *App {
 	return app
 }
 
-func (app *App) EnableVersioning(v versioning.Versioning) *App {
+func (app *App) EnableVersioning(opts *versioning.Versioning) *App {
 	app.mustBeBeforeCreate("EnableVersioning")
+	var v versioning.Versioning
+	if opts != nil {
+		v = *opts
+	}
 	app.http.enableVersioning(v)
 
 	return app

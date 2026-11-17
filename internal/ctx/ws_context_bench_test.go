@@ -10,8 +10,8 @@ func BenchmarkWSContext_Init_NoConnection(b *testing.B) {
 	c := NewWSContext()
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(nil)
-		c.Reset()
+		WSInit(c, nil)
+		WSReset(c)
 	}
 }
 
@@ -20,7 +20,7 @@ func BenchmarkWSContext_Init_ConnectionWithoutRequest(b *testing.B) {
 	conn := &websocket.Conn{}
 	b.ReportAllocs()
 	for b.Loop() {
-		c.Init(conn)
-		c.Reset()
+		WSInit(c, conn)
+		WSReset(c)
 	}
 }

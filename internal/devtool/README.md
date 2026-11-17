@@ -37,7 +37,7 @@ func (instance UserController) READ_users() string {
 func main() {
 	app := core.New()
 	app.EnableDevtool()
-	app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 }
 ```
 
@@ -61,10 +61,10 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 
 | Method | Adds |
 |---|---|
-| `AddExceptionFilters([]common.ExceptionFilterable, []common.HTTPLayer)` | global and per-route exception filters |
+| `AddExceptionFilters([]any, []common.HTTPLayer)` | global and per-route exception filters |
 | `AddMiddlewares([]common.MiddlewareFn, []common.HTTPLayer)` | global and per-route middlewares |
-| `AddGuarders([]common.Guarder, []common.HTTPLayer)` | global and per-route guards |
-| `AddInterceptors([]common.Interceptable, []common.HTTPLayer)` | global and per-route interceptors |
+| `AddGuarders([]any, []common.HTTPLayer)` | global and per-route guards |
+| `AddInterceptors([]any, []common.HTTPLayer)` | global and per-route interceptors |
 | `AddVersioning(*versioning.Versioning)` | the app's versioning, or `nil` without versioning |
 | `AddHTTPMainHandlers([]common.HTTPLayer)` | the routes, sorted by path |
 

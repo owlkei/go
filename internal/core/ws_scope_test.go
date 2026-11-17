@@ -69,7 +69,7 @@ func newWSScopeEnv(t *testing.T, middlewares ...common.MiddlewareFn) *wsScopeEnv
 	app.SetLogger(&mockLogger{})
 	rec := newTraceRecorder(app)
 	app.EnableWS(&WSOptions{Path: "/ws"}, middlewares...)
-	app.Create(ModuleBuilder().Controllers(wsScopeController{}, traceWSAllController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(wsScopeController{}, traceWSAllController{}).Build())
 	server := httptest.NewServer(app)
 	t.Cleanup(server.Close)
 	return &wsScopeEnv{app: app, server: server, rec: rec}
@@ -244,7 +244,7 @@ func TestWS_MessageScope(t *testing.T) {
 	var got []seen
 	wsScopeSetHook(func(c *ctx.WSContext) {
 		mu.Lock()
-		got = append(got, seen{scope: tracecontext.ScopeOf(c.Context()), id: c.GetID()})
+		got = append(got, seen{scope: tracecontext.ScopeOf(c.Context()), id: c.ID()})
 		mu.Unlock()
 	})
 
@@ -265,7 +265,7 @@ func TestWS_MessageScope(t *testing.T) {
 		t.Error(test.DiffMessage([]string{s.Connection, s.Parent}, []string{connected.ID, connected.ID}, "W4: the connection is the connected payload's id"))
 	}
 	if len(s.Message) != 16 || !isLowerHex(s.Message) || s.Message == connected.ID || got[0].id != s.Message {
-		t.Error(test.DiffMessage(got[0].id, s.Message, "W5: c.GetID() is the message ID, which is not the connection's"))
+		t.Error(test.DiffMessage(got[0].id, s.Message, "W5: c.ID() is the message ID, which is not the connection's"))
 	}
 	if s.Request != "" || s.Upstream != "" {
 		t.Error(test.DiffMessage([]string{s.Request, s.Upstream}, []string{"", ""}, "W4: Request and Upstream are empty on a message"))
@@ -375,7 +375,7 @@ func TestWS_ScopeAfterClose(t *testing.T) {
 	var all []kept
 	wsScopeSetHook(func(c *ctx.WSContext) {
 		mu.Lock()
-		all = append(all, kept{ctx: c.Context(), id: c.GetID()})
+		all = append(all, kept{ctx: c.Context(), id: c.ID()})
 		mu.Unlock()
 	})
 
@@ -414,8 +414,8 @@ func TestWS_ConcurrentConnectionsIsolated(t *testing.T) {
 	var wrong sync.Map
 	wsScopeSetHook(func(c *ctx.WSContext) {
 		s := tracecontext.ScopeOf(c.Context())
-		if s == nil || s.Message != c.GetID() || s.Connection == "" {
-			wrong.Store(c.GetID(), true)
+		if s == nil || s.Message != c.ID() || s.Connection == "" {
+			wrong.Store(c.ID(), true)
 		}
 	})
 

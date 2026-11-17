@@ -87,12 +87,12 @@ func resolveGlobalMiddlewares(middlewares []common.MiddlewareFn, injectedProvide
 func handshakeMiddleware(m httpMiddleware, ev *trace.Tracer) ctx.HTTPHandler {
 	return func(c *ctx.HTTPContext) {
 		if !ev.Enabled() {
-			m.use(c.Request, c.ResponseWriter, c.Next)
+			m.use(c.Request, c.ResponseWriter, ctx.HTTPNext(c))
 			return
 		}
 		start := time.Now()
-		m.use(c.Request, c.ResponseWriter, c.Next)
-		m.emit(ev, tracecontext.ScopeOf(c.Context()), c.GetID(), time.Since(start), 0)
+		m.use(c.Request, c.ResponseWriter, ctx.HTTPNext(c))
+		m.emit(ev, tracecontext.ScopeOf(c.Context()), c.ID(), time.Since(start), 0)
 	}
 }
 
@@ -153,9 +153,9 @@ func (ws *WS) handshake(c *ctx.HTTPContext) (err error) {
 	}()
 
 	isNext := true
-	c.Next = func() {
+	ctx.HTTPSetNext(c, func() {
 		isNext = true
-	}
+	})
 
 	for _, gm := range ws.globalMiddlewares {
 		if !isNext {

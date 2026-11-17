@@ -32,7 +32,7 @@ func (c benchModuleController4) NewController() Controller         { return c }
 func (c benchModuleController4) READ_benchmoduleresource4() string { return "ok" }
 
 func BenchmarkCreate_FiveControllers(b *testing.B) {
-	m := ModuleBuilder().
+	m := NewModuleBuilder().
 		Controllers(
 			benchModuleController0{},
 			benchModuleController1{},
@@ -553,7 +553,7 @@ func benchChainProviders() []Provider {
 }
 
 func BenchmarkCreate_ChainedProviders(b *testing.B) {
-	m := ModuleBuilder().Providers(benchChainProviders()...).Build()
+	m := NewModuleBuilder().Providers(benchChainProviders()...).Build()
 	b.ReportAllocs()
 	for b.Loop() {
 		New().Create(m)
@@ -567,14 +567,14 @@ func (p benchStaticSubProvider) NewProvider() Provider { return p }
 func makeBenchStaticSubmodules(n int) []any {
 	imports := make([]any, n)
 	for i := range imports {
-		imports[i] = ModuleBuilder().Providers(benchStaticSubProvider{}).Build()
+		imports[i] = NewModuleBuilder().Providers(benchStaticSubProvider{}).Build()
 	}
 	return imports
 }
 
 func BenchmarkCreate_StaticSubmodules(b *testing.B) {
 	const n = 100
-	root := ModuleBuilder().Imports(makeBenchStaticSubmodules(n)...).Build()
+	root := NewModuleBuilder().Imports(makeBenchStaticSubmodules(n)...).Build()
 	b.ReportAllocs()
 	for b.Loop() {
 		New().Create(root)
@@ -582,7 +582,7 @@ func BenchmarkCreate_StaticSubmodules(b *testing.B) {
 }
 
 func benchCollectModulesDynamicFactory() *Module {
-	return ModuleBuilder().Build()
+	return NewModuleBuilder().Build()
 }
 
 func BenchmarkCreate_DynamicSubmodules(b *testing.B) {
@@ -591,7 +591,7 @@ func BenchmarkCreate_DynamicSubmodules(b *testing.B) {
 	for i := range imports {
 		imports[i] = benchCollectModulesDynamicFactory
 	}
-	root := ModuleBuilder().Imports(imports...).Build()
+	root := NewModuleBuilder().Imports(imports...).Build()
 	b.ReportAllocs()
 	for b.Loop() {
 		New().Create(root)

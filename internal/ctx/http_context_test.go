@@ -23,23 +23,23 @@ func newTestHTTPContext() *HTTPContext {
 
 func TestNewHTTPContext_DefaultCode(t *testing.T) {
 	c := NewHTTPContext()
-	if c.Code != http.StatusOK {
-		t.Error(test.DiffMessage(c.Code, http.StatusOK, "NewHTTPContext default Code"))
+	if HTTPCode(c) != http.StatusOK {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusOK, "NewHTTPContext default Code"))
 	}
 }
 
 func TestHTTPContext_Init_GetIDIsRequest(t *testing.T) {
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 	s := tracecontext.ScopeOf(c.Context())
 	if s == nil {
 		t.Fatal(test.DiffMessage(s, "<a scope>", "S1: Init puts a scope in the request context"))
 	}
-	if c.GetID() != s.Request {
-		t.Error(test.DiffMessage(c.GetID(), s.Request, "S1: GetID is Scope.Request"))
+	if c.ID() != s.Request {
+		t.Error(test.DiffMessage(c.ID(), s.Request, "S1: GetID is Scope.Request"))
 	}
-	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
-		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "S2: the ID is a span ID"))
+	if len(c.ID()) != 16 || !isLowerHex(c.ID()) {
+		t.Error(test.DiffMessage(c.ID(), "<16 lowercase hexadecimal characters>", "S2: the ID is a span ID"))
 	}
 }
 
@@ -47,12 +47,12 @@ func TestHTTPContext_Init_IgnoresRequestIDHeader(t *testing.T) {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set(RequestID, "test-request-id")
-	c.Init(httptest.NewRecorder(), r)
-	if c.GetID() == "test-request-id" {
-		t.Error(test.DiffMessage(c.GetID(), "<generated id, not the header value>", "S2: no header can set the request ID"))
+	HTTPInit(c, httptest.NewRecorder(), r)
+	if c.ID() == "test-request-id" {
+		t.Error(test.DiffMessage(c.ID(), "<generated id, not the header value>", "S2: no header can set the request ID"))
 	}
-	if len(c.GetID()) != 16 || !isLowerHex(c.GetID()) {
-		t.Error(test.DiffMessage(c.GetID(), "<16 lowercase hexadecimal characters>", "S2: Init still generates an ID when a header is present"))
+	if len(c.ID()) != 16 || !isLowerHex(c.ID()) {
+		t.Error(test.DiffMessage(c.ID(), "<16 lowercase hexadecimal characters>", "S2: Init still generates an ID when a header is present"))
 	}
 	if s := tracecontext.ScopeOf(c.Context()); s.Upstream != "test-request-id" {
 		t.Error(test.DiffMessage(s.Upstream, "test-request-id", "S4: a valid X-Request-Id is the upstream"))
@@ -63,10 +63,10 @@ func TestHTTPContext_Init_IgnoresTraceparentAsRequestID(t *testing.T) {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
-	c.Init(httptest.NewRecorder(), r)
+	HTTPInit(c, httptest.NewRecorder(), r)
 	s := tracecontext.ScopeOf(c.Context())
-	if c.GetID() == "00f067aa0ba902b7" {
-		t.Error(test.DiffMessage(c.GetID(), "<own ID>", "S2: the incoming parent ID is not the request ID"))
+	if c.ID() == "00f067aa0ba902b7" {
+		t.Error(test.DiffMessage(c.ID(), "<own ID>", "S2: the incoming parent ID is not the request ID"))
 	}
 	if s.TraceID != "4bf92f3577b34da6a3ce929d0e0e4736" || s.Parent != "00f067aa0ba902b7" {
 		t.Error(test.DiffMessage([]string{s.TraceID, s.Parent}, []string{"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7"}, "S3: Init continues the incoming trace"))
@@ -75,17 +75,17 @@ func TestHTTPContext_Init_IgnoresTraceparentAsRequestID(t *testing.T) {
 
 func TestHTTPContext_Init_TraceIDUsesTimestamp(t *testing.T) {
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 	s := tracecontext.ScopeOf(c.Context())
-	if want := fmt.Sprintf("%012x", c.Timestamp.UnixMilli()); s.TraceID[:12] != want {
-		t.Error(test.DiffMessage(s.TraceID[:12], want, "S1: the scope is built with c.Timestamp"))
+	if want := fmt.Sprintf("%012x", HTTPTimestamp(c).UnixMilli()); s.TraceID[:12] != want {
+		t.Error(test.DiffMessage(s.TraceID[:12], want, "S1: the scope is built with HTTPTimestamp(c)"))
 	}
 }
 
 func TestHTTPContext_Init_RequestCarriesScope(t *testing.T) {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("GET", "/path?q=1", nil)
-	c.Init(httptest.NewRecorder(), r)
+	HTTPInit(c, httptest.NewRecorder(), r)
 
 	s := tracecontext.ScopeOf(c.Context())
 	if s == nil {
@@ -110,7 +110,7 @@ func TestHTTPContext_Init_ContextKeepsRequestContextValues(t *testing.T) {
 	parent, cancel := context.WithCancel(context.WithValue(context.Background(), key{}, "v"))
 	r := httptest.NewRequest("GET", "/", nil).WithContext(parent)
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), r)
+	HTTPInit(c, httptest.NewRecorder(), r)
 	if c.Context().Value(key{}) != "v" {
 		t.Error(test.DiffMessage(c.Context().Value(key{}), "v", "S1: the scope context wraps the request's context"))
 	}
@@ -127,7 +127,7 @@ func TestHTTPContext_Init_NestedScopeUsesHeaders(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil).WithContext(outer)
 	r.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), r)
+	HTTPInit(c, httptest.NewRecorder(), r)
 	s := tracecontext.ScopeOf(c.Context())
 	if s == outerScope || s.TraceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
 		t.Error(test.DiffMessage([]any{s == outerScope, s.TraceID}, []any{false, "4bf92f3577b34da6a3ce929d0e0e4736"}, "S11: Init builds a new scope from the headers whatever the context carries"))
@@ -136,26 +136,26 @@ func TestHTTPContext_Init_NestedScopeUsesHeaders(t *testing.T) {
 
 func TestHTTPContext_Init_GetIDEmptyBeforeInitAndAfterReset(t *testing.T) {
 	c := newTestHTTPContext()
-	if c.GetID() != "" {
-		t.Error(test.DiffMessage(c.GetID(), "", "S10: GetID is empty before Init"))
+	if c.ID() != "" {
+		t.Error(test.DiffMessage(c.ID(), "", "S10: GetID is empty before Init"))
 	}
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
-	c.Reset()
-	if c.GetID() != "" {
-		t.Error(test.DiffMessage(c.GetID(), "", "S10: GetID is empty after Reset"))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	HTTPReset(c)
+	if c.ID() != "" {
+		t.Error(test.DiffMessage(c.ID(), "", "S10: GetID is empty after Reset"))
 	}
 }
 
 func TestHTTPContext_ScopeSurvivesReuse(t *testing.T) {
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/first", nil))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/first", nil))
 	kept := c.Context()
-	firstID := c.GetID()
+	firstID := c.ID()
 	firstTrace := tracecontext.ScopeOf(kept).TraceID
 	firstTraceparent := tracecontext.ScopeOf(kept).Traceparent()
 
-	c.Reset()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/second", nil))
+	HTTPReset(c)
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/second", nil))
 
 	s := tracecontext.ScopeOf(kept)
 	if s == nil {
@@ -164,8 +164,8 @@ func TestHTTPContext_ScopeSurvivesReuse(t *testing.T) {
 	if s.Request != firstID || s.TraceID != firstTrace || s.Traceparent() != firstTraceparent {
 		t.Error(test.DiffMessage([]string{s.Request, s.TraceID}, []string{firstID, firstTrace}, "S8: the kept context reads the first request's IDs"))
 	}
-	if c.GetID() == firstID || tracecontext.ScopeOf(c.Context()) == s {
-		t.Error(test.DiffMessage(c.GetID(), "<the second request's own ID>", "S8: the reused context holds a new scope"))
+	if c.ID() == firstID || tracecontext.ScopeOf(c.Context()) == s {
+		t.Error(test.DiffMessage(c.ID(), "<the second request's own ID>", "S8: the reused context holds a new scope"))
 	}
 }
 
@@ -173,11 +173,11 @@ func TestHTTPContext_ScopeSurvivesCancel(t *testing.T) {
 	parent, cancel := context.WithCancel(context.Background())
 	r := httptest.NewRequest("GET", "/", nil).WithContext(parent)
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), r)
+	HTTPInit(c, httptest.NewRecorder(), r)
 	kept := c.Context()
-	id := c.GetID()
+	id := c.ID()
 	cancel()
-	c.Reset()
+	HTTPReset(c)
 	if s := tracecontext.ScopeOf(kept); s == nil || s.Request != id {
 		t.Error(test.DiffMessage(s, id, "S8: a cancelled context still reads its IDs"))
 	}
@@ -197,10 +197,10 @@ func TestHTTPContext_Init_ConcurrentContextsIsolated(t *testing.T) {
 			var kept []context.Context
 			var ids []string
 			for i := 0; i < rounds; i++ {
-				c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+				HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 				kept = append(kept, c.Context())
-				ids = append(ids, c.GetID())
-				c.Reset()
+				ids = append(ids, c.ID())
+				HTTPReset(c)
 			}
 			for i, k := range kept {
 				if s := tracecontext.ScopeOf(k); s == nil || s.Request != ids[i] {
@@ -229,7 +229,7 @@ func TestHTTPContext_SetIDRemoved(t *testing.T) {
 
 func TestHTTPContext_ContextMethodFromRequest(t *testing.T) {
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
 	var asContext Context = c
 	if asContext.Context() != c.Request.Context() {
 		t.Error(test.DiffMessage(asContext.Context(), c.Request.Context(), "Context() on the interface is the request's context"))
@@ -239,19 +239,19 @@ func TestHTTPContext_ContextMethodFromRequest(t *testing.T) {
 func TestGetID(t *testing.T) {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("GET", "/", nil)
-	c.Init(httptest.NewRecorder(), r)
-	if c.GetID() == "" {
-		t.Error(test.DiffMessage(c.GetID(), "<non-empty id>", "GetID"))
+	HTTPInit(c, httptest.NewRecorder(), r)
+	if c.ID() == "" {
+		t.Error(test.DiffMessage(c.ID(), "<non-empty id>", "GetID"))
 	}
-	if c.GetID() != tracecontext.ScopeOf(c.Context()).Request {
-		t.Error(test.DiffMessage(c.GetID(), tracecontext.ScopeOf(c.Context()).Request, "GetID must return the request ID of the scope"))
+	if c.ID() != tracecontext.ScopeOf(c.Context()).Request {
+		t.Error(test.DiffMessage(c.ID(), tracecontext.ScopeOf(c.Context()).Request, "GetID must return the request ID of the scope"))
 	}
 }
 
 func TestHTTPContext_GetIDConcurrentReads_NoDataRace(t *testing.T) {
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
-	want := c.GetID()
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	want := c.ID()
 
 	const goroutines = 8
 	var wg sync.WaitGroup
@@ -260,8 +260,8 @@ func TestHTTPContext_GetIDConcurrentReads_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				if c.GetID() != want {
-					t.Error(test.DiffMessage(c.GetID(), want, "B24: GetID after Init should be a pure read"))
+				if c.ID() != want {
+					t.Error(test.DiffMessage(c.ID(), want, "B24: GetID after Init should be a pure read"))
 					return
 				}
 			}
@@ -273,8 +273,8 @@ func TestHTTPContext_GetIDConcurrentReads_NoDataRace(t *testing.T) {
 func TestHTTPContext_Status(t *testing.T) {
 	c := newTestHTTPContext()
 	ret := c.Status(http.StatusNotFound)
-	if c.Code != http.StatusNotFound {
-		t.Error(test.DiffMessage(c.Code, http.StatusNotFound, "Status sets Code"))
+	if HTTPCode(c) != http.StatusNotFound {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusNotFound, "Status sets Code"))
 	}
 	if ret != c {
 		t.Error(test.DiffMessage(ret, c, "Status returns self"))
@@ -286,10 +286,10 @@ func TestHTTPContext_Init(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
-	c.Init(w, r)
+	HTTPInit(c, w, r)
 
-	if c.Timestamp.IsZero() {
-		t.Error(test.DiffMessage(c.Timestamp.IsZero(), false, "B26: Init should set Timestamp"))
+	if HTTPTimestamp(c).IsZero() {
+		t.Error(test.DiffMessage(HTTPTimestamp(c).IsZero(), false, "B26: Init should set Timestamp"))
 	}
 	if c.ResponseWriter != http.ResponseWriter(w) {
 		t.Error(test.DiffMessage(c.ResponseWriter, w, "B26: Init should set ResponseWriter"))
@@ -297,18 +297,18 @@ func TestHTTPContext_Init(t *testing.T) {
 	if c.Request == nil || c.Request.URL != r.URL || c.Request.Method != r.Method {
 		t.Error(test.DiffMessage(c.Request, r, "B26: Init should set Request to a copy of the request"))
 	}
-	if len(c.GetID()) != 16 {
-		t.Error(test.DiffMessage(len(c.GetID()), 16, "B26: Init should set the id"))
+	if len(c.ID()) != 16 {
+		t.Error(test.DiffMessage(len(c.ID()), 16, "B26: Init should set the id"))
 	}
-	if c.Code != http.StatusOK {
-		t.Error(test.DiffMessage(c.Code, http.StatusOK, "B26: Init should leave Code at 200"))
+	if HTTPCode(c) != http.StatusOK {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusOK, "B26: Init should leave Code at 200"))
 	}
 
 	v := reflect.ValueOf(c).Elem()
 	for i := 0; i < v.NumField(); i++ {
 		name := v.Type().Field(i).Name
 		switch name {
-		case "Request", "ResponseWriter", "scope", "Timestamp", "Code":
+		case "Request", "ResponseWriter", "scope", "timestamp", "code":
 			continue
 		}
 		if !v.Field(i).IsZero() {
@@ -320,9 +320,9 @@ func TestHTTPContext_Init(t *testing.T) {
 func TestHTTPContext_Init_KeepsCodeSetBefore(t *testing.T) {
 	c := newTestHTTPContext()
 	c.Status(http.StatusTeapot)
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
-	if c.Code != http.StatusTeapot {
-		t.Error(test.DiffMessage(c.Code, http.StatusTeapot, "B26: Init should not touch Code"))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	if HTTPCode(c) != http.StatusTeapot {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusTeapot, "B26: Init should not touch Code"))
 	}
 }
 
@@ -331,22 +331,21 @@ func TestReset_ClearsAllFields(t *testing.T) {
 	r := httptest.NewRequest("GET", "/test", nil)
 	r.Header.Set(RequestID, "some-id")
 	w := httptest.NewRecorder()
-	c.Init(w, r)
+	HTTPInit(c, w, r)
 	c.Status(http.StatusNotFound)
 	_ = c.Query()
 	_ = c.Header()
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"1"}
+	HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"1"})
 	_ = c.Param()
-	c.Next = func() {}
+	HTTPSetNext(c, func() {})
 
-	c.Reset()
+	HTTPReset(c)
 
-	if c.Code != http.StatusOK {
-		t.Error(test.DiffMessage(c.Code, http.StatusOK, "Reset Code"))
+	if HTTPCode(c) != http.StatusOK {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusOK, "Reset Code"))
 	}
-	if c.GetID() != "" {
-		t.Error(test.DiffMessage(c.GetID(), "", "Reset ID"))
+	if c.ID() != "" {
+		t.Error(test.DiffMessage(c.ID(), "", "Reset ID"))
 	}
 	if c.Request != nil {
 		t.Error(test.DiffMessage(c.Request, nil, "Reset Request"))
@@ -366,14 +365,14 @@ func TestReset_ClearsAllFields(t *testing.T) {
 	if c.param != nil {
 		t.Error(test.DiffMessage(c.param, nil, "Reset param"))
 	}
-	if c.ParamKeys != nil {
-		t.Error(test.DiffMessage(c.ParamKeys, nil, "Reset ParamKeys"))
+	if c.paramKeys != nil {
+		t.Error(test.DiffMessage(c.paramKeys, nil, "Reset ParamKeys"))
 	}
-	if len(c.ParamValues) != 0 {
-		t.Error(test.DiffMessage(c.ParamValues, []string{}, "H3: Reset ParamValues must be empty"))
+	if len(c.paramValues) != 0 {
+		t.Error(test.DiffMessage(c.paramValues, []string{}, "H3: Reset ParamValues must be empty"))
 	}
-	if c.Next != nil {
-		t.Error(test.DiffMessage(c.Next, nil, "Reset Next"))
+	if HTTPNext(c) != nil {
+		t.Error(test.DiffMessage(HTTPNext(c), nil, "Reset Next"))
 	}
 }
 
@@ -383,34 +382,33 @@ func TestReset_EveryFieldIsZeroAfterUse(t *testing.T) {
 	r := httptest.NewRequest("POST", "/path?callback=cb&a=1", buf)
 	r.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
-	c.Init(w, r)
+	HTTPInit(c, w, r)
 	c.Status(http.StatusAccepted)
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"1"}
+	HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"1"})
 	_ = c.Param()
 	_ = c.Query()
 	_ = c.Header()
 	_ = c.Form()
 	_ = c.File()
-	c.AddAggregation(aggregation.NewAggregation())
-	c.Next = func() {}
+	HTTPAddAggregation(c, aggregation.NewAggregation())
+	HTTPSetNext(c, func() {})
 	c.JSON(Map{"a": 1})
 	c.Text("x")
 
-	c.Reset()
+	HTTPReset(c)
 
 	v := reflect.ValueOf(c).Elem()
 	for i := 0; i < v.NumField(); i++ {
 		name := v.Type().Field(i).Name
 		switch name {
-		case "Code":
-			if c.Code != http.StatusOK {
-				t.Error(test.DiffMessage(c.Code, http.StatusOK, "B27: Reset should set Code to 200"))
+		case "code":
+			if HTTPCode(c) != http.StatusOK {
+				t.Error(test.DiffMessage(HTTPCode(c), http.StatusOK, "B27: Reset should set Code to 200"))
 			}
 			continue
-		case "Timestamp":
+		case "timestamp":
 			continue
-		case "ParamValues", "aggregations":
+		case "paramValues", "aggregations":
 			if v.Field(i).Len() != 0 {
 				t.Error(test.DiffMessage(v.Field(i).Len(), 0, "H3: after Reset "+name+" must be empty"))
 			}
@@ -420,32 +418,31 @@ func TestReset_EveryFieldIsZeroAfterUse(t *testing.T) {
 			t.Error(test.DiffMessage(v.Field(i), "<zero>", "B27: after Reset the context should hold no reference to the request, the writer, the payload or parsed input, but "+name+" is set"))
 		}
 	}
-	if len(c.Aggregations()) != 0 {
-		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B27: Reset should drop the aggregations"))
+	if len(HTTPAggregations(c)) != 0 {
+		t.Error(test.DiffMessage(len(HTTPAggregations(c)), 0, "B27: Reset should drop the aggregations"))
 	}
 }
 
 func TestReset_ClearsParamValuesAndAggregations(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = append(c.ParamValues, "42", "x")
-	c.AddAggregation(aggregation.NewAggregation())
-	c.AddAggregation(aggregation.NewAggregation())
+	HTTPSetParams(c, map[string][]int{"id": {0}}, append(c.paramValues, "42", "x"))
+	HTTPAddAggregation(c, aggregation.NewAggregation())
+	HTTPAddAggregation(c, aggregation.NewAggregation())
 
-	c.Reset()
+	HTTPReset(c)
 
-	if len(c.ParamValues) != 0 {
-		t.Error(test.DiffMessage(len(c.ParamValues), 0, "H3: Reset should cut ParamValues to length 0"))
+	if len(c.paramValues) != 0 {
+		t.Error(test.DiffMessage(len(c.paramValues), 0, "H3: Reset should cut ParamValues to length 0"))
 	}
-	if len(c.Aggregations()) != 0 {
-		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: Reset should empty the aggregation list"))
+	if len(HTTPAggregations(c)) != 0 {
+		t.Error(test.DiffMessage(len(HTTPAggregations(c)), 0, "B36: Reset should empty the aggregation list"))
 	}
 }
 
 func TestHTTPContext_Aggregations_EmptyByDefault(t *testing.T) {
 	c := newTestHTTPContext()
-	if len(c.Aggregations()) != 0 {
-		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: a new context should have no aggregation"))
+	if len(HTTPAggregations(c)) != 0 {
+		t.Error(test.DiffMessage(len(HTTPAggregations(c)), 0, "B36: a new context should have no aggregation"))
 	}
 }
 
@@ -454,11 +451,11 @@ func TestHTTPContext_Aggregations_Order(t *testing.T) {
 	first := aggregation.NewAggregation()
 	second := aggregation.NewAggregation()
 	third := aggregation.NewAggregation()
-	c.AddAggregation(first)
-	c.AddAggregation(second)
-	c.AddAggregation(third)
+	HTTPAddAggregation(c, first)
+	HTTPAddAggregation(c, second)
+	HTTPAddAggregation(c, third)
 
-	got := c.Aggregations()
+	got := HTTPAggregations(c)
 	if len(got) != 3 || got[0] != first || got[1] != second || got[2] != third {
 		t.Error(test.DiffMessage(got, []*aggregation.Aggregation{first, second, third}, "B36: Aggregations should return the list in the order added"))
 	}
@@ -466,17 +463,17 @@ func TestHTTPContext_Aggregations_Order(t *testing.T) {
 
 func TestHTTPContext_ResetClearsAggregations(t *testing.T) {
 	c := newTestHTTPContext()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
-	c.AddAggregation(aggregation.NewAggregation())
-	c.Reset()
-	if len(c.Aggregations()) != 0 {
-		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B36: Reset should empty the aggregation list"))
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	HTTPAddAggregation(c, aggregation.NewAggregation())
+	HTTPReset(c)
+	if len(HTTPAggregations(c)) != 0 {
+		t.Error(test.DiffMessage(len(HTTPAggregations(c)), 0, "B36: Reset should empty the aggregation list"))
 	}
 
 	again := aggregation.NewAggregation()
-	c.Init(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
-	c.AddAggregation(again)
-	got := c.Aggregations()
+	HTTPInit(c, httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+	HTTPAddAggregation(c, again)
+	got := HTTPAggregations(c)
 	if len(got) != 1 || got[0] != again {
 		t.Error(test.DiffMessage(got, []*aggregation.Aggregation{again}, "B36: a context reused after Reset should start with no aggregation"))
 	}
@@ -488,30 +485,29 @@ func TestHTTPContext_ReuseAfterResetHasNoTraceOfPreviousRequest(t *testing.T) {
 	rA := httptest.NewRequest("POST", "/a?q=a", buf)
 	rA.Header.Set("Content-Type", contentType)
 	rA.Header.Set("X-A", "a")
-	c.Init(httptest.NewRecorder(), rA)
-	idA := c.GetID()
+	HTTPInit(c, httptest.NewRecorder(), rA)
+	idA := c.ID()
 	c.Status(http.StatusNotFound)
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = []string{"1"}
+	HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"1"})
 	_ = c.Param()
 	_ = c.Query()
 	_ = c.Header()
 	_ = c.Form()
 	_ = c.File()
 	_ = c.Body()
-	c.AddAggregation(aggregation.NewAggregation())
-	c.Next = func() {}
-	c.Reset()
+	HTTPAddAggregation(c, aggregation.NewAggregation())
+	HTTPSetNext(c, func() {})
+	HTTPReset(c)
 
 	rB := httptest.NewRequest("GET", "/b?q=b", nil)
 	rB.Header.Set("X-B", "b")
-	c.Init(httptest.NewRecorder(), rB)
+	HTTPInit(c, httptest.NewRecorder(), rB)
 
-	if c.GetID() == idA {
-		t.Error(test.DiffMessage(c.GetID(), "<an id other than "+idA+">", "B28: the id should be new"))
+	if c.ID() == idA {
+		t.Error(test.DiffMessage(c.ID(), "<an id other than "+idA+">", "B28: the id should be new"))
 	}
-	if c.Code != http.StatusOK {
-		t.Error(test.DiffMessage(c.Code, http.StatusOK, "B28: Code should be 200"))
+	if HTTPCode(c) != http.StatusOK {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusOK, "B28: Code should be 200"))
 	}
 	if len(c.Body()) != 0 {
 		t.Error(test.DiffMessage(c.Body(), Body{}, "B28: body should be empty"))
@@ -531,11 +527,11 @@ func TestHTTPContext_ReuseAfterResetHasNoTraceOfPreviousRequest(t *testing.T) {
 	if len(c.Param()) != 0 {
 		t.Error(test.DiffMessage(c.Param(), Param{}, "B28: params should be empty"))
 	}
-	if c.Next != nil {
-		t.Error(test.DiffMessage(c.Next, nil, "B28: Next should be nil"))
+	if HTTPNext(c) != nil {
+		t.Error(test.DiffMessage(HTTPNext(c), nil, "B28: Next should be nil"))
 	}
-	if len(c.Aggregations()) != 0 {
-		t.Error(test.DiffMessage(len(c.Aggregations()), 0, "B28: aggregations should be empty"))
+	if len(HTTPAggregations(c)) != 0 {
+		t.Error(test.DiffMessage(len(HTTPAggregations(c)), 0, "B28: aggregations should be empty"))
 	}
 }
 
@@ -556,21 +552,21 @@ func TestHTTPContext_ConcurrentRequests_NoDataRace(t *testing.T) {
 				w := httptest.NewRecorder()
 
 				c := pool.Get().(*HTTPContext)
-				c.Init(w, r)
-				id := c.GetID()
+				HTTPInit(c, w, r)
+				id := c.ID()
 				body := c.Body()
 				if body.Get("g") != float64(g) || body.Get("i") != float64(i) {
 					t.Error(test.DiffMessage(body, payload, "B28: each goroutine should read its own body"))
 				}
-				if len(id) != 16 || c.GetID() != id {
-					t.Error(test.DiffMessage(c.GetID(), id, "B28: each goroutine should keep its own id"))
+				if len(id) != 16 || c.ID() != id {
+					t.Error(test.DiffMessage(c.ID(), id, "B28: each goroutine should keep its own id"))
 				}
 				c.JSON(Map{"g": g, "id": id})
 				expected := `{"g":` + strconv.Itoa(g) + `,"id":"` + id + `"}`
 				if w.Body.String() != expected {
 					t.Error(test.DiffMessage(w.Body.String(), expected, "B28: each goroutine should write its own response"))
 				}
-				c.Reset()
+				HTTPReset(c)
 				pool.Put(c)
 			}
 		}()
@@ -590,8 +586,8 @@ func TestHTTPContext_RedirectKeeps3xxStatus(t *testing.T) {
 		if w.Code != code {
 			t.Error(test.DiffMessage(w.Code, code, "B18: Redirect should answer the 3xx status set before it"))
 		}
-		if c.Code != code {
-			t.Error(test.DiffMessage(c.Code, code, "B18: Code should hold the code sent"))
+		if HTTPCode(c) != code {
+			t.Error(test.DiffMessage(HTTPCode(c), code, "B18: Code should hold the code sent"))
 		}
 		if loc := w.Header().Get("Location"); loc != "/new-location" {
 			t.Error(test.DiffMessage(loc, "/new-location", "B18: Redirect should set the Location header"))
@@ -610,8 +606,8 @@ func TestHTTPContext_RedirectDefaultsTo301(t *testing.T) {
 	if w.Code != http.StatusMovedPermanently {
 		t.Error(test.DiffMessage(w.Code, http.StatusMovedPermanently, "B18: Redirect should answer 301 by default"))
 	}
-	if c.Code != http.StatusMovedPermanently {
-		t.Error(test.DiffMessage(c.Code, http.StatusMovedPermanently, "B18: Code should hold the code sent"))
+	if HTTPCode(c) != http.StatusMovedPermanently {
+		t.Error(test.DiffMessage(HTTPCode(c), http.StatusMovedPermanently, "B18: Code should hold the code sent"))
 	}
 	if loc := w.Header().Get("Location"); loc != "/new-location" {
 		t.Error(test.DiffMessage(loc, "/new-location", "Redirect should set the Location header"))
@@ -630,8 +626,8 @@ func TestHTTPContext_RedirectIgnoresNon3xxStatus(t *testing.T) {
 		if w.Code != http.StatusMovedPermanently {
 			t.Error(test.DiffMessage(w.Code, http.StatusMovedPermanently, "B18: Redirect should answer 301 when the status is "+strconv.Itoa(code)))
 		}
-		if c.Code != http.StatusMovedPermanently {
-			t.Error(test.DiffMessage(c.Code, http.StatusMovedPermanently, "B18: Code should hold the code sent"))
+		if HTTPCode(c) != http.StatusMovedPermanently {
+			t.Error(test.DiffMessage(HTTPCode(c), http.StatusMovedPermanently, "B18: Code should hold the code sent"))
 		}
 	}
 }
@@ -658,31 +654,30 @@ func dirtyHTTPContext(t *testing.T) *HTTPContext {
 	c := newTestHTTPContext()
 	r := httptest.NewRequest("POST", "/path?callback=cb&a=1", buf)
 	r.Header.Set("Content-Type", contentType)
-	c.Init(httptest.NewRecorder(), r)
+	HTTPInit(c, httptest.NewRecorder(), r)
 	c.Status(http.StatusAccepted)
-	c.ParamKeys = map[string][]int{"id": {0}}
-	c.ParamValues = append(make([]string, 0, 8), "1", "2")
+	HTTPSetParams(c, map[string][]int{"id": {0}}, append(make([]string, 0, 8), "1", "2"))
 	_ = c.Param()
 	_ = c.Query()
 	_ = c.Header()
 	_ = c.Form()
 	_ = c.File()
 	_ = c.Body()
-	c.AddAggregation(aggregation.NewAggregation())
-	c.AddAggregation(aggregation.NewAggregation())
-	c.Next = func() {}
+	HTTPAddAggregation(c, aggregation.NewAggregation())
+	HTTPAddAggregation(c, aggregation.NewAggregation())
+	HTTPSetNext(c, func() {})
 	return c
 }
 
 func TestReset_EqualsNewContextExceptCapacity(t *testing.T) {
 	c := dirtyHTTPContext(t)
-	c.Reset()
+	HTTPReset(c)
 
-	if len(c.ParamValues) != 0 || len(c.aggregations) != 0 {
-		t.Error(test.DiffMessage([]int{len(c.ParamValues), len(c.aggregations)}, []int{0, 0}, "H3-eq: after Reset both kept slices have length 0"))
+	if len(c.paramValues) != 0 || len(c.aggregations) != 0 {
+		t.Error(test.DiffMessage([]int{len(c.paramValues), len(c.aggregations)}, []int{0, 0}, "H3-eq: after Reset both kept slices have length 0"))
 	}
 	got := *c
-	got.ParamValues = nil
+	got.paramValues = nil
 	got.aggregations = nil
 	want := *NewHTTPContext()
 	if !reflect.DeepEqual(got, want) {
@@ -692,10 +687,10 @@ func TestReset_EqualsNewContextExceptCapacity(t *testing.T) {
 
 func TestReset_KeepsCapacityOfParamValuesAndAggregations(t *testing.T) {
 	c := dirtyHTTPContext(t)
-	c.Reset()
+	HTTPReset(c)
 
-	if cap(c.ParamValues) < 8 {
-		t.Error(test.DiffMessage(cap(c.ParamValues), 8, "H3: Reset keeps the capacity of ParamValues"))
+	if cap(c.paramValues) < 8 {
+		t.Error(test.DiffMessage(cap(c.paramValues), 8, "H3: Reset keeps the capacity of ParamValues"))
 	}
 	if cap(c.aggregations) < 2 {
 		t.Error(test.DiffMessage(cap(c.aggregations), 2, "H3: Reset keeps the capacity of the aggregation list"))
@@ -704,9 +699,9 @@ func TestReset_KeepsCapacityOfParamValuesAndAggregations(t *testing.T) {
 
 func TestReset_ClearsElements(t *testing.T) {
 	c := dirtyHTTPContext(t)
-	c.Reset()
+	HTTPReset(c)
 
-	for i, v := range c.ParamValues[:cap(c.ParamValues)] {
+	for i, v := range c.paramValues[:cap(c.paramValues)] {
 		if v != "" {
 			t.Error(test.DiffMessage(v, "", "H3-eq: every element of the ParamValues backing array is zero after Reset, index "+strconv.Itoa(i)))
 		}
@@ -720,12 +715,12 @@ func TestReset_ClearsElements(t *testing.T) {
 
 func TestReset_DropsOver64(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamValues = make([]string, 0, 65)
+	c.paramValues = make([]string, 0, 65)
 	c.aggregations = make([]*aggregation.Aggregation, 0, 65)
-	c.Reset()
+	HTTPReset(c)
 
-	if c.ParamValues != nil {
-		t.Error(test.DiffMessage(cap(c.ParamValues), 0, "H3: Reset drops a ParamValues whose capacity is over 64"))
+	if c.paramValues != nil {
+		t.Error(test.DiffMessage(cap(c.paramValues), 0, "H3: Reset drops a ParamValues whose capacity is over 64"))
 	}
 	if c.aggregations != nil {
 		t.Error(test.DiffMessage(cap(c.aggregations), 0, "H3: Reset drops an aggregation list whose capacity is over 64"))
@@ -734,12 +729,12 @@ func TestReset_DropsOver64(t *testing.T) {
 
 func TestReset_Keeps64(t *testing.T) {
 	c := newTestHTTPContext()
-	c.ParamValues = make([]string, 0, 64)
+	c.paramValues = make([]string, 0, 64)
 	c.aggregations = make([]*aggregation.Aggregation, 0, 64)
-	c.Reset()
+	HTTPReset(c)
 
-	if cap(c.ParamValues) != 64 {
-		t.Error(test.DiffMessage(cap(c.ParamValues), 64, "H3: Reset keeps a ParamValues whose capacity is exactly 64"))
+	if cap(c.paramValues) != 64 {
+		t.Error(test.DiffMessage(cap(c.paramValues), 64, "H3: Reset keeps a ParamValues whose capacity is exactly 64"))
 	}
 	if cap(c.aggregations) != 64 {
 		t.Error(test.DiffMessage(cap(c.aggregations), 64, "H3: Reset keeps an aggregation list whose capacity is exactly 64"))
@@ -749,12 +744,12 @@ func TestReset_Keeps64(t *testing.T) {
 func TestReset_AddAggregationOnWarmContextDoesNotAllocate(t *testing.T) {
 	a := aggregation.NewAggregation()
 	c := newTestHTTPContext()
-	c.AddAggregation(a)
-	c.Reset()
+	HTTPAddAggregation(c, a)
+	HTTPReset(c)
 
 	allocs := testing.AllocsPerRun(100, func() {
-		c.AddAggregation(a)
-		c.Reset()
+		HTTPAddAggregation(c, a)
+		HTTPReset(c)
 	})
 	if allocs != 0 {
 		t.Error(test.DiffMessage(allocs, 0.0, "P6, H3: AddAggregation on a warm context allocates nothing"))

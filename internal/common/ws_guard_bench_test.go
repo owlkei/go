@@ -14,7 +14,7 @@ func BenchmarkInjectProvidersIntoWSGuards_ApplyAll(b *testing.B) {
 		g.BindGuard(mockWSGuarder{})
 		g.BindGuard(mockWSGuarder{})
 		g.BindGuard(mockWSGuarder{})
-		g.InjectProvidersIntoWSGuards(ws, benchCB, testConstruct)
+		InjectProvidersIntoWSGuards(g, ws, benchCB, testConstruct)
 	}
 }
 
@@ -40,7 +40,7 @@ func BenchmarkWSGuard_Call(b *testing.B) {
 
 func BenchmarkBuildWSGuardMiddleware_Allow(b *testing.B) {
 	c := ctx.NewWSContext()
-	c.Next = func() {}
+	ctx.WSSetNext(c, func() {})
 	mw := BuildWSGuardMiddleware(func(*ctx.WSContext) bool { return true })
 	b.ReportAllocs()
 	for b.Loop() {

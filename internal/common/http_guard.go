@@ -32,10 +32,10 @@ func AsHTTPGuard(guarder any) (HTTPCanActivate, bool) {
 	return layer.CanActivate, true
 }
 
-func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
-	guardItemArr := make([]GuardItem, 0, len(r.PatternToFuncNameMap)*len(g.GuardHandlers))
+func InjectProvidersIntoHTTPGuards(g *Guard, r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
+	guardItemArr := make([]GuardItem, 0, len(r.patternToFuncNameMap)*len(g.guardHandlers))
 
-	for _, guardHandler := range g.GuardHandlers {
+	for _, guardHandler := range g.guardHandlers {
 		guarderType := reflect.TypeOf(guardHandler.guarder)
 		guarderValue := reflect.ValueOf(guardHandler.guarder)
 		newGuard := reflect.New(guarderType)
@@ -46,7 +46,7 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 
 		newGuarder := newGuard.Interface()
 		newGuarder = construct(newGuarder, "NewGuard")
-		guardHandler.guarder = newGuarder.(Guarder)
+		guardHandler.guarder = newGuarder
 
 		canActivate, ok := AsHTTPGuard(guardHandler.guarder)
 		if !ok {
@@ -63,7 +63,7 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 
 		targets := httpHandlerTargets(r, guardHandler.handlers, "guard", guarderType)
 
-		for pattern := range r.PatternToFuncNameMap {
+		for pattern := range r.patternToFuncNameMap {
 			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
@@ -77,7 +77,7 @@ func (g *Guard) InjectProvidersIntoHTTPGuards(r *HTTP, cb func(int, reflect.Type
 						Common: CommonItem{
 							Handler:         canActivate,
 							Name:            guarderType.String(),
-							MainHandlerName: r.PatternToFuncNameMap[pattern],
+							MainHandlerName: r.patternToFuncNameMap[pattern],
 						},
 					},
 				})

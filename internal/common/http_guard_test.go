@@ -10,7 +10,7 @@ func TestInjectProvidersIntoHTTPGuards_Empty(t *testing.T) {
 	g := &Guard{}
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
 
-	items := g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound guards → empty result"))
 	}
@@ -25,7 +25,7 @@ func TestInjectProvidersIntoHTTPGuards_ApplyAll(t *testing.T) {
 		"CREATE_orders": "/orders/",
 	})
 
-	items := g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "guard with no handlers applies to all patterns"))
 	}
@@ -47,7 +47,7 @@ func TestInjectProvidersIntoHTTPGuards_MainHandlerName(t *testing.T) {
 	g.BindGuard(mockGuarder{})
 
 	r := buildHTTP(map[string]string{"READ_items": "/items/"})
-	items := g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 
 	if len(items) != 1 {
 		t.Error(test.DiffMessage(len(items), 1, "one pattern → one item"))
@@ -63,7 +63,7 @@ func TestInjectProvidersIntoHTTPGuards_HandlerIsCallableCanActivate(t *testing.T
 	g.BindGuard(denyGuarder{})
 
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
-	items := g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -87,7 +87,7 @@ func TestInjectProvidersIntoHTTPGuards_NoCanActivate_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "guard with no CanActivate method must panic"))
 		}
 	}()
-	g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 }
 
 func TestInjectProvidersIntoHTTPGuards_WrongReturnType_Panics(t *testing.T) {
@@ -100,7 +100,7 @@ func TestInjectProvidersIntoHTTPGuards_WrongReturnType_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "CanActivate returning non-bool must panic"))
 		}
 	}()
-	g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 }
 
 func TestInjectProvidersIntoHTTPGuards_WrongParamType_Panics(t *testing.T) {
@@ -113,7 +113,7 @@ func TestInjectProvidersIntoHTTPGuards_WrongParamType_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "CanActivate with a non-context param must panic"))
 		}
 	}()
-	g.InjectProvidersIntoHTTPGuards(r, noopCB, testConstruct)
+	InjectProvidersIntoHTTPGuards(g, r, noopCB, testConstruct)
 }
 
 func TestAsHTTPGuard_Valid(t *testing.T) {

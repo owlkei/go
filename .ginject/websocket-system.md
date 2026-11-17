@@ -69,9 +69,9 @@ readLoop() — Per-connection goroutine
     ├─ Receives JSON message
     ├─ Parses message
     ├─ Matches to handler
-    ├─ One WSContext per topic of a subscribe / publish frame: Init builds a message scope
+    ├─ One WSContext per topic of a subscribe / publish frame: WSInit builds a message scope
     │  (tracecontext.NewMessage: connection's trace ID and flags, Connection = Parent = connID,
-    │  a fresh Message ID = c.GetID()); ping, pong, unsubscribe and unknown types / topics get none
+    │  a fresh Message ID = c.ID()); ping, pong, unsubscribe and unknown types / topics get none
     ├─ Invokes handler (same pipeline as HTTP); c.Context() is the message context, done when the
     │  connection's handler returns, kept IDs readable after the close
     └─ Handler can memorybroker.Publish()

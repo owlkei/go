@@ -12,6 +12,6 @@ func BenchmarkInjectProvidersIntoHTTPMiddlewares_ApplyAll(b *testing.B) {
 		m.BindMiddleware(mockMiddlewareFn{})
 		m.BindMiddleware(mockMiddlewareFn{})
 		m.BindMiddleware(mockMiddlewareFn{})
-		m.InjectProvidersIntoHTTPMiddlewares(r, benchCB, testConstruct)
+		InjectProvidersIntoHTTPMiddlewares(m, r, benchCB, testConstruct)
 	}
 }

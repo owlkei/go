@@ -90,7 +90,7 @@ package-reference.md (independent API reference)
 ## Core Framework Concepts (Quick Summary)
 
 ### 1. Module → Controller → Provider Pattern
-- **Module**: Composition root (controllers, providers, imports), built with `core.ModuleBuilder()…Build()`
+- **Module**: Composition root (controllers, providers, imports), built with `core.NewModuleBuilder()…Build()`
 - **Controller**: HTTP/WS handler container (embeds `common.HTTP` and/or `common.WS`)
 - **Provider**: Injected business logic, constructed once per app
 

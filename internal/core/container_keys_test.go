@@ -14,7 +14,7 @@ import (
 
 func TestContainer_InterfaceKeysAreReflected(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	got, ok := app.container.interfaceFor(genFieldKey(reflect.TypeFor[log.Logger]()))
 	if !ok {

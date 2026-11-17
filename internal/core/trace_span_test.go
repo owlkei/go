@@ -56,7 +56,7 @@ func newSpanApp(t *testing.T) (*App, *traceRecorder) {
 	app.BindGlobalGuards(lcGuard{Name: "g1"})
 	app.BindGlobalInterceptors(lcInterceptor{Name: "g1"})
 	app.BindGlobalExceptionFilters(lcFilter{Name: "gf1"})
-	app.Create(ModuleBuilder().Controllers(spanController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(spanController{}).Build())
 	return app, rec
 }
 
@@ -255,7 +255,7 @@ func TestServeHTTP_RefusedUpgradeReleasesExchange(t *testing.T) {
 	app := New()
 	app.SetLogger(&mockLogger{})
 	app.EnableWS(&WSOptions{Path: "/ws"})
-	app.Create(ModuleBuilder().Build())
+	app.Create(NewModuleBuilder().Build())
 
 	var mu sync.Mutex
 	var created []*httpExchange
@@ -289,8 +289,8 @@ func TestServeHTTP_RefusedUpgradeReleasesExchange(t *testing.T) {
 	if len(created) != 1 {
 		t.Fatal(test.DiffMessage(len(created), 1, "fixture: one exchange was taken from the pool"))
 	}
-	if created[0].GetID() != "" || created[0].Request != nil {
-		t.Error(test.DiffMessage(created[0].GetID(), "", "F2: a refused upgrade releases the exchange (it is reset)"))
+	if created[0].ID() != "" || created[0].Request != nil {
+		t.Error(test.DiffMessage(created[0].ID(), "", "F2: a refused upgrade releases the exchange (it is reset)"))
 	}
 }
 
@@ -299,7 +299,7 @@ func TestServeHTTP_UpgradeReleasesExchangeOnce(t *testing.T) {
 		app := New()
 		app.SetLogger(&mockLogger{})
 		app.EnableWS(&WSOptions{Path: "/ws"})
-		app.Create(ModuleBuilder().Build())
+		app.Create(NewModuleBuilder().Build())
 		served := make(chan struct{}, 1)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			app.ServeHTTP(w, r)

@@ -132,7 +132,7 @@ func TestTrace_EveryWSEventCarriesTransport(t *testing.T) {
 	app := New()
 	rec := newTraceRecorder(app)
 	app.EnableWS(&WSOptions{Path: "/ws"})
-	app.Create(ModuleBuilder().Controllers(traceWSAllController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(traceWSAllController{}).Build())
 
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -228,7 +228,7 @@ func TestTrace_NoListenerNoEvents(t *testing.T) {
 	if app.tracer.Enabled() {
 		t.Fatal(test.DiffMessage(true, false, "setup: no listener"))
 	}
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tracepipeline", nil))
@@ -264,7 +264,7 @@ func TestTrace_ConcurrentRequestsWithListener_NoRace(t *testing.T) {
 		counts[e.ID]++
 		mu.Unlock()
 	})
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 
 	var wg sync.WaitGroup
 	for range 16 {
@@ -287,7 +287,7 @@ func TestTrace_ConcurrentRequestsWithListener_NoRace(t *testing.T) {
 func TestShutdown_AccessLogLinesFlushedAfterHooks(t *testing.T) {
 	rec := &lcRecordingLogger{}
 	app := New().SetLogger(rec).EnableAccessLog()
-	root := ModuleBuilder().Controllers(tracePipelineController{}).Build()
+	root := NewModuleBuilder().Controllers(tracePipelineController{}).Build()
 	root.OnShutdown = func() {
 		app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline?hook=1", nil))
 	}
@@ -313,7 +313,7 @@ func TestShutdown_AccessLogLinesFlushedAfterHooks(t *testing.T) {
 func TestShutdown_AccessLogStoppedOnce(t *testing.T) {
 	rec := &lcRecordingLogger{}
 	app := New().SetLogger(rec).EnableAccessLog()
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline", nil))
 	app.Stop()
 	app.Stop()
@@ -324,7 +324,7 @@ func TestShutdown_AccessLogStoppedOnce(t *testing.T) {
 
 func TestAccessLog_NotEnabledMeansNoListener(t *testing.T) {
 	app := New()
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 	if app.tracer.Enabled() {
 		t.Error(test.DiffMessage(true, false, "T1: without EnableAccessLog nobody listens, so requests are not traced"))
 	}
@@ -332,7 +332,7 @@ func TestAccessLog_NotEnabledMeansNoListener(t *testing.T) {
 
 func TestAccessLog_EnabledListensOnTheAppTracer(t *testing.T) {
 	app := New().EnableAccessLog()
-	app.Create(ModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 	if !app.tracer.Enabled() {
 		t.Error(test.DiffMessage(false, true, "T2: EnableAccessLog listens on the app's tracer"))
 	}

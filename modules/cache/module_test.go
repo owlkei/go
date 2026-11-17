@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"github.com/dangduoc08/ginject"
 	"runtime"
 	"testing"
 
@@ -120,7 +121,7 @@ func TestRegister_StartsNoGoroutine(t *testing.T) {
 
 func TestRegister_InjectedServicesShareBackend(t *testing.T) {
 	cacheModule := Register(&CacheModuleOptions{IsGlobal: true})
-	root := core.ModuleBuilder().
+	root := ginject.ModuleBuilder().
 		Imports(cacheModule).
 		Providers(consumerA{}, consumerB{}).
 		Build()

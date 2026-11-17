@@ -33,10 +33,10 @@ func AsHTTPInterceptor(interceptable any) (HTTPIntercept, bool) {
 	return layer.Intercept, true
 }
 
-func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []InterceptorItem {
-	interceptorItemArr := make([]InterceptorItem, 0, len(r.PatternToFuncNameMap)*len(i.InterceptorHandlers))
+func InjectProvidersIntoHTTPInterceptors(i *Interceptor, r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []InterceptorItem {
+	interceptorItemArr := make([]InterceptorItem, 0, len(r.patternToFuncNameMap)*len(i.interceptorHandlers))
 
-	for _, interceptorHandler := range i.InterceptorHandlers {
+	for _, interceptorHandler := range i.interceptorHandlers {
 		interceptableType := reflect.TypeOf(interceptorHandler.interceptable)
 		interceptableValue := reflect.ValueOf(interceptorHandler.interceptable)
 		newInterceptor := reflect.New(interceptableType)
@@ -47,7 +47,7 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 
 		newInterceptable := newInterceptor.Interface()
 		newInterceptable = construct(newInterceptable, "NewInterceptor")
-		interceptorHandler.interceptable = newInterceptable.(Interceptable)
+		interceptorHandler.interceptable = newInterceptable
 
 		intercept, ok := AsHTTPInterceptor(interceptorHandler.interceptable)
 		if !ok {
@@ -64,7 +64,7 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 
 		targets := httpHandlerTargets(r, interceptorHandler.handlers, "interceptor", interceptableType)
 
-		for pattern := range r.PatternToFuncNameMap {
+		for pattern := range r.patternToFuncNameMap {
 			if targets.has(pattern) {
 				method, route, version := routing.PatternToMethodRouteVersion(pattern)
 				httpMethod := routing.OperationsMapHTTPMethods[method]
@@ -78,7 +78,7 @@ func (i *Interceptor) InjectProvidersIntoHTTPInterceptors(r *HTTP, cb func(int, 
 						Common: CommonItem{
 							Handler:         intercept,
 							Name:            interceptableType.String(),
-							MainHandlerName: r.PatternToFuncNameMap[pattern],
+							MainHandlerName: r.patternToFuncNameMap[pattern],
 						},
 					},
 				})

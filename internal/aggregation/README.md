@@ -5,10 +5,6 @@
 - [Aggregation](#aggregation)
   - [Key Features](#key-features)
   - [Usage](#usage)
-  - [`Aggregation` Fields](#aggregation-fields)
-    - [InterceptorData](#interceptordata)
-    - [Name](#name)
-    - [IsMainHandlerCalled](#ismainhandlercalled)
   - [`Operator` Type](#operator-type)
   - [Functions](#functions)
     - [NewAggregation](#newaggregation)
@@ -17,8 +13,10 @@
     - [Tap](#tap)
     - [Filter](#filter)
     - [Pipe](#pipe)
+  - [Framework hooks](#framework-hooks)
     - [SetMainData](#setmaindata)
     - [Aggregate](#aggregate)
+    - [Name, InterceptorData and IsMainHandlerCalled](#name-interceptordata-and-ismainhandlercalled)
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
@@ -67,41 +65,12 @@ func (instance UserController) READ() string {
 
 func main() {
 	app := core.New()
-	app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 	app.Listen(3000, nil)
 }
 ```
 
 `GET /` responds with `{"data":"users"}`. An interceptor that returns anything other than the result of `Pipe` skips the handler, and its return value is the response.
-
-## `Aggregation` Fields
-
-### InterceptorData
-Type: `any`
-
-Default: `nil`
-
-Required: `false`
-
-The value the interceptor returned. The framework sets it after `Intercept` runs and sends it as the response when the interceptor did not call `Pipe`.
-
-### Name
-Type: `string`
-
-Default: `""`
-
-Required: `false`
-
-The interceptor's name, used by the framework in post-interceptor trace events.
-
-### IsMainHandlerCalled
-Type: `bool`
-
-Default: `false`
-
-Required: `false`
-
-`true` once `Pipe` was called: the handler runs and the piped operators are applied to its result.
 
 ## `Operator` Type
 
@@ -111,7 +80,7 @@ Required: `false`
 
 ### NewAggregation
 
-Returns an empty aggregation: no data, no operators, `IsMainHandlerCalled` is `false`. The framework creates one per interceptor per request.
+Returns an empty aggregation: no data, no operators, `IsMainHandlerCalled(a)` is `false`. The framework creates one per interceptor per request.
 
 #### Returns
 - 1st value: `*Aggregation`
@@ -125,8 +94,8 @@ a := aggregation.NewAggregation()
 ```
 
 #### Rules
-- `IsMainHandlerCalled` is `false`, the main data is `nil`, `InterceptorData` and `Name` are empty.
-- `Aggregate()` on a new aggregation returns `nil`.
+- `IsMainHandlerCalled(a)` is `false`, the main data is `nil`, `InterceptorData(a)` and `Name(a)` are empty.
+- `Aggregate(a)` on a new aggregation returns `nil`.
 
 ### Transform
 
@@ -226,40 +195,34 @@ return a.Pipe(a.Transform(addOne), a.Transform(timesTwo))
 ```
 
 #### Rules
-- Sets `IsMainHandlerCalled` to `true` and returns `nil`, with or without operators.
+- Makes `IsMainHandlerCalled(a)` `true` and returns `nil`, with or without operators.
 - Operators run in argument order, not in the order they were created.
 - Only the operators passed run; an operator created by another aggregation runs here too.
 - A second call replaces the operators of the first; `Pipe()` with no operators clears them.
 - Operators with a `nil` function and the zero `Operator{}` are skipped.
 - Up to four operators make no allocation; more work the same and keep their order.
 
+## Framework hooks
+
+`Pipe`, `Transform`, `Tap` and `Filter` are the only methods and `Aggregation` has no exported field: what the framework needs is a package-level function, which an interceptor can't reach through the root alias `ginject.Aggregation`. Every hook except `Aggregate` is a leaf the compiler inlines.
+
 ### SetMainData
 
-Sets the data the operators start from. The framework calls it with the handler's result.
-
-#### Parameters
-- 1st parameter: `any`
-
-- Description: The data
-
-#### Returns
-- 1st value: `*Aggregation`
-
-- Description: The same aggregation, for chaining
+`SetMainData(a *Aggregation, d any)` sets the data the operators start from. The framework calls it with the handler's result.
 
 #### Usage
 
 ```go
-result := a.SetMainData(handlerResult).Aggregate()
+aggregation.SetMainData(a, handlerResult)
+result := aggregation.Aggregate(a)
 ```
 
 #### Rules
-- Returns the receiver.
 - A later call overwrites the value; `nil` clears it.
 
 ### Aggregate
 
-Applies the piped operators to the main data and returns the result. The framework calls it after the handler.
+`Aggregate(a *Aggregation) any` applies the piped operators to the main data and returns the result. The framework calls it after the handler.
 
 #### Returns
 - 1st value: `any`
@@ -269,15 +232,23 @@ Applies the piped operators to the main data and returns the result. The framewo
 #### Usage
 
 ```go
-a.SetMainData(1)
+aggregation.SetMainData(a, 1)
 a.Pipe(a.Transform(func(data any) any { return data.(int) + 1 }))
-result := a.Aggregate()
+result := aggregation.Aggregate(a)
 ```
 
 #### Rules
 - With no operators it returns the main data unchanged.
 - Operators apply in `Pipe` order: `(0 + 1) * 3` gives `3` for a `+1` then a `*3` transform.
 - The final data is kept as the main data.
+
+### Name, InterceptorData and IsMainHandlerCalled
+
+| Function | Returns or sets |
+|----------|-----------------|
+| `Name(a) string` / `SetName(a, name string)` | The interceptor's name, used in post-interceptor trace events. `""` on a new aggregation |
+| `InterceptorData(a) any` / `SetInterceptorData(a, data any)` | The value the interceptor returned. The framework sets it after `Intercept` runs and sends it as the response when the interceptor did not call `Pipe`. `nil` on a new aggregation |
+| `IsMainHandlerCalled(a) bool` | `true` once `Pipe` was called: the handler runs and the piped operators are applied to its result |
 
 ## Performance notes
 

@@ -1,3 +1,4 @@
+pkg ginject, func ModuleBuilder() *core.ModuleBuilder
 pkg ginject, func New() ginject.App
 pkg ginject, func TraceTransport(http.RoundTripper) http.RoundTripper
 pkg ginject, type Aggregation = *aggregation.Aggregation
@@ -31,7 +32,6 @@ pkg ginject, type WS = common.WS
 pkg ginject, type WSContext = *ctx.WSContext
 pkg ginject, type WSOptions = core.WSOptions
 pkg ginject, type WSPayload = ctx.WSPayload
-pkg ginject, var ModuleBuilder func() *core.moduleBuilder
 pkg ginject/exception, func BadGatewayException(string, ...any) exception.Exception
 pkg ginject/exception, func BadRequestException(string, ...any) exception.Exception
 pkg ginject/exception, func ConflictException(string, ...any) exception.Exception
@@ -78,7 +78,7 @@ pkg ginject/exception, type ExceptionOptions struct, Description string
 pkg ginject/guards/throttler, const FixedWindow throttler.Strategy = 0
 pkg ginject/guards/throttler, const SlidingWindow throttler.Strategy = 1
 pkg ginject/guards/throttler, const TokenBucket throttler.Strategy = 2
-pkg ginject/guards/throttler, method (throttler.Throttler) NewGuard() common.Guarder
+pkg ginject/guards/throttler, method (throttler.Throttler) NewGuard() any
 pkg ginject/guards/throttler, type Strategy int
 pkg ginject/guards/throttler, type Throttler struct
 pkg ginject/guards/throttler, type Throttler struct, Backend cache.Cache
@@ -220,86 +220,27 @@ pkg ginject/modules/config, type ConfigModuleOptions struct, OnInit config.Confi
 pkg ginject/modules/config, type ConfigOnInitFn = func()
 pkg ginject/modules/config, type ConfigService struct
 pkg ginject/modules/config, type ConfigService struct, State *config.configState
-reach aggregation.Aggregation, field InterceptorData any
-reach aggregation.Aggregation, field IsMainHandlerCalled bool
-reach aggregation.Aggregation, field Name string
-reach aggregation.Aggregation, method (*aggregation.Aggregation) Aggregate() any
 reach aggregation.Aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
 reach aggregation.Aggregation, method (*aggregation.Aggregation) Pipe(...aggregation.Operator) any
-reach aggregation.Aggregation, method (*aggregation.Aggregation) SetMainData(any) *aggregation.Aggregation
 reach aggregation.Aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
 reach aggregation.Aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
 reach common.ArgumentMetadata, field ContextType string
 reach common.ArgumentMetadata, field ParamType string
-reach common.CommonItem, field Handler any
-reach common.CommonItem, field MainHandlerName string
-reach common.CommonItem, field Name string
-reach common.ExceptionFilter, field ExceptionFilterHandlers []common.exceptionFilterHandler
-reach common.ExceptionFilter, method (*common.ExceptionFilter) BindExceptionFilter(common.ExceptionFilterable, ...any) *common.ExceptionFilter
-reach common.ExceptionFilter, method (*common.ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
-reach common.ExceptionFilter, method (*common.ExceptionFilter) InjectProvidersIntoWSExceptionFilters(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
-reach common.ExceptionFilterItem, field HTTP common.HTTPExceptionFilterItem
-reach common.ExceptionFilterItem, field WS common.WSExceptionFilterItem
-reach common.Guard, field GuardHandlers []common.guardHandler
-reach common.Guard, method (*common.Guard) BindGuard(common.Guarder, ...any) *common.Guard
-reach common.Guard, method (*common.Guard) InjectProvidersIntoHTTPGuards(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
-reach common.Guard, method (*common.Guard) InjectProvidersIntoWSGuards(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
-reach common.GuardItem, field HTTP common.HTTPGuardItem
-reach common.GuardItem, field WS common.WSGuardItem
-reach common.HTTP, field FuncNameToPatternMap map[string]string
-reach common.HTTP, field PatternToFuncNameMap map[string]string
-reach common.HTTP, field RouterMap map[string]any
-reach common.HTTP, method (*common.HTTP) AddHandlerToRouterMap([]string, string, any)
-reach common.HTTP, method (*common.HTTP) GetPrefixes() []map[string]string
+reach common.ExceptionFilter, method (*common.ExceptionFilter) BindExceptionFilter(any, ...any) *common.ExceptionFilter
+reach common.Guard, method (*common.Guard) BindGuard(any, ...any) *common.Guard
 reach common.HTTP, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
-reach common.HTTPExceptionFilterItem, field Common common.CommonItem
-reach common.HTTPExceptionFilterItem, field Method string
-reach common.HTTPExceptionFilterItem, field Pattern string
-reach common.HTTPExceptionFilterItem, field Route string
-reach common.HTTPExceptionFilterItem, field Version string
-reach common.HTTPGuardItem, field Common common.CommonItem
-reach common.HTTPGuardItem, field Method string
-reach common.HTTPGuardItem, field Pattern string
-reach common.HTTPGuardItem, field Route string
-reach common.HTTPGuardItem, field Version string
-reach common.HTTPInterceptorItem, field Common common.CommonItem
-reach common.HTTPInterceptorItem, field Method string
-reach common.HTTPInterceptorItem, field Pattern string
-reach common.HTTPInterceptorItem, field Route string
-reach common.HTTPInterceptorItem, field Version string
-reach common.HTTPMiddlewareItem, field Common common.CommonItem
-reach common.HTTPMiddlewareItem, field Method string
-reach common.HTTPMiddlewareItem, field Pattern string
-reach common.HTTPMiddlewareItem, field Route string
-reach common.HTTPMiddlewareItem, field Version string
-reach common.Interceptor, field InterceptorHandlers []common.interceptorHandler
-reach common.Interceptor, method (*common.Interceptor) BindInterceptor(common.Interceptable, ...any) *common.Interceptor
-reach common.Interceptor, method (*common.Interceptor) InjectProvidersIntoHTTPInterceptors(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
-reach common.Interceptor, method (*common.Interceptor) InjectProvidersIntoWSInterceptors(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
-reach common.InterceptorItem, field HTTP common.HTTPInterceptorItem
-reach common.InterceptorItem, field WS common.WSInterceptorItem
-reach common.Middleware, field MiddlewareHandlers []common.middlewareHandler
+reach common.Interceptor, method (*common.Interceptor) BindInterceptor(any, ...any) *common.Interceptor
 reach common.Middleware, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
-reach common.Middleware, method (*common.Middleware) InjectProvidersIntoHTTPMiddlewares(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.MiddlewareItem
 reach common.MiddlewareFn, method (common.MiddlewareFn) Use(*http.Request, http.ResponseWriter, ctx.Next)
-reach common.MiddlewareItem, field HTTP common.HTTPMiddlewareItem
 reach common.Publisher, method (common.Publisher) Publish(string, ...any) error
-reach common.WS, field EventMap map[string]any
-reach common.WS, method (*common.WS) AddHandlerToEventMap(string, any)
-reach common.WSExceptionFilterItem, field Common common.CommonItem
-reach common.WSExceptionFilterItem, field EventName string
-reach common.WSGuardItem, field Common common.CommonItem
-reach common.WSGuardItem, field EventName string
-reach common.WSInterceptorItem, field Common common.CommonItem
-reach common.WSInterceptorItem, field EventName string
-reach core.App, method (*core.App) BindGlobalExceptionFilters(...common.ExceptionFilterable) *core.App
-reach core.App, method (*core.App) BindGlobalGuards(...common.Guarder) *core.App
-reach core.App, method (*core.App) BindGlobalInterceptors(...common.Interceptable) *core.App
+reach core.App, method (*core.App) BindGlobalExceptionFilters(...any) *core.App
+reach core.App, method (*core.App) BindGlobalGuards(...any) *core.App
+reach core.App, method (*core.App) BindGlobalInterceptors(...any) *core.App
 reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
 reach core.App, method (*core.App) Create(*core.Module)
 reach core.App, method (*core.App) EnableAccessLog() *core.App
 reach core.App, method (*core.App) EnableDevtool() *core.App
-reach core.App, method (*core.App) EnableVersioning(versioning.Versioning) *core.App
+reach core.App, method (*core.App) EnableVersioning(*versioning.Versioning) *core.App
 reach core.App, method (*core.App) EnableWS(*core.WSOptions, ...common.MiddlewareFn) *core.App
 reach core.App, method (*core.App) Get(core.Provider) any
 reach core.App, method (*core.App) Listen(int, *core.ServerOptions) error
@@ -315,18 +256,17 @@ reach core.Module, field Name string
 reach core.Module, field OnInit func()
 reach core.Module, field OnReady func()
 reach core.Module, field OnShutdown func()
-reach core.Module, method (*core.Module) ID() string
 reach core.Module, method (*core.Module) Prefix(string) *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Build() *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Controller) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
 reach core.Provider, method (core.Provider) NewProvider() core.Provider
 reach core.ServerOptions, field H2C bool
 reach core.ServerOptions, field MaxRequestBodyBytes int64
 reach core.ServerOptions, field ShutdownTimeout time.Duration
 reach core.ServerOptions, field TLSConfig *tls.Config
 reach core.WSOptions, field Path string
-reach core.moduleBuilder, method (*core.moduleBuilder) Build() *core.Module
-reach core.moduleBuilder, method (*core.moduleBuilder) Controllers(...core.Controller) *core.moduleBuilder
-reach core.moduleBuilder, method (*core.moduleBuilder) Imports(...any) *core.moduleBuilder
-reach core.moduleBuilder, method (*core.moduleBuilder) Providers(...core.Provider) *core.moduleBuilder
 reach ctx.Body, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
 reach ctx.Body, method (ctx.Body) BindValue(any) any
 reach ctx.Body, method (ctx.Body) Del(string)
@@ -361,27 +301,18 @@ reach ctx.Form, method (ctx.Form) Get(string) string
 reach ctx.Form, method (ctx.Form) Has(string) bool
 reach ctx.Form, method (ctx.Form) Set(string, string)
 reach ctx.Form, type map[string][]string
-reach ctx.HTTPContext, field Code int
-reach ctx.HTTPContext, field Next ctx.Next
-reach ctx.HTTPContext, field ParamKeys map[string][]int
-reach ctx.HTTPContext, field ParamValues []string
 reach ctx.HTTPContext, field Request *http.Request embedded
 reach ctx.HTTPContext, field ResponseWriter http.ResponseWriter embedded
-reach ctx.HTTPContext, field Timestamp time.Time
-reach ctx.HTTPContext, method (*ctx.HTTPContext) AddAggregation(*aggregation.Aggregation)
-reach ctx.HTTPContext, method (*ctx.HTTPContext) Aggregations() []*aggregation.Aggregation
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Body() ctx.Body
 reach ctx.HTTPContext, method (*ctx.HTTPContext) File() ctx.File
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Form() ctx.Form
-reach ctx.HTTPContext, method (*ctx.HTTPContext) GetID() string
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Header() ctx.Header
-reach ctx.HTTPContext, method (*ctx.HTTPContext) Init(http.ResponseWriter, *http.Request)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) ID() string
 reach ctx.HTTPContext, method (*ctx.HTTPContext) JSON(any, ...any)
 reach ctx.HTTPContext, method (*ctx.HTTPContext) JSONP(any, ...any)
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Param() ctx.Param
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Query() ctx.Query
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Redirect(string)
-reach ctx.HTTPContext, method (*ctx.HTTPContext) Reset()
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Text(string, ...any)
 reach ctx.Header, method (ctx.Header) Add(string, string)
@@ -410,18 +341,10 @@ reach ctx.Query, method (ctx.Query) Has(string) bool
 reach ctx.Query, method (ctx.Query) Set(string, string)
 reach ctx.Query, type map[string][]string
 reach ctx.WSContext, field Conn *websocket.Conn embedded
-reach ctx.WSContext, field Next ctx.Next
-reach ctx.WSContext, field Timestamp time.Time
-reach ctx.WSContext, method (*ctx.WSContext) AddAggregation(*aggregation.Aggregation)
-reach ctx.WSContext, method (*ctx.WSContext) Aggregations() []*aggregation.Aggregation
 reach ctx.WSContext, method (*ctx.WSContext) Context() context.Context
-reach ctx.WSContext, method (*ctx.WSContext) GetID() string
-reach ctx.WSContext, method (*ctx.WSContext) Init(*websocket.Conn)
-reach ctx.WSContext, method (*ctx.WSContext) Reset()
+reach ctx.WSContext, method (*ctx.WSContext) ID() string
 reach ctx.WSContext, method (*ctx.WSContext) Send(any)
 reach ctx.WSContext, method (*ctx.WSContext) SetContext(context.Context)
-reach ctx.WSContext, method (*ctx.WSContext) SetSend(func(any))
-reach ctx.WSContext, method (*ctx.WSContext) SetWSPayload(ctx.WSPayload)
 reach ctx.WSContext, method (*ctx.WSContext) WSPayload() ctx.WSPayload
 reach ctx.WSPayload, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
 reach ctx.WSPayload, method (ctx.WSPayload) BindValue(any) any

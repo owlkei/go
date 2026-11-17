@@ -2,6 +2,7 @@ package httpsredirect
 
 import (
 	"fmt"
+	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -77,7 +78,7 @@ func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(mws...)
-	app.Create(core.ModuleBuilder().Controllers(okController{}).Build())
+	app.Create(ginject.ModuleBuilder().Controllers(okController{}).Build())
 	return app
 }
 

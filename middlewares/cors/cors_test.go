@@ -2,6 +2,7 @@ package cors
 
 import (
 	"fmt"
+	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -503,7 +504,7 @@ func TestCORS_WebSocketHandshake(t *testing.T) {
 		app := core.New()
 		app.SetLogger(silentLogger{})
 		app.EnableWS(&core.WSOptions{Path: "/ws"}, CORS{AllowOrigins: allowed})
-		app.Create(core.ModuleBuilder().Build())
+		app.Create(ginject.ModuleBuilder().Build())
 		server := httptest.NewServer(app)
 		defer server.Close()
 		conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", origin)

@@ -9,7 +9,7 @@ import (
 func TestGetPrefixes_NoHandlers(t *testing.T) {
 	r := &HTTP{}
 	r.Prefix("/api")
-	prefixes := r.GetPrefixes()
+	prefixes := r.getPrefixes()
 	if len(prefixes) != 1 {
 		t.Error(test.DiffMessage(len(prefixes), 1, "one prefix entry"))
 		return
@@ -27,7 +27,7 @@ func TestGetPrefixes_NoHandlers(t *testing.T) {
 func TestGetPrefixes_WithHandlers(t *testing.T) {
 	r := &HTTP{}
 	r.Prefix("/v1", fnTestController{}.READ_users, fnTestController{}.CREATE_orders)
-	prefixes := r.GetPrefixes()
+	prefixes := r.getPrefixes()
 	if len(prefixes) != 2 {
 		t.Error(test.DiffMessage(len(prefixes), 2, "two prefix entries for two handlers"))
 		return
@@ -48,7 +48,7 @@ func TestGetPrefixes_WithHandlers(t *testing.T) {
 
 func TestGetPrefixes_Empty(t *testing.T) {
 	r := &HTTP{}
-	prefixes := r.GetPrefixes()
+	prefixes := r.getPrefixes()
 	if len(prefixes) != 0 {
 		t.Error(test.DiffMessage(len(prefixes), 0, "no prefixes configured"))
 	}
@@ -57,7 +57,7 @@ func TestGetPrefixes_Empty(t *testing.T) {
 func TestAddPrefixesToRoute_WildcardApplies(t *testing.T) {
 	r := &HTTP{}
 	r.Prefix("/api")
-	prefixes := r.GetPrefixes()
+	prefixes := r.getPrefixes()
 	got := r.addPrefixesToRoute("/users/", "READ_users", prefixes)
 	want := "/api/users/"
 	if got != want {
@@ -68,7 +68,7 @@ func TestAddPrefixesToRoute_WildcardApplies(t *testing.T) {
 func TestAddPrefixesToRoute_SpecificFnMatch(t *testing.T) {
 	r := &HTTP{}
 	r.Prefix("/v1", fnTestController{}.READ_users)
-	prefixes := r.GetPrefixes()
+	prefixes := r.getPrefixes()
 	got := r.addPrefixesToRoute("/users/", "READ_users", prefixes)
 	want := "/v1/users/"
 	if got != want {
@@ -79,7 +79,7 @@ func TestAddPrefixesToRoute_SpecificFnMatch(t *testing.T) {
 func TestAddPrefixesToRoute_SpecificFnNoMatch(t *testing.T) {
 	r := &HTTP{}
 	r.Prefix("/v1", fnTestController{}.READ_users)
-	prefixes := r.GetPrefixes()
+	prefixes := r.getPrefixes()
 	got := r.addPrefixesToRoute("/orders/", "CREATE_orders", prefixes)
 	want := "/orders/"
 	if got != want {
@@ -99,25 +99,25 @@ func TestAddPrefixesToRoute_NoPrefixes(t *testing.T) {
 func TestAddToRouters_InitMaps(t *testing.T) {
 	r := &HTTP{}
 	r.addToRouters("READ_users", "/users/", "", "GET", nil)
-	if r.RouterMap == nil {
-		t.Error(test.DiffMessage(r.RouterMap, "non-nil", "RouterMap initialized"))
+	if HTTPRouterMap(r) == nil {
+		t.Error(test.DiffMessage(HTTPRouterMap(r), "non-nil", "RouterMap initialized"))
 	}
-	if r.PatternToFuncNameMap == nil {
-		t.Error(test.DiffMessage(r.PatternToFuncNameMap, "non-nil", "PatternToFuncNameMap initialized"))
+	if HTTPPatternToFuncNameMap(r) == nil {
+		t.Error(test.DiffMessage(HTTPPatternToFuncNameMap(r), "non-nil", "PatternToFuncNameMap initialized"))
 	}
-	if r.FuncNameToPatternMap == nil {
-		t.Error(test.DiffMessage(r.FuncNameToPatternMap, "non-nil", "FuncNameToPatternMap initialized"))
+	if HTTPFuncNameToPatternMap(r) == nil {
+		t.Error(test.DiffMessage(HTTPFuncNameToPatternMap(r), "non-nil", "FuncNameToPatternMap initialized"))
 	}
 }
 
 func TestAddHandlerToRouterMap_StoresPattern(t *testing.T) {
 	r := &HTTP{}
-	r.AddHandlerToRouterMap(nil, "READ_items", nil)
-	if len(r.RouterMap) != 1 {
-		t.Error(test.DiffMessage(len(r.RouterMap), 1, "one route added"))
+	AddHandlerToRouterMap(r, nil, "READ_items", nil)
+	if len(HTTPRouterMap(r)) != 1 {
+		t.Error(test.DiffMessage(len(HTTPRouterMap(r)), 1, "one route added"))
 	}
-	if r.PatternToFuncNameMap["/items/||/[GET]/"] != "READ_items" {
-		t.Error(test.DiffMessage(r.PatternToFuncNameMap["/items/||/[GET]/"], "READ_items", "pattern stored"))
+	if HTTPPatternToFuncNameMap(r)["/items/||/[GET]/"] != "READ_items" {
+		t.Error(test.DiffMessage(HTTPPatternToFuncNameMap(r)["/items/||/[GET]/"], "READ_items", "pattern stored"))
 	}
 }
 
@@ -202,8 +202,8 @@ func routeConflictPanic(fn func()) (message string) {
 
 func TestAddHandlerToRouterMap_SameShapeDifferentParamNamesDoesNotPanic(t *testing.T) {
 	r := &HTTP{}
-	r.AddHandlerToRouterMap(nil, "READ_BY_ID", nil)
-	message := routeConflictPanic(func() { r.AddHandlerToRouterMap(nil, "READ_BY_NAME", nil) })
+	AddHandlerToRouterMap(r, nil, "READ_BY_ID", nil)
+	message := routeConflictPanic(func() { AddHandlerToRouterMap(r, nil, "READ_BY_NAME", nil) })
 	if message != "" {
 		t.Error(test.DiffMessage(message, "", "conflicts are checked per app by core, AddHandlerToRouterMap no longer panics"))
 	}
@@ -211,13 +211,29 @@ func TestAddHandlerToRouterMap_SameShapeDifferentParamNamesDoesNotPanic(t *testi
 
 func TestAddHandlerToRouterMap_DifferentShapesDoNotConflict(t *testing.T) {
 	r := &HTTP{}
-	r.AddHandlerToRouterMap(nil, "READ_users_BY_id", nil)
+	AddHandlerToRouterMap(r, nil, "READ_users_BY_id", nil)
 	message := routeConflictPanic(func() {
-		r.AddHandlerToRouterMap(nil, "READ_users_BY_id_AND_name", nil)
-		r.AddHandlerToRouterMap(nil, "UPDATE_users_BY_id", nil)
-		r.AddHandlerToRouterMap(nil, "READ_users_all", nil)
+		AddHandlerToRouterMap(r, nil, "READ_users_BY_id_AND_name", nil)
+		AddHandlerToRouterMap(r, nil, "UPDATE_users_BY_id", nil)
+		AddHandlerToRouterMap(r, nil, "READ_users_all", nil)
 	})
 	if message != "" {
 		t.Error(test.DiffMessage(message, "", "routes with a different shape, method or static segment must not conflict"))
+	}
+}
+
+func TestHooks_RouterMapAccessors(t *testing.T) {
+	h := &HTTP{}
+	AddHandlerToRouterMap(h, nil, "READ_items", nil)
+	if len(HTTPRouterMap(h)) != 1 || len(HTTPPatternToFuncNameMap(h)) != 1 || len(HTTPFuncNameToPatternMap(h)) != 1 {
+		t.Error(test.DiffMessage([3]int{len(HTTPRouterMap(h)), len(HTTPPatternToFuncNameMap(h)), len(HTTPFuncNameToPatternMap(h))}, [3]int{1, 1, 1}, "B18: the hook functions read what AddHandlerToRouterMap wrote"))
+	}
+}
+
+func TestHooks_EventMapAccessors(t *testing.T) {
+	ws := &WS{}
+	AddHandlerToEventMap(ws, "SUBSCRIBE_chat_ANY", nil)
+	if _, ok := WSEventMap(ws)["chat.*"]; !ok {
+		t.Error(test.DiffMessage(WSEventMap(ws), "<map with chat.*>", "B18: WSEventMap reads what AddHandlerToEventMap wrote"))
 	}
 }

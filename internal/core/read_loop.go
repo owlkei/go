@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/memorybroker"
@@ -146,7 +147,7 @@ func handlePublish(conn *WSConnection, ws *WS, payload WSPayload) {
 }
 
 func runCatchChain(conn *WSConnection, ws *WS, c *ctx.WSContext, pattern string, payloadID string, rec any) {
-	c.SetSend(func(data any) {
+	ctx.WSSetSend(c, func(data any) {
 		reply(conn, TypeError, payloadID, data)
 	})
 
@@ -176,12 +177,12 @@ func runWSMiddlewares(conn *WSConnection, ws *WS, pattern string, item wsevent.W
 		}
 	}()
 
-	c.Init(conn.Conn)
+	ctx.WSInit(c, conn.Conn)
 	messageMap, _ := payload.Message.(map[string]any)
-	c.SetWSPayload(ctx.WSPayload(messageMap))
+	ctx.WSSetPayload(c, ctx.WSPayload(messageMap))
 
 	isNext := true
-	c.Next = func() { isNext = true }
+	ctx.WSSetNext(c, func() { isNext = true })
 
 	for _, middleware := range item.Middlewares {
 		if isNext {
@@ -213,28 +214,28 @@ func dispatchWSEvent(conn *WSConnection, ws *WS, pattern, topic string, item wse
 
 	data := ws.resolveAndCallHandler(pattern, item.Handler, c)
 
-	if aggregations := c.Aggregations(); len(aggregations) > 0 {
+	if aggregations := ctx.WSAggregations(c); len(aggregations) > 0 {
 		var aggregatedData any
 		totalAggregations := len(aggregations)
 
 		for i := totalAggregations - 1; i >= 0; i-- {
 			agg := aggregations[i]
 
-			if !agg.IsMainHandlerCalled {
+			if !aggregation.IsMainHandlerCalled(agg) {
 				for j := i; j >= 0; j-- {
-					ws.emitPostInterceptor(c, aggregations[j].Name, 0)
+					ws.emitPostInterceptor(c, aggregation.Name(aggregations[j]), 0)
 				}
-				reply(conn, TypeEvent, payload.ID, agg.InterceptorData)
+				reply(conn, TypeEvent, payload.ID, aggregation.InterceptorData(agg))
 				return true
 			}
 
 			if i == totalAggregations-1 && len(data) > 0 {
 				aggregatedData = data[len(data)-1].Interface()
 			}
-			agg.SetMainData(aggregatedData)
+			aggregation.SetMainData(agg, aggregatedData)
 			start := time.Now()
-			aggregatedData = agg.Aggregate()
-			ws.emitPostInterceptor(c, agg.Name, time.Since(start))
+			aggregatedData = aggregation.Aggregate(agg)
+			ws.emitPostInterceptor(c, aggregation.Name(agg), time.Since(start))
 		}
 
 		reply(conn, TypeEvent, payload.ID, aggregatedData)

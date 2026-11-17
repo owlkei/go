@@ -39,7 +39,7 @@ func TestServe_DotRootServesFilesUnderWorkingDirectory(t *testing.T) {
 	_ = hidden.Close()
 
 	app := New()
-	app.Create(ModuleBuilder().Controllers(serveDotController{}).Build())
+	app.Create(NewModuleBuilder().Controllers(serveDotController{}).Build())
 
 	w := serveGet(app, "/dot/"+strings.TrimPrefix(file.Name(), "./"))
 	if w.Code != http.StatusOK || w.Body.String() != "DOT-ROOT-CONTENT" {

@@ -111,7 +111,7 @@ func (instance UserController) READ_users_BY_id(param ctx.Param, page PageDTO) c
 func main() {
 	app := core.New()
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Controllers(UserController{}).
 			Providers(GreetingService{}).
 			Build(),
@@ -147,7 +147,7 @@ Builds the module tree from the root module, initializes the modules (see [Modul
 #### Usage
 
 ```go
-app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
+app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 ```
 
 ### ServeHTTP
@@ -155,7 +155,7 @@ app.Create(core.ModuleBuilder().Controllers(UserController{}).Build())
 `ServeHTTP(w http.ResponseWriter, r *http.Request)` serves one request: it caps a request body at the app's limit (10 MiB, or the `MaxRequestBodyBytes` of the serving call; a request without a body, `nil` or `http.NoBody`, is not wrapped), takes a pooled context, builds the request's trace scope, sets the `X-Request-Id` and `Traceparent` response headers before any middleware runs, runs the [request lifecycle](#request-lifecycle) and, with a trace listener, emits the `complete` event, whose `Code` is the status actually written (`200` when nothing was written). Requests to the WebSocket path are upgraded when `EnableWS` was called.
 
 #### Request and trace IDs
-- Every response (a route, a 404, a 405, an error) carries `X-Request-Id: <request ID>` (16 hex characters, the same as `c.GetID()`) and `Traceparent: 00-<trace ID>-<request ID>-<flags>`.
+- Every response (a route, a 404, a 405, an error) carries `X-Request-Id: <request ID>` (16 hex characters, the same as `c.ID()`) and `Traceparent: 00-<trace ID>-<request ID>-<flags>`.
 - The request ID is always the app's own: neither an incoming `X-Request-Id` nor a `traceparent` sets it.
 - One valid incoming `traceparent` continues its trace ID and keeps its flags (`& 03`), so a client chooses the trace ID of its request (see [trace › Security](../internal/trace/README.md#security)); an absent, repeated or invalid one (upper case, zero IDs, version `ff`, CR/LF, a megabyte of junk) is ignored silently and a new, time-ordered trace starts with flags `03`.
 - The scope is in `c.Context()`, `c.Request.Context()` and the `*http.Request` every middleware receives, so guards, interceptors, filters, the handler and a service called with `c.Context()` all read the same IDs. A goroutine that keeps `c.Context()` reads them after the request ended and the pooled context was reused; concurrent requests never read each other's scope.
@@ -202,10 +202,10 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 | Method | Effect |
 |---|---|
 | `BindGlobalMiddlewares(...common.MiddlewareFn)` | Middlewares that run for every HTTP request |
-| `BindGlobalGuards(...common.Guarder)` | Guards for every HTTP route and WS event |
-| `BindGlobalInterceptors(...common.Interceptable)` | Interceptors for every HTTP route and WS event |
-| `BindGlobalExceptionFilters(...common.ExceptionFilterable)` | Exception filters for every HTTP route and WS event |
-| `EnableVersioning(versioning.Versioning)` | Route versioning (`Key` defaults to `v`) |
+| `BindGlobalGuards(...any)` | Guards for every HTTP route and WS event |
+| `BindGlobalInterceptors(...any)` | Interceptors for every HTTP route and WS event |
+| `BindGlobalExceptionFilters(...any)` | Exception filters for every HTTP route and WS event |
+| `EnableVersioning(*versioning.Versioning)` | Route versioning (`Key` defaults to `v`). `nil` is the zero options; the options are copied, so a later change of the caller's struct changes nothing |
 | `EnableWS(*WSOptions, ...common.MiddlewareFn)` | The WebSocket server, with handshake middlewares |
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
@@ -218,14 +218,16 @@ A module groups controllers and providers and imports other modules: `*Module` v
 ### ModuleBuilder
 
 ```go
-func ModuleBuilder() *moduleBuilder
-func (m *moduleBuilder) Imports(modules ...any) *moduleBuilder
-func (m *moduleBuilder) Providers(providers ...Provider) *moduleBuilder
-func (m *moduleBuilder) Controllers(controllers ...Controller) *moduleBuilder
-func (m *moduleBuilder) Build() *Module
+type ModuleBuilder struct
+
+func NewModuleBuilder() *ModuleBuilder
+func (m *ModuleBuilder) Imports(modules ...any) *ModuleBuilder
+func (m *ModuleBuilder) Providers(providers ...Provider) *ModuleBuilder
+func (m *ModuleBuilder) Controllers(controllers ...Controller) *ModuleBuilder
+func (m *ModuleBuilder) Build() *Module
 ```
 
-`ModuleBuilder()` starts a module. `Imports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `Build()` returns the `*Module`.
+`NewModuleBuilder()` starts a module (the root package's `ginject.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `Build()` returns the `*Module`.
 
 #### Parameters
 - `Imports`: `...any`, each a `*Module` or a module func whose type starts with `func(` and returns `*core.Module`.
@@ -233,18 +235,18 @@ func (m *moduleBuilder) Build() *Module
 - `Controllers`: `...Controller`, controller values.
 
 #### Returns
-- `ModuleBuilder`, `Imports`, `Providers`, `Controllers`: `*moduleBuilder`, the same builder.
+- `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `Providers`, `Controllers`: the same builder.
 - `Build`: `*Module`, a new module with its own `ID()` and a resolved `Name`.
 
 #### Usage
 
 ```go
-var UserModule = core.ModuleBuilder().
+var UserModule = core.NewModuleBuilder().
 	Controllers(UserController{}).
 	Providers(GreetingService{}).
 	Build()
 
-var AppModule = core.ModuleBuilder().
+var AppModule = core.NewModuleBuilder().
 	Imports(UserModule).
 	Build()
 ```
@@ -303,7 +305,7 @@ Runs once when the app shuts down or `Stop()` is called (see [Hooks](#hooks) and
 
 ```go
 var CacheModule = func() *core.Module {
-	m := core.ModuleBuilder().Providers(GreetingService{}).Build()
+	m := core.NewModuleBuilder().Providers(GreetingService{}).Build()
 	m.IsGlobal = true
 	m.OnShutdown = func() { /* close connections */ }
 	return m
@@ -320,7 +322,7 @@ func (m *Module) ID() string
 `Prefix` adds a path prefix to every route of the module and of the modules it imports, and returns the module. A prefix added to an importing module goes in front: a child with `Prefix("v1")` imported by a root with `Prefix("api")` serves `/api/v1/ping`, and `/ping` and `/v1/ping` answer 404. `ID` returns the identifier `Build` gave the module, unique per built module.
 
 ```go
-var V1Module = core.ModuleBuilder().Controllers(UserController{}).Build().Prefix("v1")
+var V1Module = core.NewModuleBuilder().Controllers(UserController{}).Build().Prefix("v1")
 ```
 
 ### Provider and Controller
@@ -700,7 +702,7 @@ Parameters are matched by type identity: a type from another package that only p
 | `*ctx.WSContext` | no | yes | the message's context |
 | `*websocket.Conn` (`golang.org/x/net/websocket`) | no | yes | `c.Conn` |
 | `ctx.WSPayload` | no | yes | `c.WSPayload()` |
-| `ctx.Next` | yes | yes | `c.Next` |
+| `ctx.Next` | yes | yes | the middlewares' `next` (`ctx.HTTPNext(c)` / `ctx.WSNext(c)`) |
 | `common.Publisher` | yes | yes | the app's publisher, looked up at `Create()` |
 | a pipe of `common.ContextPipeable`, `BodyPipeable`, `FormPipeable`, `QueryPipeable`, `HeaderPipeable`, `ParamPipeable` or `FilePipeable` | yes | no | what its `Transform` returns |
 | a pipe of `common.WSPayloadPipeable` | no | yes | what its `Transform` returns |
@@ -774,11 +776,12 @@ From the tests (`fn_plan_test.go`, `fn_plan_ws_test.go`, `fn_app_test.go`, `fn_t
 - **Tracing is separate.** One listener check per call; the traced path has its own functions, so the untraced path has no `defer` and reads no clock.
 - What remains is the cost of `reflect.Value.Call` (one allocation for the result slice, plus one per result that is not pointer-shaped) and whatever the accessors and pipes do.
 - **One route struct per route.** At `Create()` each route gets an immutable `httpRoute` (module middlewares, guards and interceptors with the global ones in front, the handler plan, the filter list, the `SERVE` index), stored in a slice at the router item's index: a request does one slice index instead of three map lookups keyed by the pattern string.
-- **No closure without middleware.** A route without middleware gets a shared no-op `c.Next`; with middlewares, one closure and one flag per request, passed to every `Use` (a closure kept on the pooled context would let a leaked `next` continue another request). Guards and interceptors are called directly, and a refused guard reaches the filters without a panic.
+- **No closure without middleware.** A route without middleware gets a shared no-op `next`; with middlewares, one closure and one flag per request, passed to every `Use` (a closure kept on the pooled context would let a leaked `next` continue another request). Guards and interceptors are called directly, and a refused guard reaches the filters without a panic.
 - **One listener check, one recover.** `Tracer.Enabled` (one atomic load) is asked once per request; `handleRequest` holds the request's only `defer` / `recover`, and `ServeHTTP` releases the context in straight-line code.
 - **Fixed bodies.** The 404, 405, 410 and fixed 500 bodies are byte slices built once; a miss tries only the methods that have routes for the `Allow` header, which comes from a table built once.
 - **One atomic load for the body cap.** The cap is an `atomic.Int64` written when a serving call starts and loaded only for a request with a body (about 1 ns, no allocation). The rest of the server code runs once per start or stop.
-- **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ParamValues`, whose capacity `Reset` keeps.
+- **No `MaxBytesReader` for a bodiless request**, and the router appends parameter values to the pooled context's `ctx.HTTPParamValues(c)`, whose capacity `ctx.HTTPReset` keeps.
+- **Hooks are inlined.** The `ctx` and `aggregation` hooks (`ctx.HTTPSetCode`, `ctx.HTTPSetParams`, `aggregation.SetMainData`…) are package functions with the context as first parameter; `go build -gcflags=-m` reports each as inlinable, so they cost what the field accesses and methods they replace cost.
 - **Tracking writer in the pooled exchange.** The writer lives next to the context in the pool, so it costs no allocation. Its internal exchange hooks (used by `compress`) cost one length check per request when none is registered; the hook list keeps its capacity across pooled exchanges, and the clock is read once, only when a hook exists.
 - **Static caching.** The `no-cache` value of a served file is a one-element slice built once and assigned to the header map: no allocation.
 - **The trace scope.** Each request builds one scope (the `traceparent` string and a context value of 240 B together) and copies the request with `r.WithContext` (320 B) so middleware sees the IDs: about +270 ns, +530 B and +1 allocation against the request ID it replaces. The response headers reuse one-element slices prebuilt in the scope, so they allocate nothing. The random bytes come from a 512-byte `crypto/rand` buffer (`internal/tracecontext`), one system call per about 28 requests.

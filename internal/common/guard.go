@@ -9,29 +9,27 @@ import (
 
 const GuardMethodName = "CanActivate"
 
-type Guarder any
-
 type GuardItem struct {
 	HTTP HTTPGuardItem
 	WS   WSGuardItem
 }
 
 type guardHandler struct {
-	guarder  Guarder
+	guarder  any
 	handlers []any
 }
 
 type Guard struct {
-	GuardHandlers []guardHandler
+	guardHandlers []guardHandler
 }
 
-func (g *Guard) BindGuard(guarder Guarder, handlers ...any) *Guard {
+func (g *Guard) BindGuard(guard any, handlers ...any) *Guard {
 	guardHandler := guardHandler{
-		guarder:  guarder,
+		guarder:  guard,
 		handlers: handlers,
 	}
 
-	g.GuardHandlers = append(g.GuardHandlers, guardHandler)
+	g.guardHandlers = append(g.guardHandlers, guardHandler)
 	return g
 }
 

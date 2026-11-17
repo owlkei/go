@@ -77,7 +77,7 @@ func main() {
 	app := core.New()
 
 	app.Create(
-		core.ModuleBuilder().
+		core.NewModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{}),
 			).

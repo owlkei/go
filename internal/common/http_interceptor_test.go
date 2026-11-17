@@ -11,7 +11,7 @@ func TestInjectProvidersIntoHTTPInterceptors_Empty(t *testing.T) {
 	ic := &Interceptor{}
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
 
-	items := ic.InjectProvidersIntoHTTPInterceptors(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPInterceptors(ic, r, noopCB, testConstruct)
 	if len(items) != 0 {
 		t.Error(test.DiffMessage(len(items), 0, "no bound interceptors → empty result"))
 	}
@@ -26,7 +26,7 @@ func TestInjectProvidersIntoHTTPInterceptors_ApplyAll(t *testing.T) {
 		"CREATE_orders": "/orders/",
 	})
 
-	items := ic.InjectProvidersIntoHTTPInterceptors(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPInterceptors(ic, r, noopCB, testConstruct)
 	if len(items) != 2 {
 		t.Error(test.DiffMessage(len(items), 2, "interceptor with no handlers applies to all patterns"))
 	}
@@ -48,7 +48,7 @@ func TestInjectProvidersIntoHTTPInterceptors_MainHandlerName(t *testing.T) {
 	ic.BindInterceptor(mockInterceptable{})
 
 	r := buildHTTP(map[string]string{"READ_items": "/items/"})
-	items := ic.InjectProvidersIntoHTTPInterceptors(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPInterceptors(ic, r, noopCB, testConstruct)
 
 	if len(items) != 1 {
 		t.Error(test.DiffMessage(len(items), 1, "one pattern → one item"))
@@ -64,7 +64,7 @@ func TestInjectProvidersIntoHTTPInterceptors_HandlerIsCallableIntercept(t *testi
 	ic.BindInterceptor(mockInterceptable{})
 
 	r := buildHTTP(map[string]string{"READ_users": "/users/"})
-	items := ic.InjectProvidersIntoHTTPInterceptors(r, noopCB, testConstruct)
+	items := InjectProvidersIntoHTTPInterceptors(ic, r, noopCB, testConstruct)
 	if len(items) != 1 {
 		t.Fatal(test.DiffMessage(len(items), 1, "one pattern → one item"))
 	}
@@ -84,7 +84,7 @@ func TestInjectProvidersIntoHTTPInterceptors_NoIntercept_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(nil, "panic", "interceptor with no Intercept method must panic"))
 		}
 	}()
-	ic.InjectProvidersIntoHTTPInterceptors(r, noopCB, testConstruct)
+	InjectProvidersIntoHTTPInterceptors(ic, r, noopCB, testConstruct)
 }
 
 func TestInjectProvidersIntoHTTPInterceptors_WrongParamType_Panics(t *testing.T) {
@@ -97,7 +97,7 @@ func TestInjectProvidersIntoHTTPInterceptors_WrongParamType_Panics(t *testing.T)
 			t.Error(test.DiffMessage(nil, "panic", "Intercept with a non-context first param must panic"))
 		}
 	}()
-	ic.InjectProvidersIntoHTTPInterceptors(r, noopCB, testConstruct)
+	InjectProvidersIntoHTTPInterceptors(ic, r, noopCB, testConstruct)
 }
 
 func TestAsHTTPInterceptor_Valid(t *testing.T) {
