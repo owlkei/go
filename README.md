@@ -80,9 +80,9 @@ Create `main.go`:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type GreetingService struct{}
@@ -152,13 +152,13 @@ Run it with `go run .`, then call it:
 
 | Method | Effect |
 |---|---|
-| `SetLogger(common.LogAdapter)` | Sets the app's logger. Read it back with `app.Logger()`. |
+| `SetLogger(log.LogAdapter)` | Sets the app's logger. Read it back with `app.Logger()`. |
 | `BindGlobalMiddlewares(...)` | Middlewares for every HTTP request. |
 | `BindGlobalGuards(...)` | Guards for every HTTP route and WebSocket event. |
 | `BindGlobalInterceptors(...)` | Interceptors for every HTTP route and WebSocket event. |
 | `BindGlobalExceptionFilters(...)` | Exception filters for every HTTP route and WebSocket event. |
 | `EnableVersioning(versioning.Versioning)` | Routes per API version. See [Versioning](#versioning). |
-| `EnableWS(*core.WSConfig, ...)` | The WebSocket server. See [WebSocket](#websocket). |
+| `EnableWS(*core.WSOptions, ...)` | The WebSocket server. See [WebSocket](#websocket). |
 | `EnableAccessLog()` | One access log line per request. |
 | `EnableDevtool()` | A snapshot of the routes and layers for development tools. |
 
@@ -174,8 +174,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 )
 
 type HealthController struct {
@@ -215,8 +215,8 @@ A module groups controllers and providers, and imports other modules. Build one 
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 )
 
 type UserService struct{}
@@ -278,8 +278,8 @@ func main() {
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -351,7 +351,7 @@ services, repositories, clients.
   when its module is global.
 - Providers are injected by value. Put state that must be shared, such as a connection pool,
   behind a pointer.
-- A field of type `common.Logger` gets the app's logger, and a field of type `common.Publisher`
+- A field of type `log.Logger` gets the app's logger, and a field of type `common.Publisher`
   the app's WebSocket publisher.
 
 Never call `NewProvider` yourself: the instance it returns has no injected fields. To read a
@@ -372,9 +372,9 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type AdminGuard struct{}
@@ -488,9 +488,9 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type OrderController struct {
@@ -576,9 +576,9 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type JobController struct {
@@ -647,13 +647,13 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type RequestLogMiddleware struct {
-	Logger common.Logger
+	Logger log.Logger
 }
 
 func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
@@ -698,7 +698,7 @@ func main() {
 ```
 
 - Exported fields of a middleware get providers injected, like a controller's. A
-  `common.Logger` field gets the app's logger.
+  `log.Logger` field gets the app's logger.
 - `Logger.From(r.Context())` adds the request's `trace_id` and `request` ID to the log line.
 - A middleware's panic never reaches your exception filters. An exception keeps its code and
   message, and any other value answers a fixed `500`. See
@@ -723,9 +723,9 @@ can't have unexported fields: they stop `Create()`.
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -796,9 +796,9 @@ package main
 
 import (
 	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type EnvelopeInterceptor struct{}
@@ -850,9 +850,9 @@ with `*ctx.WSContext` for WebSocket events:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/exception"
 )
 
@@ -931,9 +931,9 @@ package main
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/exception"
 )
 
@@ -986,7 +986,7 @@ See [core › Pipes](core/README.md#pipes) and [ctx › Binding](ctx/README.md#b
 
 ## WebSocket
 
-Turn on the WebSocket server with `app.EnableWS(&core.WSConfig{Path: "ws"})` before `Create`. An
+Turn on the WebSocket server with `app.EnableWS(&core.WSOptions{Path: "ws"})` before `Create`. An
 empty `Path` serves `/ws`. Then write a controller that embeds `common.WS`, with one
 `SUBSCRIBE_…` method per event:
 
@@ -994,9 +994,9 @@ empty `Path` serves `/ws`. Then write a controller that embeds `common.WS`, with
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type ChatMessage struct {
@@ -1018,7 +1018,7 @@ func (instance ChatController) SUBSCRIBE_chat_ANY(payload ctx.WSPayload) ctx.Map
 
 func main() {
 	app := core.New()
-	app.EnableWS(&core.WSConfig{Path: "ws"})
+	app.EnableWS(&core.WSOptions{Path: "ws"})
 	app.Create(core.ModuleBuilder().Controllers(ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -1063,9 +1063,9 @@ subscriber of a topic:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type NewsController struct {
@@ -1097,7 +1097,7 @@ func (instance ChatController) SUBSCRIBE_chat_ANY(payload ctx.WSPayload) ctx.WSP
 
 func main() {
 	app := core.New()
-	app.EnableWS(&core.WSConfig{Path: "ws"})
+	app.EnableWS(&core.WSOptions{Path: "ws"})
 	app.Create(core.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -1115,7 +1115,7 @@ subscribed to `chat.news`.
   `*ctx.WSContext` and bind them in the controller or globally.
 - Middlewares bound with `BindGlobalMiddlewares` don't run on WebSocket connections. Pass the
   middlewares the handshake needs to `EnableWS`, after the config:
-  `app.EnableWS(&core.WSConfig{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+  `app.EnableWS(&core.WSOptions{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
   They run once per connection, at the handshake, and a middleware that doesn't call `next()`
   refuses the connection.
 
@@ -1130,9 +1130,9 @@ Versioning lets one path answer differently per API version. Enable it before `C
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
@@ -1199,9 +1199,9 @@ A `SERVE_…` handler returns the directory to serve. `SERVE_ANY_OF_assets` serv
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type AssetController struct {
@@ -1252,8 +1252,8 @@ binding, variable expansion and validation hooks. It never prints a value. See t
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/modules/config"
 )
 
@@ -1326,9 +1326,9 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/modules/cache"
 )
 
@@ -1387,9 +1387,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/trace"
 )
@@ -1398,7 +1398,7 @@ var client = &http.Client{Transport: trace.Transport(nil), Timeout: 10 * time.Se
 
 type AccountController struct {
 	common.HTTP
-	Logger common.Logger
+	Logger log.Logger
 }
 
 func (instance AccountController) NewController() core.Controller {
@@ -1505,8 +1505,8 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/guards/throttler"
 	"github.com/dangduoc08/ginject/log"
 	"github.com/dangduoc08/ginject/middlewares/compress"
@@ -1576,7 +1576,7 @@ with `"ip":"198.51.100.20"`. The same request over plain HTTP answers
 ### WebSocket
 Middlewares bound with `BindGlobalMiddlewares` don't run on the WebSocket handshake. Pass the ones
 the handshake needs to `EnableWS`, in the same order, for example
-`app.EnableWS(&core.WSConfig{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+`app.EnableWS(&core.WSOptions{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
 `cors` then refuses a handshake from an origin you didn't list.
 
 ### Security notes
@@ -1602,8 +1602,8 @@ package main
 import (
 	"database/sql"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/exception"
 )
 

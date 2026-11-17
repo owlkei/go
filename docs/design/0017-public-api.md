@@ -106,7 +106,7 @@ implement.
 | `Module` | added | The result type of a static module (`var Module = func() ginject.Module`) and of `Register` |
 | `Controller`, `Provider` | added | The result types of `NewController()` and `NewProvider()` |
 | `ServerOptions` | added | Second argument of `Listen`, `ListenTLS`, `Serve` |
-| `WSOptions` | added | Argument of `EnableWS`. Was `core.WSConfig` |
+| `WSOptions` | added | Argument of `EnableWS`. Was `core.WSOptions` |
 | `HTTP`, `WS` | added | Embedded in a controller to declare its transport |
 | `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware` | added | Embedded in a controller to bind layers to handlers |
 | `MiddlewareFn` | added | The type of a middleware list and the result type of `NewMiddleware()` |
@@ -291,7 +291,7 @@ package. Callers change from `x.M(args)` to `pkg.F(x, args)` and from `x.Field` 
 | `(*Versioning).GetTypeString()`, `GetVersion(c)` | `func TypeString(o *Options) string`; `func Version(o *Options, c *ctx.HTTPContext) string` |
 | `core.ModuleBuilder()` returning `*moduleBuilder` | `type ModuleBuilder struct`; `func NewModuleBuilder() *ModuleBuilder` (the root `ModuleBuilder()` calls it) |
 | `(*core.Module).ID()` | removed (unused; the field `id` stays) |
-| `core.WSConfig`, parameter `cfg` | `core.WSOptions`, parameter `opts` |
+| `core.WSOptions`, parameter `cfg` | `core.WSOptions`, parameter `opts` |
 | `core.loggerKey`, `core.publisherKey` string literals | `genFieldKey(reflect.TypeFor[log.Logger]())`, `genFieldKey(reflect.TypeFor[common.Publisher]())` |
 | `accesslog.AccessLogConfig`, `NewAccessLog(cfg)` | `AccessLogOptions`, `NewAccessLog(opts *AccessLogOptions)` |
 
@@ -326,7 +326,7 @@ Looked at and kept on purpose:
 
 | Kind | Rule | Applied by this design |
 |---|---|---|
-| Settings struct | `XxxOptions`, `XxxModuleOptions` for a module; passed as `opts *XxxOptions`; `nil` means defaults (D-032). `Config` is reserved for `modules/config` | `WSConfig` → `WSOptions`, `AccessLogConfig` → `AccessLogOptions`, `Versioning` → `VersioningOptions` (pointer parameter). Known exception until roadmap 0006: `EnableWS(nil)` still fails (backlog) |
+| Settings struct | `XxxOptions`, `XxxModuleOptions` for a module; passed as `opts *XxxOptions`; `nil` means defaults (D-032). `Config` is reserved for `modules/config` | `WSOptions` → `WSOptions`, `AccessLogConfig` → `AccessLogOptions`, `Versioning` → `VersioningOptions` (pointer parameter). Known exception until roadmap 0006: `EnableWS(nil)` still fails (backlog) |
 | Layer (middleware, guard, interceptor, filter) | A value type whose exported fields are its options; no options struct, no constructor; the container calls `New<Layer>()` | none (already so) |
 | Option boolean | Starts with `Is` | `H2C` → `IsH2C`, `AddSource` → `IsAddSource` |
 | Constructor | `New<Type>`; `New` for the package's main type; a builder entry is `<Type>Builder()`; a dynamic module is `Register(opts)` | none on the surface; `core.NewModuleBuilder` inside |

@@ -1,6 +1,6 @@
 # Log
 
-*Package `log` is the built-in logger of `Ginject`: a `common.Logger` on top of `log/slog` with a JSON, text or pretty format, `log` struct tags and field masking that also apply to a logger you bring, `From(ctx)` for the IDs of the request a line belongs to, and an output that never makes a request wait for stdout while an app serves.*
+*Package `log` is the built-in logger of `Ginject`: a `log.Logger` on top of `log/slog` with a JSON, text or pretty format, `log` struct tags and field masking that also apply to a logger you bring, `From(ctx)` for the IDs of the request a line belongs to, and an output that never makes a request wait for stdout while an app serves.*
 
 - [Log](#log)
   - [Key Features](#key-features)
@@ -16,6 +16,7 @@
     - [NewLog](#newlog)
     - [WrapLogger](#wraplogger)
     - [From](#from)
+  - [Logger and LogAdapter](#logger-and-logadapter)
   - [How values are written](#how-values-are-written)
   - [Struct tags](#struct-tags)
   - [Masking](#masking)
@@ -41,7 +42,7 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/log"
 )
 
@@ -191,7 +192,7 @@ Builds a new logger from the options. Output goes to stdout.
 - Description: The options; `nil` means level Info, the default format, no source and no mask rule
 
 #### Returns
-- 1st value: `common.Logger`
+- 1st value: `Logger`
 
 #### Usage
 
@@ -214,7 +215,7 @@ logger := log.NewLog(&log.LogOptions{LogFormat: log.TextFormat})
 Returns a logger that converts and masks the arguments (see [How values are written](#how-values-are-written) and [Masking](#masking)), then calls the same method of `next` once.
 
 #### Parameters
-- 1st parameter: `common.LogAdapter`
+- 1st parameter: `LogAdapter`
 
 - Description: The logger to wrap: any type with `Debug`, `Info`, `Warn`, `Error` and `Fatal` (zap's `SugaredLogger` shape)
 
@@ -223,7 +224,7 @@ Returns a logger that converts and masks the arguments (see [How values are writ
 - Description: The paths to mask; `nil` masks nothing
 
 #### Returns
-- 1st value: `common.Logger`
+- 1st value: `Logger`
 
 #### Usage
 
@@ -245,7 +246,7 @@ logger := log.WrapLogger(myLogger, []string{"password", "token.*"})
 
 ### From
 
-`From(ctx context.Context) common.Logger` is a method of every `common.Logger` (`NewLog`, `WrapLogger`, the logger `Ginject` injects). It returns the same logger with the fields of the request, WebSocket connection or message that `ctx` belongs to: `trace_id`, `request`, `connection`, `message`, `upstream`, in that order, empty ones skipped. Inside a handler, a guard or a service called with it, pass `c.Context()`.
+`From(ctx context.Context) Logger` is a method of every `Logger` (`NewLog`, `WrapLogger`, the logger `Ginject` injects). It returns the same logger with the fields of the request, WebSocket connection or message that `ctx` belongs to: `trace_id`, `request`, `connection`, `message`, `upstream`, in that order, empty ones skipped. Inside a handler, a guard or a service called with it, pass `c.Context()`.
 
 #### Parameters
 - 1st parameter: `context.Context`
@@ -253,7 +254,7 @@ logger := log.WrapLogger(myLogger, []string{"password", "token.*"})
 - Description: A context from `Ginject` (`c.Context()`, or a context derived from it); `nil` is allowed
 
 #### Returns
-- 1st value: `common.Logger`
+- 1st value: `Logger`
 
 #### Usage
 
@@ -263,12 +264,12 @@ package users
 import (
 	"context"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 )
 
 type UserService struct {
-	Logger common.Logger
+	Logger log.Logger
 }
 
 func (instance UserService) NewProvider() core.Provider {
@@ -292,6 +293,22 @@ The built-in JSON logger writes `{"time":"…","level":"INFO","msg":"SignedIn","
 - With `AddSource`, the source is the caller of `Info`, as without `From`.
 - The receiver is not modified. The scoped logger is kept with the request's scope: a later `From` on the same scope and logger returns it without allocating, from any goroutine, during and after the request. Two loggers on one scope never mix their formats or mask rules.
 - `From(ctx).Fatal(…)` writes the record with the fields, then exits as `Fatal` does.
+
+## Logger and LogAdapter
+
+`LogAdapter` is the five methods a log library implements to be the app's logger: `Debug`, `Info`, `Warn`, `Error`, `Fatal`, each `(msg string, args ...any)`. `app.SetLogger` and `WrapLogger` take one.
+
+`Logger` is the leveled logger a controller, provider or layer asks for with an exported field of type `log.Logger`: a `LogAdapter` plus `From(ctx context.Context) Logger`. The field receives the app's logger, the one given to `SetLogger`. Only `Ginject` implements it (`NewLog`, `WrapLogger`, `app.Logger()`): a type with the five methods and no `From` is a `LogAdapter`, not a `Logger`.
+
+```go
+type UserService struct {
+	Logger log.Logger
+}
+
+func (instance UserService) SignIn(ctx context.Context, name string) {
+	instance.Logger.From(ctx).Info("SignedIn", "name", name)
+}
+```
 
 ## How values are written
 

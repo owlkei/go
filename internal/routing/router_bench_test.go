@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 func randomSegment(rnd *rand.Rand, n int) string {

@@ -1,11 +1,11 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 )
 
-var Module = func() *core.Module {
-	var module = core.ModuleBuilder().
+var Module = func() ginject.Module {
+	var module = ginject.ModuleBuilder().
 		Controllers(Controller{}).
 		Build()
 

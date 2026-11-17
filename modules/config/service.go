@@ -7,8 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 type ConfigService struct {

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 )
 
-func call(t *testing.T, app *core.App, method, path, token, body string) (int, map[string]any) {
+func call(t *testing.T, app http.Handler, method, path, token, body string) (int, map[string]any) {
 	t.Helper()
 
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -31,8 +31,8 @@ func call(t *testing.T, app *core.App, method, path, token, body string) (int, m
 }
 
 func TestShopRoutes(t *testing.T) {
-	app := core.New()
-	app.Create(core.ModuleBuilder().Imports(Module).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Imports(Module).Build())
 
 	user := `{"email":"a@example.com","name":"Ann","password":"secret12"}`
 	if code, out := call(t, app, http.MethodPost, "/users?email=a@example.com&name=Ann&password=secret12", "", user); code >= 300 || out["store"] == nil {

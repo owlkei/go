@@ -37,7 +37,7 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/middlewares/cors"
 )
 

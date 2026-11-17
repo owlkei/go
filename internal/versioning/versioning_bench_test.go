@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 func benchCtxQuery(key, val string) *ctx.HTTPContext {

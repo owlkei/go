@@ -9,10 +9,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/trace"
+	"github.com/dangduoc08/ginject/log"
 )
 
 const (
@@ -28,11 +28,11 @@ const (
 
 type AccessLogConfig struct {
 	Tracer *trace.Tracer
-	Logger common.LogAdapter
+	Logger log.LogAdapter
 }
 
 type AccessLog struct {
-	logger     common.LogAdapter
+	logger     log.LogAdapter
 	builtin    accessLogger
 	stopListen func()
 	shards     [shardCount]shard

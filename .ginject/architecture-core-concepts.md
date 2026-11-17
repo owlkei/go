@@ -141,7 +141,7 @@ The order is fixed (comment on `App.Create` in `core/app.go`); the walkthrough i
 [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md) § Phase 2:
 
 ```
-container.addInterface(common.Logger)
+container.addInterface(log.Logger)
 container.wire(root)       modules discovered, OnInit + providers per module, controllers injected
 initWS()                   only when EnableWS was called
 initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(), initInterceptors(), initMainHandlers()
@@ -284,7 +284,7 @@ type Provider interface {
 ### 4.2 Matching
 
 - A field matches a provider of exactly its type: `UserService` and `*UserService` are different keys
-- Lookup order per field (`injectDependencies`, `core/fn.go`): a provider of the module, a global provider, an interface the container holds (`common.Logger`, `common.Publisher`); otherwise a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`, and any other field keeps the value it was given (configuration)
+- Lookup order per field (`injectDependencies`, `core/fn.go`): a provider of the module, a global provider, an interface the container holds (`log.Logger`, `common.Publisher`); otherwise a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`, and any other field keeps the value it was given (configuration)
 - An unexported field panics `dependency injection: can't set value to unexported '<field>' field of the <type> provider`
 
 ---

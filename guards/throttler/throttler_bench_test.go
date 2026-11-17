@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/memorycache"
 )
 

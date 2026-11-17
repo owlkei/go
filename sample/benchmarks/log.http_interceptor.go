@@ -2,12 +2,12 @@ package benchmarks
 
 import (
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/log"
 )
 
 type LogModuleHTTPInterceptor struct {
-	common.Logger
+	log.Logger
 }
 
 func (instance LogModuleHTTPInterceptor) Intercept(c ginject.HTTPContext, aggregation ginject.Aggregation) any {

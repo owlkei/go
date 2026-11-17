@@ -1,8 +1,7 @@
 package dto
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject"
 )
 
 const (
@@ -16,7 +15,7 @@ type PaginationDTO struct {
 	Limit int `bind:"limit"`
 }
 
-func (paginationDTO PaginationDTO) Transform(query ctx.Query, arg common.ArgumentMetadata) any {
+func (paginationDTO PaginationDTO) Transform(query ginject.Query, arg ginject.ArgumentMetadata) any {
 	bound, _ := query.Bind(paginationDTO)
 	dto := bound.(PaginationDTO)
 

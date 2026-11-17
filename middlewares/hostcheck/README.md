@@ -34,7 +34,7 @@ list: `hostcheck` does it before any guard or handler runs.
 package main
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/middlewares/hostcheck"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )

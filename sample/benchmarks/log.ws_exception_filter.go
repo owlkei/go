@@ -2,16 +2,16 @@ package benchmarks
 
 import (
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/log"
 )
 
 type LogModuleWSExceptionFilter struct {
-	common.ExceptionFilter
-	common.Logger
+	ginject.ExceptionFilter
+	log.Logger
 }
 
-func (instance LogModuleWSExceptionFilter) Catch(c ginject.WSContext, ex ginject.Exception) {
+func (instance LogModuleWSExceptionFilter) Catch(c ginject.WSContext, ex *exception.Exception) {
 	if c.Conn.Config().Location.Query().Get("error_module_ws_ex") == "true" {
 		panic(exception.InternalServerErrorException("LogModuleWSExceptionFilter error triggered"))
 	}

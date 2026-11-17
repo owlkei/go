@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 )
 
 func TestPingRoute(t *testing.T) {
-	app := core.New()
-	app.Create(core.ModuleBuilder().Imports(Module).Build())
+	app := ginject.New()
+	app.Create(ginject.ModuleBuilder().Imports(Module).Build())
 
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ping", nil))

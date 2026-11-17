@@ -1,21 +1,21 @@
 package catalog
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/crypto"
+	"github.com/dangduoc08/ginject/sample/shared"
 )
 
 type StoreService struct {
 	Stores StoreRepository
 }
 
-func (svc StoreService) NewProvider() core.Provider {
+func (svc StoreService) NewProvider() ginject.Provider {
 	return svc
 }
 
 func (svc StoreService) CreateStore(ownerID, name string) (Store, error) {
-	id, err := crypto.UUID()
+	id, err := shared.UUID()
 	if err != nil {
 		return Store{}, exception.InternalServerErrorException("failed to create store")
 	}
@@ -38,7 +38,7 @@ func (svc StoreService) StoreByOwner(ownerID string) (Store, error) {
 }
 
 func (svc StoreService) CreateCategory(storeID, name string) (Category, error) {
-	id, err := crypto.UUID()
+	id, err := shared.UUID()
 	if err != nil {
 		return Category{}, exception.InternalServerErrorException("failed to create category")
 	}
@@ -84,7 +84,7 @@ func (svc StoreService) DeleteCategory(storeID, categoryID string) error {
 }
 
 func (svc StoreService) CreateProduct(storeID, categoryID, name string, price float64) (Product, error) {
-	id, err := crypto.UUID()
+	id, err := shared.UUID()
 	if err != nil {
 		return Product{}, exception.InternalServerErrorException("failed to create product")
 	}

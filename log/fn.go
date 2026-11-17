@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 )
 
@@ -31,7 +30,7 @@ var (
 
 type slotEntry struct {
 	owner  any
-	logger common.Logger
+	logger Logger
 }
 
 type kv struct {

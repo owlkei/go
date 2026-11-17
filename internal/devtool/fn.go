@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	reflect "reflect"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 func generateLayersByPattern(httpLayers []common.HTTPLayer) map[string][]*common.HTTPLayer {

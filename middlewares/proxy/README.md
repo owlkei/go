@@ -55,9 +55,9 @@ Bind `proxy` first, before every middleware that reads the client:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
 

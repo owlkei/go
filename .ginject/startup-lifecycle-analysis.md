@@ -46,7 +46,7 @@ Sequential, on the calling goroutine:
 Create(m)
   ├─ m == nil          → panic "invalid module: Create needs a root module"
   ├─ second call       → panic "invalid app: Create called twice"
-  ├─ container.addInterface(common.Logger)
+  ├─ container.addInterface(log.Logger)
   ├─ container.wire(m)                      core/container.go
   │    ├─ addGlobals(root)                  the root's providers are global
   │    ├─ scanGlobals(root)                 walks the static *Module imports first: every IsGlobal

@@ -15,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/test"
@@ -286,7 +285,7 @@ func builtinAccessLog(t *testing.T, format int) (*trace.Tracer, *outBuf) {
 }
 
 func TestAccessLog_AcceptsLogAdapter(t *testing.T) {
-	var adapter common.LogAdapter = newFakeLogger()
+	var adapter log.LogAdapter = newFakeLogger()
 	al := NewAccessLog(&AccessLogConfig{Tracer: &trace.Tracer{}, Logger: adapter})
 	al.Stop()
 }

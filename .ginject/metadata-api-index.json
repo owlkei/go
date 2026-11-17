@@ -50,12 +50,12 @@
             },
             {
               "name": "SetLogger",
-              "signature": "SetLogger(logger common.LogAdapter) *App",
+              "signature": "SetLogger(logger log.LogAdapter) *App",
               "purpose": "The one way to set the logger (before Create; nil panics)"
             },
             {
               "name": "Logger",
-              "signature": "Logger() common.Logger",
+              "signature": "Logger() log.Logger",
               "purpose": "The app's logger, never nil"
             },
             {

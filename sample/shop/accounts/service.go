@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/crypto"
 	"github.com/dangduoc08/ginject/modules/cache"
+	"github.com/dangduoc08/ginject/sample/shared"
 )
 
 const (
@@ -22,12 +22,12 @@ type UserService struct {
 	Cache cache.CacheService
 }
 
-func (svc UserService) NewProvider() core.Provider {
+func (svc UserService) NewProvider() ginject.Provider {
 	return svc
 }
 
 func (svc UserService) Register(email, name, password string) (User, error) {
-	id, err := crypto.UUID()
+	id, err := shared.UUID()
 	if err != nil {
 		return User{}, exception.InternalServerErrorException("failed to create user")
 	}
@@ -46,7 +46,7 @@ func (svc UserService) Authenticate(email, password string) (User, string, error
 		return User{}, "", exception.UnauthorizedException("invalid email or password")
 	}
 
-	token, err := crypto.UUID()
+	token, err := shared.UUID()
 	if err != nil {
 		return User{}, "", exception.InternalServerErrorException("failed to start session")
 	}

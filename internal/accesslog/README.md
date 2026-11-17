@@ -31,7 +31,7 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/log"
 )
 
@@ -89,7 +89,7 @@ Required: `true`
 The tracer whose events the access log listens to. `core` passes the app's tracer.
 
 ### Logger
-Type: `common.LogAdapter`
+Type: `log.LogAdapter`
 
 Default: none
 
@@ -121,7 +121,7 @@ defer al.Stop()
 #### Rules
 - A nil config, tracer or logger panics with `invalid access log: a tracer and a logger are required`.
 - The logger is called on the emitting goroutine, before `Emit` returns, once per `complete` event, in order.
-- A `common.LogAdapter` that is not a `common.Logger` is accepted.
+- A `log.LogAdapter` that is not a `log.Logger` is accepted.
 - No goroutine is started, while running or after `Stop`.
 
 ### Stop

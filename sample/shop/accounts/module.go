@@ -1,12 +1,12 @@
 package accounts
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/sample/shop/infra"
 )
 
-var Module = func() *core.Module {
-	var module = core.ModuleBuilder().
+var Module = func() ginject.Module {
+	var module = ginject.ModuleBuilder().
 		Imports(infra.CacheModule).
 		Providers(UserRepository{}, UserService{}).
 		Controllers(SessionsController{}).

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
+	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 )

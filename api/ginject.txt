@@ -1,404 +1,37 @@
+pkg ginject, func New() ginject.App
 pkg ginject, func TraceTransport(http.RoundTripper) http.RoundTripper
 pkg ginject, type Aggregation = *aggregation.Aggregation
 pkg ginject, type App = *core.App
+pkg ginject, type ArgumentMetadata = common.ArgumentMetadata
 pkg ginject, type Body = ctx.Body
-pkg ginject, type Exception = *exception.Exception
+pkg ginject, type Controller = core.Controller
+pkg ginject, type DataFile = *ctx.DataFile
+pkg ginject, type ExceptionFilter = common.ExceptionFilter
 pkg ginject, type FieldLevel = ctx.FieldLevel
 pkg ginject, type File = ctx.File
 pkg ginject, type Form = ctx.Form
+pkg ginject, type Guard = common.Guard
+pkg ginject, type HTTP = common.HTTP
 pkg ginject, type HTTPContext = *ctx.HTTPContext
 pkg ginject, type Header = ctx.Header
+pkg ginject, type Interceptor = common.Interceptor
 pkg ginject, type Map = ctx.Map
+pkg ginject, type Middleware = common.Middleware
+pkg ginject, type MiddlewareFn = common.MiddlewareFn
+pkg ginject, type Module = *core.Module
 pkg ginject, type Next = ctx.Next
 pkg ginject, type Param = ctx.Param
+pkg ginject, type Provider = core.Provider
 pkg ginject, type Publisher = common.Publisher
 pkg ginject, type Query = ctx.Query
 pkg ginject, type Redirect = ctx.Redirect
-pkg ginject, type Request = *http.Request
-pkg ginject, type Response = http.ResponseWriter
-pkg ginject, type Router = *routing.Router
+pkg ginject, type ServerOptions = core.ServerOptions
 pkg ginject, type Versioning = versioning.Versioning
+pkg ginject, type WS = common.WS
 pkg ginject, type WSContext = *ctx.WSContext
+pkg ginject, type WSOptions = core.WSOptions
 pkg ginject, type WSPayload = ctx.WSPayload
-pkg ginject/common, const BodyPipeableKey untyped string = "body"
-pkg ginject/common, const ContextPipeableKey untyped string = "context"
-pkg ginject/common, const ContextTypeHTTP untyped string = "http"
-pkg ginject/common, const ContextTypeWS untyped string = "ws"
-pkg ginject/common, const ExceptionFilterMethodName untyped string = "Catch"
-pkg ginject/common, const FilePipeableKey untyped string = "file"
-pkg ginject/common, const FormPipeableKey untyped string = "form"
-pkg ginject/common, const GuardMethodName untyped string = "CanActivate"
-pkg ginject/common, const HeaderPipeableKey untyped string = "header"
-pkg ginject/common, const InterceptorMethodName untyped string = "Intercept"
-pkg ginject/common, const ParamPipeableKey untyped string = "param"
-pkg ginject/common, const QueryPipeableKey untyped string = "query"
-pkg ginject/common, const TokenAnd untyped string = "AND"
-pkg ginject/common, const TokenAny untyped string = "ANY"
-pkg ginject/common, const TokenBy untyped string = "BY"
-pkg ginject/common, const TokenFile untyped string = "FILE"
-pkg ginject/common, const TokenOf untyped string = "OF"
-pkg ginject/common, const TokenVersion untyped string = "VERSION"
-pkg ginject/common, const WSPayloadPipeableKey untyped string = "wsPayload"
-pkg ginject/common, func AsHTTPExceptionFilter(any) (common.HTTPCatch, bool)
-pkg ginject/common, func AsHTTPGuard(any) (common.HTTPCanActivate, bool)
-pkg ginject/common, func AsHTTPInterceptor(any) (common.HTTPIntercept, bool)
-pkg ginject/common, func AsWSExceptionFilter(any) (common.WSCatch, bool)
-pkg ginject/common, func AsWSGuard(any) (common.WSCanActivate, bool)
-pkg ginject/common, func AsWSInterceptor(any) (common.WSIntercept, bool)
-pkg ginject/common, func BuildWSGuardMiddleware(common.WSCanActivate) ctx.WSHandler
-pkg ginject/common, func BuildWSInterceptMiddleware(string, common.WSIntercept) ctx.WSHandler
-pkg ginject/common, func ExceptionFilterShapeError(any) error
-pkg ginject/common, func GetFuncName(any) string
-pkg ginject/common, func GuardShapeError(any) error
-pkg ginject/common, func InterceptorShapeError(any) error
-pkg ginject/common, func NormalizeRecovered(any) *exception.Exception
-pkg ginject/common, func ParseFuncNameToURL(string) (string, string, string)
-pkg ginject/common, func ParseWSFuncNameToEvent(string) (string, bool)
-pkg ginject/common, func RunWSCatchChain(*ctx.WSContext, []common.WSCatch, any)
-pkg ginject/common, func ToWSEventName(string) string
-pkg ginject/common, method (*common.ExceptionFilter) BindExceptionFilter(common.ExceptionFilterable, ...any) *common.ExceptionFilter
-pkg ginject/common, method (*common.ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
-pkg ginject/common, method (*common.ExceptionFilter) InjectProvidersIntoWSExceptionFilters(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
-pkg ginject/common, method (*common.Guard) BindGuard(common.Guarder, ...any) *common.Guard
-pkg ginject/common, method (*common.Guard) InjectProvidersIntoHTTPGuards(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
-pkg ginject/common, method (*common.Guard) InjectProvidersIntoWSGuards(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
-pkg ginject/common, method (*common.HTTP) AddHandlerToRouterMap([]string, string, any)
-pkg ginject/common, method (*common.HTTP) GetPrefixes() []map[string]string
-pkg ginject/common, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
-pkg ginject/common, method (*common.Interceptor) BindInterceptor(common.Interceptable, ...any) *common.Interceptor
-pkg ginject/common, method (*common.Interceptor) InjectProvidersIntoHTTPInterceptors(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
-pkg ginject/common, method (*common.Interceptor) InjectProvidersIntoWSInterceptors(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
-pkg ginject/common, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
-pkg ginject/common, method (*common.Middleware) InjectProvidersIntoHTTPMiddlewares(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.MiddlewareItem
-pkg ginject/common, method (*common.WS) AddHandlerToEventMap(string, any)
-pkg ginject/common, type ArgumentMetadata struct
-pkg ginject/common, type ArgumentMetadata struct, ContextType string
-pkg ginject/common, type ArgumentMetadata struct, ParamType string
-pkg ginject/common, type BodyPipeable interface
-pkg ginject/common, type BodyPipeable interface, Transform(ctx.Body, common.ArgumentMetadata) any
-pkg ginject/common, type CommonItem struct
-pkg ginject/common, type CommonItem struct, Handler any
-pkg ginject/common, type CommonItem struct, MainHandlerName string
-pkg ginject/common, type CommonItem struct, Name string
-pkg ginject/common, type ContextPipeable interface
-pkg ginject/common, type ContextPipeable interface, Transform(*ctx.HTTPContext, common.ArgumentMetadata) any
-pkg ginject/common, type ExceptionFilter struct
-pkg ginject/common, type ExceptionFilter struct, ExceptionFilterHandlers []common.exceptionFilterHandler
-pkg ginject/common, type ExceptionFilterItem struct
-pkg ginject/common, type ExceptionFilterItem struct, HTTP common.HTTPExceptionFilterItem
-pkg ginject/common, type ExceptionFilterItem struct, WS common.WSExceptionFilterItem
-pkg ginject/common, type ExceptionFilterable interface
-pkg ginject/common, type FilePipeable interface
-pkg ginject/common, type FilePipeable interface, Transform(ctx.File, common.ArgumentMetadata) any
-pkg ginject/common, type FormPipeable interface
-pkg ginject/common, type FormPipeable interface, Transform(ctx.Form, common.ArgumentMetadata) any
-pkg ginject/common, type Guard struct
-pkg ginject/common, type Guard struct, GuardHandlers []common.guardHandler
-pkg ginject/common, type GuardItem struct
-pkg ginject/common, type GuardItem struct, HTTP common.HTTPGuardItem
-pkg ginject/common, type GuardItem struct, WS common.WSGuardItem
-pkg ginject/common, type Guarder interface
-pkg ginject/common, type HTTP struct
-pkg ginject/common, type HTTP struct, FuncNameToPatternMap map[string]string
-pkg ginject/common, type HTTP struct, PatternToFuncNameMap map[string]string
-pkg ginject/common, type HTTP struct, RouterMap map[string]any
-pkg ginject/common, type HTTPCanActivate = func(*ctx.HTTPContext) bool
-pkg ginject/common, type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
-pkg ginject/common, type HTTPExceptionFilterItem struct
-pkg ginject/common, type HTTPExceptionFilterItem struct, Common common.CommonItem
-pkg ginject/common, type HTTPExceptionFilterItem struct, Method string
-pkg ginject/common, type HTTPExceptionFilterItem struct, Pattern string
-pkg ginject/common, type HTTPExceptionFilterItem struct, Route string
-pkg ginject/common, type HTTPExceptionFilterItem struct, Version string
-pkg ginject/common, type HTTPGuardItem struct
-pkg ginject/common, type HTTPGuardItem struct, Common common.CommonItem
-pkg ginject/common, type HTTPGuardItem struct, Method string
-pkg ginject/common, type HTTPGuardItem struct, Pattern string
-pkg ginject/common, type HTTPGuardItem struct, Route string
-pkg ginject/common, type HTTPGuardItem struct, Version string
-pkg ginject/common, type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
-pkg ginject/common, type HTTPInterceptorItem struct
-pkg ginject/common, type HTTPInterceptorItem struct, Common common.CommonItem
-pkg ginject/common, type HTTPInterceptorItem struct, Method string
-pkg ginject/common, type HTTPInterceptorItem struct, Pattern string
-pkg ginject/common, type HTTPInterceptorItem struct, Route string
-pkg ginject/common, type HTTPInterceptorItem struct, Version string
-pkg ginject/common, type HTTPLayer struct
-pkg ginject/common, type HTTPLayer struct, ControllerPath string
-pkg ginject/common, type HTTPLayer struct, Handler any
-pkg ginject/common, type HTTPLayer struct, MainHandlerName string
-pkg ginject/common, type HTTPLayer struct, Method string
-pkg ginject/common, type HTTPLayer struct, Name string
-pkg ginject/common, type HTTPLayer struct, Pattern string
-pkg ginject/common, type HTTPLayer struct, Route string
-pkg ginject/common, type HTTPLayer struct, Version string
-pkg ginject/common, type HTTPMiddlewareItem struct
-pkg ginject/common, type HTTPMiddlewareItem struct, Common common.CommonItem
-pkg ginject/common, type HTTPMiddlewareItem struct, Method string
-pkg ginject/common, type HTTPMiddlewareItem struct, Pattern string
-pkg ginject/common, type HTTPMiddlewareItem struct, Route string
-pkg ginject/common, type HTTPMiddlewareItem struct, Version string
-pkg ginject/common, type HeaderPipeable interface
-pkg ginject/common, type HeaderPipeable interface, Transform(ctx.Header, common.ArgumentMetadata) any
-pkg ginject/common, type Interceptable interface
-pkg ginject/common, type Interceptor struct
-pkg ginject/common, type Interceptor struct, InterceptorHandlers []common.interceptorHandler
-pkg ginject/common, type InterceptorItem struct
-pkg ginject/common, type InterceptorItem struct, HTTP common.HTTPInterceptorItem
-pkg ginject/common, type InterceptorItem struct, WS common.WSInterceptorItem
-pkg ginject/common, type LogAdapter interface
-pkg ginject/common, type LogAdapter interface, Debug(string, ...any)
-pkg ginject/common, type LogAdapter interface, Error(string, ...any)
-pkg ginject/common, type LogAdapter interface, Fatal(string, ...any)
-pkg ginject/common, type LogAdapter interface, Info(string, ...any)
-pkg ginject/common, type LogAdapter interface, Warn(string, ...any)
-pkg ginject/common, type Logger interface
-pkg ginject/common, type Logger interface, Debug(string, ...any)
-pkg ginject/common, type Logger interface, Error(string, ...any)
-pkg ginject/common, type Logger interface, Fatal(string, ...any)
-pkg ginject/common, type Logger interface, From(context.Context) common.Logger
-pkg ginject/common, type Logger interface, Info(string, ...any)
-pkg ginject/common, type Logger interface, Warn(string, ...any)
-pkg ginject/common, type Middleware struct
-pkg ginject/common, type Middleware struct, MiddlewareHandlers []common.middlewareHandler
-pkg ginject/common, type MiddlewareFn interface
-pkg ginject/common, type MiddlewareFn interface, Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg ginject/common, type MiddlewareItem struct
-pkg ginject/common, type MiddlewareItem struct, HTTP common.HTTPMiddlewareItem
-pkg ginject/common, type ParamPipeable interface
-pkg ginject/common, type ParamPipeable interface, Transform(ctx.Param, common.ArgumentMetadata) any
-pkg ginject/common, type Prefix struct
-pkg ginject/common, type Prefix struct, Handlers []any
-pkg ginject/common, type Prefix struct, Value string
-pkg ginject/common, type Publisher interface
-pkg ginject/common, type Publisher interface, Publish(string, ...any) error
-pkg ginject/common, type QueryPipeable interface
-pkg ginject/common, type QueryPipeable interface, Transform(ctx.Query, common.ArgumentMetadata) any
-pkg ginject/common, type Use = func(*http.Request, http.ResponseWriter, ctx.Next)
-pkg ginject/common, type WS struct
-pkg ginject/common, type WS struct, EventMap map[string]any
-pkg ginject/common, type WSCanActivate = func(*ctx.WSContext) bool
-pkg ginject/common, type WSCatch = func(*ctx.WSContext, *exception.Exception)
-pkg ginject/common, type WSExceptionFilterItem struct
-pkg ginject/common, type WSExceptionFilterItem struct, Common common.CommonItem
-pkg ginject/common, type WSExceptionFilterItem struct, EventName string
-pkg ginject/common, type WSGuardItem struct
-pkg ginject/common, type WSGuardItem struct, Common common.CommonItem
-pkg ginject/common, type WSGuardItem struct, EventName string
-pkg ginject/common, type WSIntercept = func(*ctx.WSContext, *aggregation.Aggregation) any
-pkg ginject/common, type WSInterceptorItem struct
-pkg ginject/common, type WSInterceptorItem struct, Common common.CommonItem
-pkg ginject/common, type WSInterceptorItem struct, EventName string
-pkg ginject/common, type WSLayer struct
-pkg ginject/common, type WSLayer struct, EventName string
-pkg ginject/common, type WSLayer struct, Handler any
-pkg ginject/common, type WSLayer struct, Name string
-pkg ginject/common, type WSPayloadPipeable interface
-pkg ginject/common, type WSPayloadPipeable interface, Transform(ctx.WSPayload, common.ArgumentMetadata) any
-pkg ginject/common, var HTTPOperations map[string]string
-pkg ginject/common, var HTTPTokenMap map[string]string
-pkg ginject/common, var WSOperations map[string]string
-pkg ginject/core, const TypeAck core.WSPayloadType = "ack"
-pkg ginject/core, const TypeConnected core.WSPayloadType = "connected"
-pkg ginject/core, const TypeError core.WSPayloadType = "error"
-pkg ginject/core, const TypeEvent core.WSPayloadType = "event"
-pkg ginject/core, const TypePing core.WSPayloadType = "ping"
-pkg ginject/core, const TypePong core.WSPayloadType = "pong"
-pkg ginject/core, const TypePublish core.WSPayloadType = "publish"
-pkg ginject/core, const TypeSubscribe core.WSPayloadType = "subscribe"
-pkg ginject/core, const TypeUnsubscribe core.WSPayloadType = "unsubscribe"
-pkg ginject/core, func ModuleBuilder() *core.moduleBuilder
-pkg ginject/core, func New() *core.App
-pkg ginject/core, func NewWS(*core.WSConfig) *core.WS
-pkg ginject/core, func NewWSConnmgr(common.Logger, *memorybroker.Broker) *core.WSConnmgr
-pkg ginject/core, method (*core.App) BindGlobalExceptionFilters(...common.ExceptionFilterable) *core.App
-pkg ginject/core, method (*core.App) BindGlobalGuards(...common.Guarder) *core.App
-pkg ginject/core, method (*core.App) BindGlobalInterceptors(...common.Interceptable) *core.App
-pkg ginject/core, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
-pkg ginject/core, method (*core.App) Create(*core.Module)
-pkg ginject/core, method (*core.App) EnableAccessLog() *core.App
-pkg ginject/core, method (*core.App) EnableDevtool() *core.App
-pkg ginject/core, method (*core.App) EnableVersioning(versioning.Versioning) *core.App
-pkg ginject/core, method (*core.App) EnableWS(*core.WSConfig, ...common.MiddlewareFn) *core.App
-pkg ginject/core, method (*core.App) Get(core.Provider) any
-pkg ginject/core, method (*core.App) Listen(int, *core.ServerOptions) error
-pkg ginject/core, method (*core.App) ListenTLS(int, string, string, *core.ServerOptions) error
-pkg ginject/core, method (*core.App) Logger() common.Logger
-pkg ginject/core, method (*core.App) Serve(net.Listener, *core.ServerOptions) error
-pkg ginject/core, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
-pkg ginject/core, method (*core.App) SetLogger(common.LogAdapter) *core.App
-pkg ginject/core, method (*core.App) Stop()
-pkg ginject/core, method (*core.Module) ID() string
-pkg ginject/core, method (*core.Module) Prefix(string) *core.Module
-pkg ginject/core, method (*core.WSConnection) TrySend(core.WSPayload) bool
-pkg ginject/core, method (*core.WSConnmgr) Get(string) (*core.WSConnection, bool)
-pkg ginject/core, method (*core.WSConnmgr) Register(string, *websocket.Conn) *core.WSConnection
-pkg ginject/core, method (*core.WSConnmgr) Subscribe(string, string, memorybroker.MessageHandler) error
-pkg ginject/core, method (*core.WSConnmgr) Unregister(string)
-pkg ginject/core, method (*core.WSConnmgr) Unsubscribe(string, string) error
-pkg ginject/core, type App struct
-pkg ginject/core, type Controller interface
-pkg ginject/core, type Controller interface, NewController() core.Controller
-pkg ginject/core, type HTTP struct
-pkg ginject/core, type Module struct
-pkg ginject/core, type Module struct, IsGlobal bool
-pkg ginject/core, type Module struct, Name string
-pkg ginject/core, type Module struct, OnInit func()
-pkg ginject/core, type Module struct, OnReady func()
-pkg ginject/core, type Module struct, OnShutdown func()
-pkg ginject/core, type Provider interface
-pkg ginject/core, type Provider interface, NewProvider() core.Provider
-pkg ginject/core, type ServerOptions struct
-pkg ginject/core, type ServerOptions struct, H2C bool
-pkg ginject/core, type ServerOptions struct, MaxRequestBodyBytes int64
-pkg ginject/core, type ServerOptions struct, ShutdownTimeout time.Duration
-pkg ginject/core, type ServerOptions struct, TLSConfig *tls.Config
-pkg ginject/core, type WS struct
-pkg ginject/core, type WSConfig struct
-pkg ginject/core, type WSConfig struct, Path string
-pkg ginject/core, type WSConnection struct
-pkg ginject/core, type WSConnection struct, Conn *websocket.Conn
-pkg ginject/core, type WSConnection struct, CreatedAt time.Time
-pkg ginject/core, type WSConnection struct, ID string
-pkg ginject/core, type WSConnection struct, LastSeen time.Time
-pkg ginject/core, type WSConnmgr struct
-pkg ginject/core, type WSConnmgr struct, Broker *memorybroker.Broker
-pkg ginject/core, type WSPayload struct
-pkg ginject/core, type WSPayload struct, ID string
-pkg ginject/core, type WSPayload struct, Message any
-pkg ginject/core, type WSPayload struct, Topic []string
-pkg ginject/core, type WSPayload struct, Type core.WSPayloadType
-pkg ginject/core, type WSPayloadType string
-pkg ginject/ctx, const RequestID untyped string = "X-Request-Id"
-pkg ginject/ctx, const TagBind untyped string = "bind"
-pkg ginject/ctx, func BindFile(ctx.File, any) (map[string][]*ctx.DataFile, any)
-pkg ginject/ctx, func BindStrArr(map[string][]string, *[]ctx.FieldLevel, any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, func BindStruct(map[string]any, *[]ctx.FieldLevel, any, string, string) (any, []ctx.FieldLevel)
-pkg ginject/ctx, func BinderOf(reflect.Type) (*ctx.Binder, error)
-pkg ginject/ctx, func GetTagParamIndex(string) (int, string)
-pkg ginject/ctx, func GetTagParams(string) []string
-pkg ginject/ctx, func NewHTTPContext() *ctx.HTTPContext
-pkg ginject/ctx, func NewWSContext() *ctx.WSContext
-pkg ginject/ctx, method (*ctx.Binder) File(ctx.File) (map[string][]*ctx.DataFile, any)
-pkg ginject/ctx, method (*ctx.Binder) Header(ctx.Header) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (*ctx.Binder) StrArr(map[string][]string) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (*ctx.Binder) Struct(map[string]any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (*ctx.FieldLevel) Field() string
-pkg ginject/ctx, method (*ctx.FieldLevel) Index() int
-pkg ginject/ctx, method (*ctx.FieldLevel) IsValue() bool
-pkg ginject/ctx, method (*ctx.FieldLevel) Kind() reflect.Kind
-pkg ginject/ctx, method (*ctx.FieldLevel) Namespace() string
-pkg ginject/ctx, method (*ctx.FieldLevel) NestedTag() string
-pkg ginject/ctx, method (*ctx.FieldLevel) Tag() string
-pkg ginject/ctx, method (*ctx.FieldLevel) Type() reflect.Type
-pkg ginject/ctx, method (*ctx.FieldLevel) Value() any
-pkg ginject/ctx, method (*ctx.HTTPContext) AddAggregation(*aggregation.Aggregation)
-pkg ginject/ctx, method (*ctx.HTTPContext) Aggregations() []*aggregation.Aggregation
-pkg ginject/ctx, method (*ctx.HTTPContext) Body() ctx.Body
-pkg ginject/ctx, method (*ctx.HTTPContext) File() ctx.File
-pkg ginject/ctx, method (*ctx.HTTPContext) Form() ctx.Form
-pkg ginject/ctx, method (*ctx.HTTPContext) GetID() string
-pkg ginject/ctx, method (*ctx.HTTPContext) Header() ctx.Header
-pkg ginject/ctx, method (*ctx.HTTPContext) Init(http.ResponseWriter, *http.Request)
-pkg ginject/ctx, method (*ctx.HTTPContext) JSON(any, ...any)
-pkg ginject/ctx, method (*ctx.HTTPContext) JSONP(any, ...any)
-pkg ginject/ctx, method (*ctx.HTTPContext) Param() ctx.Param
-pkg ginject/ctx, method (*ctx.HTTPContext) Query() ctx.Query
-pkg ginject/ctx, method (*ctx.HTTPContext) Redirect(string)
-pkg ginject/ctx, method (*ctx.HTTPContext) Reset()
-pkg ginject/ctx, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
-pkg ginject/ctx, method (*ctx.HTTPContext) Text(string, ...any)
-pkg ginject/ctx, method (*ctx.WSContext) AddAggregation(*aggregation.Aggregation)
-pkg ginject/ctx, method (*ctx.WSContext) Aggregations() []*aggregation.Aggregation
-pkg ginject/ctx, method (*ctx.WSContext) Context() context.Context
-pkg ginject/ctx, method (*ctx.WSContext) GetID() string
-pkg ginject/ctx, method (*ctx.WSContext) Init(*websocket.Conn)
-pkg ginject/ctx, method (*ctx.WSContext) Reset()
-pkg ginject/ctx, method (*ctx.WSContext) Send(any)
-pkg ginject/ctx, method (*ctx.WSContext) SetContext(context.Context)
-pkg ginject/ctx, method (*ctx.WSContext) SetSend(func(any))
-pkg ginject/ctx, method (*ctx.WSContext) SetWSPayload(ctx.WSPayload)
-pkg ginject/ctx, method (*ctx.WSContext) WSPayload() ctx.WSPayload
-pkg ginject/ctx, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (ctx.Body) BindValue(any) any
-pkg ginject/ctx, method (ctx.Body) Del(string)
-pkg ginject/ctx, method (ctx.Body) Get(string) any
-pkg ginject/ctx, method (ctx.Body) Has(string) bool
-pkg ginject/ctx, method (ctx.Body) Set(string, any)
-pkg ginject/ctx, method (ctx.File) Bind(any) any
-pkg ginject/ctx, method (ctx.Form) Add(string, string)
-pkg ginject/ctx, method (ctx.Form) Bind(any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (ctx.Form) BindValue(any) any
-pkg ginject/ctx, method (ctx.Form) Del(string)
-pkg ginject/ctx, method (ctx.Form) Get(string) string
-pkg ginject/ctx, method (ctx.Form) Has(string) bool
-pkg ginject/ctx, method (ctx.Form) Set(string, string)
-pkg ginject/ctx, method (ctx.Header) Add(string, string)
-pkg ginject/ctx, method (ctx.Header) Bind(any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (ctx.Header) BindValue(any) any
-pkg ginject/ctx, method (ctx.Header) Del(string)
-pkg ginject/ctx, method (ctx.Header) Get(string) string
-pkg ginject/ctx, method (ctx.Header) Has(string) bool
-pkg ginject/ctx, method (ctx.Header) Set(string, string)
-pkg ginject/ctx, method (ctx.Param) Add(string, string)
-pkg ginject/ctx, method (ctx.Param) Bind(any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (ctx.Param) BindValue(any) any
-pkg ginject/ctx, method (ctx.Param) Del(string)
-pkg ginject/ctx, method (ctx.Param) Get(string) string
-pkg ginject/ctx, method (ctx.Param) Has(string) bool
-pkg ginject/ctx, method (ctx.Param) Set(string, string)
-pkg ginject/ctx, method (ctx.Query) Add(string, string)
-pkg ginject/ctx, method (ctx.Query) Bind(any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (ctx.Query) BindValue(any) any
-pkg ginject/ctx, method (ctx.Query) Del(string)
-pkg ginject/ctx, method (ctx.Query) Get(string) string
-pkg ginject/ctx, method (ctx.Query) Has(string) bool
-pkg ginject/ctx, method (ctx.Query) Set(string, string)
-pkg ginject/ctx, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
-pkg ginject/ctx, method (ctx.WSPayload) BindValue(any) any
-pkg ginject/ctx, type Binder struct
-pkg ginject/ctx, type Body map[string]any
-pkg ginject/ctx, type Context interface
-pkg ginject/ctx, type Context interface, Context() context.Context
-pkg ginject/ctx, type Context interface, GetID() string
-pkg ginject/ctx, type Context interface, Reset()
-pkg ginject/ctx, type DataFile struct
-pkg ginject/ctx, type DataFile struct, Dest string
-pkg ginject/ctx, type DataFile struct, FileHeader *multipart.FileHeader embedded
-pkg ginject/ctx, type DataFile struct, Filename string
-pkg ginject/ctx, type DataFile struct, Index int
-pkg ginject/ctx, type DataFile struct, Key string
-pkg ginject/ctx, type DataFile struct, Size int64
-pkg ginject/ctx, type DataFile struct, Total int
-pkg ginject/ctx, type DataFile struct, Type string
-pkg ginject/ctx, type ErrFunc func(error)
-pkg ginject/ctx, type FieldLevel struct
-pkg ginject/ctx, type File map[string][]*multipart.FileHeader
-pkg ginject/ctx, type Form map[string][]string
-pkg ginject/ctx, type HTTPContext struct
-pkg ginject/ctx, type HTTPContext struct, Code int
-pkg ginject/ctx, type HTTPContext struct, Next ctx.Next
-pkg ginject/ctx, type HTTPContext struct, ParamKeys map[string][]int
-pkg ginject/ctx, type HTTPContext struct, ParamValues []string
-pkg ginject/ctx, type HTTPContext struct, Request *http.Request embedded
-pkg ginject/ctx, type HTTPContext struct, ResponseWriter http.ResponseWriter embedded
-pkg ginject/ctx, type HTTPContext struct, Timestamp time.Time
-pkg ginject/ctx, type HTTPHandler = func(*ctx.HTTPContext)
-pkg ginject/ctx, type Header map[string][]string
-pkg ginject/ctx, type JSONAppender interface
-pkg ginject/ctx, type JSONAppender interface, AppendJSON([]byte) []byte
-pkg ginject/ctx, type Map map[string]any
-pkg ginject/ctx, type Next = func()
-pkg ginject/ctx, type Param map[string][]string
-pkg ginject/ctx, type Query map[string][]string
-pkg ginject/ctx, type Redirect = func(string)
-pkg ginject/ctx, type WSContext struct
-pkg ginject/ctx, type WSContext struct, Conn *websocket.Conn embedded
-pkg ginject/ctx, type WSContext struct, Next ctx.Next
-pkg ginject/ctx, type WSContext struct, Timestamp time.Time
-pkg ginject/ctx, type WSHandler = func(*ctx.WSContext)
-pkg ginject/ctx, type WSPayload map[string]any
-pkg ginject/ctx, var ErrBindTarget error
+pkg ginject, var ModuleBuilder func() *core.moduleBuilder
 pkg ginject/exception, func BadGatewayException(string, ...any) exception.Exception
 pkg ginject/exception, func BadRequestException(string, ...any) exception.Exception
 pkg ginject/exception, func ConflictException(string, ...any) exception.Exception
@@ -461,13 +94,26 @@ pkg ginject/log, const JSONFormat log.logFormat = 12
 pkg ginject/log, const PrettyFormat log.logFormat = 13
 pkg ginject/log, const TextFormat log.logFormat = 11
 pkg ginject/log, const WarnLevel slog.Level = 4
-pkg ginject/log, func NewLog(*log.LogOptions) common.Logger
-pkg ginject/log, func WrapLogger(common.LogAdapter, []string) common.Logger
+pkg ginject/log, func NewLog(*log.LogOptions) log.Logger
+pkg ginject/log, func WrapLogger(log.LogAdapter, []string) log.Logger
+pkg ginject/log, type LogAdapter interface
+pkg ginject/log, type LogAdapter interface, Debug(string, ...any)
+pkg ginject/log, type LogAdapter interface, Error(string, ...any)
+pkg ginject/log, type LogAdapter interface, Fatal(string, ...any)
+pkg ginject/log, type LogAdapter interface, Info(string, ...any)
+pkg ginject/log, type LogAdapter interface, Warn(string, ...any)
 pkg ginject/log, type LogOptions struct
 pkg ginject/log, type LogOptions struct, AddSource bool
 pkg ginject/log, type LogOptions struct, Level slog.Level
 pkg ginject/log, type LogOptions struct, LogFormat log.logFormat
 pkg ginject/log, type LogOptions struct, MaskFields []string
+pkg ginject/log, type Logger interface
+pkg ginject/log, type Logger interface, Debug(string, ...any)
+pkg ginject/log, type Logger interface, Error(string, ...any)
+pkg ginject/log, type Logger interface, Fatal(string, ...any)
+pkg ginject/log, type Logger interface, From(context.Context) log.Logger
+pkg ginject/log, type Logger interface, Info(string, ...any)
+pkg ginject/log, type Logger interface, Warn(string, ...any)
 pkg ginject/middlewares/compress, method (compress.Compress) NewMiddleware() common.MiddlewareFn
 pkg ginject/middlewares/compress, method (compress.Compress) Use(*http.Request, http.ResponseWriter, ctx.Next)
 pkg ginject/middlewares/compress, type Compress struct
@@ -583,41 +229,206 @@ reach aggregation.Aggregation, method (*aggregation.Aggregation) Pipe(...aggrega
 reach aggregation.Aggregation, method (*aggregation.Aggregation) SetMainData(any) *aggregation.Aggregation
 reach aggregation.Aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
 reach aggregation.Aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
+reach common.ArgumentMetadata, field ContextType string
+reach common.ArgumentMetadata, field ParamType string
+reach common.CommonItem, field Handler any
+reach common.CommonItem, field MainHandlerName string
+reach common.CommonItem, field Name string
+reach common.ExceptionFilter, field ExceptionFilterHandlers []common.exceptionFilterHandler
+reach common.ExceptionFilter, method (*common.ExceptionFilter) BindExceptionFilter(common.ExceptionFilterable, ...any) *common.ExceptionFilter
+reach common.ExceptionFilter, method (*common.ExceptionFilter) InjectProvidersIntoHTTPExceptionFilters(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
+reach common.ExceptionFilter, method (*common.ExceptionFilter) InjectProvidersIntoWSExceptionFilters(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.ExceptionFilterItem
+reach common.ExceptionFilterItem, field HTTP common.HTTPExceptionFilterItem
+reach common.ExceptionFilterItem, field WS common.WSExceptionFilterItem
+reach common.Guard, field GuardHandlers []common.guardHandler
+reach common.Guard, method (*common.Guard) BindGuard(common.Guarder, ...any) *common.Guard
+reach common.Guard, method (*common.Guard) InjectProvidersIntoHTTPGuards(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
+reach common.Guard, method (*common.Guard) InjectProvidersIntoWSGuards(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.GuardItem
+reach common.GuardItem, field HTTP common.HTTPGuardItem
+reach common.GuardItem, field WS common.WSGuardItem
+reach common.HTTP, field FuncNameToPatternMap map[string]string
+reach common.HTTP, field PatternToFuncNameMap map[string]string
+reach common.HTTP, field RouterMap map[string]any
+reach common.HTTP, method (*common.HTTP) AddHandlerToRouterMap([]string, string, any)
+reach common.HTTP, method (*common.HTTP) GetPrefixes() []map[string]string
+reach common.HTTP, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
+reach common.HTTPExceptionFilterItem, field Common common.CommonItem
+reach common.HTTPExceptionFilterItem, field Method string
+reach common.HTTPExceptionFilterItem, field Pattern string
+reach common.HTTPExceptionFilterItem, field Route string
+reach common.HTTPExceptionFilterItem, field Version string
+reach common.HTTPGuardItem, field Common common.CommonItem
+reach common.HTTPGuardItem, field Method string
+reach common.HTTPGuardItem, field Pattern string
+reach common.HTTPGuardItem, field Route string
+reach common.HTTPGuardItem, field Version string
+reach common.HTTPInterceptorItem, field Common common.CommonItem
+reach common.HTTPInterceptorItem, field Method string
+reach common.HTTPInterceptorItem, field Pattern string
+reach common.HTTPInterceptorItem, field Route string
+reach common.HTTPInterceptorItem, field Version string
+reach common.HTTPMiddlewareItem, field Common common.CommonItem
+reach common.HTTPMiddlewareItem, field Method string
+reach common.HTTPMiddlewareItem, field Pattern string
+reach common.HTTPMiddlewareItem, field Route string
+reach common.HTTPMiddlewareItem, field Version string
+reach common.Interceptor, field InterceptorHandlers []common.interceptorHandler
+reach common.Interceptor, method (*common.Interceptor) BindInterceptor(common.Interceptable, ...any) *common.Interceptor
+reach common.Interceptor, method (*common.Interceptor) InjectProvidersIntoHTTPInterceptors(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
+reach common.Interceptor, method (*common.Interceptor) InjectProvidersIntoWSInterceptors(*common.WS, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.InterceptorItem
+reach common.InterceptorItem, field HTTP common.HTTPInterceptorItem
+reach common.InterceptorItem, field WS common.WSInterceptorItem
+reach common.Middleware, field MiddlewareHandlers []common.middlewareHandler
+reach common.Middleware, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
+reach common.Middleware, method (*common.Middleware) InjectProvidersIntoHTTPMiddlewares(*common.HTTP, func(int, reflect.Type, reflect.Value, reflect.Value), func(any, string) any) []common.MiddlewareItem
+reach common.MiddlewareFn, method (common.MiddlewareFn) Use(*http.Request, http.ResponseWriter, ctx.Next)
+reach common.MiddlewareItem, field HTTP common.HTTPMiddlewareItem
+reach common.Publisher, method (common.Publisher) Publish(string, ...any) error
+reach common.WS, field EventMap map[string]any
+reach common.WS, method (*common.WS) AddHandlerToEventMap(string, any)
+reach common.WSExceptionFilterItem, field Common common.CommonItem
+reach common.WSExceptionFilterItem, field EventName string
+reach common.WSGuardItem, field Common common.CommonItem
+reach common.WSGuardItem, field EventName string
+reach common.WSInterceptorItem, field Common common.CommonItem
+reach common.WSInterceptorItem, field EventName string
+reach core.App, method (*core.App) BindGlobalExceptionFilters(...common.ExceptionFilterable) *core.App
+reach core.App, method (*core.App) BindGlobalGuards(...common.Guarder) *core.App
+reach core.App, method (*core.App) BindGlobalInterceptors(...common.Interceptable) *core.App
+reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
+reach core.App, method (*core.App) Create(*core.Module)
+reach core.App, method (*core.App) EnableAccessLog() *core.App
+reach core.App, method (*core.App) EnableDevtool() *core.App
+reach core.App, method (*core.App) EnableVersioning(versioning.Versioning) *core.App
+reach core.App, method (*core.App) EnableWS(*core.WSOptions, ...common.MiddlewareFn) *core.App
+reach core.App, method (*core.App) Get(core.Provider) any
+reach core.App, method (*core.App) Listen(int, *core.ServerOptions) error
+reach core.App, method (*core.App) ListenTLS(int, string, string, *core.ServerOptions) error
+reach core.App, method (*core.App) Logger() log.Logger
+reach core.App, method (*core.App) Serve(net.Listener, *core.ServerOptions) error
+reach core.App, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
+reach core.App, method (*core.App) SetLogger(log.LogAdapter) *core.App
+reach core.App, method (*core.App) Stop()
+reach core.Controller, method (core.Controller) NewController() core.Controller
+reach core.Module, field IsGlobal bool
+reach core.Module, field Name string
+reach core.Module, field OnInit func()
+reach core.Module, field OnReady func()
+reach core.Module, field OnShutdown func()
+reach core.Module, method (*core.Module) ID() string
+reach core.Module, method (*core.Module) Prefix(string) *core.Module
+reach core.Provider, method (core.Provider) NewProvider() core.Provider
+reach core.ServerOptions, field H2C bool
+reach core.ServerOptions, field MaxRequestBodyBytes int64
+reach core.ServerOptions, field ShutdownTimeout time.Duration
+reach core.ServerOptions, field TLSConfig *tls.Config
+reach core.WSOptions, field Path string
 reach core.moduleBuilder, method (*core.moduleBuilder) Build() *core.Module
 reach core.moduleBuilder, method (*core.moduleBuilder) Controllers(...core.Controller) *core.moduleBuilder
 reach core.moduleBuilder, method (*core.moduleBuilder) Imports(...any) *core.moduleBuilder
 reach core.moduleBuilder, method (*core.moduleBuilder) Providers(...core.Provider) *core.moduleBuilder
+reach ctx.Body, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Body, method (ctx.Body) BindValue(any) any
+reach ctx.Body, method (ctx.Body) Del(string)
+reach ctx.Body, method (ctx.Body) Get(string) any
+reach ctx.Body, method (ctx.Body) Has(string) bool
+reach ctx.Body, method (ctx.Body) Set(string, any)
+reach ctx.Body, type map[string]any
+reach ctx.DataFile, field Dest string
+reach ctx.DataFile, field FileHeader *multipart.FileHeader embedded
+reach ctx.DataFile, field Filename string
+reach ctx.DataFile, field Index int
+reach ctx.DataFile, field Key string
+reach ctx.DataFile, field Size int64
+reach ctx.DataFile, field Total int
+reach ctx.DataFile, field Type string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Field() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Index() int
+reach ctx.FieldLevel, method (*ctx.FieldLevel) IsValue() bool
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Kind() reflect.Kind
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Namespace() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) NestedTag() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Tag() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Type() reflect.Type
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Value() any
+reach ctx.File, method (ctx.File) Bind(any) any
+reach ctx.File, type map[string][]*multipart.FileHeader
+reach ctx.Form, method (ctx.Form) Add(string, string)
+reach ctx.Form, method (ctx.Form) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Form, method (ctx.Form) BindValue(any) any
+reach ctx.Form, method (ctx.Form) Del(string)
+reach ctx.Form, method (ctx.Form) Get(string) string
+reach ctx.Form, method (ctx.Form) Has(string) bool
+reach ctx.Form, method (ctx.Form) Set(string, string)
+reach ctx.Form, type map[string][]string
+reach ctx.HTTPContext, field Code int
+reach ctx.HTTPContext, field Next ctx.Next
+reach ctx.HTTPContext, field ParamKeys map[string][]int
+reach ctx.HTTPContext, field ParamValues []string
+reach ctx.HTTPContext, field Request *http.Request embedded
+reach ctx.HTTPContext, field ResponseWriter http.ResponseWriter embedded
+reach ctx.HTTPContext, field Timestamp time.Time
+reach ctx.HTTPContext, method (*ctx.HTTPContext) AddAggregation(*aggregation.Aggregation)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Aggregations() []*aggregation.Aggregation
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Body() ctx.Body
+reach ctx.HTTPContext, method (*ctx.HTTPContext) File() ctx.File
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Form() ctx.Form
+reach ctx.HTTPContext, method (*ctx.HTTPContext) GetID() string
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Header() ctx.Header
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Init(http.ResponseWriter, *http.Request)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) JSON(any, ...any)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) JSONP(any, ...any)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Param() ctx.Param
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Query() ctx.Query
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Redirect(string)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Reset()
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Text(string, ...any)
+reach ctx.Header, method (ctx.Header) Add(string, string)
+reach ctx.Header, method (ctx.Header) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Header, method (ctx.Header) BindValue(any) any
+reach ctx.Header, method (ctx.Header) Del(string)
+reach ctx.Header, method (ctx.Header) Get(string) string
+reach ctx.Header, method (ctx.Header) Has(string) bool
+reach ctx.Header, method (ctx.Header) Set(string, string)
+reach ctx.Header, type map[string][]string
+reach ctx.Map, type map[string]any
+reach ctx.Param, method (ctx.Param) Add(string, string)
+reach ctx.Param, method (ctx.Param) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Param, method (ctx.Param) BindValue(any) any
+reach ctx.Param, method (ctx.Param) Del(string)
+reach ctx.Param, method (ctx.Param) Get(string) string
+reach ctx.Param, method (ctx.Param) Has(string) bool
+reach ctx.Param, method (ctx.Param) Set(string, string)
+reach ctx.Param, type map[string][]string
+reach ctx.Query, method (ctx.Query) Add(string, string)
+reach ctx.Query, method (ctx.Query) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Query, method (ctx.Query) BindValue(any) any
+reach ctx.Query, method (ctx.Query) Del(string)
+reach ctx.Query, method (ctx.Query) Get(string) string
+reach ctx.Query, method (ctx.Query) Has(string) bool
+reach ctx.Query, method (ctx.Query) Set(string, string)
+reach ctx.Query, type map[string][]string
+reach ctx.WSContext, field Conn *websocket.Conn embedded
+reach ctx.WSContext, field Next ctx.Next
+reach ctx.WSContext, field Timestamp time.Time
+reach ctx.WSContext, method (*ctx.WSContext) AddAggregation(*aggregation.Aggregation)
+reach ctx.WSContext, method (*ctx.WSContext) Aggregations() []*aggregation.Aggregation
+reach ctx.WSContext, method (*ctx.WSContext) Context() context.Context
+reach ctx.WSContext, method (*ctx.WSContext) GetID() string
+reach ctx.WSContext, method (*ctx.WSContext) Init(*websocket.Conn)
+reach ctx.WSContext, method (*ctx.WSContext) Reset()
+reach ctx.WSContext, method (*ctx.WSContext) Send(any)
+reach ctx.WSContext, method (*ctx.WSContext) SetContext(context.Context)
+reach ctx.WSContext, method (*ctx.WSContext) SetSend(func(any))
+reach ctx.WSContext, method (*ctx.WSContext) SetWSPayload(ctx.WSPayload)
+reach ctx.WSContext, method (*ctx.WSContext) WSPayload() ctx.WSPayload
+reach ctx.WSPayload, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.WSPayload, method (ctx.WSPayload) BindValue(any) any
+reach ctx.WSPayload, type map[string]any
 reach log.logFormat, type int
-reach memorybroker.Broker, method (memorybroker.Broker) Close() error
-reach memorybroker.Broker, method (memorybroker.Broker) Publish(string, any) error
-reach memorybroker.Broker, method (memorybroker.Broker) PublishAsync(string, any) error
-reach memorybroker.Broker, method (memorybroker.Broker) Subscribe(string, memorybroker.MessageHandler) (memorybroker.Subscription, error)
-reach memorybroker.Broker, method (memorybroker.Broker) Unsubscribe(memorybroker.Subscription) error
-reach memorybroker.Message, field Payload any
-reach memorybroker.Message, field Timestamp time.Time
-reach memorybroker.Message, field Topic string
-reach memorybroker.MessageHandler, type func(*memorybroker.Message)
-reach memorybroker.Subscription, method (memorybroker.Subscription) ID() string
-reach memorybroker.Subscription, method (memorybroker.Subscription) Topic() string
-reach memorybroker.Subscription, method (memorybroker.Subscription) Unsubscribe() error
 reach memorycache.MemoryCacheOptions, field MaxBytes int64
 reach memorycache.MemoryCacheOptions, field MaxEntries int
-reach routing.Router, field GlobalMiddlewares []ctx.HTTPHandler
-reach routing.Router, field InjectableHandlers map[string]any
-reach routing.Router, method (*routing.Router) Add(string, string, string, ctx.HTTPHandler) *routing.Router
-reach routing.Router, method (*routing.Router) AddInjectableHandler(string, string, string, any) *routing.Router
-reach routing.Router, method (*routing.Router) For([]string, string, string) func(...ctx.HTTPHandler) *routing.Router
-reach routing.Router, method (*routing.Router) Match(string, string, string, []string) (*routing.RouterItem, []string)
-reach routing.Router, method (*routing.Router) Use(...ctx.HTTPHandler) *routing.Router
-reach routing.RouterItem, field HandlerIndex int
-reach routing.RouterItem, field Handlers []ctx.HTTPHandler
-reach routing.RouterItem, field Index int
-reach routing.RouterItem, field Injectable any
-reach routing.RouterItem, field Method string
-reach routing.RouterItem, field ParamKeys map[string][]int
-reach routing.RouterItem, field ParamNames []string
-reach routing.RouterItem, field Pattern string
-reach routing.RouterItem, field Version string
 reach versioning.Versioning, field DefaultVersion string
 reach versioning.Versioning, field Extractor versioning.ExtractorHandler
 reach versioning.Versioning, field Key string

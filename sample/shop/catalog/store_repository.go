@@ -4,7 +4,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject"
 )
 
 type catalogTables struct {
@@ -21,7 +21,7 @@ type StoreRepository struct {
 	Tables *catalogTables
 }
 
-func (repo StoreRepository) NewProvider() core.Provider {
+func (repo StoreRepository) NewProvider() ginject.Provider {
 	repo.Tables = &catalogTables{
 		stores:             map[string]Store{},
 		storeByOwner:       map[string]string{},

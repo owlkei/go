@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/net/websocket"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
@@ -264,7 +264,7 @@ func TestHostCheck_WebSocketHandshake(t *testing.T) {
 	build := func(hosts ...string) *httptest.Server {
 		app := core.New()
 		app.SetLogger(silentLogger{})
-		app.EnableWS(&core.WSConfig{Path: "/ws"}, HostCheck{Hosts: hosts})
+		app.EnableWS(&core.WSOptions{Path: "/ws"}, HostCheck{Hosts: hosts})
 		app.Create(core.ModuleBuilder().Build())
 		return httptest.NewServer(app)
 	}

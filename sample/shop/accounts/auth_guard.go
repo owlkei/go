@@ -4,8 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject"
 )
 
 type contextKey string
@@ -13,7 +12,7 @@ type contextKey string
 const currentUserKey contextKey = "shop.currentUser"
 
 type AuthGuard struct {
-	common.Guard
+	ginject.Guard
 	UserService
 }
 
@@ -21,7 +20,7 @@ func (instance AuthGuard) NewGuard() AuthGuard {
 	return instance
 }
 
-func (instance AuthGuard) CanActivate(c *ctx.HTTPContext) bool {
+func (instance AuthGuard) CanActivate(c ginject.HTTPContext) bool {
 	token := strings.TrimPrefix(c.Header().Get("Authorization"), "Bearer ")
 	if token == "" {
 		return false
@@ -37,7 +36,7 @@ func (instance AuthGuard) CanActivate(c *ctx.HTTPContext) bool {
 	return true
 }
 
-func CurrentUser(c *ctx.HTTPContext) User {
+func CurrentUser(c ginject.HTTPContext) User {
 	user, _ := c.Context().Value(currentUserKey).(User)
 
 	return user

@@ -2,13 +2,13 @@ package benchmarks
 
 import (
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/log"
 )
 
 type LogModuleWSGuard struct {
-	common.Guard
-	common.Logger
+	ginject.Guard
+	log.Logger
 }
 
 func (instance LogModuleWSGuard) CanActivate(c ginject.WSContext) bool {

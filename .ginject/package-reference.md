@@ -37,12 +37,12 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `BindGlobalGuards(g ...common.Guarder) *App` | Register global guards |
 | `BindGlobalInterceptors(i ...common.Interceptable) *App` | Register global interceptors |
 | `BindGlobalExceptionFilters(f ...common.ExceptionFilterable) *App` | Register global exception filters |
-| `EnableWS(cfg *WSConfig, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSConfig` argument**, not zero-arg |
+| `EnableWS(cfg *WSOptions, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSOptions` argument**, not zero-arg |
 | `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
 | `EnableVersioning(v versioning.Versioning) *App` | Enable API versioning |
-| `SetLogger(logger common.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
-| `Logger() common.Logger` | The app's logger; never `nil` (the built-in logger by default) |
+| `SetLogger(logger log.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
+| `Logger() log.Logger` | The app's logger; never `nil` (the built-in logger by default) |
 
 **There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `ServerOptions.MaxRequestBodyBytes` of the serving call (0 = 10 MiB, negative = no cap), stored in the unexported `atomic.Int64` `maxRequestBodyBytes` (10 MiB from `New()`) — see "HTTP Server Defaults" below.
 
@@ -382,15 +382,15 @@ All constructors share the shape `func XException(message string, opts ...any) E
 **Responsibility**: Structured logging (wraps `log/slog`)
 
 ```go
-func NewLog(opts *LogOptions) common.Logger        // returns common.Logger, NOT a package-local `log.Logger` — no such type exists
-func WrapLogger(next common.LogAdapter, maskFields []string) common.Logger
+func NewLog(opts *LogOptions) log.Logger        // returns log.Logger, NOT a package-local `log.Logger` — no such type exists
+func WrapLogger(next log.LogAdapter, maskFields []string) log.Logger
 ```
 
-`common.LogAdapter` is the five methods (`Debug`, `Info`, `Warn`, `Error`, `Fatal`); `common.Logger` is
+`log.LogAdapter` is the five methods (`Debug`, `Info`, `Warn`, `Error`, `Fatal`); `log.Logger` is
 `LogAdapter` plus `From(ctx context.Context) Logger` (the scope's `trace_id`, `request`, `connection`,
 `message`, `upstream` added to every line; built-in: after the arguments, adapter: before them). A type
 with the five methods only is a `LogAdapter`: pass it to `SetLogger` / `WrapLogger`, never store it in a
-`common.Logger` variable.
+`log.Logger` variable.
 
 ```go
 type LogOptions struct {
@@ -827,7 +827,7 @@ Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `htt
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger common.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
+- `accesslog` — `NewAccessLog(cfg *AccessLogConfig) *AccessLog` (`AccessLogConfig{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
 - `versioning` — `Versioning` type with `GetTypeString() string` / `GetVersion(c *ctx.HTTPContext) string`; wired in via `App.EnableVersioning(v)`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
 - `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`: the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.

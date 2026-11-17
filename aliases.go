@@ -1,31 +1,33 @@
 package ginject
 
 import (
-	"net/http"
-
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
-	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/routing"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 type (
-	App         = *core.App
-	Map         = ctx.Map
-	Router      = *routing.Router
-	Aggregation = *aggregation.Aggregation
-	Exception   = *exception.Exception
-	Versioning  = versioning.Versioning
-	FieldLevel  = ctx.FieldLevel
-	Publisher   = common.Publisher
+	App           = *core.App
+	Module        = *core.Module
+	Controller    = core.Controller
+	Provider      = core.Provider
+	ServerOptions = core.ServerOptions
+	WSOptions     = core.WSOptions
+
+	HTTP             = common.HTTP
+	WS               = common.WS
+	Guard            = common.Guard
+	Interceptor      = common.Interceptor
+	ExceptionFilter  = common.ExceptionFilter
+	Middleware       = common.Middleware
+	MiddlewareFn     = common.MiddlewareFn
+	ArgumentMetadata = common.ArgumentMetadata
+	Publisher        = common.Publisher
 
 	HTTPContext = *ctx.HTTPContext
 	WSContext   = *ctx.WSContext
-	Request     = *http.Request
-	Response    = http.ResponseWriter
 	Body        = ctx.Body
 	Form        = ctx.Form
 	File        = ctx.File
@@ -33,6 +35,19 @@ type (
 	Header      = ctx.Header
 	Param       = ctx.Param
 	WSPayload   = ctx.WSPayload
+	Map         = ctx.Map
 	Next        = ctx.Next
 	Redirect    = ctx.Redirect
+	FieldLevel  = ctx.FieldLevel
+	DataFile    = *ctx.DataFile
+
+	Aggregation = *aggregation.Aggregation
+
+	Versioning = versioning.Versioning
 )
+
+var ModuleBuilder = core.ModuleBuilder
+
+func New() App {
+	return core.New()
+}

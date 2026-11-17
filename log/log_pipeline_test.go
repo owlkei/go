@@ -15,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/test"
@@ -86,7 +85,7 @@ func (w *holdWriter) String() string {
 	return w.buf.String()
 }
 
-func asyncLogger(t *testing.T, w io.Writer, opts LogOptions) (common.Logger, *logpipe.Sink) {
+func asyncLogger(t *testing.T, w io.Writer, opts LogOptions) (Logger, *logpipe.Sink) {
 	t.Helper()
 	s := logpipe.New(w)
 	s.StartAsync()

@@ -87,7 +87,7 @@ calls it once (per app, whatever the number of importers) while discovering the 
 discovers the importing module's other imports. Before any module func runs, `scanGlobals` walks the
 static `*Module` imports from the root, so its arguments resolve from the global providers of the whole
 static tree (the root module's providers, and those of every `IsGlobal` module at any depth, imported
-before or after the func), then `common.Logger` and `common.Publisher`. Each func's result is scanned
+before or after the func), then `log.Logger` and `common.Publisher`. Each func's result is scanned
 the same way before the next func is called. A provider used this way is constructed then, after the
 `OnInit` of the module that declares it (that hook then does not run again). An unresolvable
 argument panics `dependency injection: can't resolve argument of '<func>' …`.
@@ -97,7 +97,7 @@ type ReportService struct{}
 
 func (instance ReportService) NewProvider() core.Provider { return instance }
 
-func ReportModule(logger common.Logger) *core.Module {
+func ReportModule(logger log.Logger) *core.Module {
 	logger.Info("ReportModule")
 	return core.ModuleBuilder().Providers(ReportService{}).Build()
 }
@@ -197,7 +197,7 @@ constructs `DatabasePool`), then injects and calls `UserService.NewProvider()`.
 For each exported field (`injectDependencies`, `core/fn.go`):
 1. a provider of the module (own or imported)
 2. a global provider
-3. an interface the container holds (`common.Logger`, `common.Publisher`)
+3. an interface the container holds (`log.Logger`, `common.Publisher`)
 4. otherwise: a field whose type implements `Provider` panics `dependency injection: can't resolve dependency …`; any other field keeps the value it was given
 
 An unexported field panics `dependency injection: can't set value to unexported '<field>' field of the <type> <kind>`.
@@ -236,7 +236,7 @@ var InfraModule = func() *core.Module {
 
 - The providers of the root module and of every `IsGlobal` module (at any import depth) are visible to every module
 - A global module still has to be in the tree (imported somewhere) to be discovered
-- Module funcs' arguments resolve only from global providers (the root's and every `IsGlobal` module's of the static tree, plus those returned by funcs called earlier), then `common.Logger` and `common.Publisher`
+- Module funcs' arguments resolve only from global providers (the root's and every `IsGlobal` module's of the static tree, plus those returned by funcs called earlier), then `log.Logger` and `common.Publisher`
 
 ---
 

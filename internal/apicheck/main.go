@@ -20,12 +20,6 @@ var targetPackages = []string{
 	"guards/*",
 }
 
-var packagesStep4Moves = []string{
-	"common",
-	"core",
-	"ctx",
-}
-
 func main() {
 	write := flag.Bool("write", false, "write "+apiFile+" instead of comparing")
 	flag.Parse()
@@ -34,7 +28,7 @@ func main() {
 
 func run(dir string, allowed []string, write bool, out io.Writer) (code int) {
 	if allowed == nil {
-		allowed = append(append([]string(nil), targetPackages...), packagesStep4Moves...)
+		allowed = targetPackages
 	}
 	surface, err := loadSurface(dir)
 	if err != nil {

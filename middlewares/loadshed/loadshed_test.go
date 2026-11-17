@@ -16,8 +16,8 @@ import (
 
 	"golang.org/x/net/websocket"
 
-	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -285,7 +285,7 @@ func TestLoadShed_ReleasedAtWSHandshake(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	shed := LoadShed{MaxInFlight: 1, MaxQueue: -1}
-	app.EnableWS(&core.WSConfig{Path: "/ws"}, shed)
+	app.EnableWS(&core.WSOptions{Path: "/ws"}, shed)
 	app.Create(core.ModuleBuilder().Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -305,7 +305,7 @@ func TestLoadShed_ReleasedAtWSHandshake(t *testing.T) {
 func TestLoadShed_RefusedWSHandshake(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
-	app.EnableWS(&core.WSConfig{Path: "/ws"}, LoadShed{MaxInFlight: 1, MaxQueue: -1}, terminalMiddleware(func(w http.ResponseWriter, r *http.Request, next func()) {
+	app.EnableWS(&core.WSOptions{Path: "/ws"}, LoadShed{MaxInFlight: 1, MaxQueue: -1}, terminalMiddleware(func(w http.ResponseWriter, r *http.Request, next func()) {
 		panic(exception.ForbiddenException("no"))
 	}))
 	app.Create(core.ModuleBuilder().Build())

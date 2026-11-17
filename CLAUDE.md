@@ -192,7 +192,7 @@ There is no HTTP client or persistence module: outbound calls use `net/http` wit
 
 ### WebSocket
 
-Controllers embed `common.WS` (alongside or instead of `common.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_PERSON_ANY`); enable the endpoint with `app.EnableWS(&core.WSConfig{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `ctx.WSPayload` for incoming events and fan out through `common.Publisher`.
+Controllers embed `common.WS` (alongside or instead of `common.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_PERSON_ANY`); enable the endpoint with `app.EnableWS(&core.WSOptions{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `ctx.WSPayload` for incoming events and fan out through `common.Publisher`.
 
 ### Bootstrap-time Error Convention
 

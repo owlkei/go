@@ -3,8 +3,7 @@ package dto
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 )
 
@@ -13,7 +12,7 @@ type ProductDTO struct {
 	Price float64 `bind:"price"`
 }
 
-func (productDTO ProductDTO) Transform(body ctx.Body, arg common.ArgumentMetadata) any {
+func (productDTO ProductDTO) Transform(body ginject.Body, arg ginject.ArgumentMetadata) any {
 	bound, _ := body.Bind(productDTO)
 	dto := bound.(ProductDTO)
 

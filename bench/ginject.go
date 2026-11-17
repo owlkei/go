@@ -4,9 +4,6 @@ import (
 	"net/http"
 
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/log"
 )
@@ -24,7 +21,7 @@ type searchQuery struct {
 	Page int    `bind:"page"`
 }
 
-func (query searchQuery) Transform(q ctx.Query, _ common.ArgumentMetadata) any {
+func (query searchQuery) Transform(q ginject.Query, _ ginject.ArgumentMetadata) any {
 	bound, _ := q.Bind(query)
 	return bound
 }
@@ -34,16 +31,16 @@ type userBody struct {
 	Age  int    `bind:"age"`
 }
 
-func (body userBody) Transform(b ctx.Body, _ common.ArgumentMetadata) any {
+func (body userBody) Transform(b ginject.Body, _ ginject.ArgumentMetadata) any {
 	bound, _ := b.Bind(body)
 	return bound
 }
 
 type ginjectController struct {
-	common.HTTP
+	ginject.HTTP
 }
 
-func (instance ginjectController) NewController() core.Controller {
+func (instance ginjectController) NewController() ginject.Controller {
 	return instance
 }
 
@@ -69,20 +66,20 @@ func (instance ginjectController) READ_error() string {
 
 type ginjectMiddleware struct{}
 
-func (ginjectMiddleware) Use(_ *http.Request, w http.ResponseWriter, next ctx.Next) {
+func (ginjectMiddleware) Use(_ *http.Request, w http.ResponseWriter, next ginject.Next) {
 	w.Header().Set(mwHeader, "1")
 	next()
 }
 
 type ginjectGuard struct{}
 
-func (ginjectGuard) CanActivate(c *ctx.HTTPContext) bool {
+func (ginjectGuard) CanActivate(c ginject.HTTPContext) bool {
 	return c.Request.Header.Get(authHeader) == authValue
 }
 
 type ginjectInterceptor struct{}
 
-func (ginjectInterceptor) Intercept(_ *ctx.HTTPContext, aggregation ginject.Aggregation) any {
+func (ginjectInterceptor) Intercept(_ ginject.HTTPContext, aggregation ginject.Aggregation) any {
 	return aggregation.Pipe(
 		aggregation.Transform(func(data any) any {
 			return ginject.Map{"data": data}
@@ -91,13 +88,13 @@ func (ginjectInterceptor) Intercept(_ *ctx.HTTPContext, aggregation ginject.Aggr
 }
 
 type ginjectChainController struct {
-	common.HTTP
-	common.Middleware
-	common.Guard
-	common.Interceptor
+	ginject.HTTP
+	ginject.Middleware
+	ginject.Guard
+	ginject.Interceptor
 }
 
-func (instance ginjectChainController) NewController() core.Controller {
+func (instance ginjectChainController) NewController() ginject.Controller {
 	instance.BindMiddleware(ginjectMiddleware{})
 	instance.BindGuard(ginjectGuard{})
 	instance.BindInterceptor(ginjectInterceptor{})
@@ -112,18 +109,18 @@ func NewGinject() http.Handler {
 	return NewGinjectApp()
 }
 
-func NewGinjectApp() *core.App {
-	return newGinjectApp(core.New().SetLogger(silentLogger{}))
+func NewGinjectApp() ginject.App {
+	return newGinjectApp(ginject.New().SetLogger(silentLogger{}))
 }
 
-func NewGinjectAppWithLog() *core.App {
-	app := core.New().SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
+func NewGinjectAppWithLog() ginject.App {
+	app := ginject.New().SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
 	return newGinjectApp(app.EnableAccessLog())
 }
 
-func newGinjectApp(app *core.App) *core.App {
+func newGinjectApp(app ginject.App) ginject.App {
 	app.Create(
-		core.ModuleBuilder().
+		ginject.ModuleBuilder().
 			Controllers(ginjectController{}, ginjectChainController{}).
 			Build(),
 	)

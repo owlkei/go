@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/net/websocket"
 
-	"github.com/dangduoc08/ginject/core"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 )
@@ -502,7 +502,7 @@ func TestCORS_WebSocketHandshake(t *testing.T) {
 	dial := func(allowed []string, origin string) error {
 		app := core.New()
 		app.SetLogger(silentLogger{})
-		app.EnableWS(&core.WSConfig{Path: "/ws"}, CORS{AllowOrigins: allowed})
+		app.EnableWS(&core.WSOptions{Path: "/ws"}, CORS{AllowOrigins: allowed})
 		app.Create(core.ModuleBuilder().Build())
 		server := httptest.NewServer(app)
 		defer server.Close()

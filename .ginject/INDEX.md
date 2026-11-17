@@ -120,7 +120,7 @@ error from a guard onwards → module exception filter → global exception filt
 ### 6. Server and Lifecycle
 - `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*core.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `H2C`)
 - Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`, then `OnShutdown` hooks in reverse init order
-- One logger API: `app.SetLogger(l)` (any `common.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
+- One logger API: `app.SetLogger(l)` (any `log.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
 - Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
 - Request tracing: one internal `trace.Tracer` per app; `EnableAccessLog()` is its only listener
 - Details: `core/README.md`, [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md)
@@ -181,7 +181,7 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md)
 
 **Steps**:
-1. Call `app.EnableWS(&core.WSConfig{Path: "/ws"})` before `app.Create()`
+1. Call `app.EnableWS(&core.WSOptions{Path: "/ws"})` before `app.Create()`
 2. Embed `common.WS` in controller
 3. Create method: `SUBSCRIBE_chat_PERSON_ANY()` (see [websocket-system.md](websocket-system.md))
 4. Inject `common.Publisher` for fanout

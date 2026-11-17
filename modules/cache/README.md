@@ -38,8 +38,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/modules/cache"
 )
 

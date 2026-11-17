@@ -3,8 +3,7 @@ package dto
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/ctx"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 )
 
@@ -14,7 +13,7 @@ type UserDTO struct {
 	Password string `bind:"password"`
 }
 
-func (userDTO UserDTO) Transform(body ctx.Body, arg common.ArgumentMetadata) any {
+func (userDTO UserDTO) Transform(body ginject.Body, arg ginject.ArgumentMetadata) any {
 	bound, _ := body.Bind(userDTO)
 	dto := bound.(UserDTO)
 
@@ -40,7 +39,7 @@ type QueryDTO struct {
 	Password string `bind:"password"`
 }
 
-func (userDTO QueryDTO) Transform(body ctx.Query, arg common.ArgumentMetadata) any {
+func (userDTO QueryDTO) Transform(body ginject.Query, arg ginject.ArgumentMetadata) any {
 	bound, _ := body.Bind(userDTO)
 	dto := bound.(QueryDTO)
 

@@ -372,8 +372,8 @@ Findings that the numbers hide:
 | `TypeSubscribe` | const | nowhere | framework internal | moves to internal/core |
 | `TypeUnsubscribe` | const | nowhere | framework internal | moves to internal/core |
 | `WS` | struct | nowhere | framework internal | moves to internal/core |
-| `WSConfig` | struct | `sample/`; tests of middlewares/* (3); docs: .ginject, CLAUDE.md, README, 2 package READMEs | user API | moves to internal/core, reachable through the root package; renamed ginject.WSOptions (core.WSOptions) |
-| `WSConfig.Path` | field | `sample/`; tests of middlewares/* (3); docs: .ginject, README, 1 package README | user API | moves to internal/core, reachable through the root package |
+| `WSOptions` | struct | `sample/`; tests of middlewares/* (3); docs: .ginject, CLAUDE.md, README, 2 package READMEs | user API | moves to internal/core, reachable through the root package; renamed ginject.WSOptions (core.WSOptions) |
+| `WSOptions.Path` | field | `sample/`; tests of middlewares/* (3); docs: .ginject, README, 1 package README | user API | moves to internal/core, reachable through the root package |
 | `WSConnection` | struct | nowhere | framework internal | moves to internal/core |
 | `WSConnection.ID` | field | nowhere | framework internal | moves to internal/core |
 | `WSConnection.Conn` | field | docs: .ginject, 1 package README | framework internal | moves to internal/core |

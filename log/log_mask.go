@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/pattern"
@@ -36,14 +35,14 @@ type converter struct {
 }
 
 type maskingLogger struct {
-	next   common.LogAdapter
+	next   LogAdapter
 	conv   converter
 	base   *maskingLogger
 	fields []any
 	slot   slotEntry
 }
 
-func WrapLogger(next common.LogAdapter, maskFields []string) common.Logger {
+func WrapLogger(next LogAdapter, maskFields []string) Logger {
 	if next == nil {
 		panic(color.FmtRed("invalid logger: WrapLogger needs a logger"))
 	}
@@ -112,7 +111,7 @@ func (m *maskingLogger) args(args []any) []any {
 	return append(out, converted...)
 }
 
-func (m *maskingLogger) From(ctx context.Context) common.Logger {
+func (m *maskingLogger) From(ctx context.Context) Logger {
 	s := tracecontext.ScopeOf(ctx)
 	if s == nil {
 		return m

@@ -56,7 +56,7 @@ Feature Request
   │   └─ DON'T instantiate manually
   │
   ├─ "I need to log something"
-  │   ├─ Inject common.Logger into handler
+  │   ├─ Inject log.Logger into handler
   │   ├─ Call logger.Log(level, data)
   │   ├─ Or use global app.Logger
   │   └─ Logger is available everywhere
@@ -111,7 +111,7 @@ Piece of Code
   │
   └─ "Logging, tracing, monitoring"
       ├─ Per-request timing: EnableAccessLog() (the app's tracer has no public listener API)
-      ├─ Use Logger for structured logging (inject common.Logger, or app.Logger())
+      ├─ Use Logger for structured logging (inject log.Logger, or app.Logger())
       └─ Can go in middleware, handler, or provider
 ```
 
@@ -162,7 +162,7 @@ I need access to...
   │       Framework resolves automatically
   │
   ├─ "Logger"
-  │   └─ common.Logger (globally available)
+  │   └─ log.Logger (globally available)
   │
   ├─ "Event publisher"
   │   └─ common.Publisher (for WS fanout)

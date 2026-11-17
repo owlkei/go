@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
@@ -20,7 +19,7 @@ func (w slowOutput) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func asyncBenchLogger(b *testing.B, out io.Writer) common.Logger {
+func asyncBenchLogger(b *testing.B, out io.Writer) Logger {
 	b.Helper()
 	s := logpipe.New(out)
 	s.StartAsync()

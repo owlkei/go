@@ -2,21 +2,19 @@ package benchmarks
 
 import (
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/exception"
 )
 
 type Controller struct {
-	common.HTTP
-	common.WS
-	common.Middleware
-	common.Guard
-	common.Interceptor
-	common.ExceptionFilter
+	ginject.HTTP
+	ginject.WS
+	ginject.Middleware
+	ginject.Guard
+	ginject.Interceptor
+	ginject.ExceptionFilter
 }
 
-func (instance Controller) NewController() core.Controller {
+func (instance Controller) NewController() ginject.Controller {
 	instance.BindMiddleware(LogModuleMiddleware{})
 	instance.BindGuard(LogModuleHTTPGuard{})
 	instance.BindGuard(LogModuleWSGuard{})

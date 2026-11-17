@@ -4,13 +4,13 @@ import (
 	"net/http"
 
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/log"
 )
 
 type LogModuleMiddleware struct {
-	common.Middleware
-	common.Logger
+	ginject.Middleware
+	log.Logger
 }
 
 func (instance LogModuleMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {

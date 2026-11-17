@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 )
 
 type CacheService struct {

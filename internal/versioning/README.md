@@ -24,7 +24,7 @@ Enable versioning on the app, then name handlers with a `VERSION` token (`READ_V
 package main
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/versioning"
 )
 

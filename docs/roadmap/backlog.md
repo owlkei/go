@@ -161,7 +161,7 @@ points to cover:
 
 Found 2026-11-17 while rewriting the main README (not fixed; the WebSocket roadmap owns them):
 - `EnableWS(nil)` crashes on a nil pointer instead of a bootstrap panic.
-- `EnableWS` writes into the caller's `*WSConfig`: two apps sharing one config overwrite each other.
+- `EnableWS` writes into the caller's `*WSOptions`: two apps sharing one config overwrite each other.
 - The goroutine that drops dead WebSocket connections never stops, even after `Stop()`.
 - `Publisher.Publish` silently drops every payload after the first.
 - Found 2026-11-18: acks and errors go through `TrySend` on the 32-slot send buffer, so a client that

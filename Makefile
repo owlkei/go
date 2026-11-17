@@ -43,7 +43,7 @@ check: ## Everything CI runs: format, vet, API, lint, tests
 	$(MAKE) api-check
 	golangci-lint run
 	go test ./... -cover -race
-	go test ./core -run '^TestTrace_(NoListenerGeneratesOneID|ListenerGeneratesOneIDPerStage)$$' -count 1
+	go test ./internal/core -run '^TestTrace_(NoListenerGeneratesOneID|ListenerGeneratesOneIDPerStage)$$' -count 1
 	go test ./middlewares/loadshed -run '^TestAdaptive_(Stable|NoRefusalBelowCapacity|RecoversWhenHandlerSlows|Steering|LongHeld)_' -count 1 -p 1
 
 BENCH_COUNT ?= 5

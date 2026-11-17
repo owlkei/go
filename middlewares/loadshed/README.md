@@ -60,7 +60,7 @@ Bind `loadshed` first, so a refused request costs as little as possible:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/core"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/middlewares/loadshed"
 )
 
@@ -93,7 +93,7 @@ values share one limiter.
 To limit WebSocket handshakes too, pass it to `EnableWS`:
 
 ```go
-app.EnableWS(&core.WSConfig{Path: "/ws"}, loadshed.LoadShed{})
+app.EnableWS(&core.WSOptions{Path: "/ws"}, loadshed.LoadShed{})
 ```
 
 The slot of a handshake is released when the handshake ends, not when the connection closes.

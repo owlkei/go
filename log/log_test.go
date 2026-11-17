@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/test"
 )
@@ -32,7 +31,7 @@ func formatName(f logFormat) string {
 	}
 }
 
-func newTestLog(format logFormat, opts LogOptions) (common.Logger, *bytes.Buffer) {
+func newTestLog(format logFormat, opts LogOptions) (Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	opts.LogFormat = format
 	if opts.Level == InfoLevel {
@@ -169,7 +168,7 @@ func TestLog_LevelLabelsJSONAndText(t *testing.T) {
 
 	jsonLogger, jsonBuf := newTestLog(JSONFormat, LogOptions{})
 	textLogger, textBuf := newTestLog(TextFormat, LogOptions{})
-	for _, logger := range []common.Logger{jsonLogger, textLogger} {
+	for _, logger := range []Logger{jsonLogger, textLogger} {
 		logger.Debug("m")
 		logger.Info("m")
 		logger.Warn("m")

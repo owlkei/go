@@ -4,19 +4,17 @@ import (
 	"strings"
 
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/sample/shop/accounts/dto"
 )
 
 type SessionsController struct {
-	common.HTTP
-	common.Guard
+	ginject.HTTP
+	ginject.Guard
 
 	UserService
 }
 
-func (instance SessionsController) NewController() core.Controller {
+func (instance SessionsController) NewController() ginject.Controller {
 	instance.BindGuard(AuthGuard{}, instance.DELETE_sessions)
 
 	return instance

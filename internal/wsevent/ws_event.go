@@ -4,8 +4,8 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	ptrn "github.com/dangduoc08/ginject/internal/pattern"
 )
 

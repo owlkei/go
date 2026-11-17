@@ -39,7 +39,7 @@
         "action": "app.Create(module)",
         "critical": true,
         "order": [
-          "container.addInterface(common.Logger)",
+          "container.addInterface(log.Logger)",
           "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",
           "initWS (only if EnableWS)",
           "initRoutes",
@@ -358,7 +358,7 @@
   "module_initialization_order": {
     "critical": "Create's call order is fixed (comment on App.Create in core/app.go)",
     "sequence": [
-      "container.addInterface(common.Logger)",
+      "container.addInterface(log.Logger)",
       "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",
       "initWS (only if EnableWS)",
       "initRoutes",

@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
@@ -86,7 +85,7 @@ type encoder struct {
 	pretty   *prettyHandler
 }
 
-func NewLog(opts *LogOptions) common.Logger {
+func NewLog(opts *LogOptions) Logger {
 	return newLogSink(logpipe.Stdout(), isTerminal(os.Stdout), opts)
 }
 
@@ -95,11 +94,11 @@ func isTerminal(f *os.File) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func newLog(out io.Writer, isTerminal bool, opts *LogOptions) common.Logger {
+func newLog(out io.Writer, isTerminal bool, opts *LogOptions) Logger {
 	return newLogSink(logpipe.New(out), isTerminal, opts)
 }
 
-func newLogSink(s *logpipe.Sink, isTerminal bool, opts *LogOptions) common.Logger {
+func newLogSink(s *logpipe.Sink, isTerminal bool, opts *LogOptions) Logger {
 	var o LogOptions
 	if opts != nil {
 		o = *opts
@@ -185,7 +184,7 @@ func (l *logger) Fatal(msg string, args ...any) {
 	exit(1)
 }
 
-func (l *logger) From(ctx context.Context) common.Logger {
+func (l *logger) From(ctx context.Context) Logger {
 	s := tracecontext.ScopeOf(ctx)
 	if s == nil {
 		return l

@@ -2,21 +2,19 @@ package shop
 
 import (
 	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/common"
-	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/sample/shop/accounts"
 	accountsdto "github.com/dangduoc08/ginject/sample/shop/accounts/dto"
 	"github.com/dangduoc08/ginject/sample/shop/catalog"
 )
 
 type UsersController struct {
-	common.HTTP
+	ginject.HTTP
 
 	accounts.UserService
 	catalog.StoreService
 }
 
-func (instance UsersController) NewController() core.Controller {
+func (instance UsersController) NewController() ginject.Controller {
 	return instance
 }
 

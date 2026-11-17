@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/common"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
@@ -77,14 +76,14 @@ func withoutTime(s string) string {
 
 func TestLogger_ExtendsLogAdapterWithFrom(t *testing.T) {
 	adapter := new(fromAdapter)
-	var _ common.LogAdapter = adapter
-	logger := reflect.TypeFor[common.Logger]()
-	base := reflect.TypeFor[common.LogAdapter]()
+	var _ LogAdapter = adapter
+	logger := reflect.TypeFor[Logger]()
+	base := reflect.TypeFor[LogAdapter]()
 	if base.NumMethod() != 5 || logger.NumMethod() != 6 {
 		t.Error(test.DiffMessage([]int{base.NumMethod(), logger.NumMethod()}, []int{5, 6}, "I1: LogAdapter has the five methods, Logger adds From"))
 	}
 	if !logger.Implements(base) {
-		t.Error(test.DiffMessage(false, true, "I1: a common.Logger is a common.LogAdapter"))
+		t.Error(test.DiffMessage(false, true, "I1: a Logger is a LogAdapter"))
 	}
 	if reflect.TypeOf(adapter).Implements(logger) || !reflect.TypeOf(adapter).Implements(base) {
 		t.Error(test.DiffMessage(true, false, "I1: a type with the five methods and no From is a LogAdapter, not a Logger"))
@@ -98,7 +97,7 @@ func TestWrapLogger_AcceptsFiveMethodAdapter(t *testing.T) {
 	if calls := adapter.all(); len(calls) != 1 || calls[0].msg != "hello" {
 		t.Error(test.DiffMessage(calls, "one call", "I1: WrapLogger accepts a type with five methods"))
 	}
-	var nilAdapter common.LogAdapter
+	var nilAdapter LogAdapter
 	defer func() {
 		if recover() == nil {
 			t.Error(test.DiffMessage("no panic", "panic", "I1: WrapLogger(nil, ...) panics as today"))
@@ -126,7 +125,7 @@ func TestFrom_NilContextReturnsReceiver(t *testing.T) {
 	var nilCtx context.Context
 	builtin, _ := newTestLog(JSONFormat, LogOptions{})
 	wrapped := WrapLogger(&fromAdapter{}, nil)
-	for name, l := range map[string]common.Logger{"built-in": builtin, "adapter": wrapped} {
+	for name, l := range map[string]Logger{"built-in": builtin, "adapter": wrapped} {
 		if got := l.From(nilCtx); got != l {
 			t.Error(test.DiffMessage(got, l, "F1: From(nil) returns the receiver, "+name))
 		}
@@ -136,7 +135,7 @@ func TestFrom_NilContextReturnsReceiver(t *testing.T) {
 func TestFrom_NoScopeReturnsReceiver(t *testing.T) {
 	builtin, _ := newTestLog(JSONFormat, LogOptions{})
 	wrapped := WrapLogger(&fromAdapter{}, nil)
-	for name, l := range map[string]common.Logger{"built-in": builtin, "adapter": wrapped} {
+	for name, l := range map[string]Logger{"built-in": builtin, "adapter": wrapped} {
 		if got := l.From(context.Background()); got != l {
 			t.Error(test.DiffMessage(got, l, "F1: a context without a scope returns the receiver, "+name))
 		}
@@ -147,7 +146,7 @@ func TestFrom_EmptyFieldsReturnsReceiver(t *testing.T) {
 	builtin, _ := newTestLog(JSONFormat, LogOptions{})
 	wrapped := WrapLogger(&fromAdapter{}, nil)
 	ctx := scopeContext(tracecontext.Scope{})
-	for name, l := range map[string]common.Logger{"built-in": builtin, "adapter": wrapped} {
+	for name, l := range map[string]Logger{"built-in": builtin, "adapter": wrapped} {
 		if got := l.From(ctx); got != l {
 			t.Error(test.DiffMessage(got, l, "F1: a scope with no fields returns the receiver, "+name))
 		}
