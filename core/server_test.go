@@ -358,14 +358,17 @@ func srvFreePort(t *testing.T) int {
 	return port
 }
 
-func srvPortFree(t *testing.T, port int) bool {
+// srvHeldPort returns a port that stays bound by the test until it ends. A call that must fail
+// before binding returns its own error on it; one that binds first gets "address already in use"
+// instead. Unlike checking afterwards that the port is free, another process can't take it meanwhile.
+func srvHeldPort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+	l, err := net.Listen("tcp", ":0")
 	if err != nil {
-		return false
+		t.Fatal(err)
 	}
-	_ = l.Close()
-	return true
+	t.Cleanup(func() { _ = l.Close() })
+	return l.Addr().(*net.TCPAddr).Port
 }
 
 func srvListenerOpen(ln net.Listener) bool {
@@ -627,7 +630,7 @@ func TestNewServer_AppliesDefaults(t *testing.T) {
 
 func TestListen_TLSConfigIsAnError(t *testing.T) {
 	h := newSrv(t)
-	port := srvFreePort(t)
+	port := srvHeldPort(t)
 
 	err := h.app.Listen(port, &ServerOptions{TLSConfig: &tls.Config{}})
 
@@ -635,15 +638,12 @@ func TestListen_TLSConfigIsAnError(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "O4: Listen refuses a TLSConfig"))
 	}
-	if !srvPortFree(t, port) {
-		t.Error(test.DiffMessage("bound", "free", "O4: the port stays free after the error"))
-	}
 }
 
 func TestListenTLS_H2CIsAnError(t *testing.T) {
 	h := newSrv(t)
 	certs := srvMakeCert(t)
-	port := srvFreePort(t)
+	port := srvHeldPort(t)
 
 	err := h.app.ListenTLS(port, "", "", &ServerOptions{
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}},
@@ -653,9 +653,6 @@ func TestListenTLS_H2CIsAnError(t *testing.T) {
 	want := "core: H2C applies to connections without TLS"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "O5: ListenTLS refuses H2C"))
-	}
-	if !srvPortFree(t, port) {
-		t.Error(test.DiffMessage("bound", "free", "O5: the port stays free after the error"))
 	}
 }
 
@@ -1023,7 +1020,7 @@ func TestListenTLS_BadCertificateFile(t *testing.T) {
 	if err := os.WriteFile(keyFile, []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	port := srvFreePort(t)
+	port := srvHeldPort(t)
 	before := len(h.log.all())
 
 	err := h.app.ListenTLS(port, certFile, keyFile, nil)
@@ -1035,9 +1032,6 @@ func TestListenTLS_BadCertificateFile(t *testing.T) {
 	if missing == nil || !strings.HasPrefix(missing.Error(), "core: load TLS certificate: ") {
 		t.Error(test.DiffMessage(missing, "core: load TLS certificate: <err>", "S5: a missing file"))
 	}
-	if !srvPortFree(t, port) {
-		t.Error(test.DiffMessage("bound", "free", "S5: the pair is loaded before binding"))
-	}
 	if n := len(h.log.all()); n != before {
 		t.Error(test.DiffMessage(n, before, "S5: nothing is logged"))
 	}
@@ -1045,7 +1039,7 @@ func TestListenTLS_BadCertificateFile(t *testing.T) {
 
 func TestListenTLS_NoCertificateSource(t *testing.T) {
 	h := newSrv(t)
-	port := srvFreePort(t)
+	port := srvHeldPort(t)
 	want := "core: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
 
 	for name, opts := range map[string]*ServerOptions{
@@ -1058,14 +1052,11 @@ func TestListenTLS_NoCertificateSource(t *testing.T) {
 			t.Error(test.DiffMessage(err, want, "C15, S5: "+name))
 		}
 	}
-	if !srvPortFree(t, port) {
-		t.Error(test.DiffMessage("bound", "free", "C15: no fallback to plaintext, the port stays free"))
-	}
 }
 
 func TestListenTLS_OneEmptyFileName(t *testing.T) {
 	h := newSrv(t)
-	port := srvFreePort(t)
+	port := srvHeldPort(t)
 	want := "core: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
 
 	if err := h.app.ListenTLS(port, "cert.pem", "", nil); err == nil || err.Error() != want {
@@ -1073,9 +1064,6 @@ func TestListenTLS_OneEmptyFileName(t *testing.T) {
 	}
 	if err := h.app.ListenTLS(port, "", "key.pem", nil); err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "S5: cert name empty"))
-	}
-	if !srvPortFree(t, port) {
-		t.Error(test.DiffMessage("bound", "free", "S5: the port stays free"))
 	}
 }
 
