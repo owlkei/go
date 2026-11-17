@@ -1,16 +1,32 @@
 package bench
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func NewGin() http.Handler {
+	return newGin(gin.Recovery())
+}
+
+func NewGinWithLog() http.Handler {
+	return newGin(gin.LoggerWithConfig(gin.LoggerConfig{Output: os.Stdout, Formatter: ginJSONLine}), gin.Recovery())
+}
+
+func ginJSONLine(p gin.LogFormatterParams) string {
+	return fmt.Sprintf(`{"time":%q,"status":%d,"latency":%q,"ip":%q,"method":%q,"path":%q}`+"\n",
+		p.TimeStamp.Format(time.RFC3339Nano), p.StatusCode, p.Latency, p.ClientIP, p.Method, p.Path)
+}
+
+func newGin(middlewares ...gin.HandlerFunc) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	router.Use(gin.Recovery())
+	router.Use(middlewares...)
 
 	router.GET("/static", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 	router.GET("/users/:id", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"id": c.Param("id")}) })

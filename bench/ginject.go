@@ -8,6 +8,7 @@ import (
 	"github.com/dangduoc08/ginject/core"
 	"github.com/dangduoc08/ginject/ctx"
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/log"
 )
 
 type silentLogger struct{}
@@ -112,8 +113,15 @@ func NewGinject() http.Handler {
 }
 
 func NewGinjectApp() *core.App {
-	app := core.New()
-	app.SetLogger(silentLogger{})
+	return newGinjectApp(core.New().SetLogger(silentLogger{}))
+}
+
+func NewGinjectAppWithLog() *core.App {
+	app := core.New().SetLogger(log.NewLog(&log.LogOptions{LogFormat: log.JSONFormat}))
+	return newGinjectApp(app.EnableAccessLog())
+}
+
+func newGinjectApp(app *core.App) *core.App {
 	app.Create(
 		core.ModuleBuilder().
 			Controllers(ginjectController{}, ginjectChainController{}).

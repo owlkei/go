@@ -1,7 +1,10 @@
 package bench
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/labstack/echo/v4"
@@ -9,9 +12,35 @@ import (
 )
 
 func NewEcho() http.Handler {
+	return newEcho(middleware.Recover())
+}
+
+func NewEchoWithLog() http.Handler {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	requestLogger := middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogStatus:   true,
+		LogLatency:  true,
+		LogRemoteIP: true,
+		LogMethod:   true,
+		LogURIPath:  true,
+		LogValuesFunc: func(_ echo.Context, v middleware.RequestLoggerValues) error {
+			logger.LogAttrs(context.Background(), slog.LevelInfo, "request",
+				slog.Int("status", v.Status),
+				slog.Duration("latency", v.Latency),
+				slog.String("ip", v.RemoteIP),
+				slog.String("method", v.Method),
+				slog.String("path", v.URIPath),
+			)
+			return nil
+		},
+	})
+	return newEcho(requestLogger, middleware.Recover())
+}
+
+func newEcho(middlewares ...echo.MiddlewareFunc) http.Handler {
 	e := echo.New()
 	e.HideBanner = true
-	e.Use(middleware.Recover())
+	e.Use(middlewares...)
 
 	e.GET("/static", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
 	e.GET("/users/:id", func(c echo.Context) error { return c.JSON(http.StatusOK, map[string]any{"id": c.Param("id")}) })

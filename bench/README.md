@@ -43,18 +43,44 @@ Compare two runs with `benchstat old.txt new.txt`.
 
 ### Load test
 
-The load test needs [`wrk`](https://github.com/wg/wrk) on your `PATH`. It builds `cmd/server`,
-serves one framework at a time on `PORT` (default `18080`) and runs `wrk` for `Static`, `Param`,
-`JSONBody` and `Chain` at each connection count:
+The load test needs [`wrk`](https://github.com/wg/wrk) on your `PATH`. It builds `cmd/server` as a
+release binary (`go build -trimpath -ldflags="-s -w"`), serves one framework at a time on `PORT`
+(default `18080`) and runs `wrk` for each scenario at each connection count:
 
 ```sh
 make load
-FRAMEWORKS="ginject nethttp gin echo chi fiber" DURATION=10s CONNECTIONS="64 256" make load
+FRAMEWORKS="ginject nethttp gin echo chi fiber" LOGS="on off" PROCS="1 2 all" DURATION=5s CONNECTIONS=64 make load
 ```
 
-It prints a Markdown table with requests per second, p50, p99 and the count of non-2xx responses.
-Ginject is served through `App.Listen`, its production path; the others through
+| Variable | Default | Effect |
+|---|---|---|
+| `FRAMEWORKS` | `ginject` | the servers to measure: `ginject`, `nethttp`, `gin`, `echo`, `chi`, `fiber` |
+| `LOGS` | `on` | `on` turns the framework's request logger on, `off` turns it off; `nethttp` has no logger and runs once, as `none` |
+| `PROCS` | `all` | the `GOMAXPROCS` values of the server; `all` leaves it unset (every core) |
+| `DURATION` | `10s` | how long `wrk` runs per scenario |
+| `CONNECTIONS` | `64 256` | the connection counts |
+| `SCENARIOS` | `Static Param JSONBody Chain` | the scenarios |
+| `THREADS` | `4` | `wrk` threads |
+| `LOG_DIR` | `$TMPDIR` | where the server's stdout (the log) and stderr go, one file per framework and log setting |
+
+It prints a Markdown table with requests per second, p50, p99, the count of non-2xx responses, the
+requests `wrk` completed, the log lines written during the run, and the server's CPU time per
+request. Ginject is served through `App.Listen`, its production path; the others through
 `http.ListenAndServe` or Fiber's `Listen`.
+
+With the log on, each framework writes one line per request to stdout, which goes to a file on disk:
+
+| Framework | Request logger |
+|---|---|
+| Ginject | the built-in logger in JSON with the access log (`EnableAccessLog`) |
+| Gin | `gin.LoggerWithConfig` with a JSON formatter |
+| Echo | `middleware.RequestLoggerWithConfig` writing through `slog`'s JSON handler |
+| Chi | `middleware.Logger` (text lines: Chi has no JSON logger) |
+| Fiber | `logger.New` with a JSON format |
+| net/http | none |
+
+The CPU time is the server process's user plus system time (`getrusage`), read before and after
+each run: the server prints it to stderr when it receives `SIGUSR1`.
 
 ## How the measurements stay fair
 
@@ -69,7 +95,12 @@ Ginject is served through `App.Listen`, its production path; the others through
   directly.
 - **The load test** runs the client and the server on one machine, so absolute numbers are a floor;
   comparisons between frameworks on the same run are fair.
+- **Logging:** the benchmarks run every framework without a request logger. The load test compares
+  frameworks with their loggers on, and Ginject with its log off against net/http, which has no
+  logger. The log lines column shows that a logger wrote every line: one that drops lines would
+  otherwise look cheap.
 
 ## Results
 
-The baseline and the hot spots it points to are in `docs/review/http-baseline.md`.
+The baseline and the hot spots it points to are in `docs/review/http-baseline.md`; the latest
+measurements, with logging on, in `docs/review/http-0005.md`.

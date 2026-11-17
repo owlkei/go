@@ -47,5 +47,5 @@ bench-compare: ## Same scenarios on ginject, net/http, Gin, Echo, Chi and Fiber 
 	cd bench && go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./...
 
 .PHONY: load
-load: ## Load test with wrk (bench/load.sh); FRAMEWORKS="ginject gin" DURATION=10s CONNECTIONS="64 256"
+load: ## Load test with wrk on a release build (bench/load.sh); FRAMEWORKS="ginject gin" LOGS="on off" PROCS="1 2 all" DURATION=10s CONNECTIONS="64 256"
 	./bench/load.sh

@@ -10,8 +10,16 @@ import (
 )
 
 func NewChi() http.Handler {
+	return newChi(middleware.Recoverer)
+}
+
+func NewChiWithLog() http.Handler {
+	return newChi(middleware.Logger, middleware.Recoverer)
+}
+
+func newChi(middlewares ...func(http.Handler) http.Handler) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Recoverer)
+	r.Use(middlewares...)
 
 	r.Get("/static", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	r.Get("/users/{id}", func(w http.ResponseWriter, req *http.Request) {

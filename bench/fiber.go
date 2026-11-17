@@ -2,14 +2,29 @@ package bench
 
 import (
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
 
+const fiberJSONLine = `{"time":"${time}","status":${status},"latency":"${latency}","ip":"${ip}","method":"${method}","path":"${path}"}` + "\n"
+
 func NewFiber() *fiber.App {
+	return newFiber(recover.New())
+}
+
+func NewFiberWithLog() *fiber.App {
+	return newFiber(logger.New(logger.Config{Format: fiberJSONLine, TimeFormat: time.RFC3339Nano, Output: os.Stdout, DisableColors: true}), recover.New())
+}
+
+func newFiber(handlers ...fiber.Handler) *fiber.App {
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
-	app.Use(recover.New())
+	for _, handler := range handlers {
+		app.Use(handler)
+	}
 
 	app.Get("/static", func(c *fiber.Ctx) error { return c.SendString("ok") })
 	app.Get("/users/:id", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"id": c.Params("id")}) })
