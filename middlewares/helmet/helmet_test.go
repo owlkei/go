@@ -1,62 +1,18 @@
 package helmet
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
-
-const (
-	defaultCSP         = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests"
-	defaultPermissions = "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), browsing-topics=()"
-	defaultHSTS        = "max-age=63072000; includeSubDomains"
-)
-
-var defaultsOverHTTPS = map[string]string{
-	"Content-Security-Policy":           defaultCSP,
-	"Cross-Origin-Opener-Policy":        "same-origin",
-	"Cross-Origin-Resource-Policy":      "same-origin",
-	"Permissions-Policy":                defaultPermissions,
-	"Referrer-Policy":                   "no-referrer",
-	"Strict-Transport-Security":         defaultHSTS,
-	"X-Frame-Options":                   "DENY",
-	"X-Content-Type-Options":            "nosniff",
-	"X-XSS-Protection":                  "0",
-	"X-DNS-Prefetch-Control":            "off",
-	"X-Permitted-Cross-Domain-Policies": "none",
-	"Origin-Agent-Cluster":              "?1",
-}
-
-var fixedHeaders = []string{"X-Content-Type-Options", "X-XSS-Protection", "X-DNS-Prefetch-Control", "X-Permitted-Cross-Domain-Policies", "Origin-Agent-Cluster"}
-
-func secure(target string) *http.Request {
-	r := request(http.MethodGet, target)
-	r.TLS = &tls.ConnectionState{}
-	return r
-}
-
-func expectHeader(t *testing.T, w *httptest.ResponseRecorder, key, want, desc string) {
-	t.Helper()
-	got := w.Header().Values(key)
-	if want == "" {
-		if len(got) != 0 {
-			t.Error(test.DiffMessage(got, []string{}, desc+": "+key+" is not sent"))
-		}
-		return
-	}
-	if len(got) != 1 || got[0] != want {
-		t.Error(test.DiffMessage(got, []string{want}, desc+": "+key))
-	}
-}
 
 func TestHelmet_Disabled_Constant(t *testing.T) {
 	if Disabled != "-" {
@@ -199,22 +155,6 @@ func TestHelmet_FixedHeadersOnEveryResponse(t *testing.T) {
 	}
 }
 
-type headerProbe struct{ Name string }
-
-var seen sync.Map
-
-func (p headerProbe) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-	seen.Store(p.Name, w.Header().Clone())
-	next()
-}
-
-type headerOverride struct{ Key, Value string }
-
-func (o headerOverride) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-	w.Header().Set(o.Key, o.Value)
-	next()
-}
-
 func TestHelmet_HeadersSetBeforeNext(t *testing.T) {
 	app := newApp(t, Helmet{}, headerProbe{Name: "after-helmet"})
 	serve(app, secure("/ok"))
@@ -334,4 +274,241 @@ func TestHelmet_AddingToAHeaderDoesNotChangeSharedValue(t *testing.T) {
 	w := serve(app, secure("/ok"))
 	expectHeader(t, w, "Content-Security-Policy", defaultCSP, "M1: Header.Add on a prebuilt value never writes the shared slice")
 	expectHeader(t, w, "X-Frame-Options", "DENY", "M1: Header.Add on a prebuilt value never writes the shared slice (X-Frame-Options)")
+}
+
+func TestNonce_DefaultPolicyHeader(t *testing.T) {
+	app := nonceApp(t, Helmet{}, false)
+
+	w := nonceServe(app, "/nonce")
+	n := bodyNonce(t, w.Body.String())
+	want := strings.ReplaceAll(nonceDefaultPolicy, "%s", n)
+	if got := w.Header().Get("Content-Security-Policy"); got != want {
+		t.Error(test.DiffMessage(got, want, "R31: the exact default header"))
+	}
+	if n := len(w.Header().Values("Content-Security-Policy")); n != 1 {
+		t.Error(test.DiffMessage(n, 1, "R31: one CSP header"))
+	}
+}
+
+func TestNonce_SameInHeaderAndBody(t *testing.T) {
+	app := nonceApp(t, Helmet{}, false)
+
+	w := nonceServe(app, "/nonce")
+	body := bodyNonce(t, w.Body.String())
+	if !nonceHexValue.MatchString(body) {
+		t.Error(test.DiffMessage(body, "32 lowercase hexadecimal characters", "R33: format"))
+	}
+	headers := nonceInHeader.FindAllStringSubmatch(w.Header().Get("Content-Security-Policy"), -1)
+	if len(headers) != 2 {
+		t.Fatal(test.DiffMessage(len(headers), 2, "R33: a nonce in script-src and in style-src"))
+	}
+	for _, m := range headers {
+		if m[1] != body {
+			t.Error(test.DiffMessage(m[1], body, "R33: the header nonce equals the body nonce"))
+		}
+	}
+	if strings.Count(w.Body.String(), body) != 3 {
+		t.Error(test.DiffMessage(strings.Count(w.Body.String(), body), 3, "R33: three uses in one page"))
+	}
+}
+
+func TestNonce_UniquePerResponse(t *testing.T) {
+	app := nonceApp(t, Helmet{}, false)
+
+	seen := map[string]bool{}
+	for i := 0; i < 1000; i++ {
+		w := nonceServe(app, "/nonce")
+		n := bodyNonce(t, w.Body.String())
+		if !strings.Contains(w.Header().Get("Content-Security-Policy"), "'nonce-"+n+"'") {
+			t.Fatal(test.DiffMessage(w.Header().Get("Content-Security-Policy"), "'nonce-"+n+"'", "R33: header and body agree"))
+		}
+		seen[n] = true
+	}
+	if len(seen) != 1000 {
+		t.Error(test.DiffMessage(len(seen), 1000, "R33: 1,000 responses give 1,000 nonces"))
+	}
+}
+
+func TestNonce_Concurrent(t *testing.T) {
+	app := nonceApp(t, Helmet{}, false)
+
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	var wg sync.WaitGroup
+	for g := 0; g < 64; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 10; i++ {
+				w := nonceServe(app, "/nonce")
+				found := nonceInBody.FindStringSubmatch(w.Body.String())
+				if found == nil || strings.Count(w.Header().Get("Content-Security-Policy"), "'nonce-"+found[1]+"'") != 2 {
+					t.Error(test.DiffMessage(w.Header().Get("Content-Security-Policy"), "the body's nonce twice", "R33: concurrent header and body"))
+					return
+				}
+				mu.Lock()
+				seen[found[1]] = true
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if len(seen) != 640 {
+		t.Error(test.DiffMessage(len(seen), 640, "R33: 64 goroutines never share a nonce"))
+	}
+}
+
+func TestNonce_OnlyWhenUsed(t *testing.T) {
+	app := nonceApp(t, Helmet{}, false)
+
+	for _, target := range []string{"/plain", "/api", "/assets/app.css", "/missing"} {
+		w := nonceServe(app, target)
+		if got := w.Header().Get("Content-Security-Policy"); got != defaultCSP {
+			t.Error(test.DiffMessage(got, defaultCSP, "R30: the static policy, byte for byte: "+target))
+		}
+		if strings.Contains(w.Header().Get("Content-Security-Policy"), "nonce") {
+			t.Error(test.DiffMessage(w.Header().Get("Content-Security-Policy"), "no nonce", "R30: "+target))
+		}
+	}
+	if got := nonceServe(app, "/nonce").Header().Get("Content-Security-Policy"); got == defaultCSP {
+		t.Error(test.DiffMessage(got, "a policy with a nonce", "R30: a page that uses {{nonce}} differs"))
+	}
+	if got := nonceServe(app, "/plain").Header().Get("Content-Security-Policy"); got != defaultCSP {
+		t.Error(test.DiffMessage(got, defaultCSP, "R30: the shared header is not changed by an earlier nonce response"))
+	}
+}
+
+func TestNonce_ErrorPageSet(t *testing.T) {
+	app := nonceApp(t, Helmet{}, true)
+
+	w := nonceServe(app, "/boom")
+	if w.Code != http.StatusNotFound {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusNotFound, "R30: the error page answers"))
+	}
+	n := bodyNonce(t, w.Body.String())
+	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "'nonce-"+n+"'") {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Security-Policy"), "'nonce-"+n+"'", "R30: an error page that uses {{nonce}} gets its nonce in the header"))
+	}
+
+	if got := nonceServe(app, "/api").Header().Get("Content-Security-Policy"); got != defaultCSP {
+		t.Error(test.DiffMessage(got, defaultCSP, "R30: an API route stays static with an error page that has a nonce"))
+	}
+}
+
+func TestNonce_WithoutHelmet(t *testing.T) {
+	app := core.New()
+	app.SetLogger(silentLogger{})
+	app.EnableRender(&core.RenderOptions{FS: nonceFiles(false), Dir: "."})
+	app.Create(core.NewModuleBuilder().Controllers(noncePages{}, nonceLaterPages{}, nonceAPI{}).Build())
+
+	w := nonceServe(app, "/nonce")
+	if !nonceHexValue.MatchString(bodyNonce(t, w.Body.String())) {
+		t.Error(test.DiffMessage(w.Body.String(), "a nonce", "R34: {{nonce}} still renders a nonce"))
+	}
+	if len(w.Header().Values("Content-Security-Policy")) != 0 {
+		t.Error(test.DiffMessage(w.Header().Values("Content-Security-Policy"), []string{}, "R34: no CSP header is added"))
+	}
+
+	disabled := nonceApp(t, Helmet{ContentSecurityPolicy: Disabled}, false)
+	w = nonceServe(disabled, "/nonce")
+	if !nonceHexValue.MatchString(bodyNonce(t, w.Body.String())) {
+		t.Error(test.DiffMessage(w.Body.String(), "a nonce", "R34: a disabled policy still renders a nonce"))
+	}
+	if len(w.Header().Values("Content-Security-Policy")) != 0 {
+		t.Error(test.DiffMessage(w.Header().Values("Content-Security-Policy"), []string{}, "R34: a disabled policy adds no header"))
+	}
+}
+
+func TestNonce_KeepsForeignCSP(t *testing.T) {
+	app := nonceApp(t, Helmet{}, false)
+
+	for _, target := range []string{"/foreign", "/later"} {
+		w := nonceServe(app, target)
+		if got := w.Header().Values("Content-Security-Policy"); !reflect.DeepEqual(got, []string{nonceForeign}) {
+			t.Error(test.DiffMessage(got, []string{nonceForeign}, "R35: a CSP set after helmet is left as it is: "+target))
+		}
+		if !nonceHexValue.MatchString(bodyNonce(t, w.Body.String())) {
+			t.Error(test.DiffMessage(w.Body.String(), "a nonce", "R35: the body still renders: "+target))
+		}
+	}
+}
+
+func TestHelmet_NonceDirectives(t *testing.T) {
+	got, n := nonceHeader(t, "script-src 'self'; style-src 'self' https://cdn.test; img-src 'self'")
+	want := "script-src 'self' 'nonce-" + n + "'; style-src 'self' https://cdn.test 'nonce-" + n + "'; img-src 'self'"
+	if got != want {
+		t.Error(test.DiffMessage(got, want, "R32: present directives get the nonce appended"))
+	}
+
+	policy := "script-src 'self' 'unsafe-inline'; style-src 'none'; img-src 'self'"
+	if got, _ := nonceHeader(t, policy); got != policy {
+		t.Error(test.DiffMessage(got, policy, "R32: 'unsafe-inline' and 'none' directives are unchanged"))
+	}
+
+	got, n = nonceHeader(t, "default-src 'self' data:; script-src 'self'")
+	d := directives(got)
+	if d["script-src"] != "'self' 'nonce-"+n+"'" || d["style-src"] != "'self' data: 'nonce-"+n+"'" || d["default-src"] != "'self' data:" {
+		t.Error(test.DiffMessage(got, "script-src with the nonce and style-src copied from default-src plus the nonce", "R32: an absent style-src follows default-src"))
+	}
+	if order := directiveOrder(got); len(order) < 2 || order[0] != "default-src" || order[1] != "style-src" {
+		t.Error(test.DiffMessage(order, "style-src right after default-src", "R32: the inserted directive follows default-src"))
+	}
+
+	if got, _ := nonceHeader(t, "img-src 'self'; font-src 'self'"); got != "img-src 'self'; font-src 'self'" {
+		t.Error(test.DiffMessage(got, "img-src 'self'; font-src 'self'", "R32: no default-src and no directive, unchanged"))
+	}
+	if got, _ := nonceHeader(t, "default-src 'none'; img-src 'self'"); got != "default-src 'none'; img-src 'self'" {
+		t.Error(test.DiffMessage(got, "default-src 'none'; img-src 'self'", "R32: default-src 'none' is unchanged"))
+	}
+	if got, _ := nonceHeader(t, "default-src 'self' 'unsafe-inline'; img-src 'self'"); got != "default-src 'self' 'unsafe-inline'; img-src 'self'" {
+		t.Error(test.DiffMessage(got, "default-src 'self' 'unsafe-inline'; img-src 'self'", "R32: default-src 'unsafe-inline' is unchanged"))
+	}
+}
+
+func TestHelmet_NonceDirectivesElem(t *testing.T) {
+	got, n := nonceHeader(t, "default-src 'self'; script-src-elem 'self'; style-src-elem 'self' 'unsafe-inline'")
+	d := directives(got)
+	if d["script-src-elem"] != "'self' 'nonce-"+n+"'" {
+		t.Error(test.DiffMessage(d["script-src-elem"], "'self' 'nonce-"+n+"'", "R32: script-src-elem gets the nonce"))
+	}
+	if d["style-src-elem"] != "'self' 'unsafe-inline'" {
+		t.Error(test.DiffMessage(d["style-src-elem"], "'self' 'unsafe-inline'", "R32: style-src-elem with 'unsafe-inline' is unchanged"))
+	}
+	if d["script-src"] != "'self' 'nonce-"+n+"'" || d["style-src"] != "'self' 'nonce-"+n+"'" {
+		t.Error(test.DiffMessage(got, "script-src and style-src inserted from default-src", "R32: absent script-src and style-src follow default-src"))
+	}
+
+	got, n = nonceHeader(t, "script-src 'self'; script-src-elem 'self'; style-src 'none'; style-src-elem 'none'")
+	d = directives(got)
+	if d["script-src"] != "'self' 'nonce-"+n+"'" || d["script-src-elem"] != "'self' 'nonce-"+n+"'" || d["style-src"] != "'none'" || d["style-src-elem"] != "'none'" {
+		t.Error(test.DiffMessage(got, "nonce on both script directives, 'none' style directives unchanged", "R32: -elem directives follow the same rule"))
+	}
+}
+
+func TestHelmet_SnapshotNonceDirectives(t *testing.T) {
+	for policy, want := range map[string][]string{
+		"":                                    {"script-src", "style-src"},
+		"script-src 'self'; style-src 'none'": {"script-src"},
+		"default-src 'self'; script-src-elem 'self'; style-src-elem 'self'": {"script-src", "style-src", "script-src-elem", "style-src-elem"},
+		"default-src 'none'": {},
+		"img-src 'self'":     {},
+		Disabled:             {},
+	} {
+		mw := Helmet{ContentSecurityPolicy: policy}.NewMiddleware()
+		snapshotter, ok := mw.(inspect.Snapshotter)
+		if !ok {
+			t.Fatal(test.DiffMessage(mw, "an inspect.Snapshotter", "R44: helmet implements Snapshotter"))
+		}
+		snap := snapshotter.Snapshot()
+		got, ok := field(snap, "nonce_directives").([]string)
+		if !ok {
+			t.Fatal(test.DiffMessage(field(snap, "nonce_directives"), "a []string", "R44: the field is present: "+policy))
+		}
+		if len(got) == 0 && len(want) == 0 {
+			continue
+		}
+		if !sameSet(got, want) {
+			t.Error(test.DiffMessage(got, want, "R44: the directives that receive a nonce: "+policy))
+		}
+	}
 }
