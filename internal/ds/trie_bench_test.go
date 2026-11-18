@@ -11,27 +11,6 @@ func BenchmarkMatchGlob(b *testing.B) {
 	}
 }
 
-func buildBenchTrie() *Trie[string] {
-	routes := []string{
-		"/users/$",
-		"/users/$/friends/$",
-		"/feeds/all",
-		"/products/$",
-		"/products/$/reviews/$",
-		"/*/feeds/{feed*Id}/*/files/*.html/*",
-		"/a/$/x",
-		"/a/*",
-	}
-	tr := NewTrie[string]()
-	for _, r := range routes {
-		value := r
-		if err := tr.Insert(r, &value); err != nil {
-			panic(err)
-		}
-	}
-	return tr
-}
-
 func BenchmarkTrieFind_Static(b *testing.B) {
 	tr := buildBenchTrie()
 	b.ReportAllocs()
