@@ -1,48 +1,12 @@
 package devtool
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/versioning"
 )
-
-type snapshotGlobalGuard struct{}
-
-func (snapshotGlobalGuard) CanActivate(*ctx.HTTPContext) bool { return true }
-
-type snapshotBodyDTO struct {
-	Name string `bind:"name"`
-	Age  int    `bind:"age"`
-}
-
-func (dto snapshotBodyDTO) Transform(ctx.Body, common.ArgumentMetadata) any { return dto }
-
-func snapshotHandler(snapshotBodyDTO) any { return nil }
-
-func buildSnapshot() *Devtool {
-	return DevtoolBuilder().
-		AddExceptionFilters(nil, nil).
-		AddMiddlewares(nil, nil).
-		AddGuarders([]any{snapshotGlobalGuard{}}, nil).
-		AddInterceptors(nil, nil).
-		AddVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
-		AddHTTPMainHandlers([]common.HTTPLayer{{
-			Handler:        snapshotHandler,
-			ControllerPath: "users.Controller",
-			Name:           "CREATE",
-			Route:          "/users/",
-			Version:        "1",
-			Method:         http.MethodPost,
-			Pattern:        "/users/[POST]",
-		}}).
-		Build()
-}
 
 func TestDevtoolBuilder_BuildsHTTPComponent(t *testing.T) {
 	snapshot := buildSnapshot()
@@ -96,43 +60,47 @@ func TestDevtoolBuilder_DescribesBodySchema(t *testing.T) {
 	}
 }
 
-func TestDevtool_GetConfigurationReturnsSnapshot(t *testing.T) {
-	snapshot := buildSnapshot()
+func TestDevtool_WithoutVersioning(t *testing.T) {
+	var snapshot *Devtool
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatal(test.DiffMessage(r, "no panic", "D1: Build without AddVersioning does not panic"))
+			}
+		}()
+		snapshot = DevtoolBuilder().
+			AddExceptionFilters(nil, nil).
+			AddMiddlewares(nil, nil).
+			AddGuarders(nil, nil).
+			AddInterceptors(nil, nil).
+			AddHTTPMainHandlers(versionedHandlers()).
+			Build()
+	}()
 
-	response, err := snapshot.GetConfiguration(context.Background(), &GetConfigurationRequest{})
-	if err != nil {
-		t.Fatal(err)
+	if len(snapshot.Controller.Http) != 1 {
+		t.Fatal(test.DiffMessage(len(snapshot.Controller.Http), 1, "D1: HTTP components"))
 	}
-	if response.Controller != snapshot.Controller {
-		t.Error(test.DiffMessage(response.Controller, snapshot.Controller, "controller"))
+	v := snapshot.Controller.Http[0].Versioning
+	if v == nil {
+		t.Fatal(test.DiffMessage(nil, "a versioning entry", "D1: the entry has versioning"))
+	}
+	if v.Value != "1" || v.Key != "" || v.Type != 0 {
+		t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"1", "", int32(0)}, "D1: value is the route's version, key and type are empty"))
 	}
 }
 
-func TestDevtool_SnapshotEncodesAsJSON(t *testing.T) {
-	encoded, err := json.Marshal(buildSnapshot().GetConfigurationResponse)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDevtool_WithVersioningUnchanged(t *testing.T) {
+	snapshot := DevtoolBuilder().
+		AddExceptionFilters(nil, nil).
+		AddMiddlewares(nil, nil).
+		AddGuarders(nil, nil).
+		AddInterceptors(nil, nil).
+		AddVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
+		AddHTTPMainHandlers(versionedHandlers()).
+		Build()
 
-	var decoded GetConfigurationResponse
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Controller.Http[0].Route != "/users/" {
-		t.Error(test.DiffMessage(decoded.Controller.Http[0].Route, "/users/", "route after a JSON round trip"))
-	}
-}
-
-func TestLayerScope_String(t *testing.T) {
-	cases := map[LayerScope]string{
-		LayerScope_UNKNOWN:       "UNKNOWN",
-		LayerScope_REQUEST_SCOPE: "REQUEST_SCOPE",
-		LayerScope_GLOBAL_SCOPE:  "GLOBAL_SCOPE",
-		LayerScope(99):           "UNKNOWN",
-	}
-	for scope, expected := range cases {
-		if scope.String() != expected {
-			t.Error(test.DiffMessage(scope.String(), expected, "LayerScope.String"))
-		}
+	v := snapshot.Controller.Http[0].Versioning
+	if v.Value != "1" || v.Key != "X-Version" || v.Type != int32(versioning.TypeHeader) {
+		t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"1", "X-Version", int32(versioning.TypeHeader)}, "D1: with versioning the entry is what it is today"))
 	}
 }
