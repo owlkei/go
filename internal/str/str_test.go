@@ -8,8 +8,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-var strSink string
-
 func TestEnclose_Empty(t *testing.T) {
 	for _, in := range []string{"", " ", " \t\n\v\f\r "} {
 		got := Enclose(in, '/')
