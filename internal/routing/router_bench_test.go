@@ -1,7 +1,6 @@
 package routing
 
 import (
-	"fmt"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -10,31 +9,6 @@ import (
 
 	"github.com/dangduoc08/ginject/internal/ctx"
 )
-
-func randomSegment(rnd *rand.Rand, n int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = charset[rnd.Intn(len(charset))]
-	}
-	return string(b)
-}
-
-func randomRoute(rnd *rand.Rand) string {
-	return fmt.Sprintf("/%s/%s/{id}/%s", randomSegment(rnd, 8), randomSegment(rnd, 8), randomSegment(rnd, 8))
-}
-
-func buildBenchRouter(n int) (*Router, []string) {
-	rnd := rand.New(rand.NewSource(42))
-	r := NewRouter()
-	routes := make([]string, n)
-	handler := ctx.HTTPHandler(func(c *ctx.HTTPContext) {})
-	for i := 0; i < n; i++ {
-		routes[i] = randomRoute(rnd)
-		r.Add(http.MethodGet, routes[i], "", handler)
-	}
-	return r, routes
-}
 
 func BenchmarkRouterAdd(b *testing.B) {
 	rnd := rand.New(rand.NewSource(7))

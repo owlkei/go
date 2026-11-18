@@ -15,63 +15,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func noop(c *ctx.HTTPContext) {}
-
-func addGET(r *Router, routes ...string) *Router {
-	for _, route := range routes {
-		r.Add(http.MethodGet, route, "", noop)
-	}
-	return r
-}
-
-func patternOf(item *RouterItem) string {
-	if item == nil {
-		return ""
-	}
-	return item.Pattern
-}
-
-func getPattern(route string) string {
-	return MethodRouteVersionToPattern(http.MethodGet, route, "")
-}
-
-func sameParams(a, b []string) bool {
-	return len(a) == len(b) && (len(a) == 0 || slices.Equal(a, b))
-}
-
-func panicText(f func()) (string, bool) {
-	var text string
-	var panicked bool
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				panicked = true
-				text = fmt.Sprint(r)
-			}
-		}()
-		f()
-	}()
-	return text, panicked
-}
-
-func expectRoutePanic(t *testing.T, rule, route, reason string, f func()) {
-	t.Helper()
-	text, panicked := panicText(f)
-	if !panicked {
-		t.Error(test.DiffMessage(panicked, true, rule+": "+route+" must panic"))
-		return
-	}
-	if !strings.Contains(text, "invalid route: ") {
-		t.Error(test.DiffMessage(text, "invalid route: ...", rule+": panic category of "+route))
-	}
-	if !strings.Contains(text, route) {
-		t.Error(test.DiffMessage(text, route, rule+": panic names the route"))
-	}
-	if !strings.Contains(text, reason) {
-		t.Error(test.DiffMessage(text, reason, rule+": panic reason of "+route))
-	}
-}
-
 func TestRouter_Match_Root(t *testing.T) {
 	r := addGET(NewRouter(), "/")
 	for _, path := range []string{"/", "", "//"} {
@@ -138,34 +81,6 @@ func TestRouter_Match_LiteralDollarDeep(t *testing.T) {
 	if item == nil || !slices.Equal(params, []string{"$", "123"}) {
 		t.Error(test.DiffMessage(params, []string{"$", "123"}, "R4: a literal $ keeps parameters aligned"))
 	}
-}
-
-func invariantRoutes() []string {
-	return []string{
-		"/a/{x}",
-		"/a/{x}/b/{y}",
-		"/{x}/{y}/{z}",
-		"/a/b",
-		"/a/*",
-		"/*/b/{x}",
-		"/all/{x}/1",
-		"/a/*.html",
-		"/{x}",
-		"/b/{x}/*",
-	}
-}
-
-func randomPath(rnd *rand.Rand, tokens []string, maxSegments int) string {
-	n := rnd.Intn(maxSegments + 1)
-	var b strings.Builder
-	for i := 0; i < n; i++ {
-		b.WriteByte('/')
-		b.WriteString(tokens[rnd.Intn(len(tokens))])
-	}
-	if rnd.Intn(4) == 0 {
-		b.WriteByte('/')
-	}
-	return b.String()
 }
 
 func TestRouter_Match_ParamCountInvariant(t *testing.T) {
@@ -657,13 +572,6 @@ func TestRouterMatch(t *testing.T) {
 		if actual := patternOf(item); actual != expected {
 			t.Error(test.DiffMessage(actual, expected, "existing: "+requestedRoute+" should match "+expectedRoute))
 		}
-	}
-}
-
-func staticEqualsRoutes() []string {
-	return []string{
-		"/", "/users/all", "/users/{id}", "/users/{id}/friends", "/a/b/c", "/a/*", "/a/b/*.html",
-		"/x/{y}/z", "/b", "/*/b", "/files/in*.html",
 	}
 }
 
