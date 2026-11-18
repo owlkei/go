@@ -2,30 +2,18 @@ package hostcheck
 
 import (
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"golang.org/x/net/websocket"
-
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"golang.org/x/net/websocket"
 )
-
-const (
-	unknownHostBody = `{"code":421,"error":"Misdirected Request","message":"Unknown host"}`
-	invalidHostBody = `{"code":400,"error":"Bad Request","message":"Invalid host"}`
-)
-
-func hostRequest(host string) *http.Request {
-	r := request(http.MethodGet, "/ok")
-	r.Host = host
-	return r
-}
 
 func TestNewHostCheck_Panics_Empty(t *testing.T) {
 	for _, hosts := range [][]string{nil, {}} {

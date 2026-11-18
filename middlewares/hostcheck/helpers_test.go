@@ -2,12 +2,12 @@ package hostcheck
 
 import (
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/ctx"
@@ -15,24 +15,45 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
+func benchHost(b *testing.B, host string) {
+	b.Helper()
+	mw := HostCheck{Hosts: []string{"example.com", "*.example.org", "api.example.net:8443"}}.NewMiddleware()
+	r := hostRequest(host)
+	w := &discardWriter{header: http.Header{}}
+	b.ReportAllocs()
+	for b.Loop() {
+		mw.Use(r, w, noop)
+	}
+}
+
 func noop() {}
 
 type okController struct{ common.HTTP }
 
 func (c okController) NewController() core.Controller { return c }
-func (okController) READ_ok() string                  { return "ok" }
-func (okController) CREATE_ok() string                { return "ok" }
-func (okController) UPDATE_ok() string                { return "ok" }
-func (okController) MODIFY_ok() string                { return "ok" }
-func (okController) DELETE_ok() string                { return "ok" }
-func (okController) PREFLIGHT_ok() string             { return "options-route" }
+
+func (okController) READ_ok() string { return "ok" }
+
+func (okController) CREATE_ok() string { return "ok" }
+
+func (okController) UPDATE_ok() string { return "ok" }
+
+func (okController) MODIFY_ok() string { return "ok" }
+
+func (okController) DELETE_ok() string { return "ok" }
+
+func (okController) PREFLIGHT_ok() string { return "options-route" }
 
 type silentLogger struct{}
 
 func (silentLogger) Debug(string, ...any) {}
-func (silentLogger) Info(string, ...any)  {}
-func (silentLogger) Warn(string, ...any)  {}
+
+func (silentLogger) Info(string, ...any) {}
+
+func (silentLogger) Warn(string, ...any) {}
+
 func (silentLogger) Error(string, ...any) {}
+
 func (silentLogger) Fatal(string, ...any) {}
 
 type probeMiddleware struct{ Name string }
@@ -69,8 +90,10 @@ type discardWriter struct {
 	code   int
 }
 
-func (w *discardWriter) Header() http.Header         { return w.header }
-func (w *discardWriter) WriteHeader(code int)        { w.code = code }
+func (w *discardWriter) Header() http.Header { return w.header }
+
+func (w *discardWriter) WriteHeader(code int) { w.code = code }
+
 func (w *discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
@@ -126,4 +149,15 @@ func expectRefusal(t *testing.T, w *httptest.ResponseRecorder, code int, body, d
 	if got := w.Header().Get("Content-Type"); got != "application/json" {
 		t.Error(test.DiffMessage(got, "application/json", "G1: "+desc+": Content-Type"))
 	}
+}
+
+const (
+	unknownHostBody = `{"code":421,"error":"Misdirected Request","message":"Unknown host"}`
+	invalidHostBody = `{"code":400,"error":"Bad Request","message":"Invalid host"}`
+)
+
+func hostRequest(host string) *http.Request {
+	r := request(http.MethodGet, "/ok")
+	r.Host = host
+	return r
 }
