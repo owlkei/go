@@ -2,181 +2,22 @@ package throttler
 
 import (
 	"context"
-	"encoding/binary"
-	"errors"
 	"net/http"
-	"net/http/httptest"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/memorycache"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type activator interface {
-	CanActivate(*ctx.HTTPContext) bool
-}
-
-type testCache struct {
-	mu        sync.RWMutex
-	items     map[string][]byte
-	incrCalls atomic.Int64
-	setCalls  atomic.Int64
-}
-
-func newTestCache() *testCache {
-	return &testCache{items: make(map[string][]byte)}
-}
-
-func (tc *testCache) Get(_ context.Context, key string) ([]byte, bool) {
-	tc.mu.RLock()
-	v, ok := tc.items[key]
-	tc.mu.RUnlock()
-	return v, ok
-}
-
-func (tc *testCache) Set(_ context.Context, key string, val []byte, _ time.Duration) error {
-	tc.setCalls.Add(1)
-	tc.mu.Lock()
-	tc.items[key] = append([]byte(nil), val...)
-	tc.mu.Unlock()
-	return nil
-}
-
-func (tc *testCache) SetNX(_ context.Context, key string, val []byte, _ time.Duration) (bool, error) {
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-	if _, ok := tc.items[key]; ok {
-		return false, nil
-	}
-	tc.items[key] = append([]byte(nil), val...)
-	return true, nil
-}
-
-func (tc *testCache) Incr(_ context.Context, key string, delta int64, _ time.Duration) (int64, error) {
-	tc.incrCalls.Add(1)
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-	var cur int64
-	if v, ok := tc.items[key]; ok {
-		if len(v) != 8 {
-			return 0, memorycache.ErrNotCounter
-		}
-		cur = int64(binary.BigEndian.Uint64(v))
-	}
-	cur += delta
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(cur))
-	tc.items[key] = b
-	return cur, nil
-}
-
-func (tc *testCache) Delete(_ context.Context, key string) error {
-	tc.mu.Lock()
-	delete(tc.items, key)
-	tc.mu.Unlock()
-	return nil
-}
-
-func (tc *testCache) Keys(_ context.Context) []string {
-	tc.mu.RLock()
-	defer tc.mu.RUnlock()
-	keys := make([]string, 0, len(tc.items))
-	for k := range tc.items {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func (tc *testCache) TTL(_ context.Context, _ string) (time.Duration, bool) {
-	return 0, false
-}
-
-type failingCache struct {
-	testCache
-}
-
-func (fc *failingCache) Get(context.Context, string) ([]byte, bool) {
-	return nil, false
-}
-
-func (fc *failingCache) Set(context.Context, string, []byte, time.Duration) error {
-	return errors.New("backend down")
-}
-
-func (fc *failingCache) SetNX(context.Context, string, []byte, time.Duration) (bool, error) {
-	return false, errors.New("backend down")
-}
-
-func (fc *failingCache) Incr(context.Context, string, int64, time.Duration) (int64, error) {
-	return 0, errors.New("backend down")
-}
-
-var allStrategies = []struct {
-	name     string
-	strategy Strategy
-}{
-	{"FixedWindow", StrategyFixedWindow},
-	{"SlidingWindow", StrategySlidingWindow},
-	{"TokenBucket", StrategyTokenBucket},
-}
-
-func compile(t testing.TB, g Throttler) activator {
-	t.Helper()
-	guarder := g.NewGuard()
-	a, ok := guarder.(activator)
-	if !ok {
-		t.Fatal(test.DiffMessage(guarder, "a value with CanActivate(*ctx.HTTPContext) bool", "T6: NewGuard must return a guard"))
-	}
-	return a
-}
-
-func newCtx(remoteAddr string, headers map[string]string) *ctx.HTTPContext {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = remoteAddr
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	c := ctx.NewHTTPContext()
-	c.Request = req
-	c.ResponseWriter = httptest.NewRecorder()
-	return c
-}
-
-func try(a activator, c *ctx.HTTPContext) (allowed bool, refusal any) {
-	defer func() {
-		if r := recover(); r != nil {
-			allowed = false
-			refusal = r
-		}
-	}()
-	return a.CanActivate(c), nil
-}
-
-func headersOf(c *ctx.HTTPContext) http.Header {
-	return c.ResponseWriter.(*httptest.ResponseRecorder).Header()
-}
-
-func fixedKeyFunc(key string) func(*ctx.HTTPContext) string {
-	return func(*ctx.HTTPContext) string { return key }
-}
-
-func storeHas(tc *testCache, part string) bool {
-	for _, k := range tc.Keys(context.Background()) {
-		if strings.Contains(k, part) {
-			return true
-		}
-	}
-	return false
-}
 
 func TestThrottler_DefaultsAreAppliedByNewGuard(t *testing.T) {
 	a := compile(t, Throttler{})
@@ -280,30 +121,6 @@ func TestThrottler_DifferentKeysAreIndependent(t *testing.T) {
 				t.Error(test.DiffMessage(ok, true, "T3: "+s.name+" key "+k+" has its own budget"))
 			}
 		}
-	}
-}
-
-func exactnessRun(t *testing.T, a activator, limit int64, goroutines, perGoroutine int) {
-	t.Helper()
-	var allowed atomic.Int64
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			for range perGoroutine {
-				if ok, _ := try(a, newCtx("203.0.113.9:1", nil)); ok {
-					allowed.Add(1)
-				}
-			}
-		}()
-	}
-	close(start)
-	wg.Wait()
-	if got := allowed.Load(); got != limit {
-		t.Error(test.DiffMessage(got, limit, "T3: exactly Limit requests allowed out of "+strconv.Itoa(goroutines*perGoroutine)))
 	}
 }
 
@@ -613,5 +430,128 @@ func TestTokenBucket_RetryAfterNeverZeroOnRefusal(t *testing.T) {
 	reset, _ := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64)
 	if now := time.Now().Unix(); reset <= now-1 {
 		t.Error(test.DiffMessage(reset, "after the current second", "X-RateLimit-Reset rounds up too"))
+	}
+}
+
+func TestPageError_ThrottlerFollowsRoute(t *testing.T) {
+	app := core.New()
+	app.EnableRender(&core.RenderOptions{FS: fstest.MapFS{"page/hit.html": &fstest.MapFile{Data: []byte("OK")}}, Dir: "."})
+	app.Create(core.NewModuleBuilder().Controllers(pagedPage{}, pagedAPI{}).Build())
+
+	if w := pagedGet(app, "/page/hit", "application/json"); w.Code != http.StatusOK || w.Body.String() != "OK" {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "R19: the first request is served"))
+	}
+	w := pagedGet(app, "/page/hit", "application/json")
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusTooManyRequests, "R19: the second request is refused"))
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") || strings.HasPrefix(w.Body.String(), "{") {
+		t.Error(test.DiffMessage(ct, "text/html; charset=utf-8", "R19: a page route refuses in HTML whatever Accept says"))
+	}
+	if secs, err := strconv.Atoi(w.Header().Get("Retry-After")); err != nil || secs < 0 {
+		t.Error(test.DiffMessage(w.Header().Get("Retry-After"), "seconds", "R19: Retry-After is kept on the page"))
+	}
+	if w.Header().Get("X-Ratelimit-Limit") != "1" {
+		t.Error(test.DiffMessage(w.Header().Get("X-Ratelimit-Limit"), "1", "R19: the rate headers are kept on the page"))
+	}
+
+	if w := pagedGet(app, "/api/hit", "text/html"); w.Code != http.StatusOK {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "R19: the first API request is served"))
+	}
+	w = pagedGet(app, "/api/hit", "text/html")
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusTooManyRequests, "R19: the second API request is refused"))
+	}
+	if w.Header().Get("Content-Type") != "application/json" || !strings.HasPrefix(w.Body.String(), "{") {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Type"), "application/json", "R19: an API route refuses in JSON whatever Accept says"))
+	}
+	if w.Header().Get("Retry-After") == "" || w.Header().Get("X-Ratelimit-Limit") != "1" {
+		t.Error(test.DiffMessage(w.Header().Get("Retry-After"), "Retry-After and rate headers", "R19: the headers are kept on the API response"))
+	}
+}
+
+func TestThrottler_Snapshot(t *testing.T) {
+	a := compile(t, Throttler{Limit: 2, TTL: 24 * time.Hour, Strategy: StrategySlidingWindow})
+	for i := range 5 {
+		try(a, newCtx("203.0.113.9:"+strconv.Itoa(i+1), nil))
+	}
+	try(a, newCtx("203.0.113.10:1", nil))
+	f := snapshotOf(t, a)
+
+	if n, ok := numberOf(f["limit"]); !ok || n != 2 {
+		t.Error(test.DiffMessage(f["limit"], 2, "I4: effective limit"))
+	}
+	if f["ttl"] != 24*time.Hour {
+		t.Error(test.DiffMessage(f["ttl"], 24*time.Hour, "I4: effective TTL"))
+	}
+	if _, ok := f["strategy"]; !ok {
+		t.Error(test.DiffMessage(f, "a strategy field", "I4: effective strategy"))
+	}
+	if n, ok := numberOf(f["keys"]); !ok || n != 2 {
+		t.Error(test.DiffMessage(f["keys"], 2, "I4: keys is the store's count (two clients, sliding window stores the current window)"))
+	}
+	if n, ok := numberOf(f["rejected"]); !ok || n != 3 {
+		t.Error(test.DiffMessage(f["rejected"], 3, "I4: rejected counts refusals"))
+	}
+	if n, ok := numberOf(f["evictions"]); !ok || n != 0 {
+		t.Error(test.DiffMessage(f["evictions"], 0, "I4: evictions come from the store"))
+	}
+}
+
+func TestThrottler_Snapshot_CustomBackendHasNoStoreFields(t *testing.T) {
+	a := compile(t, Throttler{Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")})
+	try(a, newCtx("203.0.113.9:1", nil))
+	f := snapshotOf(t, a)
+	for _, name := range []string{"keys", "evictions"} {
+		if _, ok := f[name]; ok {
+			t.Error(test.DiffMessage(f[name], "absent", "I4: with a custom Backend the "+name+" field is absent"))
+		}
+	}
+	if _, ok := f["rejected"]; !ok {
+		t.Error(test.DiffMessage(f, "a rejected field", "I4: rejected stays"))
+	}
+}
+
+func TestThrottler_Snapshot_NotBuiltOnRequestPath(t *testing.T) {
+	a := compile(t, Throttler{Limit: 1 << 30, KeyFunc: fixedKeyFunc("k")})
+	c := newCtx("203.0.113.9:1", nil)
+	allocs := testing.AllocsPerRun(100, func() { a.CanActivate(c) })
+	if allocs > 8 {
+		t.Error(test.DiffMessage(allocs, 8, "I2: a passing request allocates no snapshot"))
+	}
+}
+
+func TestThrottler_StoreBounded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("1,000,000 distinct keys")
+	}
+	var next int
+	a := compile(t, Throttler{Limit: 1, TTL: 24 * time.Hour, KeyFunc: func(*ctx.HTTPContext) string {
+		next++
+		return "key-" + strconv.Itoa(next)
+	}})
+	c := newCtx("203.0.113.9:1", nil)
+	for i := range 1_000_000 {
+		a.CanActivate(c)
+		if i%100_000 == 99_999 {
+			if n, ok := numberOf(snapshotOf(t, a)["keys"]); !ok || n > 32768 {
+				t.Fatal(test.DiffMessage(n, 32768, "T4: entry count after "+strconv.Itoa(i+1)+" distinct keys"))
+			}
+		}
+	}
+	f := snapshotOf(t, a)
+	if n, ok := numberOf(f["evictions"]); !ok || n < 1_000_000-32768 {
+		t.Error(test.DiffMessage(f["evictions"], 1_000_000-32768, "T4: every key past the bound evicts another"))
+	}
+}
+
+func TestThrottler_StoreBounded_SpoofedHeaderFlood(t *testing.T) {
+	a := compile(t, Throttler{Limit: 5, TTL: 24 * time.Hour})
+	for i := range 100_000 {
+		ip := "10." + strconv.Itoa(i>>16&255) + "." + strconv.Itoa(i>>8&255) + "." + strconv.Itoa(i&255)
+		try(a, newCtx("203.0.113.9:1", map[string]string{"X-Forwarded-For": ip, "X-Real-IP": ip}))
+	}
+	if n, ok := numberOf(snapshotOf(t, a)["keys"]); !ok || n != 1 {
+		t.Error(test.DiffMessage(n, 1, "T1, T4: a flood of spoofed headers from one peer stores one key"))
 	}
 }

@@ -1,33 +1,8 @@
 package throttler
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
-
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/memorycache"
 )
-
-func benchGuard(b *testing.B, strategy Strategy) activator {
-	return compile(b, Throttler{
-		Limit:    1 << 40,
-		TTL:      time.Minute,
-		Strategy: strategy,
-		KeyFunc:  func(*ctx.HTTPContext) string { return "benchkey" },
-		Backend:  memorycache.NewMemoryCache(nil),
-	})
-}
-
-func benchCtx() *ctx.HTTPContext {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	c := ctx.NewHTTPContext()
-	c.Request = req
-	c.ResponseWriter = httptest.NewRecorder()
-	return c
-}
 
 func BenchmarkCanActivate(b *testing.B) {
 	for _, s := range allStrategies {
