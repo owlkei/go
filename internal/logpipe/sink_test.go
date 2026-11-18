@@ -1019,19 +1019,6 @@ func TestSink_StopAsyncWritesWithoutTimer(t *testing.T) {
 	}
 }
 
-func heldPass(t *testing.T, f *fakedSink) chan struct{} {
-	t.Helper()
-	f.w.hold()
-	f.s.Write(Info, rec(40, 'a'), quietReport)
-	fired := make(chan struct{})
-	go func() {
-		f.ft.fire()
-		close(fired)
-	}()
-	<-f.w.entered
-	return fired
-}
-
 func TestSink_EndOfPassRearmsBelowWakeSize(t *testing.T) {
 	f := newFakedSink(t)
 	fired := heldPass(t, f)

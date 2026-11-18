@@ -8,30 +8,6 @@ import (
 	"time"
 )
 
-type slowWriter struct{ delay time.Duration }
-
-func (w slowWriter) Write(p []byte) (int, error) {
-	time.Sleep(w.delay)
-	return len(p), nil
-}
-
-func benchRecord() []byte {
-	return []byte(`{"time":"2026-11-16T10:00:00.123456789Z","level":"INFO","msg":"request","id":"0f1e2d3c4b5a6978","code":200,"ok":true}` + "\n")
-}
-
-type dropCounter struct{ n atomic.Uint64 }
-
-func (d *dropCounter) report(dropped [4]uint64) []byte {
-	d.n.Add(dropped[0] + dropped[1] + dropped[2] + dropped[3])
-	return nil
-}
-
-func (d *dropCounter) reportPerOp(b *testing.B, ops int64) {
-	if ops > 0 {
-		b.ReportMetric(float64(d.n.Load())/float64(ops), "dropped/op")
-	}
-}
-
 func BenchmarkSink_Write_Async_1(b *testing.B) {
 	s := New(io.Discard)
 	s.StartAsync()
