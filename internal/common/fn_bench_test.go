@@ -15,7 +15,7 @@ func BenchmarkGetFnName(b *testing.B) {
 func BenchmarkParseFnNameToURL_Simple(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		ParseFuncNameToURL("READ_users")
+		ParseFuncNameToURL("READ_users", PathStyleKebab)
 	}
 }
 
@@ -24,6 +24,7 @@ func BenchmarkParseFnNameToURL_Complex(b *testing.B) {
 	for b.Loop() {
 		ParseFuncNameToURL(
 			"UPDATE_products_BY_productId_AND_productRanks_OF_categories_BY_categoryId_AND_categoryRank_OF_shops_BY_shopId_AND_shopRanks_VERSION_V_12",
+			PathStyleKebab,
 		)
 	}
 }

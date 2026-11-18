@@ -1,3 +1,5 @@
+pkg ginject, const PathStyleAsWritten common.PathStyle = 2
+pkg ginject, const PathStyleKebab common.PathStyle = 1
 pkg ginject, const VersioningCustom versioning.Type = 3
 pkg ginject, const VersioningHeader versioning.Type = 2
 pkg ginject, const VersioningMediaType versioning.Type = 4
@@ -27,6 +29,7 @@ pkg ginject, type Module = *core.Module
 pkg ginject, type Next = ctx.Next
 pkg ginject, type Page = common.Page
 pkg ginject, type Param = ctx.Param
+pkg ginject, type PathStyle = common.PathStyle
 pkg ginject, type Provider = core.Provider
 pkg ginject, type Publisher = common.Publisher
 pkg ginject, type Query = ctx.Query
@@ -237,11 +240,13 @@ reach common.ArgumentMetadata, field ContextType string
 reach common.ArgumentMetadata, field ParamType string
 reach common.ExceptionFilter, method (*common.ExceptionFilter) BindExceptionFilter(any, ...any) *common.ExceptionFilter
 reach common.Guard, method (*common.Guard) BindGuard(any, ...any) *common.Guard
+reach common.HTTP, method (*common.HTTP) Path(string, ...any) *common.HTTP
 reach common.HTTP, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
 reach common.Interceptor, method (*common.Interceptor) BindInterceptor(any, ...any) *common.Interceptor
 reach common.Middleware, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
 reach common.MiddlewareFn, method (common.MiddlewareFn) Use(*http.Request, http.ResponseWriter, ctx.Next)
 reach common.Page, method (*common.Page) Prefix(string, ...any) *common.Page
+reach common.PathStyle, type int
 reach common.Publisher, method (common.Publisher) Publish(string, ...any) error
 reach common.View, field Data any
 reach common.View, field Name string
@@ -273,6 +278,7 @@ reach core.Module, method (*core.Module) Prefix(string) *core.Module
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Build() *core.Module
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Controller) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) PathStyle(common.PathStyle) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
 reach core.Provider, method (core.Provider) NewProvider() core.Provider
 reach core.RenderOptions, field Dir string

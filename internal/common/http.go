@@ -1,8 +1,11 @@
 package common
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/dangduoc08/ginject/internal/color"
 
 	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
@@ -36,6 +39,13 @@ var HTTPTokenMap = map[string]string{
 	TokenVersion: TokenVersion,
 }
 
+type PathStyle int
+
+const (
+	PathStyleKebab PathStyle = iota + 1
+	PathStyleAsWritten
+)
+
 type HTTPLayer struct {
 	Handler         any
 	ControllerPath  string
@@ -50,9 +60,15 @@ type HTTPLayer struct {
 
 type HTTP struct {
 	prefixes             []Prefix
+	exactPaths           []exactPath
 	patternToFuncNameMap map[string]string
 	funcNameToPatternMap map[string]string
 	routerMap            map[string]any
+}
+
+type exactPath struct {
+	value  string
+	fnName string
 }
 
 type Prefix struct {
@@ -122,17 +138,61 @@ func (r *HTTP) Prefix(v string, handlers ...any) *HTTP {
 	return r
 }
 
-func AddHandlerToRouterMap(r *HTTP, modulePrefixes []string, fnName string, handler any) {
-	prefixes := r.getPrefixes()
+func (r *HTTP) Path(v string, handlers ...any) *HTTP {
+	if len(handlers) == 0 {
+		panic(errors.New(color.FmtRed("invalid route: Path(%q) needs at least one handler", v)))
+	}
+	if i := strings.IndexAny(v, "?#"); i >= 0 {
+		panic(errors.New(color.FmtRed("invalid route: Path(%q) holds '%c': a path has no query or fragment", v, v[i])))
+	}
 
-	httpMethod, route, version := ParseFuncNameToURL(fnName)
-	if httpMethod != "" {
-		route = r.addPrefixesToRoute(route, fnName, prefixes)
-		for _, modulePrefix := range modulePrefixes {
-			route = modulePrefix + route
+	paths := r.exactPaths[:len(r.exactPaths):len(r.exactPaths)]
+	for _, handler := range handlers {
+		name, isFunc := handlerName(handler)
+		if !isFunc {
+			panic(errors.New(color.FmtRed("invalid route: Path(%q) is bound to '%s', which is not a handler of the controller", v, name)))
 		}
+		if previous, ok := findExactPath(paths, name); ok {
+			panic(errors.New(color.FmtRed("invalid route: %s has two exact paths: %q and %q", name, previous.value, v)))
+		}
+		paths = append(paths, exactPath{value: v, fnName: name})
+	}
+	r.exactPaths = paths
 
-		r.addToRouters(fnName, route, version, httpMethod, handler)
+	return r
+}
+
+func findExactPath(paths []exactPath, fnName string) (exactPath, bool) {
+	for _, path := range paths {
+		if path.fnName == fnName {
+			return path, true
+		}
+	}
+	return exactPath{}, false
+}
+
+func AddHandlerToRouterMap(r *HTTP, modulePrefixes []string, style PathStyle, fnName string, handler any) {
+	httpMethod, route, version := ParseFuncNameToURL(fnName, style)
+	if httpMethod == "" {
+		return
+	}
+
+	if path, ok := findExactPath(r.exactPaths, fnName); ok {
+		route = str.Enclose(path.value, '/')
+	}
+	route = r.addPrefixesToRoute(route, fnName, r.getPrefixes())
+	for _, modulePrefix := range modulePrefixes {
+		route = modulePrefix + route
+	}
+
+	r.addToRouters(fnName, route, version, httpMethod, handler)
+}
+
+func CheckExactPaths(r *HTTP) {
+	for _, path := range r.exactPaths {
+		if _, ok := r.funcNameToPatternMap[path.fnName]; !ok {
+			panic(errors.New(color.FmtRed("invalid route: Path(%q) is bound to '%s', which is not a handler of the controller", path.value, path.fnName)))
+		}
 	}
 }
 

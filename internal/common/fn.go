@@ -4,7 +4,9 @@ import (
 	"errors"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/color"
@@ -28,134 +30,175 @@ func GetFuncName(handler any) string {
 	return strings.TrimSuffix(name, "-fm")
 }
 
-func ParseFuncNameToURL(fnName string) (string, string, string) {
-	method := ""
-	route := ""
-	version := ""
+func ParseFuncNameToURL(fnName string, style PathStyle) (string, string, string) {
+	words := strings.Split(fnName, "_")
+	method, ok := HTTPOperations[words[0]]
+	if !ok {
+		return "", "", ""
+	}
 
-	subStr := strings.FieldsFunc(fnName, func(r rune) bool { return r == '_' })
-	j := -1
+	p := routeParser{name: fnName, words: words, i: 1, isServe: method == routing.SERVE, joint: "-"}
+	if style == PathStyleAsWritten {
+		p.joint = "_"
+	}
 
-	for i, b := range subStr {
-
-		if j >= 0 && i < j {
-			continue
+	var resources [][]string
+	for {
+		segments := p.resource()
+		isOf := p.at(TokenOf)
+		if len(segments) == 0 && (isOf || len(resources) > 0) {
+			panic(errors.New(color.FmtRed("invalid route: OF in %s needs a resource or a parameter on both sides", fnName)))
 		}
-
-		s := b
-
-		if i == 0 {
-			var ok bool
-			method, ok = HTTPOperations[s]
-			if !ok {
-				return "", "", ""
-			}
-		}
-
-		if s == TokenVersion {
-			if i+1 < len(subStr) {
-				version = strings.Join(subStr[i+1:], "_")
-			}
+		resources = append(resources, segments)
+		if !isOf {
 			break
 		}
+		p.i++
+	}
 
-		if _, ok := HTTPOperations[s]; ok || s == TokenOf {
-			i++
-			path := ""
-			isAny := false
+	version := ""
+	if p.at(TokenVersion) {
+		version = strings.Join(slices.DeleteFunc(slices.Clone(words[p.i+1:]), isEmptyWord), "_")
+	}
 
-			for i < len(subStr) &&
-				subStr[i] != TokenBy &&
-				subStr[i] != TokenAnd &&
-				subStr[i] != TokenOf &&
-				subStr[i] != TokenVersion {
-
-				if subStr[i] == TokenAny {
-					if method == routing.SERVE && path != "" && isGroupEnd(subStr, i+1) {
-						path += "/*"
-					} else {
-						path += "*"
-					}
-					isAny = true
-				}
-
-				if subStr[i] == TokenFile {
-					lastWildcardIndex := strings.LastIndex(path, "*")
-					if lastWildcardIndex > -1 {
-						remainPath := "*"
-						extension := strings.ToLower(path[lastWildcardIndex+1:])
-						path = remainPath + "." + extension
-					} else {
-						lastWildcardIndex := strings.LastIndex(path, "_")
-						if lastWildcardIndex > -1 {
-							remainPath := path[:lastWildcardIndex]
-							if remainPath == TokenAny {
-								remainPath = "*"
-							}
-							extension := strings.ToLower(path[lastWildcardIndex+1:])
-
-							path = remainPath + "." + extension
-						}
-					}
-				}
-
-				if subStr[i] != TokenAny && subStr[i] != TokenFile {
-					if path == "" || isAny {
-						path += subStr[i]
-						isAny = false
-					} else {
-						path += "_" + subStr[i]
-					}
-				}
-				i++
-			}
-			j = i
-
-			route = path + "/" + route
-			continue
-		}
-
-		if s == TokenBy || s == TokenAnd {
-			firstSlashIndex := strings.Index(route, "/")
-			resource := route[:firstSlashIndex]
-			rest := route[firstSlashIndex:]
-
-			i++
-			start := i
-			for i < len(subStr) && HTTPTokenMap[subStr[i]] == "" {
-				i++
-			}
-			param := strings.Join(subStr[start:i], "_")
-			j = i
-
-			at := paramInsertIndex(rest)
-			route = resource + rest[:at] + "/{" + param + "}" + rest[at:]
-			continue
-		}
-
-		if s == TokenAny && (i == len(subStr)-1 || subStr[i+1] == TokenOf) {
-
-			if route == "" {
-				route = "*/"
-				continue
-			}
-			firstSlashIndex := strings.Index(route, "/")
-			shouldConcatRoute := route[:firstSlashIndex]
-			remainRoutes := route[firstSlashIndex:]
-			route = "*/" + shouldConcatRoute + remainRoutes
-			continue
+	var b strings.Builder
+	b.Grow(len(fnName) + 2)
+	b.WriteByte('/')
+	for i := len(resources) - 1; i >= 0; i-- {
+		for _, segment := range resources[i] {
+			b.WriteString(segment)
+			b.WriteByte('/')
 		}
 	}
 
-	return method, "/" + strings.TrimPrefix(route, "/"), version
+	return method, b.String(), version
 }
 
-func isGroupEnd(subStr []string, i int) bool {
-	return i >= len(subStr) ||
-		subStr[i] == TokenBy ||
-		subStr[i] == TokenAnd ||
-		subStr[i] == TokenOf ||
-		subStr[i] == TokenVersion
+type routeParser struct {
+	name    string
+	words   []string
+	i       int
+	isServe bool
+	joint   string
+}
+
+type routeItem struct {
+	text  string
+	isAny bool
+	isExt bool
+}
+
+func (p *routeParser) at(token string) bool {
+	return p.i < len(p.words) && p.words[p.i] == token
+}
+
+func (p *routeParser) resource() []string {
+	var items []routeItem
+	for ; p.i < len(p.words); p.i++ {
+		word := p.words[p.i]
+		switch word {
+		case TokenOf, TokenVersion:
+			return p.renderItems(items)
+		case TokenBy, TokenAnd:
+			return append(p.renderItems(items), p.params()...)
+		case TokenAny:
+			items = append(items, routeItem{isAny: true})
+		case TokenFile:
+			if len(items) < 2 {
+				panic(errors.New(color.FmtRed("invalid route: FILE in %s needs a name and an extension before it", p.name)))
+			}
+			last := &items[len(items)-1]
+			last.isExt = true
+			last.text = strings.ToLower(last.text)
+		case "":
+		default:
+			checkLowerWord(word, p.name)
+			items = append(items, routeItem{text: word})
+		}
+	}
+	return p.renderItems(items)
+}
+
+func (p *routeParser) params() []string {
+	var segments []string
+	for p.at(TokenBy) || p.at(TokenAnd) {
+		keyword := p.words[p.i]
+		p.i++
+		start := p.i
+		for p.i < len(p.words) && !isRouteWord(p.words[p.i]) {
+			p.i++
+		}
+		param := strings.Join(p.words[start:p.i], "_")
+		if strings.Trim(param, "_") == "" {
+			panic(errors.New(color.FmtRed("invalid route: %s in %s has no parameter name", keyword, p.name)))
+		}
+		segments = append(segments, "{"+param+"}")
+	}
+	if p.at(TokenAny) {
+		segments = append(segments, "*")
+		p.i++
+	}
+	for p.i < len(p.words) && p.words[p.i] == "" {
+		p.i++
+	}
+	if p.i < len(p.words) && !p.at(TokenOf) && !p.at(TokenVersion) {
+		panic(errors.New(color.FmtRed("invalid route: %s in %s comes after a parameter; start the next resource with OF", p.words[p.i], p.name)))
+	}
+	return segments
+}
+
+func (p *routeParser) renderItems(items []routeItem) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	last := len(items) - 1
+	if p.isServe && last > 0 && items[last].isAny && !items[last].isExt {
+		return []string{p.join(items[:last]), "*"}
+	}
+	return []string{p.join(items)}
+}
+
+func (p *routeParser) join(items []routeItem) string {
+	var b strings.Builder
+	for i, item := range items {
+		if i > 0 {
+			if item.isExt {
+				b.WriteByte('.')
+			} else if !item.isAny && !items[i-1].isAny {
+				b.WriteString(p.joint)
+			}
+		}
+		if item.isAny {
+			b.WriteByte('*')
+		} else {
+			b.WriteString(item.text)
+		}
+	}
+	return b.String()
+}
+
+func isRouteWord(word string) bool {
+	_, ok := HTTPTokenMap[word]
+	return ok
+}
+
+func isEmptyWord(word string) bool {
+	return word == ""
+}
+
+func checkLowerWord(word, fnName string) {
+	hasUpper := false
+	for _, r := range word {
+		if unicode.IsLower(r) {
+			return
+		}
+		if unicode.IsUpper(r) {
+			hasUpper = true
+		}
+	}
+	if hasUpper {
+		panic(errors.New(color.FmtRed("invalid route: %s in %s is upper case but not a route word; write it in lower case or camelCase", word, fnName)))
+	}
 }
 
 func ParseWSFuncNameToEvent(fnName string) (string, bool) {
@@ -166,41 +209,30 @@ func ParseWSFuncNameToEvent(fnName string) (string, bool) {
 	if _, ok := WSOperations[op]; !ok {
 		return "", false
 	}
-	var b strings.Builder
-	b.Grow(len(rest))
-	hasSeg := false
-	for rest != "" {
-		var p string
-		p, rest, _ = strings.Cut(rest, "_")
-		if p == "" {
-			continue
-		}
-		if hasSeg {
-			b.WriteByte('.')
-		}
-		if p == TokenAny {
-			b.WriteByte('*')
-		} else {
-			b.WriteString(strings.ToLower(p))
-		}
-		hasSeg = true
-	}
-	if !hasSeg {
+	words := strings.FieldsFunc(rest, func(r rune) bool { return r == '_' })
+	if len(words) == 0 {
 		return "", false
 	}
-	return b.String(), true
-}
-
-func paramInsertIndex(rest string) int {
-	at := 0
-	for at+1 < len(rest) && rest[at+1] == '{' {
-		end := strings.Index(rest[at:], "}/")
-		if end < 0 {
-			break
+	var b strings.Builder
+	b.Grow(len(rest) + 1)
+	for i, word := range words {
+		if i > 0 {
+			b.WriteByte('.')
 		}
-		at += end + 1
+		switch word {
+		case TokenAll:
+			if i != len(words)-1 {
+				panic(errors.New(color.FmtRed("invalid route: ALL in %s must be the last word", fnName)))
+			}
+			b.WriteString("**")
+		case TokenAny:
+			b.WriteByte('*')
+		default:
+			checkLowerWord(word, fnName)
+			b.WriteString(strings.ToLower(word))
+		}
 	}
-	return at
+	return b.String(), true
 }
 
 func ToWSEventName(s string) string {
@@ -261,7 +293,7 @@ func handlerName(handler any) (string, bool) {
 
 func wsHandlerTargets(handlers []any, category string, layerType reflect.Type) handlerTargets {
 	return resolveHandlerTargets(handlers, category, layerType, ParseWSFuncNameToEvent, func(fnName string) bool {
-		method, _, _ := ParseFuncNameToURL(fnName)
+		method, _, _ := ParseFuncNameToURL(fnName, PathStyleKebab)
 		return method != ""
 	})
 }

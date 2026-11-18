@@ -40,6 +40,7 @@ type container struct {
 	controllerKeysByModule map[*Module][]string
 	controllerByKey        map[string]Controller
 	prefixesByController   map[string][]string
+	styleByController      map[string]common.PathStyle
 
 	layersByKey      map[layerKey][]*layerEntry
 	funcByRouteShape map[string]string
@@ -86,6 +87,7 @@ func newContainer() *container {
 		controllerKeysByModule: make(map[*Module][]string),
 		controllerByKey:        make(map[string]Controller),
 		prefixesByController:   make(map[string][]string),
+		styleByController:      make(map[string]common.PathStyle),
 		layersByKey:            make(map[layerKey][]*layerEntry),
 		funcByRouteShape:       make(map[string]string),
 		funcByEvent:            make(map[string]string),
@@ -217,6 +219,9 @@ func (c *container) discover(m *Module) {
 
 	for _, key := range controllerKeys {
 		c.prefixesByController[key] = append(c.prefixesByController[key], m.prefixes...)
+		if _, ok := c.styleByController[key]; !ok && m.pathStyle != 0 {
+			c.styleByController[key] = m.pathStyle
+		}
 	}
 
 	c.visibleByModule[m] = visible
@@ -389,17 +394,23 @@ func (c *container) bindHTTPController(controller Controller) {
 	}
 	checkViewResults(controllerType, isPage)
 	controllerPath := controllerType.PkgPath()
-	modulePrefixes := c.prefixesByController[genFieldKey(controllerType)]
+	controllerKey := genFieldKey(controllerType)
+	modulePrefixes := c.prefixesByController[controllerKey]
+	style, ok := c.styleByController[controllerKey]
+	if !ok {
+		style = common.PathStyleKebab
+	}
 
 	for j := 0; j < controllerType.NumMethod(); j++ {
 		methodName := controllerType.Method(j).Name
 
 		handler := controllerValue.Method(j).Interface()
-		common.AddHandlerToRouterMap(&http, modulePrefixes, methodName, handler)
+		common.AddHandlerToRouterMap(&http, modulePrefixes, style, methodName, handler)
 		if pattern, ok := common.HTTPFuncNameToPatternMap(&http)[methodName]; ok {
 			c.addRoute(pattern, methodName)
 		}
 	}
+	common.CheckExactPaths(&http)
 
 	c.bindHTTPExceptionFilters(controller, controllerType, controllerPath, &http)
 	c.bindHTTPMiddlewares(controller, controllerType, controllerPath, &http)
@@ -437,7 +448,7 @@ var viewType = reflect.TypeFor[common.View]()
 func checkViewResults(controllerType reflect.Type, isPage bool) {
 	for j := 0; j < controllerType.NumMethod(); j++ {
 		method := controllerType.Method(j)
-		httpMethod, _, _ := common.ParseFuncNameToURL(method.Name)
+		httpMethod, _, _ := common.ParseFuncNameToURL(method.Name, common.PathStyleKebab)
 		if httpMethod == "" || httpMethod == routing.SERVE {
 			continue
 		}

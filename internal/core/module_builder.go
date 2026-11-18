@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/common"
 )
 
 const maxModuleNameStackDepth = 32
@@ -29,6 +30,7 @@ type ModuleBuilder struct {
 	imports     []any
 	providers   []Provider
 	controllers []Controller
+	pathStyle   common.PathStyle
 }
 
 func NewModuleBuilder() *ModuleBuilder {
@@ -80,6 +82,14 @@ func (m *ModuleBuilder) Controllers(controllers ...Controller) *ModuleBuilder {
 	return m
 }
 
+func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder {
+	if style != common.PathStyleKebab && style != common.PathStyleAsWritten {
+		panic(color.FmtRed("invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten"))
+	}
+	m.pathStyle = style
+	return m
+}
+
 func (m *ModuleBuilder) Build() *Module {
 	staticModules, dynamicModules := m.getModuleType()
 
@@ -89,6 +99,7 @@ func (m *ModuleBuilder) Build() *Module {
 		dynamicModules: dynamicModules,
 		providers:      m.providers,
 		controllers:    m.controllers,
+		pathStyle:      m.pathStyle,
 	}
 
 	module.id = strconv.FormatUint(uint64(reflect.ValueOf(module).Pointer()), 10)

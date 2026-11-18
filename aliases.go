@@ -48,6 +48,8 @@ type (
 
 	VersioningOptions = versioning.Options
 	VersioningType    = versioning.Type
+
+	PathStyle = common.PathStyle
 )
 
 func ModuleBuilder() *core.ModuleBuilder {
@@ -63,4 +65,9 @@ const (
 	VersioningHeader    = versioning.TypeHeader
 	VersioningCustom    = versioning.TypeCustom
 	VersioningMediaType = versioning.TypeMediaType
+)
+
+const (
+	PathStyleKebab     = common.PathStyleKebab
+	PathStyleAsWritten = common.PathStyleAsWritten
 )

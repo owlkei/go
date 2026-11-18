@@ -1,6 +1,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
@@ -138,4 +139,63 @@ func TestAddHandlerToEventMap_SameEventDoesNotPanic(t *testing.T) {
 		}
 	}()
 	AddHandlerToEventMap(ws, "SUBSCRIBE_message", nil)
+}
+
+func TestParseWSFnNameToEvent_All(t *testing.T) {
+	cases := []struct{ fn, want string }{
+		{"SUBSCRIBE_chat_ALL", "chat.**"},
+		{"SUBSCRIBE_ALL", "**"},
+		{"SUBSCRIBE_chat_ANY_ALL", "chat.*.**"},
+		{"SUBSCRIBE_chat_ANY", "chat.*"},
+	}
+	for _, c := range cases {
+		got, ok := ParseWSFuncNameToEvent(c.fn)
+		if !ok || got != c.want {
+			t.Error(test.DiffMessage(got, c.want, "B18: "+c.fn))
+		}
+	}
+}
+
+func TestParseWSFnNameToEvent_AllNotLastPanics(t *testing.T) {
+	for _, fn := range []string{"SUBSCRIBE_chat_ALL_x", "SUBSCRIBE_ALL_chat", "SUBSCRIBE_ALL_ANY"} {
+		want := "invalid route: ALL in " + fn + " must be the last word"
+		text, panicked := routePanicText(func() { ParseWSFuncNameToEvent(fn) })
+		if !panicked || !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "B19: "+fn))
+		}
+	}
+}
+
+func TestParseWSFnNameToEvent_UpperCaseWordPanics(t *testing.T) {
+	cases := []struct{ fn, word string }{
+		{"SUBSCRIBE_chat_PERSON_ANY", "PERSON"},
+		{"SUBSCRIBE_chat_V2", "V2"},
+		{"SUBSCRIBE_FB", "FB"},
+	}
+	for _, c := range cases {
+		text, panicked := routePanicText(func() { ParseWSFuncNameToEvent(c.fn) })
+		if want := upperCaseMessage(c.word, c.fn); !panicked || !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "B9: "+c.fn))
+		}
+	}
+}
+
+func TestParseWSFnNameToEvent_UpperCaseAllowedAndOthersIgnored(t *testing.T) {
+	cases := []struct{ fn, want string }{
+		{"SUBSCRIBE_Chat_Message", "chat.message"},
+		{"SUBSCRIBE_chatRoom", "chatroom"},
+		{"SUBSCRIBE_chat_ANY_message", "chat.*.message"},
+	}
+	for _, c := range cases {
+		got, ok := ParseWSFuncNameToEvent(c.fn)
+		if !ok || got != c.want {
+			t.Error(test.DiffMessage(got, c.want, "B9: "+c.fn))
+		}
+	}
+	for _, fn := range []string{"READ_orgs_FB", "Helper_FB", "SUBSCRIBE", "subscribe_FB"} {
+		text, panicked := routePanicText(func() { ParseWSFuncNameToEvent(fn) })
+		if panicked {
+			t.Error(test.DiffMessage(text, "no panic", "B10: "+fn+" is not a WebSocket route"))
+		}
+	}
 }

@@ -9,11 +9,11 @@ import (
 func TestParseFuncNameToURL_ServeTrailingAnyIsSegment(t *testing.T) {
 	cases := []struct{ fn, wantRoute string }{
 		{"SERVE_static_ANY", "/static/*/"},
-		{"SERVE_a_b_ANY", "/a_b/*/"},
+		{"SERVE_a_b_ANY", "/a-b/*/"},
 		{"SERVE_assets_ANY_OF_public", "/public/assets/*/"},
 	}
 	for _, c := range cases {
-		method, route, version := ParseFuncNameToURL(c.fn)
+		method, route, version := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if method != "SERVE" {
 			t.Error(test.DiffMessage(method, "SERVE", "V1: "+c.fn+" method"))
 		}
@@ -33,7 +33,7 @@ func TestParseFuncNameToURL_ServeAnyBetweenNamesIsGlob(t *testing.T) {
 		{"SERVE_me_ANY_bers", "/me*bers/"},
 	}
 	for _, c := range cases {
-		_, route, _ := ParseFuncNameToURL(c.fn)
+		_, route, _ := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if route != c.wantRoute {
 			t.Error(test.DiffMessage(route, c.wantRoute, "V2: "+c.fn+" route"))
 		}
@@ -44,10 +44,10 @@ func TestParseFuncNameToURL_ReadTrailingAnyStaysGlob(t *testing.T) {
 	cases := []struct{ fn, wantRoute string }{
 		{"READ_assets_ANY", "/assets*/"},
 		{"CREATE_assets_ANY", "/assets*/"},
-		{"READ_a_b_ANY", "/a_b*/"},
+		{"READ_a_b_ANY", "/a-b*/"},
 	}
 	for _, c := range cases {
-		_, route, _ := ParseFuncNameToURL(c.fn)
+		_, route, _ := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if route != c.wantRoute {
 			t.Error(test.DiffMessage(route, c.wantRoute, "V2: "+c.fn+" route"))
 		}

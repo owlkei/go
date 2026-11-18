@@ -57,7 +57,7 @@ func TestParseFnNameToURL_AllHTTPMethods(t *testing.T) {
 		{"PREFLIGHT_health", "OPTIONS", "/health/"},
 	}
 	for _, c := range cases {
-		method, route, version := ParseFuncNameToURL(c.fn)
+		method, route, version := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if method != c.wantMethod {
 			t.Error(test.DiffMessage(method, c.wantMethod, c.fn+" method"))
 		}
@@ -79,7 +79,7 @@ func TestParseFnNameToURL_InvalidInput(t *testing.T) {
 		{"", ""},
 	}
 	for _, c := range cases {
-		method, _, _ := ParseFuncNameToURL(c.fn)
+		method, _, _ := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if method != c.wantMethod {
 			t.Error(test.DiffMessage(method, c.wantMethod, c.fn+" method should be empty"))
 		}
@@ -98,7 +98,7 @@ func TestParseFnNameToURL_VersionExtraction(t *testing.T) {
 		{"READ_users_VERSION", "/users/", ""},
 	}
 	for _, c := range cases {
-		_, route, version := ParseFuncNameToURL(c.fn)
+		_, route, version := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if route != c.wantRoute {
 			t.Error(test.DiffMessage(route, c.wantRoute, c.fn+" route"))
 		}
@@ -117,7 +117,7 @@ func TestParseFnNameToURL_BareOperation(t *testing.T) {
 		{"READ_VERSION_v1", "/"},
 	}
 	for _, c := range cases {
-		_, route, _ := ParseFuncNameToURL(c.fn)
+		_, route, _ := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if route != c.wantRoute {
 			t.Error(test.DiffMessage(route, c.wantRoute, c.fn+" route"))
 		}
@@ -125,7 +125,7 @@ func TestParseFnNameToURL_BareOperation(t *testing.T) {
 }
 
 func TestParseFnNameToURL_ParamWithoutPath(t *testing.T) {
-	_, route, _ := ParseFuncNameToURL("READ_BY_id")
+	_, route, _ := ParseFuncNameToURL("READ_BY_id", PathStyleKebab)
 	want := "/{id}/"
 	if route != want {
 		t.Error(test.DiffMessage(route, want, "READ_BY_id route"))
@@ -133,7 +133,7 @@ func TestParseFnNameToURL_ParamWithoutPath(t *testing.T) {
 }
 
 func TestParseFnNameToURL_ThreeParamsKeepOrder(t *testing.T) {
-	method, route, version := ParseFuncNameToURL("READ_x_BY_a_AND_b_AND_c")
+	method, route, version := ParseFuncNameToURL("READ_x_BY_a_AND_b_AND_c", PathStyleKebab)
 
 	if method != "GET" {
 		t.Error(test.DiffMessage(method, "GET", "B25: method"))
@@ -147,7 +147,7 @@ func TestParseFnNameToURL_ThreeParamsKeepOrder(t *testing.T) {
 }
 
 func TestParseFnNameToURL_FourParamsKeepOrder(t *testing.T) {
-	method, route, version := ParseFuncNameToURL("READ_BY_a_AND_b_AND_c_AND_d")
+	method, route, version := ParseFuncNameToURL("READ_BY_a_AND_b_AND_c_AND_d", PathStyleKebab)
 
 	if method != "GET" {
 		t.Error(test.DiffMessage(method, "GET", "B25: method"))
@@ -161,7 +161,7 @@ func TestParseFnNameToURL_FourParamsKeepOrder(t *testing.T) {
 }
 
 func TestParseFnNameToURL_ThreeParamsPerResource(t *testing.T) {
-	method, route, version := ParseFuncNameToURL("READ_m_BY_a_AND_b_AND_c_OF_u_BY_d_AND_e_AND_f")
+	method, route, version := ParseFuncNameToURL("READ_m_BY_a_AND_b_AND_c_OF_u_BY_d_AND_e_AND_f", PathStyleKebab)
 
 	if method != "GET" {
 		t.Error(test.DiffMessage(method, "GET", "B25: method"))
@@ -185,11 +185,10 @@ func TestParseFnNameToURL_FrozenCases(t *testing.T) {
 		{"SERVE_assets_ANY", "SERVE", "/assets/*/", ""},
 		{"READ_logo_png_FILE", "GET", "/logo.png/", ""},
 		{"READ_VERSION_1_2", "GET", "/", "1_2"},
-		{"READ_users_CREATE_x", "GET", "/users_CREATE_x/", ""},
 		{"read_users", "", "", ""},
 	}
 	for _, c := range cases {
-		method, route, version := ParseFuncNameToURL(c.fn)
+		method, route, version := ParseFuncNameToURL(c.fn, PathStyleKebab)
 		if method != c.method {
 			t.Error(test.DiffMessage(method, c.method, "B26: "+c.fn+" method"))
 		}

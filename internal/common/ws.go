@@ -4,6 +4,8 @@ var WSOperations = map[string]string{
 	"SUBSCRIBE": "SUBSCRIBE",
 }
 
+const TokenAll = "ALL"
+
 type WSLayer struct {
 	Handler   any
 	EventName string

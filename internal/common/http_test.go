@@ -112,7 +112,7 @@ func TestAddToRouters_InitMaps(t *testing.T) {
 
 func TestAddHandlerToRouterMap_StoresPattern(t *testing.T) {
 	r := &HTTP{}
-	AddHandlerToRouterMap(r, nil, "READ_items", nil)
+	AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_items", nil)
 	if len(HTTPRouterMap(r)) != 1 {
 		t.Error(test.DiffMessage(len(HTTPRouterMap(r)), 1, "one route added"))
 	}
@@ -126,7 +126,7 @@ func TestParseFnNameToURL(t *testing.T) {
 
 	testCases["READ_members_BY_user_name_AND_member_id_OF_club_users_BY_id"] = []string{
 		"GET",
-		"/club_users/{id}/members/{user_name}/{member_id}/",
+		"/club-users/{id}/members/{user_name}/{member_id}/",
 		"",
 	}
 
@@ -138,7 +138,7 @@ func TestParseFnNameToURL(t *testing.T) {
 
 	testCases["CREATE_owned_lists_OF_users_BY_id_VERSION_"] = []string{
 		"POST",
-		"/users/{id}/owned_lists/",
+		"/users/{id}/owned-lists/",
 		"",
 	}
 
@@ -148,13 +148,13 @@ func TestParseFnNameToURL(t *testing.T) {
 		"NEUTRAL",
 	}
 
-	testCases["READ_ANY_HTML_FILE_OF_members_OF_ANY_JPEG_FILE_VERSION_112____3"] = []string{
+	testCases["READ_ANY_html_FILE_OF_members_OF_ANY_jpeg_FILE_VERSION_112____3"] = []string{
 		"GET",
 		"/*.jpeg/members/*.html/",
 		"112_3",
 	}
 
-	testCases["DELETE_image_PNG_FILE_OF_members_OF_users_BY_id_VERSION_NEUTRAL__"] = []string{
+	testCases["DELETE_image_png_FILE_OF_members_OF_users_BY_id_VERSION_NEUTRAL__"] = []string{
 		"DELETE",
 		"/users/{id}/members/image.png/",
 		"NEUTRAL",
@@ -162,7 +162,7 @@ func TestParseFnNameToURL(t *testing.T) {
 
 	testCases["MODIFY_dm_events_OF_with_BY_participant_id_OF_dm_conversations_VERSION_V2"] = []string{
 		"PATCH",
-		"/dm_conversations/with/{participant_id}/dm_events/",
+		"/dm-conversations/with/{participant_id}/dm-events/",
 		"V2",
 	}
 
@@ -173,7 +173,7 @@ func TestParseFnNameToURL(t *testing.T) {
 	}
 
 	for fn, results := range testCases {
-		method, route, version := ParseFuncNameToURL(fn)
+		method, route, version := ParseFuncNameToURL(fn, PathStyleKebab)
 		if method != results[0] {
 			t.Error(test.DiffMessage(results[0], method, "method should be equal"))
 		}
@@ -202,8 +202,8 @@ func routeConflictPanic(fn func()) (message string) {
 
 func TestAddHandlerToRouterMap_SameShapeDifferentParamNamesDoesNotPanic(t *testing.T) {
 	r := &HTTP{}
-	AddHandlerToRouterMap(r, nil, "READ_BY_ID", nil)
-	message := routeConflictPanic(func() { AddHandlerToRouterMap(r, nil, "READ_BY_NAME", nil) })
+	AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_BY_ID", nil)
+	message := routeConflictPanic(func() { AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_BY_NAME", nil) })
 	if message != "" {
 		t.Error(test.DiffMessage(message, "", "conflicts are checked per app by core, AddHandlerToRouterMap no longer panics"))
 	}
@@ -211,11 +211,11 @@ func TestAddHandlerToRouterMap_SameShapeDifferentParamNamesDoesNotPanic(t *testi
 
 func TestAddHandlerToRouterMap_DifferentShapesDoNotConflict(t *testing.T) {
 	r := &HTTP{}
-	AddHandlerToRouterMap(r, nil, "READ_users_BY_id", nil)
+	AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_users_BY_id", nil)
 	message := routeConflictPanic(func() {
-		AddHandlerToRouterMap(r, nil, "READ_users_BY_id_AND_name", nil)
-		AddHandlerToRouterMap(r, nil, "UPDATE_users_BY_id", nil)
-		AddHandlerToRouterMap(r, nil, "READ_users_all", nil)
+		AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_users_BY_id_AND_name", nil)
+		AddHandlerToRouterMap(r, nil, PathStyleKebab, "UPDATE_users_BY_id", nil)
+		AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_users_all", nil)
 	})
 	if message != "" {
 		t.Error(test.DiffMessage(message, "", "routes with a different shape, method or static segment must not conflict"))
@@ -224,7 +224,7 @@ func TestAddHandlerToRouterMap_DifferentShapesDoNotConflict(t *testing.T) {
 
 func TestHooks_RouterMapAccessors(t *testing.T) {
 	h := &HTTP{}
-	AddHandlerToRouterMap(h, nil, "READ_items", nil)
+	AddHandlerToRouterMap(h, nil, PathStyleKebab, "READ_items", nil)
 	if len(HTTPRouterMap(h)) != 1 || len(HTTPPatternToFuncNameMap(h)) != 1 || len(HTTPFuncNameToPatternMap(h)) != 1 {
 		t.Error(test.DiffMessage([3]int{len(HTTPRouterMap(h)), len(HTTPPatternToFuncNameMap(h)), len(HTTPFuncNameToPatternMap(h))}, [3]int{1, 1, 1}, "B18: the hook functions read what AddHandlerToRouterMap wrote"))
 	}

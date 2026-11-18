@@ -1,13 +1,15 @@
 package core
 
 import (
+	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/str"
 )
 
 type Module struct {
-	id       string
-	Name     string
-	prefixes []string
+	id        string
+	Name      string
+	prefixes  []string
+	pathStyle common.PathStyle
 
 	imports        []any
 	staticModules  []*Module

@@ -15,6 +15,8 @@ Internal package: applications use `ginject.HTTP`, `Page`, `View`, `WS`, `Middle
     - [ToWSEventName](#towseventname)
   - [`HTTP` Controller Embed](#http-controller-embed)
     - [Prefix](#prefix)
+    - [Path](#path)
+    - [PathStyle](#pathstyle)
     - [AddHandlerToRouterMap](#addhandlertoroutermap)
   - [`Page` Controller Embed](#page-controller-embed)
   - [`View`](#view)
@@ -41,7 +43,8 @@ Internal package: applications use `ginject.HTTP`, `Page`, `View`, `WS`, `Middle
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- Routes and events come from method names: `READ_users_BY_id` is `GET /users/{id}/`, `SUBSCRIBE_chat_ANY` is the event `chat.*`
+- Routes and events come from method names: `READ_users_BY_id` is `GET /users/{id}/`, `READ_user_profile` is `GET /user-profile/`, `SUBSCRIBE_chat_ANY` is the event `chat.*`
+- A name the parser would misread (an upper-case word that is not a route word, a `BY` without a name) stops `Create()` instead of serving another URL
 - Guards, interceptors and exception filters are plain structs matched by method name and signature, called through compiled method values (no reflection per request)
 - One layer instance per configuration: equal bindings share it, different ones get their own
 - A layer bound to a method that is not a handler stops `Create()` instead of applying to every route
@@ -132,7 +135,7 @@ func main() {
 
 ### Tokens
 
-A route name is `<OPERATION>[_<resource>][_BY_<param>[_AND_<param>…]][_OF_<resource>…][_VERSION_<version>]`, in upper-case tokens and free resource words.
+A route name is `<OPERATION>[_<resource>][_BY_<param>[_AND_<param>…]][_ANY][_OF_<resource>…][_VERSION_<version>]`, in upper-case tokens and free resource words. After the operation, the route words are `BY`, `AND`, `OF`, `ANY`, `FILE`, `VERSION` (HTTP) and `ANY`, `ALL` (WebSocket).
 
 | Token | Exported as | Meaning |
 |---|---|---|
@@ -141,19 +144,24 @@ A route name is `<OPERATION>[_<resource>][_BY_<param>[_AND_<param>…]][_OF_<res
 | `AND` | `TokenAnd` | one more parameter of the current resource |
 | `OF` | `TokenOf` | a parent resource, placed before the current one |
 | `ANY` | `TokenAny` | a wildcard `*` |
-| `FILE` | `TokenFile` | turns the last `_` of the segment into a `.` extension (`logo_png_FILE` → `logo.png`) |
+| `FILE` | `TokenFile` | turns the joint before the word that precedes it into a `.` and lower-cases that word (`logo_png_FILE` → `logo.png`) |
 | `VERSION` | `TokenVersion` | the rest of the name is the version |
+| `ALL` | `TokenAll` | WebSocket only, last word: `**` (one or more segments) |
 
-`HTTPTokenMap` (`map[string]string`) holds the six separator tokens. `SUBSCRIBE` (`WSOperations`, `map[string]string`) starts a WebSocket event name.
+`HTTPTokenMap` (`map[string]string`) holds the six HTTP route words. `SUBSCRIBE` (`WSOperations`, `map[string]string`) starts a WebSocket event name.
 
 ### ParseFuncNameToURL
 
-Turns a method name into its HTTP method, route and version.
+Turns a method name into its HTTP method, route and version. A name that starts with an operation but that the parser would misread panics with `invalid route: …` (red), during `Create()`.
 
 #### Parameters
 - 1st parameter: `string`
 
 - Description: The method name
+
+- 2nd parameter: `PathStyle`
+
+- Description: How the words of one resource are joined: `PathStyleKebab` with `-`, `PathStyleAsWritten` with `_`
 
 #### Returns
 - 1st value: `string`
@@ -171,8 +179,11 @@ Turns a method name into its HTTP method, route and version.
 #### Usage
 
 ```go
-method, route, version := common.ParseFuncNameToURL("READ_users_BY_id_OF_posts_BY_post_id_VERSION_2")
+method, route, version := common.ParseFuncNameToURL("READ_users_BY_id_OF_posts_BY_post_id_VERSION_2", common.PathStyleKebab)
 // "GET", "/posts/{post_id}/users/{id}/", "2"
+
+common.ParseFuncNameToURL("READ_user_profile", common.PathStyleKebab)
+// "GET", "/user-profile/", ""
 ```
 
 #### Rules
@@ -181,12 +192,23 @@ method, route, version := common.ParseFuncNameToURL("READ_users_BY_id_OF_posts_B
 - A bare operation is the root: `READ` → `/`; `READ_VERSION_v1` → `/`, version `v1`.
 - `READ_BY_id` → `/{id}/`; `READ_BY_ID_AND_NAME` → `/{ID}/{NAME}/`.
 - Parameters of one resource keep their declaration order for any count: `READ_x_BY_a_AND_b_AND_c` → `/x/{a}/{b}/{c}/`; `READ_BY_a_AND_b_AND_c_AND_d` → `/{a}/{b}/{c}/{d}/`; `READ_m_BY_a_AND_b_AND_c_OF_u_BY_d_AND_e_AND_f` → `/u/{d}/{e}/{f}/m/{a}/{b}/{c}/`.
-- `OF` puts the parent first: `READ_users_BY_id_OF_posts_BY_post_id` → `/posts/{post_id}/users/{id}/`; `MODIFY_dm_events_OF_with_BY_participant_id_OF_dm_conversations_VERSION_V2` → `PATCH /dm_conversations/with/{participant_id}/dm_events/`, version `V2`.
-- `ANY` is a wildcard: `READ_ANY` → `/*/`; `READ_assets_ANY` → `/assets*/`; `SERVE_me_ANY_bers` → `SERVE /me*bers/`; `READ_me_ANY_bers_OF_us_ANY_ers_BY_id_VERSION_v1_v1` → `/us*ers/{id}/me*bers/`, version `v1_v1`.
-- In a `SERVE` method, an `ANY` that ends a resource group after at least one name token is a segment of its own: `SERVE_static_ANY` → `SERVE /static/*/`; `SERVE_a_b_ANY` → `/a_b/*/`; `SERVE_assets_ANY_OF_public` → `/public/assets/*/`. `SERVE_ANY` → `/*/` and `SERVE_ANY_OF_static` → `/static/*/` are unchanged, and `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route.
-- `FILE` makes an extension: `READ_logo_png_FILE` → `/logo.png/`; `READ_ANY_HTML_FILE_OF_members_OF_ANY_JPEG_FILE_VERSION_112____3` → `/*.jpeg/members/*.html/`, version `112_3`.
-- The version is the rest of the name joined with `_`, empty parts dropped: `READ_users_VERSION_V_12` → `V_12`; `READ_users_VERSION_` and `READ_users_VERSION` → `""`.
-- An operation token inside a resource stays a word: `READ_users_CREATE_x` → `/users_CREATE_x/`.
+- `OF` puts the parent first: `READ_users_BY_id_OF_posts_BY_post_id` → `/posts/{post_id}/users/{id}/`; `MODIFY_dm_events_OF_with_BY_participant_id_OF_dm_conversations_VERSION_V2` → `PATCH /dm-conversations/with/{participant_id}/dm-events/`, version `V2` (`/dm_conversations/with/{participant_id}/dm_events/` as written).
+- The resource words of one resource are joined with `-` under `PathStyleKebab` (`READ_user_profile` → `/user-profile/`, `READ_user_profile_OF_big_orgs` → `/big-orgs/user-profile/`) and with `_` under `PathStyleAsWritten` (`/user_profile/`, `/big_orgs/user_profile/`). `OF` makes a new segment in both styles.
+- A word is copied as written, never lower-cased or split at a capital: `READ_userProfile` → `/userProfile/`; `READ_orders_2024` → `/orders-2024/`; `READ_404` → `/404/`; `READ_2fa_codes` → `/2fa-codes/`; `READ_Users` → `/Users/`; `READ_é_cafés` → `/é-cafés/`.
+- Empty words in a resource are dropped: `READ_user__profile` → `/user-profile/`; `READ__users` and `READ_users_` → `/users/`; `READ_a___b` → `/a-b/`.
+- A parameter name is the exact text between the `_` after `BY` / `AND` and the `_` before the next route word, in both styles: `BY_user_id` → `{user_id}`, `BY_user__id` → `{user__id}`, `BY__id` → `{_id}`, `READ_users_BY_id__OF_big_orgs` → `/big-orgs/users/{id_}/`, `BY_ID` → `{ID}`. `BY` and `AND` are interchangeable: `READ_users_AND_id` → `/users/{id}/`.
+- A resource without words leaves no empty segment: `READ_BY_id_OF_users` → `/users/{id}/`.
+- `ANY` is a wildcard glued to its neighbours with no separator: `READ_ANY` → `/*/`; `READ_assets_ANY` → `/assets*/`; `READ_a_b_ANY` → `/a-b*/`; `READ_me_ANY_bers` → `/me*bers/`; `READ_big_me_ANY_bers_x` → `/big-me*bers-x/`.
+- In a `SERVE` method, an `ANY` that ends a resource after at least one word is a segment of its own: `SERVE_static_ANY` → `SERVE /static/*/`; `SERVE_static_files_ANY` and `SERVE_ANY_OF_static_files` → `/static-files/*/` (the same route); `SERVE_assets_ANY_OF_public` → `/public/assets/*/`; `SERVE_ANY` → `/*/`.
+- One `ANY` after the parameters of a resource is a wildcard segment after them, for every operation: `READ_files_BY_name_ANY` → `/files/{name}/*/` (`GET /files/a/b/c` gives `name` = `a`); `READ_files_BY_dir_AND_name_ANY` → `/files/{dir}/{name}/*/`; `READ_files_BY_name_ANY_OF_x` → `/x/files/{name}/*/`; `READ_BY_name_ANY` → `/{name}/*/`.
+- `FILE` turns the joint before the preceding word into `.` and lower-cases that word: `READ_logo_png_FILE` → `/logo.png/`; `READ_site_map_xml_FILE` → `/site-map.xml/`; `READ_a_b_FILE_c` → `/a.b-c/`; `READ_img_ANY_png_FILE` → `/img*.png/`; `READ_ANY_html_FILE_OF_members_OF_ANY_jpeg_FILE_VERSION_112____3` → `/*.jpeg/members/*.html/`, version `112_3`.
+- The version is the rest of the name joined with `_`, empty parts dropped, never kebab-cased or checked: `READ_users_VERSION_V_12` → `V_12`; `READ_user_profile_VERSION_v1_v1` → `/user-profile/`, `v1_v1`; `READ_users_VERSION_` and `READ_users_VERSION` → `""`.
+- A resource word with an upper-case letter and no lower-case letter that is not a route word panics `invalid route: <W> in <Name> is upper case but not a route word; write it in lower case or camelCase`: `READ_orgs_FB`, `READ_orgs_V2`, `READ_plan_B`, `READ_URL_shortener`, `READ_ÉCOLE`, `READ_users_CREATE_x`, `READ_ALL`, `READ_logo_PNG_FILE`, `READ_ANY_HTML_FILE`. Allowed: `READ_orgsFB`, `READ_apiV2`, `READ_Users`, `READ_404`, `READ_BY_ID`, `READ_users_VERSION_V2`, `READ_x_VERSION_NEUTRAL`. Names that do not start with an operation (`Helper_FB`, `read_FB`) are never checked.
+- Malformed names panic, all `invalid route: `:
+  - `BY in READ_users_BY has no parameter name` (also `READ_users_BY_OF_x`, `READ_users_BY_id_AND`, `DELETE_BY_ID_AND_VERSION` for `AND`);
+  - `x in READ_files_BY_name_ANY_x comes after a parameter; start the next resource with OF` (also `FILE` in `READ_users_BY_id_FILE`);
+  - `OF in READ_OF_users needs a resource or a parameter on both sides` (also `READ_users_OF`, `READ_a_OF_OF_b`, `SERVE_ANY_OF_`);
+  - `FILE in READ_txt_FILE needs a name and an extension before it` (also `READ_FILE`, `READ_FILE_ANY`).
 
 ### ParseWSFuncNameToEvent
 
@@ -216,7 +238,8 @@ event, ok := common.ParseWSFuncNameToEvent("SUBSCRIBE_chat_ANY_message")
 #### Rules
 - `SUBSCRIBE_message` → `message`; `SUBSCRIBE_chat_message` → `chat.message`; `SUBSCRIBE_a_b_c` → `a.b.c`.
 - `ANY` is `*`: `SUBSCRIBE_chat_ANY` → `chat.*` (one segment after `chat`); `SUBSCRIBE_ANY` → `*` (single-segment topics). See `internal/pattern/MATCHING.md`.
-- Segments are lower-cased: `SUBSCRIBE_Chat_Message` → `chat.message`.
+- `ALL` is `**`, one or more segments: `SUBSCRIBE_chat_ALL` → `chat.**` (`chat.room1.typing` reaches it, `chat` alone does not); `SUBSCRIBE_ALL` → `**`; `SUBSCRIBE_chat_ANY_ALL` → `chat.*.**`. `ALL` anywhere but last panics `invalid route: ALL in <Name> must be the last word` (`SUBSCRIBE_chat_ALL_x`, `SUBSCRIBE_ALL_chat`).
+- Segments are lower-cased: `SUBSCRIBE_Chat_Message` → `chat.message`, `SUBSCRIBE_chatRoom` → `chatroom`. A word with an upper-case letter and no lower-case letter that is not `ANY` or `ALL` panics with the upper-case message of `ParseFuncNameToURL`: `SUBSCRIBE_chat_PERSON_ANY`, `SUBSCRIBE_chat_V2`. `PathStyle` does not apply to events.
 - `READ_users`, `CREATE_orders`, `""`, `SUBSCRIBE`, `SUBSCRIBE_` and `lowercase_message` are not events (`false`).
 
 ### GetFuncName
@@ -261,7 +284,7 @@ name := common.ToWSEventName("/message/")
 
 ## `HTTP` Controller Embed
 
-`HTTP` makes a controller an HTTP controller. Its only method is `Prefix` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `ginject.HTTP`.
+`HTTP` makes a controller an HTTP controller. Its methods are `Prefix` and `Path` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `ginject.HTTP`.
 
 | Function | Returns |
 |----------|---------|
@@ -303,9 +326,55 @@ instance.Prefix("v1", instance.READ_users)
 - `Prefix("/api")` gives `/api/users/` for `/users/`, without a double slash.
 - A prefix bound to `READ_users` changes `READ_users` only.
 
+### Path
+
+Gives one or more handlers an exact path that replaces the path their names spell. The operation word still gives the HTTP method, `VERSION` still gives the version, and the controller and module prefixes still apply.
+
+#### Parameters
+- 1st parameter: `string`
+
+- Description: The path, with or without slashes; it may hold `{name}` parameters and `*`, and is never kebab-cased
+
+- Variadic parameter: `...any`
+
+- Description: Handlers (method values), at least one
+
+#### Returns
+- 1st value: `*HTTP`
+
+- Description: The receiver, for chaining
+
+#### Usage
+
+```go
+func (instance TokenController) NewController() ginject.Controller {
+	instance.Path("/oauth2/token", instance.CREATE_token)
+	return instance
+}
+```
+
+#### Rules
+- `Path("/oauth2/token", instance.CREATE_token)` gives `POST /oauth2/token/`; with `Prefix("v1")` and a module prefix `api`, `POST /api/v1/oauth2/token/`. `Path("/people", instance.READ_users_VERSION_2)` keeps version `2`.
+- `Path("/a_b/{id}", h)` stays `/a_b/{id}/` under `PathStyleKebab`; `Path("/", h)` is the controller's root.
+- The handler's name is still parsed: `Path("/x", instance.READ_orgs_FB)` panics with the upper-case message.
+- `Path("/token", instance.READ_token, instance.CREATE_token)` is two routes; the same operation twice on one path is a `route conflict:` in `core`, and so is an exact path equal to another handler's path.
+- Guards and other layers bound to the handler, and prefixes targeted at it, work unchanged.
+- Panics, all `invalid route: `: `Path("/x") needs at least one handler`; `Path("/x") is bound to 'Helper', which is not a handler of the controller` (a helper, a `SUBSCRIBE_` method or a non-function such as `'string'`; `core` checks method names after the controller's routes are registered, through `CheckExactPaths(h *HTTP)`); `READ_ok has two exact paths: "/one" and "/two"`; `Path("/x?y=1") holds '?': a path has no query or fragment` (also `#`).
+
+### PathStyle
+
+`type PathStyle int` decides how `ParseFuncNameToURL` joins the words of one resource. The root package re-exports it as `ginject.PathStyle`; `core`'s `ModuleBuilder.PathStyle` sets it per module.
+
+| Constant | Value | Joint | `READ_payment_intents` |
+|---|---|---|---|
+| `PathStyleKebab` | `1` | `-` (the default) | `/payment-intents/` |
+| `PathStyleAsWritten` | `2` | `_` | `/payment_intents/` |
+
+The zero value means "not set". The style applies to resource words only: never to prefixes, exact paths, parameter names, versions or WebSocket events. It changes nothing at request time: `GET /user_profile` is a 404 when the route is `/user-profile/`.
+
 ### AddHandlerToRouterMap
 
-`AddHandlerToRouterMap(h *HTTP, modulePrefixes []string, fnName string, handler any)` registers a method as a route when its name parses as one (`core` calls it at `Create()`). The controller's prefixes apply first: the unexported `getPrefixes` lists them as `prefix → handler name` maps, `"*"` standing for every route (`Prefix("/api")` gives `[{"/api/": "*"}]`; a prefix with two handlers gives two entries; no prefix gives an empty slice).
+`AddHandlerToRouterMap(h *HTTP, modulePrefixes []string, style PathStyle, fnName string, handler any)` registers a method as a route when its name parses as one (`core` calls it at `Create()` with the controller's style). An exact path set with `Path` replaces the parsed route first. The controller's prefixes apply next: the unexported `getPrefixes` lists them as `prefix → handler name` maps, `"*"` standing for every route (`Prefix("/api")` gives `[{"/api/": "*"}]`; a prefix with two handlers gives two entries; no prefix gives an empty slice).
 
 #### Parameters
 - 1st parameter: `*HTTP`
@@ -316,22 +385,27 @@ instance.Prefix("v1", instance.READ_users)
 
 - Description: Module prefixes, outermost last
 
-- 3rd parameter: `string`
+- 3rd parameter: `PathStyle`
+
+- Description: The style of the controller's resource words
+
+- 4th parameter: `string`
 
 - Description: The method name
 
-- 4th parameter: `any`
+- 5th parameter: `any`
 
 - Description: The handler value
 
 #### Usage
 
 ```go
-common.AddHandlerToRouterMap(&instance.HTTP, nil, "READ_items", handler)
+common.AddHandlerToRouterMap(&instance.HTTP, nil, common.PathStyleKebab, "READ_items", handler)
 ```
 
 #### Rules
 - `READ_items` adds one route: `HTTPPatternToFuncNameMap(h)["/items/||/[GET]/"]` is `READ_items`.
+- `READ_payment_intents` is `/payment-intents/` under `PathStyleKebab` and `/payment_intents/` under `PathStyleAsWritten`; prefixes keep their text (`Prefix("my_api")` and the module prefix `/pay_ments/` give `/pay_ments/my_api/payment-intents/`).
 - It never panics: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
 
 ## `Page` Controller Embed

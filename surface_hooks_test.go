@@ -88,7 +88,7 @@ func TestSurface_EmbeddableMembers(t *testing.T) {
 		typ  reflect.Type
 		want []string
 	}{
-		{reflect.TypeFor[*ginject.HTTP](), []string{"Prefix"}},
+		{reflect.TypeFor[*ginject.HTTP](), []string{"Path", "Prefix"}},
 		{reflect.TypeFor[*ginject.WS](), nil},
 		{reflect.TypeFor[*ginject.Guard](), []string{"BindGuard"}},
 		{reflect.TypeFor[*ginject.Interceptor](), []string{"BindInterceptor"}},
