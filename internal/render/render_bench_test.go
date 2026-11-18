@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"html/template"
 	"strings"
 	"testing"
 )
@@ -35,7 +36,7 @@ func BenchmarkRender_PooledBuffer(b *testing.B) {
 	b.Run("pooled", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			buf, err := e.Render("list", data)
+			buf, err := e.Render("/list", data)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -44,7 +45,7 @@ func BenchmarkRender_PooledBuffer(b *testing.B) {
 	})
 	b.Run("new buffer", func(b *testing.B) {
 		b.ReportAllocs()
-		t := e.site.pageByName["list"]
+		t := template.Must(template.New("list").Parse(benchPage(false)["list.html"]))
 		for b.Loop() {
 			var buf bytes.Buffer
 			if err := t.Execute(&buf, data); err != nil {
@@ -64,7 +65,7 @@ func BenchmarkRender_Nonce(b *testing.B) {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				buf, err := e.Render("list", data)
+				buf, err := e.Render("/list", data)
 				if err != nil {
 					b.Fatal(err)
 				}

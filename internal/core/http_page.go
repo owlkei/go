@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/devtool"
 	"github.com/dangduoc08/ginject/internal/render"
@@ -31,17 +30,10 @@ const defaultRenderDir = "web"
 
 const (
 	textHTMLUTF8         = "text/html; charset=utf-8"
-	errorPageTraceName   = "error"
 	builtInPageTraceName = "error (built-in)"
-	errorTemplateName    = "error.html"
-	builtInTemplateName  = "built-in"
 )
 
-var (
-	textHTMLValue = []string{textHTMLUTF8}
-
-	errNotView = errors.New("render: the result after the interceptors is not a ginject.View")
-)
+var textHTMLValue = []string{textHTMLUTF8}
 
 func (app *App) initRender() {
 	if app.http.render == nil {
@@ -52,6 +44,15 @@ func (app *App) initRender() {
 	}
 	if app.http.render.IsReload() {
 		app.logger.Warn("RenderReloadOn", "dir", app.renderDir, "note", "templates and assets are read from disk on every render; turn IsReload off in production")
+	}
+}
+
+func (app *App) checkRenderBindings() {
+	if app.http.render == nil {
+		return
+	}
+	if err := app.http.render.CheckBindings(); err != nil {
+		panic(color.FmtRed("invalid render: %s", strings.ReplaceAll(err.Error(), "\n", "\ninvalid render: ")))
 	}
 }
 
@@ -88,41 +89,34 @@ func (app *App) renderSnapshot() *devtool.Render {
 	}
 	snap := engine.Snapshot()
 	out := &devtool.Render{
-		IsReload:      snap.IsReload,
-		Pages:         make([]*devtool.RenderPage, 0, len(snap.Pages)),
-		Partials:      snap.Partials,
-		ErrorTemplate: builtInTemplateName,
-		Assets:        snap.Assets,
-		Counters:      engine.Counters,
-	}
-	if snap.HasErrorPage {
-		out.ErrorTemplate = errorTemplateName
+		IsReload:       snap.IsReload,
+		Pages:          make([]*devtool.RenderPage, 0, len(snap.Pages)),
+		Partials:       snap.Partials,
+		ErrorTemplates: snap.ErrorTemplates,
+		Assets:         snap.Assets,
+		Public:         snap.Public,
+		Counters:       engine.Counters,
 	}
 	for _, p := range snap.Pages {
-		out.Pages = append(out.Pages, &devtool.RenderPage{Name: p.Name, Layout: p.Layout})
+		out.Pages = append(out.Pages, &devtool.RenderPage{Name: p.Name, Route: p.Route, Layout: p.Layout, Assets: p.Assets})
 	}
 	slices.SortFunc(out.Pages, func(a, b *devtool.RenderPage) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
-func (http *HTTP) writePage(ex *httpExchange, result reflect.Value) {
+func (http *HTTP) writePage(ex *httpExchange, route *httpRoute, result reflect.Value) {
 	if ex.writer.status() != 0 {
 		return
 	}
 	c := &ex.HTTPContext
-	var view common.View
-	isView := false
-	if result.IsValid() && result.Type() == viewType {
-		view, isView = result.Interface().(common.View)
-	}
-	if !isView {
-		http.renderFailed(ex, "", errNotView)
-		return
+	var data any
+	if result.IsValid() {
+		data = result.Interface()
 	}
 
-	buf, err := http.renderPage(c, view.Name, view.Data)
+	buf, err := http.renderPage(c, route, data)
 	if err != nil {
-		http.renderFailed(ex, view.Name, err)
+		http.renderFailed(ex, route.template, err)
 		return
 	}
 	ex.writer.placeNonce(buf.Nonce())
@@ -150,24 +144,24 @@ func (http *HTTP) renderFailed(ex *httpExchange, name string, err error) {
 	ctx.HTTPSetCode(c, stdHTTP.StatusInternalServerError)
 }
 
-func (http *HTTP) renderPage(c *ctx.HTTPContext, name string, data any) (*render.Buffer, error) {
+func (http *HTTP) renderPage(c *ctx.HTTPContext, route *httpRoute, data any) (*render.Buffer, error) {
 	if !http.tracer.Enabled() {
-		return http.render.Render(name, data)
+		return http.render.Render(route.pageRoute, data)
 	}
 	start := time.Now()
-	buf, err := http.render.Render(name, data)
-	http.emitRender(c, name, time.Since(start), err != nil)
+	buf, err := http.render.Render(route.pageRoute, data)
+	http.emitRender(c, route.template, time.Since(start), err != nil)
 	return buf, err
 }
 
-func (http *HTTP) renderErrorPage(c *ctx.HTTPContext, data any) (*render.Buffer, error) {
+func (http *HTTP) renderErrorPage(c *ctx.HTTPContext, code int, data any) (*render.Buffer, error) {
 	if !http.tracer.Enabled() {
-		return http.render.RenderError(data)
+		return http.render.RenderError(code, data)
 	}
 	start := time.Now()
-	buf, err := http.render.RenderError(data)
+	buf, err := http.render.RenderError(code, data)
 	if !errors.Is(err, render.ErrNoErrorPage) {
-		http.emitRender(c, errorPageTraceName, time.Since(start), err != nil)
+		http.emitRender(c, http.render.ErrorTemplate(code), time.Since(start), err != nil)
 	}
 	return buf, err
 }

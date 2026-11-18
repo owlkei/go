@@ -63,14 +63,14 @@ func (http *HTTP) logClientText(c *ctx.HTTPContext, e *exception.Exception, code
 
 func (http *HTTP) writeHTMLError(c *ctx.HTTPContext, w stdHTTP.ResponseWriter, code int, status, message string) {
 	data := map[string]any{"Code": code, "Status": status, "Message": message, "RequestID": c.ID()}
-	buf, err := http.renderErrorPage(c, data)
+	buf, err := http.renderErrorPage(c, code, data)
 	if err != nil {
 		var fileErr *render.FileError
 		switch {
 		case errors.As(err, &fileErr):
 			http.logger.From(c.Context()).Error("RenderReloadFailed", "file", fileErr.File, "cause", fileErr.Err)
 		case !errors.Is(err, render.ErrNoErrorPage):
-			http.logger.From(c.Context()).Error("RenderFailed", "template", "error", "cause", err)
+			http.logger.From(c.Context()).Error("RenderFailed", "template", http.render.ErrorTemplate(code), "cause", err)
 		}
 		writeHTMLBody(w, code, http.builtInPage(c, code, status, message))
 		return

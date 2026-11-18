@@ -6,7 +6,7 @@
   <div data-ok-alert-message>Check the fields marked below.</div>
 </div>
 {{end}}
-<form method="post" action="/bookings" novalidate>
+<form method="post" action="/bookings/new" novalidate>
   {{template "partials/field" dict "Name" "guest" "Label" "Guest name" "Value" .Guest "Error" .Errors.guest}}
   {{template "partials/field" dict "Name" "email" "Label" "Email" "Type" "email" "Value" .Email "Error" .Errors.email}}
   {{template "partials/field" dict "Name" "date" "Label" "Arrival date" "Type" "date" "Value" .Date "Error" .Errors.date "Help" "YYYY-MM-DD"}}

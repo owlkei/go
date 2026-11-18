@@ -8,11 +8,17 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
 //go:embed testdata/web
 var rdEmbedded embed.FS
+
+type rdX struct{ common.HTTP }
+
+func (c rdX) NewController() Controller { return c }
+func (c rdX) RENDER_x()                 {}
 
 func rdApp(t *testing.T, opts *RenderOptions) (*App, *lcRecordingLogger) {
 	t.Helper()
@@ -20,22 +26,22 @@ func rdApp(t *testing.T, opts *RenderOptions) (*App, *lcRecordingLogger) {
 	app := New()
 	app.SetLogger(logger)
 	app.EnableRender(opts)
-	mustCreate(t, app, NewModuleBuilder().Controllers(pgPages{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Controllers(rdX{}).Build())
 	return app, logger
 }
 
 func TestRenderDir_DefaultIsWeb(t *testing.T) {
 	files := fstest.MapFS{"web/x.html": {Data: []byte("FROMWEB")}, "x.html": {Data: []byte("FROMROOT")}}
 	app, _ := rdApp(t, &RenderOptions{FS: files})
-	if got := createGet(app, pgView("x", "")).Body.String(); got != "FROMWEB" {
+	if got := createGet(app, "/x").Body.String(); got != "FROMWEB" {
 		t.Error(test.DiffMessage(got, "FROMWEB", "an empty Dir reads the web directory of FS"))
 	}
 }
 
 func TestRenderDir_DotIsTheRoot(t *testing.T) {
-	files := fstest.MapFS{"web/x.html": {Data: []byte("FROMWEB")}, "x.html": {Data: []byte("FROMROOT")}}
+	files := fstest.MapFS{"web/note.txt": {Data: []byte("FROMWEB")}, "x.html": {Data: []byte("FROMROOT")}}
 	app, _ := rdApp(t, &RenderOptions{FS: files, Dir: "."})
-	if got := createGet(app, pgView("x", "")).Body.String(); got != "FROMROOT" {
+	if got := createGet(app, "/x").Body.String(); got != "FROMROOT" {
 		t.Error(test.DiffMessage(got, "FROMROOT", `Dir "." reads the root of FS`))
 	}
 }
@@ -53,7 +59,7 @@ func TestRenderDir_MissingDirectoryPanics(t *testing.T) {
 func TestRenderDir_EmbeddedFSWithReloadReadsDisk(t *testing.T) {
 	dir := filepath.Join("testdata", "web")
 	app, logger := rdApp(t, &RenderOptions{FS: rdEmbedded, Dir: dir, IsReload: true})
-	if got := createGet(app, pgView("x", "")).Body.String(); !strings.HasPrefix(got, "EMBEDDED") {
+	if got := createGet(app, "/x").Body.String(); !strings.HasPrefix(got, "EMBEDDED") {
 		t.Fatal(test.DiffMessage(got, "EMBEDDED …", "the page renders from the directory"))
 	}
 	path := filepath.Join(dir, "x.html")
@@ -65,7 +71,7 @@ func TestRenderDir_EmbeddedFSWithReloadReadsDisk(t *testing.T) {
 	if err := os.WriteFile(path, []byte("ONDISK"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := createGet(app, pgView("x", "")).Body.String(); got != "ONDISK" {
+	if got := createGet(app, "/x").Body.String(); got != "ONDISK" {
 		t.Error(test.DiffMessage(got, "ONDISK", "with an embed.FS, IsReload reads the same directory from disk"))
 	}
 	entries := logger.named("RenderReloadOn")

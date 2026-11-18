@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +18,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 type pgRows struct{ Rows []string }
@@ -51,14 +51,7 @@ func (pgGuard) CanActivate(c *ctx.HTTPContext) bool {
 type pgInterceptor struct{}
 
 func (pgInterceptor) Intercept(_ *ctx.HTTPContext, agg *aggregation.Aggregation) any {
-	return agg.Pipe(agg.Transform(func(data any) any {
-		view, ok := data.(common.View)
-		if !ok {
-			return data
-		}
-		view.Data = ctx.Map{"Word": "intercepted"}
-		return view
-	}))
+	return agg.Pipe(agg.Transform(func(any) any { return ctx.Map{"Word": "intercepted"} }))
 }
 
 type pgStringInterceptor struct{}
@@ -70,7 +63,7 @@ func (pgStringInterceptor) Intercept(_ *ctx.HTTPContext, agg *aggregation.Aggreg
 type pgShortInterceptor struct{}
 
 func (pgShortInterceptor) Intercept(_ *ctx.HTTPContext, _ *aggregation.Aggregation) any {
-	return common.View{Name: "short", Data: ctx.Map{"Word": "short-circuit"}}
+	return ctx.Map{"Word": "short-circuit"}
 }
 
 type pgMiddleware struct{}
@@ -80,87 +73,65 @@ func (pgMiddleware) Use(_ *http.Request, w http.ResponseWriter, next ctx.Next) {
 	next()
 }
 
-type pgPages struct{ common.Page }
+type pgPages struct{ common.HTTP }
 
 func (c pgPages) NewController() Controller { return c }
 
-func (c pgPages) READ_view(h *ctx.HTTPContext) common.View {
-	return common.View{Name: h.Query().Get("n"), Data: ctx.Map{"X": h.Query().Get("x")}}
-}
+func (c pgPages) RENDER_nodata() {}
 
-func (c pgPages) CREATE_view(h *ctx.HTTPContext) common.View {
-	return common.View{Name: h.Query().Get("n"), Data: ctx.Map{"X": h.Query().Get("x")}}
-}
+func (c pgPages) RENDER_view(h *ctx.HTTPContext) ctx.Map { return ctx.Map{"X": h.Query().Get("x")} }
 
-func (c pgPages) READ_nodata() common.View { return common.View{Name: "nodata"} }
+func (c pgPages) RENDER_plain(h *ctx.HTTPContext) ctx.Map { return ctx.Map{"X": h.Query().Get("x")} }
 
-func (c pgPages) READ_rows() common.View {
-	return common.View{Name: "rows", Data: pgRows{Rows: make([]string, 1000)}}
-}
+func (c pgPages) RENDER_custom(h *ctx.HTTPContext) ctx.Map { return ctx.Map{"X": h.Query().Get("x")} }
 
-func (c pgPages) READ_big(h *ctx.HTTPContext) common.View {
+func (c pgPages) RENDER_esc(h *ctx.HTTPContext) ctx.Map { return ctx.Map{"X": h.Query().Get("x")} }
+
+func (c pgPages) RENDER_url(h *ctx.HTTPContext) ctx.Map { return ctx.Map{"X": h.Query().Get("x")} }
+
+func (c pgPages) RENDER_rows() pgRows { return pgRows{Rows: make([]string, 1000)} }
+
+func (c pgPages) RENDER_big(h *ctx.HTTPContext) pgBig {
 	n, _ := strconv.Atoi(h.Query().Get("n"))
-	return common.View{Name: "big", Data: pgBig{Rows: make([]int, n)}}
+	return pgBig{Rows: make([]int, n)}
 }
 
-func (c pgPages) READ_statusctx(h *ctx.HTTPContext) common.View {
-	h.Status(http.StatusUnprocessableEntity)
-	return common.View{Name: "nodata"}
+func (c pgPages) RENDER_statusctx(h *ctx.HTTPContext) { h.Status(http.StatusUnprocessableEntity) }
+
+func (c pgPages) RENDER_statusresult() (int, ctx.Map) {
+	return http.StatusUnprocessableEntity, ctx.Map{"Word": "result"}
 }
 
-func (c pgPages) CREATE_statusctx(h *ctx.HTTPContext) common.View {
-	h.Status(http.StatusUnprocessableEntity)
-	return common.View{Name: "nodata"}
-}
-
-func (c pgPages) READ_statusresult() (int, common.View) {
-	return http.StatusUnprocessableEntity, common.View{Name: "nodata"}
-}
-
-func (c pgPages) CREATE_statusresult() (int, common.View) {
-	return http.StatusUnprocessableEntity, common.View{Name: "nodata"}
-}
-
-func (c pgPages) READ_cached(h *ctx.HTTPContext) common.View {
+func (c pgPages) RENDER_cached(h *ctx.HTTPContext) {
 	h.ResponseWriter.Header().Set("Cache-Control", "max-age=60")
-	return common.View{Name: "nodata"}
 }
 
-func (c pgPages) CREATE_redirect(h *ctx.HTTPContext) common.View {
-	h.Redirect("/elsewhere")
-	return common.View{Name: "marker"}
+func (c pgPages) RENDER_redirect(h *ctx.HTTPContext) { h.Redirect("/elsewhere") }
+
+func (c pgPages) RENDER_direct(h *ctx.HTTPContext) { h.Text("direct write") }
+
+func (c pgPages) RENDER_dict(h *ctx.HTTPContext) ctx.Map {
+	return ctx.Map{"Value": h.Query().Get("v")}
 }
 
-func (c pgPages) READ_direct(h *ctx.HTTPContext) common.View {
-	h.Text("direct write")
-	return common.View{Name: "marker"}
+var pgRoutes = []string{
+	"nodata", "view", "plain", "custom", "esc", "url", "rows", "big",
+	"statusctx", "statusresult", "cached", "redirect", "direct", "dict",
 }
 
-func (c pgPages) READ_dict(h *ctx.HTTPContext) common.View {
-	return common.View{Name: "dict", Data: ctx.Map{"Value": h.Query().Get("v")}}
-}
-
-type pgVersioned struct{ common.Page }
-
-func (c pgVersioned) NewController() Controller { return c }
-
-func (c pgVersioned) READ_ver_VERSION_1() common.View { return common.View{Name: "ver1"} }
-
-func (c pgVersioned) READ_ver_VERSION_2() common.View { return common.View{Name: "ver2"} }
-
-type pgPrefixed struct{ common.Page }
+type pgPrefixed struct{ common.HTTP }
 
 func (c pgPrefixed) NewController() Controller {
 	c.Prefix("site")
 	return c
 }
 
-func (c pgPrefixed) READ_home() common.View { return common.View{Name: "nodata"} }
+func (c pgPrefixed) RENDER_home() {}
 
-func (c pgPrefixed) CREATE_home() common.View { return common.View{Name: "nodata"} }
+func (c pgPrefixed) SUBMIT_home(h *ctx.HTTPContext) { h.Redirect("/done") }
 
 type pgLayered struct {
-	common.Page
+	common.HTTP
 	common.Guard
 	common.Interceptor
 	common.Middleware
@@ -173,12 +144,16 @@ func (c pgLayered) NewController() Controller {
 	return c
 }
 
-func (c pgLayered) READ_layered(d pgDTO) common.View {
-	return common.View{Name: "layered", Data: ctx.Map{"Word": d.Word}}
-}
+func (c pgLayered) RENDER_layered(d pgDTO) ctx.Map { return ctx.Map{"Word": d.Word} }
+
+type pgPipeOnly struct{ common.HTTP }
+
+func (c pgPipeOnly) NewController() Controller { return c }
+
+func (c pgPipeOnly) RENDER_piped(d pgDTO) ctx.Map { return ctx.Map{"Word": d.Word} }
 
 type pgReplaced struct {
-	common.Page
+	common.HTTP
 	common.Interceptor
 }
 
@@ -187,10 +162,10 @@ func (c pgReplaced) NewController() Controller {
 	return c
 }
 
-func (c pgReplaced) READ_replaced() common.View { return common.View{Name: "nodata"} }
+func (c pgReplaced) RENDER_replaced() ctx.Map { return ctx.Map{"Word": "handler"} }
 
 type pgShort struct {
-	common.Page
+	common.HTTP
 	common.Interceptor
 }
 
@@ -199,10 +174,32 @@ func (c pgShort) NewController() Controller {
 	return c
 }
 
-func (c pgShort) READ_short() common.View {
+func (c pgShort) RENDER_short() ctx.Map {
 	pgHandlerCalls.Add(1)
-	return common.View{Name: "nodata"}
+	return ctx.Map{"Word": "handler"}
 }
+
+type pgBookings struct{ common.HTTP }
+
+func (c pgBookings) NewController() Controller { return c }
+
+func (c pgBookings) RENDER_list_OF_bookings(h *ctx.HTTPContext) ctx.Map {
+	return ctx.Map{"X": h.Query().Get("x")}
+}
+
+type pgNested struct{ common.HTTP }
+
+func (c pgNested) NewController() Controller {
+	c.Path("/admin/dash", c.RENDER_dash)
+	c.Path("/admin/deep/inner", c.RENDER_inner)
+	c.Path("/info", c.RENDER_info)
+	return c
+}
+
+func (c pgNested) RENDER_home()  {}
+func (c pgNested) RENDER_dash()  {}
+func (c pgNested) RENDER_inner() {}
+func (c pgNested) RENDER_info()  {}
 
 func pgFiles(files map[string]string) fstest.MapFS {
 	m := fstest.MapFS{}
@@ -210,6 +207,19 @@ func pgFiles(files map[string]string) fstest.MapFS {
 		m[name] = &fstest.MapFile{Data: []byte(content)}
 	}
 	return m
+}
+
+func pgPageFileMap(extra map[string]string) map[string]string {
+	files := map[string]string{}
+	for _, name := range pgRoutes {
+		files[name+".html"] = "DEFAULT"
+	}
+	maps.Copy(files, extra)
+	return files
+}
+
+func pgPageFiles(extra map[string]string) fstest.MapFS {
+	return pgFiles(pgPageFileMap(extra))
 }
 
 func pgNew(t *testing.T, fsys fs.FS, controllers ...Controller) (*App, *lcRecordingLogger) {
@@ -222,8 +232,8 @@ func pgNew(t *testing.T, fsys fs.FS, controllers ...Controller) (*App, *lcRecord
 	return app, logger
 }
 
-func pgView(name, x string) string {
-	return "/view?n=" + url.QueryEscape(name) + "&x=" + url.QueryEscape(x)
+func pgView(route, x string) string {
+	return "/" + route + "?x=" + url.QueryEscape(x)
 }
 
 func pgExpectHTMLFixed500(t *testing.T, rule string, w *httptest.ResponseRecorder) {
@@ -241,39 +251,25 @@ func pgExpectHTMLFixed500(t *testing.T, rule string, w *httptest.ResponseRecorde
 }
 
 func TestPage_RoutesLikeHTTP(t *testing.T) {
-	files := pgFiles(map[string]string{"nodata.html": "NODATA", "ver1.html": "V1", "ver2.html": "V2"})
+	files := pgFiles(map[string]string{"v9/site/home.html": "HOME"})
 	logger := &lcRecordingLogger{}
 	app := New()
 	app.SetLogger(logger)
 	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
-	inner := NewModuleBuilder().Controllers(pgPrefixed{}, pgPages{}).Build()
+	inner := NewModuleBuilder().Controllers(pgPrefixed{}).Build()
 	inner.Prefix("v9")
 	mustCreate(t, app, NewModuleBuilder().Imports(inner).Build())
 
 	w := createGet(app, "/v9/site/home")
-	if w.Code != http.StatusOK || w.Body.String() != "NODATA" {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R1: GET under module prefix and controller Prefix, "+w.Body.String()))
+	if w.Code != http.StatusOK || w.Body.String() != "HOME" {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "P1, P2: GET under module prefix and controller Prefix, "+w.Body.String()))
 	}
 	w = createRequest(app, http.MethodPost, "/v9/site/home")
-	if w.Code != http.StatusOK || w.Body.String() != "NODATA" {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R1, R6: POST handler of a page controller answers 200, "+w.Body.String()))
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/done" {
+		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "P12: the SUBMIT_ of the page posts under the same prefixes"))
 	}
 	if w := createGet(app, "/site/home"); w.Code != http.StatusNotFound {
-		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "R1: the module prefix applies"))
-	}
-}
-
-func TestPage_Versions(t *testing.T) {
-	files := pgFiles(map[string]string{"ver1.html": "V1", "ver2.html": "V2"})
-	app := New()
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
-	app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
-	mustCreate(t, app, NewModuleBuilder().Controllers(pgVersioned{}).Build())
-	if w := createRequest(app, http.MethodGet, "/ver", "X-Version", "2"); w.Body.String() != "V2" {
-		t.Error(test.DiffMessage(w.Body.String(), "V2", "R1: the version of a page route"))
-	}
-	if w := createRequest(app, http.MethodGet, "/ver", "X-Version", "1"); w.Body.String() != "V1" {
-		t.Error(test.DiffMessage(w.Body.String(), "V1", "R1: another version of a page route"))
+		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "P1: the module prefix applies"))
 	}
 }
 
@@ -282,32 +278,23 @@ func TestPage_LayersBind(t *testing.T) {
 	app, _ := pgNew(t, files, pgLayered{})
 
 	if w := createRequest(app, http.MethodGet, "/layered?w=a"); w.Code != http.StatusForbidden {
-		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "R1: a guard returning false refuses a page route"))
+		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "P1: a guard returning false refuses a page route"))
 	}
 	w := createRequest(app, http.MethodGet, "/layered?w=a", "X-Allow", "yes")
 	if w.Code != http.StatusOK {
-		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "R1: the guard lets the request through"))
+		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "P1: the guard lets the request through"))
 	}
 	if w.Header().Get("X-Page-Middleware") != "ran" {
-		t.Error(test.DiffMessage(w.Header().Get("X-Page-Middleware"), "ran", "R1: a controller middleware runs on a page route"))
+		t.Error(test.DiffMessage(w.Header().Get("X-Page-Middleware"), "ran", "P1: a controller middleware runs on a page route"))
 	}
 	if want := "word=intercepted"; w.Body.String() != want {
-		t.Error(test.DiffMessage(w.Body.String(), want, "R1, R13: the interceptor changed the View's data"))
+		t.Error(test.DiffMessage(w.Body.String(), want, "P1, P6: the interceptor's result is the template's data"))
 	}
 
-	files2 := pgFiles(map[string]string{"layered.html": "word={{.Word}}"})
-	piped, _ := pgNew(t, files2, pgPipeOnly{})
+	piped, _ := pgNew(t, pgFiles(map[string]string{"piped.html": "word={{.Word}}"}), pgPipeOnly{})
 	if w := createGet(piped, "/piped?w=a"); w.Body.String() != "word=piped-a" {
-		t.Error(test.DiffMessage(w.Body.String(), "word=piped-a", "R1: a pipe on a page route"))
+		t.Error(test.DiffMessage(w.Body.String(), "word=piped-a", "P1: a pipe on a page route"))
 	}
-}
-
-type pgPipeOnly struct{ common.Page }
-
-func (c pgPipeOnly) NewController() Controller { return c }
-
-func (c pgPipeOnly) READ_piped(d pgDTO) common.View {
-	return common.View{Name: "layered", Data: ctx.Map{"Word": d.Word}}
 }
 
 func TestPage_RendersInsideLayout(t *testing.T) {
@@ -315,8 +302,8 @@ func TestPage_RendersInsideLayout(t *testing.T) {
 		"layout.html":        `<html><body>{{template "content" .}}</body></html>`,
 		"bookings/list.html": `<ul><li>{{.X}}</li></ul>`,
 	})
-	app, _ := pgNew(t, files, pgPages{})
-	w := createGet(app, pgView("bookings/list", "ab"))
+	app, _ := pgNew(t, files, pgBookings{})
+	w := createGet(app, "/bookings/list?x=ab")
 	if w.Code != http.StatusOK {
 		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R5: status of a page"))
 	}
@@ -332,39 +319,37 @@ func TestPage_NearestLayoutWins(t *testing.T) {
 		"home.html":              `home`,
 		"admin/dash.html":        `dash`,
 		"admin/deep/inner.html":  `inner`,
-		"public/info.html":       `info`,
-		"admin/partials/x.html":  `ignored-here`,
+		"info.html":              `info`,
 		"admin/deep/.hidden.txt": `ignored`,
 	})
-	app, _ := pgNew(t, files, pgPages{})
+	app, _ := pgNew(t, files, pgNested{})
 	cases := map[string]string{
-		"home":             "[root:home]",
-		"admin/dash":       "[admin:dash]",
-		"admin/deep/inner": "[admin:inner]",
-		"public/info":      "[root:info]",
+		"/home":             "[root:home]",
+		"/admin/dash":       "[admin:dash]",
+		"/admin/deep/inner": "[admin:inner]",
+		"/info":             "[root:info]",
 	}
-	for name, want := range cases {
-		if got := createGet(app, pgView(name, "")).Body.String(); got != want {
-			t.Error(test.DiffMessage(got, want, "R5: the nearest layout of "+name))
+	for target, want := range cases {
+		if got := createGet(app, target).Body.String(); got != want {
+			t.Error(test.DiffMessage(got, want, "R5: the nearest layout of "+target))
 		}
 	}
 }
 
 func TestPage_NoLayout(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"plain.html": "just {{.X}}"}), pgPages{})
+	app, _ := pgNew(t, pgPageFiles(map[string]string{"plain.html": "just {{.X}}"}), pgPages{})
 	w := createGet(app, pgView("plain", "me"))
 	if w.Code != http.StatusOK || w.Body.String() != "just me" {
 		t.Error(test.DiffMessage(w.Body.String(), "just me", "R5: without a layout the page is rendered alone"))
 	}
-	files := pgFiles(map[string]string{"nodata.html": "no data here"})
-	app, _ = pgNew(t, files, pgPages{})
+	app, _ = pgNew(t, pgPageFiles(map[string]string{"nodata.html": "no data here"}), pgPages{})
 	if w := createGet(app, "/nodata"); w.Code != http.StatusOK || w.Body.String() != "no data here" {
-		t.Error(test.DiffMessage(w.Body.String(), "no data here", "R5: a View with nil Data renders"))
+		t.Error(test.DiffMessage(w.Body.String(), "no data here", "P6: a handler without a result renders"))
 	}
 }
 
 func TestPage_BlockOverride(t *testing.T) {
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"layout.html": `<title>{{block "title" .}}Default{{end}}</title><main>{{template "content" .}}</main>`,
 		"custom.html": `{{define "title"}}Custom {{.X}}{{end}}body-custom`,
 		"plain.html":  `body-plain`,
@@ -379,7 +364,7 @@ func TestPage_BlockOverride(t *testing.T) {
 }
 
 func TestPage_Headers(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"nodata.html": "héllo"}), pgPages{})
+	app, _ := pgNew(t, pgPageFiles(map[string]string{"nodata.html": "héllo"}), pgPages{})
 	w := createGet(app, "/nodata")
 	if got := w.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Error(test.DiffMessage(got, "text/html; charset=utf-8", "R5: Content-Type"))
@@ -393,44 +378,37 @@ func TestPage_Headers(t *testing.T) {
 }
 
 func TestPage_KeepsHandlerCacheControl(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"nodata.html": "x"}), pgPages{})
+	app, _ := pgNew(t, pgPageFiles(nil), pgPages{})
 	if got := createGet(app, "/cached").Header().Get("Cache-Control"); got != "max-age=60" {
 		t.Error(test.DiffMessage(got, "max-age=60", "R5: a Cache-Control set by the handler is kept"))
 	}
 }
 
 func TestPage_DefaultStatus200(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"x.html": "x"}), pgPages{})
-	if w := createGet(app, pgView("x", "")); w.Code != http.StatusOK {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R6: GET page status"))
-	}
-	if w := createRequest(app, http.MethodPost, pgView("x", "")); w.Code != http.StatusOK {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R6: POST page status is 200, not 201"))
+	app, _ := pgNew(t, pgPageFiles(nil), pgPages{})
+	if w := createGet(app, pgView("view", "")); w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "P7: GET page status"))
 	}
 }
 
 func TestPage_StatusFromContext(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"nodata.html": "form"}), pgPages{})
-	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		w := createRequest(app, method, "/statusctx")
-		if w.Code != http.StatusUnprocessableEntity || w.Body.String() != "form" {
-			t.Error(test.DiffMessage(w.Code, http.StatusUnprocessableEntity, "R6: c.Status on "+method))
-		}
+	app, _ := pgNew(t, pgPageFiles(map[string]string{"statusctx.html": "form"}), pgPages{})
+	w := createGet(app, "/statusctx")
+	if w.Code != http.StatusUnprocessableEntity || w.Body.String() != "form" {
+		t.Error(test.DiffMessage(w.Code, http.StatusUnprocessableEntity, "P7: c.Status on a RENDER_"))
 	}
 }
 
 func TestPage_StatusFromResult(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"nodata.html": "form"}), pgPages{})
-	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		w := createRequest(app, method, "/statusresult")
-		if w.Code != http.StatusUnprocessableEntity || w.Body.String() != "form" {
-			t.Error(test.DiffMessage(w.Code, http.StatusUnprocessableEntity, "R6: (int, View) on "+method))
-		}
+	app, _ := pgNew(t, pgPageFiles(map[string]string{"statusresult.html": "form {{.Word}}"}), pgPages{})
+	w := createGet(app, "/statusresult")
+	if w.Code != http.StatusUnprocessableEntity || w.Body.String() != "form result" {
+		t.Error(test.DiffMessage(w.Code, http.StatusUnprocessableEntity, "P7: (int, data) on a RENDER_, "+w.Body.String()))
 	}
 }
 
 func TestPage_EscapesByContext(t *testing.T) {
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"esc.html": `<p>{{.X}}</p><i title="{{.X}}"></i><a href="/q?v={{.X}}">l</a><script>var a = {{.X}};</script>`,
 		"url.html": `<a href="{{.X}}">l</a>`,
 	})
@@ -457,59 +435,41 @@ func TestPage_EscapesByContext(t *testing.T) {
 	}
 }
 
-func TestPage_ViewIgnoredAfterResponse(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"marker.html": "VIEWMARKER"}), pgPages{})
-	w := createRequest(app, http.MethodPost, "/redirect")
-	if w.Code < 300 || w.Code > 399 || w.Header().Get("Location") != "/elsewhere" {
-		t.Error(test.DiffMessage(w.Code, "a 3xx to /elsewhere", "R8: the redirect stands"))
+func TestPage_ResultIgnoredAfterResponse(t *testing.T) {
+	app, _ := pgNew(t, pgPageFiles(map[string]string{"redirect.html": "PAGEMARKER", "direct.html": "PAGEMARKER"}), pgPages{})
+	w := createGet(app, "/redirect")
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/elsewhere" {
+		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "R8, P14: the redirect stands"))
 	}
-	if strings.Contains(w.Body.String(), "VIEWMARKER") {
-		t.Error(test.DiffMessage(w.Body.String(), "no view body", "R8: the View after Redirect is ignored"))
+	if strings.Contains(w.Body.String(), "PAGEMARKER") {
+		t.Error(test.DiffMessage(w.Body.String(), "no page body", "R8: the template after Redirect is not rendered"))
 	}
 	w = createGet(app, "/direct")
 	if w.Body.String() != "direct write" || w.Code != http.StatusOK {
-		t.Error(test.DiffMessage(w.Body.String(), "direct write", "R8: the View after a direct write is ignored"))
+		t.Error(test.DiffMessage(w.Body.String(), "direct write", "R8: the template after a direct write is not rendered"))
 	}
 }
 
-func TestPage_UnknownViewIs500(t *testing.T) {
-	counted := &pgCountFS{inner: pgFiles(map[string]string{
+func TestPage_RequestOpensNoFile(t *testing.T) {
+	counted := &pgCountFS{inner: pgPageFiles(map[string]string{
 		"layout.html":         `{{template "content" .}}`,
 		"partials/field.html": `field`,
-		"error.html":          `ERRORPAGE {{.Code}} {{.Message}}`,
-		"real.html":           `real`,
+		"404.html":            `E{{.Code}}`,
+		"view.html":           `real`,
 	})}
-	app, logger := pgNew(t, counted, pgPages{})
+	app, _ := pgNew(t, counted, pgPages{})
 	counted.opens.Store(0)
 
-	names := []string{"nope", "", "error", "partials/field", "layout", "../x", "real.html", "/real", "partials"}
-	for _, name := range names {
-		w := createGet(app, pgView(name, ""))
-		pgExpectHTMLFixed500(t, "R9: view "+strconv.Quote(name), w)
-		if body := w.Body.String(); !strings.Contains(body, "ERRORPAGE 500 Internal Server Error") {
-			t.Error(test.DiffMessage(body, "the error page with the fixed 500 data", "R9, R24: an unknown view answers the error page, never the error template as a 200 page"))
-		}
-	}
+	createGet(app, "/view")
+	createRequest(app, http.MethodGet, "/missing", "Accept", "text/html")
+	createGet(app, "/nodata")
 	if n := counted.opens.Load(); n != 0 {
-		t.Error(test.DiffMessage(n, 0, "R9: a request never opens a file"))
-	}
-	entries := logger.named("RenderFailed")
-	if len(entries) != len(names) {
-		t.Fatal(test.DiffMessage(len(entries), len(names), "R9: one RenderFailed per bad view"))
-	}
-	if entries[0].level != "error" {
-		t.Error(test.DiffMessage(entries[0].level, "error", "R9: RenderFailed is an Error"))
-	}
-	if got := entries[0].field("template"); got != "nope" {
-		t.Error(test.DiffMessage(got, "nope", "R9: the template field"))
-	}
-	if entries[0].field("cause") == nil {
-		t.Error(test.DiffMessage(nil, "a cause", "R9: the cause field"))
+		t.Error(test.DiffMessage(n, 0, "P2, P17: the templates are bound at Create; a request, a page or an error page, opens no file"))
 	}
 }
 
 func TestPage_ExecErrorSendsNoPartialPage(t *testing.T) {
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"layout.html": `<html>LAYOUTMARKER{{template "content" .}}</html>`,
 		"rows.html":   `{{range .Rows}}<i>PAGEMARKER-0123456789</i>{{end}}{{.Nope}}`,
 	})
@@ -521,13 +481,20 @@ func TestPage_ExecErrorSendsNoPartialPage(t *testing.T) {
 			t.Error(test.DiffMessage(w.Body.String(), "no "+marker, "R10: no fragment of the failed page or its error"))
 		}
 	}
-	if n := len(logger.named("RenderFailed")); n != 1 {
-		t.Error(test.DiffMessage(n, 1, "R10: one RenderFailed"))
+	entries := logger.named("RenderFailed")
+	if len(entries) != 1 {
+		t.Fatal(test.DiffMessage(len(entries), 1, "R10: one RenderFailed"))
+	}
+	if got := entries[0].field("template"); got != "rows" {
+		t.Error(test.DiffMessage(got, "rows", "R10, R41: the template field is the template path without .html"))
+	}
+	if entries[0].level != "error" || entries[0].field("cause") == nil {
+		t.Error(test.DiffMessage(entries[0].level, "error with a cause", "R10: RenderFailed is an Error with its cause"))
 	}
 }
 
 func TestPage_OversizedPageIs500(t *testing.T) {
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"big.html": `{{range .Rows}}` + strings.Repeat("0123456789", 10) + `{{end}}`,
 	})
 	app, logger := pgNew(t, files, pgPages{})
@@ -548,15 +515,15 @@ func TestPage_OversizedPageIs500(t *testing.T) {
 }
 
 func TestPage_UnknownAssetFails(t *testing.T) {
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"assets/app.css": "body{}",
-		"x.html":         `{{if .X}}<link href="{{asset "missing.css"}}">{{end}}ok`,
+		"view.html":      `{{if .X}}<link href="{{asset "missing.css"}}">{{end}}ok`,
 	})
 	app, logger := pgNew(t, files, pgPages{})
-	if w := createGet(app, pgView("x", "")); w.Code != http.StatusOK || w.Body.String() != "ok" {
+	if w := createGet(app, pgView("view", "")); w.Code != http.StatusOK || w.Body.String() != "ok" {
 		t.Error(test.DiffMessage(w.Body.String(), "ok", "R12: the unused branch renders"))
 	}
-	w := createGet(app, pgView("x", "show"))
+	w := createGet(app, pgView("view", "show"))
 	pgExpectHTMLFixed500(t, "R12: an unknown asset", w)
 	if strings.Contains(w.Body.String(), "missing.css") {
 		t.Error(test.DiffMessage(w.Body.String(), "no asset name", "R12: the cause is not sent"))
@@ -570,25 +537,25 @@ func TestPage_AssetFunction(t *testing.T) {
 	css := "body{color:red}"
 	sum := sha256.Sum256([]byte(css))
 	want := "/assets/css/app.css?v=" + hex.EncodeToString(sum[:8])
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"assets/css/app.css": css,
-		"x.html":             `{{asset "css/app.css"}}`,
+		"view.html":          `{{asset "css/app.css"}}`,
 	})
 	app, _ := pgNew(t, files, pgPages{})
-	if got := createGet(app, pgView("x", "")).Body.String(); got != want {
+	if got := createGet(app, pgView("view", "")).Body.String(); got != want {
 		t.Error(test.DiffMessage(got, want, "D6: asset returns the path with the first 8 bytes of the SHA-256"))
 	}
 
 	reload := New()
 	reload.EnableRender(&RenderOptions{FS: files, Dir: ".", IsReload: true})
 	mustCreate(t, reload, NewModuleBuilder().Controllers(pgPages{}).Build())
-	if got, want := createGet(reload, pgView("x", "")).Body.String(), "/assets/css/app.css"; got != want {
+	if got, want := createGet(reload, pgView("view", "")).Body.String(), "/assets/css/app.css"; got != want {
 		t.Error(test.DiffMessage(got, want, "D6: with IsReload asset adds no version"))
 	}
 }
 
 func TestPage_DictFunction(t *testing.T) {
-	files := pgFiles(map[string]string{
+	files := pgPageFiles(map[string]string{
 		"partials/field.html": `<label>{{.Name}}={{.Value}}</label>`,
 		"dict.html":           `{{template "partials/field" (dict "Name" "email" "Value" .Value)}}`,
 	})
@@ -598,7 +565,7 @@ func TestPage_DictFunction(t *testing.T) {
 		t.Error(test.DiffMessage(w.Body.String(), want, "D6: dict passes several values to a partial, escaped"))
 	}
 
-	bad := pgFiles(map[string]string{
+	bad := pgPageFiles(map[string]string{
 		"partials/field.html": `x`,
 		"dict.html":           `{{template "partials/field" (dict "Name" "email" "Value")}}`,
 	})
@@ -609,7 +576,7 @@ func TestPage_DictFunction(t *testing.T) {
 		t.Error(test.DiffMessage(n, 1, "R10: a failed dict is RenderFailed"))
 	}
 
-	badKey := pgFiles(map[string]string{
+	badKey := pgPageFiles(map[string]string{
 		"partials/field.html": `x`,
 		"dict.html":           `{{template "partials/field" (dict 1 "a")}}`,
 	})
@@ -619,34 +586,26 @@ func TestPage_DictFunction(t *testing.T) {
 }
 
 func TestPage_InterceptorResult(t *testing.T) {
-	files := pgFiles(map[string]string{"nodata.html": "never", "short.html": "word={{.Word}}"})
-	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
-	mustCreate(t, app, NewModuleBuilder().Controllers(pgReplaced{}, pgShort{}).Build())
+	files := pgFiles(map[string]string{"replaced.html": "data={{.}}", "short.html": "word={{.Word}}"})
+	app, _ := pgNew(t, files, pgReplaced{}, pgShort{})
 
 	w := createGet(app, "/replaced")
-	pgExpectHTMLFixed500(t, "R13: a post-interceptor replaced the View by a string", w)
-	if strings.Contains(w.Body.String(), "replaced") && !strings.Contains(w.Body.String(), "Internal Server Error") {
-		t.Error(test.DiffMessage(w.Body.String(), "fixed 500", "R13: the string is not sent"))
-	}
-	if n := len(logger.named("RenderFailed")); n != 1 {
-		t.Error(test.DiffMessage(n, 1, "R13: RenderFailed is logged"))
+	if w.Code != http.StatusOK || w.Body.String() != "data=replaced" {
+		t.Error(test.DiffMessage(w.Body.String(), "data=replaced", "P6: a post-interceptor's replacement, of any type, is the data"))
 	}
 
 	pgHandlerCalls.Store(0)
 	w = createGet(app, "/short")
 	if w.Code != http.StatusOK || w.Body.String() != "word=short-circuit" {
-		t.Error(test.DiffMessage(w.Body.String(), "word=short-circuit", "R13: an interceptor returning a View renders it"))
+		t.Error(test.DiffMessage(w.Body.String(), "word=short-circuit", "P6: an interceptor that answers without the handler supplies the data"))
 	}
 	if n := pgHandlerCalls.Load(); n != 0 {
-		t.Error(test.DiffMessage(n, 0, "R13: the handler was not called"))
+		t.Error(test.DiffMessage(n, 0, "P6: the handler was not called"))
 	}
 }
 
 func TestPage_Head(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"nodata.html": "body text"}), pgPages{})
+	app, _ := pgNew(t, pgPageFiles(map[string]string{"nodata.html": "body text"}), pgPages{})
 	w := createRequest(app, http.MethodHead, "/nodata")
 	if w.Code != http.StatusOK {
 		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R15: HEAD status"))

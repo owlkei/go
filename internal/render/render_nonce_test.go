@@ -60,7 +60,7 @@ func directOutput(t testing.TB, nonce string, data any) string {
 
 func TestRender_NonceEqualsDirectValue(t *testing.T) {
 	e := rdEngine(t, nonceFiles(), false)
-	b, err := e.Render("page", "<data>")
+	b, err := e.Render("/page", "<data>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRender_NonceOnlyWhenUsed(t *testing.T) {
 	}, false)
 
 	before := e.NonceDraws()
-	b, err := e.Render("plain", nil)
+	b, err := e.Render("/plain", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestRender_NonceOnlyWhenUsed(t *testing.T) {
 		t.Error(test.DiffMessage(got, before, "R30: a page without {{nonce}} does not read crypto/rand"))
 	}
 
-	b, err = e.Render("used", nil)
+	b, err = e.Render("/used", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestRender_NonceReachedThroughPartialAndLayout(t *testing.T) {
 		"deep/page.html":   `y`,
 		"partials/p.html":  `<script nonce="{{nonce}}"></script>`,
 	}, false)
-	for _, name := range []string{"viapartial", "deep/page"} {
+	for _, name := range []string{"/viapartial", "/deep/page"} {
 		b, err := e.Render(name, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -129,7 +129,7 @@ func TestRender_NonceReachedThroughPartialAndLayout(t *testing.T) {
 		}
 		e.Release(b)
 	}
-	b, err := e.Render("vialayout", nil)
+	b, err := e.Render("/vialayout", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,9 +142,9 @@ func TestRender_NonceReachedThroughPartialAndLayout(t *testing.T) {
 func TestRender_NonceInErrorPage(t *testing.T) {
 	e := rdEngine(t, map[string]string{
 		"layout.html": `<main>{{template "content" .}}</main>`,
-		"error.html":  `<script nonce="{{nonce}}"></script>{{.Code}}`,
+		"4xx.html":    `<script nonce="{{nonce}}"></script>{{.Code}}`,
 	}, false)
-	b, err := e.RenderError(map[string]any{"Code": 404})
+	b, err := e.RenderError(404, map[string]any{"Code": 404})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestRender_NonceUniquePerRender(t *testing.T) {
 	e := rdEngine(t, nonceFiles(), false)
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {
-		b, err := e.Render("page", nil)
+		b, err := e.Render("/page", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +173,7 @@ func TestRender_NonceUniquePerRender(t *testing.T) {
 func TestRender_NonceNeverTakenFromData(t *testing.T) {
 	e := rdEngine(t, nonceFiles(), false)
 	submitted := strings.Repeat("ab", 16)
-	b, err := e.Render("page", submitted)
+	b, err := e.Render("/page", submitted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,10 @@ func TestRender_NonceFollowsReload(t *testing.T) {
 	if err := e.Load(); err != nil {
 		t.Fatal(err)
 	}
-	b, err := e.Render("a", nil)
+	if _, err := e.Bind("/a"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.Render("/a", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +203,7 @@ func TestRender_NonceFollowsReload(t *testing.T) {
 	e.Release(b)
 
 	swap.set(map[string]string{"a.html": `<script nonce="{{nonce}}">1</script>`})
-	b, err = e.Render("a", nil)
+	b, err = e.Render("/a", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +223,7 @@ func TestRender_NonceConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 20; i++ {
-				b, err := e.Render("page", nil)
+				b, err := e.Render("/page", nil)
 				if err != nil {
 					t.Error(err)
 					return
@@ -244,7 +247,7 @@ func TestRender_NonceConcurrent(t *testing.T) {
 
 func TestRender_NonceAllocationsAgainstDirectValue(t *testing.T) {
 	e := rdEngine(t, nonceFiles(), false)
-	probe, err := e.Render("page", nil)
+	probe, err := e.Render("/page", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +270,7 @@ func TestRender_NonceAllocationsAgainstDirectValue(t *testing.T) {
 		_ = set.Execute(&out, nil)
 	})
 	engine := testing.AllocsPerRun(200, func() {
-		b, _ := e.Render("page", nil)
+		b, _ := e.Render("/page", nil)
 		e.Release(b)
 	})
 	if engine > direct+2 {

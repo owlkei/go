@@ -20,9 +20,23 @@ const (
 	assetSVG = `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
 )
 
+type assetPages struct{ common.HTTP }
+
+func (c assetPages) NewController() Controller { return c }
+
+func (c assetPages) RENDER_list_OF_bookings() {}
+
+func (c assetPages) RENDER_page() {}
+
+type assetPlain struct{ common.HTTP }
+
+func (c assetPlain) NewController() Controller { return c }
+func (c assetPlain) RENDER_x()                 {}
+
 func assetFiles() fstest.MapFS {
 	return pgFiles(map[string]string{
 		"layout.html":              `<html>{{template "content" .}}</html>`,
+		"page.html":                `{{asset "css/app.css"}}`,
 		"bookings/list.html":       `LIST-TEMPLATE`,
 		"partials/field.html":      `FIELD-PARTIAL`,
 		"assets/css/app.css":       assetCSS,
@@ -48,7 +62,7 @@ func assetApp(t *testing.T, files fstest.MapFS, setup func(*App)) *App {
 	if setup != nil {
 		setup(app)
 	}
-	mustCreate(t, app, NewModuleBuilder().Controllers(pgPages{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Controllers(assetPages{}).Build())
 	return app
 }
 
@@ -84,7 +98,7 @@ func TestAsset_Refuses(t *testing.T) {
 	for _, path := range []string{
 		"/assets/", "/assets/css", "/assets/css/", "/assets/missing.css",
 		"/assets/.env", "/assets/.hidden/x.txt", "/assets/css/.env",
-		"/assets/layout.html", "/assets/bookings/list.html", "/assets/partials/field.html",
+		"/assets/layout.html", "/assets/bookings/list.html", "/assets/partials/field.html", "/assets/_pages/bookings/list.html", "/assets/_pages/layout.html",
 	} {
 		w := createRequest(app, http.MethodGet, path, "Accept", "text/html")
 		if w.Code != http.StatusNotFound {
@@ -163,11 +177,12 @@ func TestAsset_ETag304(t *testing.T) {
 }
 
 func TestAsset_ETagMatchesAssetFunction(t *testing.T) {
-	files := assetFiles()
-	files["page.html"] = &fstest.MapFile{Data: []byte(`{{asset "css/app.css"}}`)}
-	app := assetApp(t, files, nil)
+	app := assetApp(t, assetFiles(), nil)
 
-	link := strings.TrimSuffix(strings.TrimPrefix(createGet(app, pgView("page", "")).Body.String(), "<html>"), "</html>")
+	link := strings.TrimSuffix(strings.TrimPrefix(createGet(app, "/page").Body.String(), "<html>"), "</html>")
+	if !strings.HasPrefix(link, "/assets/") {
+		t.Fatal(test.DiffMessage(link, "/assets/css/app.css?v=…", "R37: {{asset}} writes the URL of the asset"))
+	}
 	w := createGet(app, link)
 	if got := w.Header().Get("Cache-Control"); w.Code != http.StatusOK || got != "public, max-age=31536000, immutable" {
 		t.Error(test.DiffMessage(got, "public, max-age=31536000, immutable", "R37: the URL {{asset}} writes is immutable: "+link))
@@ -180,7 +195,7 @@ func TestAsset_Reload(t *testing.T) {
 		"assets/app.css": {Data: []byte("a{}")},
 		"page.html":      {Data: []byte(`{{asset "app.css"}}`)},
 	})
-	app, _ := rlApp(t, swap, true)
+	app, _ := rlApp(t, swap, true, rlPageOnly{})
 
 	w := createGet(app, "/assets/app.css?v="+assetHash("a{}"))
 	if got := w.Header().Get("Cache-Control"); got != "no-cache" || w.Header().Get("ETag") != "" {
@@ -189,7 +204,7 @@ func TestAsset_Reload(t *testing.T) {
 	if w.Body.String() != "a{}" {
 		t.Error(test.DiffMessage(w.Body.String(), "a{}", "R38: the file"))
 	}
-	if got := createGet(app, pgView("page", "")).Body.String(); got != "/assets/app.css" {
+	if got := createGet(app, "/page").Body.String(); got != "/assets/app.css" {
 		t.Error(test.DiffMessage(got, "/assets/app.css", "R38: {{asset}} adds no ?v="))
 	}
 
@@ -218,7 +233,7 @@ func TestAsset_RouteConflict(t *testing.T) {
 	app := New()
 	app.EnableRender(&RenderOptions{FS: assetFiles(), Dir: "."})
 	text, panicked := createPanicText(func() {
-		app.Create(NewModuleBuilder().Controllers(pgPages{}, assetUserServe{}).Build())
+		app.Create(NewModuleBuilder().Controllers(assetPages{}, assetUserServe{}).Build())
 	})
 	if !panicked || !strings.Contains(text, "route conflict:") {
 		t.Error(test.DiffMessage(text, "route conflict: …", "R39: a user /assets/* route conflicts with the asset route"))
@@ -227,7 +242,10 @@ func TestAsset_RouteConflict(t *testing.T) {
 
 func TestAsset_NoDirNoRoute(t *testing.T) {
 	files := pgFiles(map[string]string{"x.html": "X"})
-	app := assetApp(t, files, nil)
+	app := New()
+	app.SetLogger(&lcRecordingLogger{})
+	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	mustCreate(t, app, NewModuleBuilder().Controllers(assetPlain{}).Build())
 
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		w := createRequest(app, method, "/assets/app.css")
@@ -239,7 +257,7 @@ func TestAsset_NoDirNoRoute(t *testing.T) {
 	other := New()
 	other.EnableRender(&RenderOptions{FS: files, Dir: "."})
 	text, panicked := createPanicText(func() {
-		other.Create(NewModuleBuilder().Controllers(pgPages{}, assetUserServe{}).Build())
+		other.Create(NewModuleBuilder().Controllers(assetPlain{}, assetUserServe{}).Build())
 	})
 	if panicked {
 		t.Error(test.DiffMessage(text, "no panic", "R39: without an assets directory a user /assets/* route is free"))

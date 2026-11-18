@@ -127,7 +127,7 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
 
 | Path | Holds | Importable by applications |
 |---|---|---|
-| `/` (package `ginject`: `aliases.go`, `trace.go`) | `New`, `ModuleBuilder`, `TraceTransport` and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `Page`, `View`, `RenderOptions`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
+| `/` (package `ginject`: `aliases.go`, `trace.go`) | `New`, `ModuleBuilder`, `TraceTransport` and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `RenderOptions`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
 | `exception`, `log`, `middlewares/*`, `modules/*`, `guards/*` | exceptions, the logger and `log.Logger` / `log.LogAdapter`, built-in middlewares, modules and the throttler guard | yes |
 | `internal/core`, `internal/common`, `internal/ctx` | the container and server, the controller embeds and layers, the request contexts | no (root aliases) |
 | `internal/render` | the `html/template` engine behind `EnableRender`: template sets, pooled buffers, the nonce, the asset table (design 0018) | no |
@@ -155,8 +155,8 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
 Written as an application writes it (root aliases):
 
 - **Provider**: any struct implementing `NewProvider() ginject.Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
-- **Controller**: any struct implementing `NewController() ginject.Controller`. Must embed `ginject.HTTP` (API routes), `ginject.Page` (HTML page routes) and/or `ginject.WS` (WebSocket) to register routes; `HTTP` and `Page` exclude each other. There is no `REST` embed.
-- **Page** (design 0018, `README.md` › Pages, `internal/core/README.md` › Pages): `app.EnableRender(&ginject.RenderOptions{FS: web, IsReload: dev})` (`Dir` defaults to `web`; with an `embed.FS`, `IsReload` reads it from disk) before `Create`; a `ginject.Page` controller uses the same route words and layers, and each handler returns `ginject.View{Name, Data}` (only or last result). Files in `FS`: `layout.html` per directory tree, top-level `partials/`, root `error.html`, `assets/` (served at `/assets/*`), every other `.html` a page named by its path. Fixed template functions `nonce`, `asset`, `dict` (no user `FuncMap`). Status 200 for every method, `c.Redirect` → 303. Forms: a `Form` pipe (exported fields only) + `Bind` + `FieldLevel`, 422 re-render. `html/template` strips JavaScript comments in inline scripts.
+- **Controller**: any struct implementing `NewController() ginject.Controller`. Must embed `ginject.HTTP` (API and page routes) and/or `ginject.WS` (WebSocket) to register routes. There is no `REST` embed.
+- **Page** (design 0018 amendment 2, `README.md` › Pages, `internal/core/README.md` › Pages): `app.EnableRender(&ginject.RenderOptions{FS: web, IsReload: dev})` (`Dir` defaults to `web`; with an `embed.FS`, `IsReload` reads it from disk) before `Create`. In a `ginject.HTTP` controller, `RENDER_<route>` is a GET page and `SUBMIT_<route>` the POST on the same path; the route picks the template (`<path>.html` or `<path>/index.html` after prefixes and `PathStyle`, `{id}` for parameters), the handler's result is the data. Files in `Dir`: `layout.html` per directory tree, top-level `partials/`, root `<400–599>.html` / `4xx.html` / `5xx.html` error pages, `assets/` (served at `/assets/*`), `public/` (served at the root URL), `X.css` / `X.js` next to `X.html` (linked by `{{pageAssets}}`, served at `/assets/_pages/…`); an `.html` without a route stops `Create`. Fixed template functions `nonce`, `asset`, `dict`, `pageAssets` (no user `FuncMap`). `RENDER_` answers 200, a `SUBMIT_` that renders 422, `c.Redirect` → 303. Forms: a `Form` pipe (exported fields only) + `Bind` + `FieldLevel`. `html/template` strips JavaScript comments in inline scripts.
 - **Module**: built with `ginject.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()` (inside the engine: `core.NewModuleBuilder()`). Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`internal/core/README.md` › Modules and lifecycle).
 - **App**: created via `ginject.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `ginject.ServerOptions`: `ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`; `internal/core/README.md` › Server).
 
@@ -182,9 +182,9 @@ their code and message; anything else answers a fixed 500 and is logged. A cause
 the client (the status text is sent, the cause logged at Debug), and a 500 exception sends the fixed
 `Internal Server Error` text (design 0018 R24).
 
-Error output: JSON without `EnableRender`. With it, a matched page route (`ginject.Page`) from its first
-guard on answers HTML (`error.html` in the root layout, else a built-in page); an API, `SERVE` or asset
-route answers JSON; before any guard (middleware refusals, 404, 405, 410) HTML only when an `Accept`
+Error output: JSON without `EnableRender`. With it, a matched page route (`RENDER_`, `SUBMIT_`) from its first
+guard on answers HTML (`<code>.html`, then `<N>xx.html` in the root layout, else a built-in page); an API,
+`SERVE`, public-file or asset route answers JSON; before any guard (middleware refusals, 404, 405, 410) HTML only when an `Accept`
 value contains `text/html`, with `Vary: Accept`.
 
 Each layer is bound with `BindMiddleware(fn, handlers...)`, `BindGuard(fn, handlers...)`, etc. on the `ginject.Middleware`, `ginject.Guard`, `ginject.Interceptor`, `ginject.ExceptionFilter` embedded fields of a controller.
@@ -240,10 +240,9 @@ Build/config failures (route conflicts, unresolved dependencies, invalid handler
 Message format is `"<category>: <detail>"`:
 - `"route conflict: ..."` (`internal/core/container.go`, per app: the same method, version and route shape; routes that differ only in parameter names conflict; `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`)
 - `"event conflict: ..."` (`internal/core/container.go`, per app)
-- `"invalid handler: ..."` (`internal/routing/router.go`; `internal/core/container.go` `checkViewResults`: a page handler not returning `ginject.View`, an API handler returning one)
-- `"invalid route: ..."` (`internal/routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments)
-- `"invalid controller: ..."` (`internal/core/container.go`: a controller embedding both `ginject.HTTP` and `ginject.Page`)
-- `"invalid render: ..."` (`internal/core/app.go`, `container.go`, `http_page.go`: `EnableRender` without `FS` or called twice, a `Page` controller without `EnableRender`, a template that fails to parse, calls a missing template or fails to escape, with its file path)
+- `"invalid handler: ..."` (`internal/routing/router.go`; `internal/core/container.go`: a `SUBMIT_` without the `RENDER_` of the same words in its controller)
+- `"invalid route: ..."` (`internal/routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments; `internal/common`: `ANY`, `VERSION` or `FILE` in a page route name, `Path` or `Prefix` bound to a `SUBMIT_`; `internal/core/container.go`: a page route whose path holds a wildcard)
+- `"invalid render: ..."` (`internal/core/app.go`, `container.go`, `http_page.go`: `EnableRender` without `FS` or called twice, a `RENDER_` / `SUBMIT_` without `EnableRender`, a page route with no template, two templates, a reserved directory or an error page name, an `.html` file without a route, an unusable error page name, a CSS or JS file that belongs to no template, a page set with such files and no `{{pageAssets}}`, `assets/_pages`, a template that fails to parse, calls a missing template or fails to escape, with its file path)
 - `"invalid module: ..."` (`internal/core/module_builder.go`; `Create(nil)` in `internal/core/app.go`)
 - `"invalid app: ..."` (`internal/core/app.go`: `Create` called twice, a configuration method (`EnableRender` too) or `SetLogger` after `Create`, `SetLogger(nil)`)
 - `"dependency injection: ..."` (`internal/core/fn.go`, `internal/core/fn_plan.go`, `internal/core/container.go`)

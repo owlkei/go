@@ -18,8 +18,15 @@ var HTTPOperations = map[string]string{
 	"MODIFY":      http.MethodPatch,
 	"DELETE":      http.MethodDelete,
 	"PREFLIGHT":   http.MethodOptions,
+	PageRender:    http.MethodGet,
+	PageSubmit:    http.MethodPost,
 	routing.SERVE: routing.SERVE,
 }
+
+const (
+	PageRender = "RENDER"
+	PageSubmit = "SUBMIT"
+)
 
 const (
 	TokenBy      = "BY"
@@ -55,6 +62,7 @@ type HTTPLayer struct {
 	Method          string
 	Pattern         string
 	MainHandlerName string
+	Template        string
 	IsPage          bool
 }
 
@@ -128,6 +136,7 @@ func (r *HTTP) addPrefixesToRoute(route, fnName string, prefixes []map[string]st
 }
 
 func (r *HTTP) Prefix(v string, handlers ...any) *HTTP {
+	refuseSubmitTarget("Prefix", v, handlers)
 	r.prefixes = append([]Prefix{
 		{
 			Value:    v,
@@ -146,6 +155,7 @@ func (r *HTTP) Path(v string, handlers ...any) *HTTP {
 		panic(errors.New(color.FmtRed("invalid route: Path(%q) holds '%c': a path has no query or fragment", v, v[i])))
 	}
 
+	refuseSubmitTarget("Path", v, handlers)
 	paths := r.exactPaths[:len(r.exactPaths):len(r.exactPaths)]
 	for _, handler := range handlers {
 		name, isFunc := handlerName(handler)
@@ -162,6 +172,14 @@ func (r *HTTP) Path(v string, handlers ...any) *HTTP {
 	return r
 }
 
+func refuseSubmitTarget(call, v string, handlers []any) {
+	for _, handler := range handlers {
+		if name, isFunc := handlerName(handler); isFunc && PageOperation(name) == PageSubmit {
+			panic(errors.New(color.FmtRed("invalid route: %s(%q) is bound to '%s': a SUBMIT_ uses the path of its RENDER_", call, v, name)))
+		}
+	}
+}
+
 func findExactPath(paths []exactPath, fnName string) (exactPath, bool) {
 	for _, path := range paths {
 		if path.fnName == fnName {
@@ -172,20 +190,44 @@ func findExactPath(paths []exactPath, fnName string) (exactPath, bool) {
 }
 
 func AddHandlerToRouterMap(r *HTTP, modulePrefixes []string, style PathStyle, fnName string, handler any) {
+	AddHandlerToRouterMapWithPageVersion(r, modulePrefixes, style, fnName, handler, "")
+}
+
+func AddHandlerToRouterMapWithPageVersion(r *HTTP, modulePrefixes []string, style PathStyle, fnName string, handler any, pageVersion string) {
 	httpMethod, route, version := ParseFuncNameToURL(fnName, style)
 	if httpMethod == "" {
 		return
 	}
 
-	if path, ok := findExactPath(r.exactPaths, fnName); ok {
+	pathName := fnName
+	switch PageOperation(fnName) {
+	case PageSubmit:
+		pathName = RenderNameOf(fnName)
+		version = pageVersion
+	case PageRender:
+		version = pageVersion
+	}
+	if path, ok := findExactPath(r.exactPaths, pathName); ok {
 		route = str.Enclose(path.value, '/')
 	}
-	route = r.addPrefixesToRoute(route, fnName, r.getPrefixes())
+	route = r.addPrefixesToRoute(route, pathName, r.getPrefixes())
 	for _, modulePrefix := range modulePrefixes {
 		route = modulePrefix + route
 	}
 
 	r.addToRouters(fnName, route, version, httpMethod, handler)
+}
+
+func PageOperation(fnName string) string {
+	word, _, _ := strings.Cut(fnName, "_")
+	if word == PageRender || word == PageSubmit {
+		return word
+	}
+	return ""
+}
+
+func RenderNameOf(submitName string) string {
+	return PageRender + strings.TrimPrefix(submitName, PageSubmit)
 }
 
 func CheckExactPaths(r *HTTP) {

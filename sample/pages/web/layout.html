@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{block "title" .}}Bookings{{end}} · Ginject pages</title>
   <link rel="stylesheet" href="{{asset "owlky.min.css"}}">
+  {{/* The CSS and JS files named after this layout and after the page, such as layout.css. */}}
+  {{pageAssets}}
   {{/* The one inline script: follow the system's light or dark mode before the first paint. Its nonce is the
        request's CSP nonce, which helmet adds to script-src. */}}
   <script nonce="{{nonce}}">

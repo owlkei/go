@@ -36,6 +36,9 @@ func ParseFuncNameToURL(fnName string, style PathStyle) (string, string, string)
 	if !ok {
 		return "", "", ""
 	}
+	if words[0] == PageRender || words[0] == PageSubmit {
+		refusePageWords(words, fnName)
+	}
 
 	p := routeParser{name: fnName, words: words, i: 1, isServe: method == routing.SERVE, joint: "-"}
 	if style == PathStyleAsWritten {
@@ -72,6 +75,23 @@ func ParseFuncNameToURL(fnName string, style PathStyle) (string, string, string)
 	}
 
 	return method, b.String(), version
+}
+
+func refusePageWords(words []string, fnName string) {
+	for _, word := range words[1:] {
+		reason := ""
+		switch word {
+		case TokenAny:
+			reason = "wildcard"
+		case TokenVersion:
+			reason = "version"
+		case TokenFile:
+			reason = "file extension"
+		default:
+			continue
+		}
+		panic(errors.New(color.FmtRed("invalid route: %s in %s: a page route has no %s", word, fnName, reason)))
+	}
 }
 
 type routeParser struct {

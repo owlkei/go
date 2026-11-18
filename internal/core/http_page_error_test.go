@@ -59,25 +59,22 @@ func peBoom(kind string) {
 	}
 }
 
-type pePage struct{ common.Page }
+type pePage struct{ common.HTTP }
 
 func (c pePage) NewController() Controller {
 	c.Prefix("page")
 	return c
 }
 
-func (c pePage) READ_boom(h *ctx.HTTPContext) common.View {
+func (c pePage) RENDER_boom(h *ctx.HTTPContext) ctx.Map {
 	k := h.Query().Get("k")
-	if k == "render" {
-		return common.View{Name: "nosuch"}
-	}
 	peBoom(k)
-	return common.View{Name: "ok"}
+	return ctx.Map{"K": k}
 }
 
-func (c pePage) CREATE_boom() common.View { return common.View{Name: "ok"} }
+func (c pePage) SUBMIT_boom(h *ctx.HTTPContext) { h.Redirect("/page/ok") }
 
-func (c pePage) READ_ok() common.View { return common.View{Name: "ok"} }
+func (c pePage) RENDER_ok() {}
 
 type peAPI struct{ common.HTTP }
 
@@ -139,7 +136,7 @@ func (d peDTO) Transform(q ctx.Query, _ common.ArgumentMetadata) any {
 }
 
 type peLayeredPage struct {
-	common.Page
+	common.HTTP
 	common.Guard
 	common.Interceptor
 	common.ExceptionFilter
@@ -153,11 +150,10 @@ func (c peLayeredPage) NewController() Controller {
 	return c
 }
 
-func (c peLayeredPage) READ_run(_ peDTO, h *ctx.HTTPContext) common.View {
+func (c peLayeredPage) RENDER_run(_ peDTO, h *ctx.HTTPContext) {
 	if h.Query().Get("h") == "boom" {
 		panic(exception.NotFoundException("handler refuses"))
 	}
-	return common.View{Name: "ok"}
 }
 
 type peLayeredAPI struct {
@@ -263,12 +259,30 @@ func peExpectJSON(t *testing.T, rule string, w *httptest.ResponseRecorder, code 
 	}
 }
 
-func peLayerFiles() map[string]string {
-	return map[string]string{"ok.html": "OK"}
+func peLayerFiles(groups ...string) map[string]string {
+	files := map[string]string{}
+	for _, group := range groups {
+		switch group {
+		case "page":
+			files["page/ok.html"] = "OK"
+			files["page/boom.html"] = `{{if eq .K "render"}}{{index .K 99}}{{end}}OK`
+		case "lp":
+			files["lp/run.html"] = "OK"
+		}
+	}
+	return files
+}
+
+func peFilesWith(extra map[string]string, groups ...string) map[string]string {
+	files := peLayerFiles(groups...)
+	for name, content := range extra {
+		files[name] = content
+	}
+	return files
 }
 
 func TestPageError_RouteKindDecides(t *testing.T) {
-	app, _ := peApp(t, peLayerFiles(), nil, peLayeredPage{}, peLayeredAPI{})
+	app, _ := peApp(t, peLayerFiles("lp"), nil, peLayeredPage{}, peLayeredAPI{})
 	triggers := []struct {
 		name    string
 		query   string
@@ -297,7 +311,7 @@ func TestError_AcceptDecidesBeforeGuards(t *testing.T) {
 	setup := func(app *App) {
 		app.BindGlobalMiddlewares(peMiddleware{}, csrf.CSRF{}, hostcheck.HostCheck{Hosts: []string{"example.com"}})
 	}
-	app, _ := peApp(t, peLayerFiles(), setup, pePage{}, peAPI{})
+	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{}, peAPI{})
 
 	for _, route := range []string{"/page/ok", "/api/ok"} {
 		peExpectHTML(t, "R18: a user middleware refusal on "+route+" with Accept text/html", peDo(app, http.MethodGet, route, "X-Mw", "panic", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
@@ -327,8 +341,8 @@ func TestError_AcceptDecidesBeforeGuards(t *testing.T) {
 		t.Error(test.DiffMessage(w.Header().Get("Allow"), "an Allow header holding GET", "R18: the Allow header of a 405 is kept in JSON"))
 	}
 
-	if w := peDo(app, http.MethodPost, "/page/boom", "Sec-Fetch-Site", "same-origin", "Accept", peAcceptHTML); w.Code != http.StatusOK {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R29: a same-origin POST passes"))
+	if w := peDo(app, http.MethodPost, "/page/boom", "Sec-Fetch-Site", "same-origin", "Accept", peAcceptHTML); w.Code != http.StatusSeeOther {
+		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "R29: a same-origin POST passes (the SUBMIT_ redirects)"))
 	}
 }
 
@@ -384,7 +398,7 @@ func (c peBlocking) READ_hold() string {
 }
 
 func TestError_AcceptTable(t *testing.T) {
-	app, _ := peApp(t, peLayerFiles(), nil, pePage{})
+	app, _ := peApp(t, peLayerFiles("page"), nil, pePage{})
 	cases := []struct {
 		name    string
 		accept  []string
@@ -420,7 +434,7 @@ func TestError_AcceptTable(t *testing.T) {
 }
 
 func TestError_VaryAccept(t *testing.T) {
-	app, _ := peApp(t, peLayerFiles(), nil, pePage{})
+	app, _ := peApp(t, peLayerFiles("page"), nil, pePage{})
 	for name, accept := range map[string]string{"html": peAcceptHTML, "json": peAcceptJSON, "none": ""} {
 		var headers []string
 		if accept != "" {
@@ -448,18 +462,15 @@ func TestError_JSONWithoutEnableRender(t *testing.T) {
 }
 
 func TestPageError_CustomTemplate(t *testing.T) {
-	files := map[string]string{
-		"layout.html":        `<html>{{template "content" .}}</html>`,
-		"error.html":         `[{{.Code}}|{{.Status}}|{{.Message}}|{{.RequestID}}|{{printf "%T" .Code}}]`,
-		"ok.html":            "OK",
-		"nested/layout.html": `<nested>{{template "content" .}}</nested>`,
-		"nested/page.html":   "NESTED",
-	}
+	files := peFilesWith(map[string]string{
+		"layout.html": `<html>{{template "content" .}}</html>`,
+		"4xx.html":    `[{{.Code}}|{{.Status}}|{{.Message}}|{{.RequestID}}|{{printf "%T" .Code}}]`,
+	}, "lp")
 	app, _ := peApp(t, files, nil, peLayeredPage{})
 	w := peDo(app, http.MethodGet, "/lp/run", "X-Guard", "panic")
 	want := "<html>[403|Forbidden|guard refuses|" + w.Header().Get("X-Request-Id") + "|int]</html>"
 	if w.Body.String() != want {
-		t.Error(test.DiffMessage(w.Body.String(), want, "R20: error.html inside the root layout with Code, Status, Message and RequestID"))
+		t.Error(test.DiffMessage(w.Body.String(), want, "P17, P18: 4xx.html inside the root layout with Code, Status, Message and RequestID"))
 	}
 	if w.Header().Get("X-Request-Id") == "" {
 		t.Error(test.DiffMessage("", "a request id", "R20: the request id is on the page and in the header"))
@@ -472,7 +483,7 @@ func TestPageError_CustomTemplate(t *testing.T) {
 
 func TestPageError_KeepsLayerHeaders(t *testing.T) {
 	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}) }
-	app, _ := peApp(t, peLayerFiles(), setup, pePage{})
+	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{})
 
 	w := peDo(app, http.MethodGet, "/page/ok", "X-Mw", "retry", "Accept", peAcceptHTML)
 	peExpectHTML(t, "R20: error after a layer set Retry-After", w, http.StatusServiceUnavailable)
@@ -489,7 +500,7 @@ func TestPageError_KeepsLayerHeaders(t *testing.T) {
 
 func TestPageError_DropsBodyHeaders(t *testing.T) {
 	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}) }
-	app, _ := peApp(t, peLayerFiles(), setup, pePage{})
+	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{})
 	w := peDo(app, http.MethodGet, "/page/ok", "X-Mw", "dirty", "Accept", peAcceptHTML)
 
 	peExpectHTML(t, "R20: error after a layer set body headers", w, http.StatusBadRequest)
@@ -504,7 +515,7 @@ func TestPageError_DropsBodyHeaders(t *testing.T) {
 }
 
 func TestPageError_BuiltIn(t *testing.T) {
-	files := map[string]string{"layout.html": `<html>LAYOUTMARK{{template "content" .}}</html>`, "ok.html": "OK"}
+	files := peFilesWith(map[string]string{"layout.html": `<html>LAYOUTMARK{{template "content" .}}</html>`}, "page")
 	app, _ := peApp(t, files, nil, pePage{})
 	w := peDo(app, http.MethodGet, "/page/boom?k=hostile")
 
@@ -530,32 +541,36 @@ func TestPageError_BuiltIn(t *testing.T) {
 }
 
 func TestPageError_FallsBackToBuiltIn(t *testing.T) {
-	files := map[string]string{"layout.html": `<html>LAYOUTMARK{{template "content" .}}</html>`, "error.html": `ERRORMARK{{index .Code 0}}`, "ok.html": "OK"}
+	files := peFilesWith(map[string]string{"layout.html": `<html>LAYOUTMARK{{template "content" .}}</html>`, "404.html": `ERRORMARK{{index .Code 0}}`, "4xx.html": "NEXTFILE"}, "page")
 	app, logger := peApp(t, files, nil, pePage{})
 	w := peDo(app, http.MethodGet, "/page/boom?k=notfound")
-	peExpectHTML(t, "R22: error.html fails", w, http.StatusNotFound)
+	peExpectHTML(t, "P19: 404.html fails", w, http.StatusNotFound)
 	body := w.Body.String()
-	if body == "" || strings.Contains(body, "ERRORMARK") || strings.Contains(body, "LAYOUTMARK") || !strings.Contains(body, "no such thing") {
-		t.Error(test.DiffMessage(body, "the built-in page with the same code", "R22: no half page"))
+	if body == "" || strings.Contains(body, "ERRORMARK") || strings.Contains(body, "LAYOUTMARK") || strings.Contains(body, "NEXTFILE") || !strings.Contains(body, "no such thing") {
+		t.Error(test.DiffMessage(body, "the built-in page with the same code", "P19: no half page and the next file is not tried"))
 	}
-	if n := len(logger.named("RenderFailed")); n != 1 {
-		t.Error(test.DiffMessage(n, 1, "R22: RenderFailed is logged"))
+	entries := logger.named("RenderFailed")
+	if len(entries) != 1 {
+		t.Fatal(test.DiffMessage(len(entries), 1, "P19: RenderFailed is logged"))
+	}
+	if got := entries[0].field("template"); got != "404" {
+		t.Error(test.DiffMessage(got, "404", "P19: the template field names the error page"))
 	}
 
-	files = map[string]string{"layout.html": `<html>{{index .Code 0}}{{template "content" .}}</html>`, "error.html": `ERRORMARK`, "ok.html": "OK"}
+	files = peFilesWith(map[string]string{"layout.html": `<html>{{index .Code 0}}{{template "content" .}}</html>`, "404.html": `ERRORMARK`}, "page")
 	app, logger = peApp(t, files, nil, pePage{})
 	w = peDo(app, http.MethodGet, "/page/boom?k=notfound")
-	peExpectHTML(t, "R22: the layout fails with error data", w, http.StatusNotFound)
+	peExpectHTML(t, "P19: the layout fails with error data", w, http.StatusNotFound)
 	if body := w.Body.String(); body == "" || strings.Contains(body, "ERRORMARK") || !strings.Contains(body, "no such thing") {
-		t.Error(test.DiffMessage(body, "the built-in page with the same code", "R22: no half page when the layout fails"))
+		t.Error(test.DiffMessage(body, "the built-in page with the same code", "P19: no half page when the layout fails"))
 	}
 	if n := len(logger.named("RenderFailed")); n != 1 {
-		t.Error(test.DiffMessage(n, 1, "R22: RenderFailed is logged for the layout"))
+		t.Error(test.DiffMessage(n, 1, "P19: RenderFailed is logged for the layout"))
 	}
 }
 
 func TestPageError_UserFilterFirst(t *testing.T) {
-	files := map[string]string{"error.html": "BUILTIN {{.Code}}", "ok.html": "OK"}
+	files := peFilesWith(map[string]string{"4xx.html": "BUILTIN {{.Code}}"}, "lp")
 	app, _ := peApp(t, files, nil, peLayeredPage{})
 
 	w := peDo(app, http.MethodGet, "/lp/run?h=boom", "X-Filter", "handle")
@@ -604,7 +619,7 @@ func peCases() []peCase {
 func peLogCount(l *lcRecordingLogger, msg string) int { return len(l.named(msg)) }
 
 func TestClientText_Table(t *testing.T) {
-	files := map[string]string{"error.html": peTextBody, "ok.html": "OK"}
+	files := peFilesWith(map[string]string{"4xx.html": peTextBody, "5xx.html": peTextBody}, "page")
 	app, logger := peApp(t, files, nil, pePage{}, peAPI{})
 
 	for _, tc := range peCases() {
@@ -686,7 +701,7 @@ func TestClientText_LoggedFields(t *testing.T) {
 }
 
 func TestClientText_RenderFailure(t *testing.T) {
-	files := map[string]string{"error.html": peTextBody, "ok.html": "OK"}
+	files := peFilesWith(map[string]string{"4xx.html": peTextBody, "5xx.html": peTextBody}, "page")
 	app, logger := peApp(t, files, nil, pePage{})
 	w := peDo(app, http.MethodGet, "/page/boom?k=render")
 	peExpectHTML(t, "R24: a render failure", w, http.StatusInternalServerError)
@@ -722,20 +737,20 @@ func (c peBodyAPI) CREATE_json(b ctx.Body) any { return ctx.Map{"got": b["k"]} }
 
 func (c peBodyAPI) CREATE_form(f ctx.Form) any { return ctx.Map{"got": f.Get("k")} }
 
-type pePageIn struct{ common.Page }
+type pePageIn struct{ common.HTTP }
 
 func (c pePageIn) NewController() Controller {
 	c.Prefix("pin")
 	return c
 }
 
-func (c pePageIn) CREATE_json(b ctx.Body) common.View {
-	return common.View{Name: "ok", Data: ctx.Map{"got": b["k"]}}
-}
+func (c pePageIn) RENDER_json() {}
 
-func (c pePageIn) CREATE_form(f ctx.Form) common.View {
-	return common.View{Name: "ok", Data: ctx.Map{"got": f.Get("k")}}
-}
+func (c pePageIn) RENDER_form() {}
+
+func (c pePageIn) SUBMIT_json(b ctx.Body) ctx.Map { return ctx.Map{"got": b["k"]} }
+
+func (c pePageIn) SUBMIT_form(f ctx.Form) ctx.Map { return ctx.Map{"got": f.Get("k")} }
 
 func pePost(app *App, target, contentType, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
@@ -746,7 +761,7 @@ func pePost(app *App, target, contentType, body string) *httptest.ResponseRecord
 }
 
 func TestClientText_FrameworkMessages(t *testing.T) {
-	files := map[string]string{"error.html": peTextBody, "ok.html": "OK"}
+	files := map[string]string{"4xx.html": peTextBody, "pin/json.html": "OK", "pin/form.html": "OK"}
 	app, logger := peApp(t, files, nil, peBodyAPI{}, pePageIn{})
 	app.maxRequestBodyBytes.Store(64)
 	big := strings.Repeat("a", 4096)
@@ -788,10 +803,9 @@ func TestClientText_FrameworkMessages(t *testing.T) {
 }
 
 func TestPageError_HTMLErrorIsNotCached(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{
+	app, _ := pgNew(t, pgPageFiles(map[string]string{
 		"layout.html": `<script nonce="{{nonce}}"></script>{{template "content" .}}`,
-		"error.html":  `E{{.Code}}`,
-		"real.html":   `real`,
+		"404.html":    `E{{.Code}}`,
 	}), pgPages{})
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
 	req.Header.Set("Accept", "text/html")

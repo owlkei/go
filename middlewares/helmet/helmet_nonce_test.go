@@ -30,19 +30,18 @@ var (
 )
 
 type noncePages struct {
-	common.Page
+	common.HTTP
 	common.Middleware
 }
 
 func (c noncePages) NewController() core.Controller { return c }
 
-func (c noncePages) READ_nonce() common.View { return common.View{Name: "nonce"} }
-func (c noncePages) READ_plain() common.View { return common.View{Name: "plain"} }
-func (c noncePages) READ_boom() common.View  { panic(exception.NotFoundException("missing")) }
+func (c noncePages) RENDER_nonce() {}
+func (c noncePages) RENDER_plain() {}
+func (c noncePages) RENDER_boom()  { panic(exception.NotFoundException("missing")) }
 
-func (c noncePages) READ_foreign(h *ctx.HTTPContext) common.View {
+func (c noncePages) RENDER_foreign(h *ctx.HTTPContext) {
 	h.ResponseWriter.Header().Set("Content-Security-Policy", nonceForeign)
-	return common.View{Name: "nonce"}
 }
 
 type nonceLaterMiddleware struct{}
@@ -53,7 +52,7 @@ func (nonceLaterMiddleware) Use(_ *http.Request, w http.ResponseWriter, next ctx
 }
 
 type nonceLaterPages struct {
-	common.Page
+	common.HTTP
 	common.Middleware
 }
 
@@ -62,7 +61,7 @@ func (c nonceLaterPages) NewController() core.Controller {
 	return c
 }
 
-func (c nonceLaterPages) READ_later() common.View { return common.View{Name: "nonce"} }
+func (c nonceLaterPages) RENDER_later() {}
 
 type nonceAPI struct{ common.HTTP }
 
@@ -70,13 +69,17 @@ func (c nonceAPI) NewController() core.Controller { return c }
 func (c nonceAPI) READ_api() string               { return "api" }
 
 func nonceFiles(errorPage bool) fstest.MapFS {
+	const used = `<script nonce="{{nonce}}"></script><style nonce="{{nonce}}"></style><i nonce="{{nonce}}"></i>`
 	files := fstest.MapFS{
-		"nonce.html":     {Data: []byte(`<script nonce="{{nonce}}"></script><style nonce="{{nonce}}"></style><i nonce="{{nonce}}"></i>`)},
+		"nonce.html":     {Data: []byte(used)},
+		"foreign.html":   {Data: []byte(used)},
+		"later.html":     {Data: []byte(used)},
 		"plain.html":     {Data: []byte(`<p>plain</p>`)},
+		"boom.html":      {Data: []byte(`boom`)},
 		"assets/app.css": {Data: []byte(`a{}`)},
 	}
 	if errorPage {
-		files["error.html"] = &fstest.MapFile{Data: []byte(`<script nonce="{{nonce}}"></script><b>{{.Code}}</b>`)}
+		files["404.html"] = &fstest.MapFile{Data: []byte(`<script nonce="{{nonce}}"></script><b>{{.Code}}</b>`)}
 	}
 	return files
 }
@@ -255,7 +258,7 @@ func TestNonce_WithoutHelmet(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.EnableRender(&core.RenderOptions{FS: nonceFiles(false), Dir: "."})
-	app.Create(core.NewModuleBuilder().Controllers(noncePages{}, nonceAPI{}).Build())
+	app.Create(core.NewModuleBuilder().Controllers(noncePages{}, nonceLaterPages{}, nonceAPI{}).Build())
 
 	w := nonceServe(app, "/nonce")
 	if !nonceHexValue.MatchString(bodyNonce(t, w.Body.String())) {

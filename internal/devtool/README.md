@@ -87,7 +87,7 @@ snapshot := devtool.DevtoolBuilder().
 
 #### Rules
 - Each route gives one `HTTPComponent` with its handler name, HTTP method, route and a non-empty `Id`.
-- A page route (`HTTPLayer.IsPage`) has `Kind` `page` (JSON `kind`); an API route has none, so `kind` is omitted.
+- A page route (`HTTPLayer.IsPage`: a `RENDER_` or `SUBMIT_` route) has `Kind` `page` (JSON `kind`); an API route has none, so `kind` is omitted.
 - A global layer is listed with `Scope` `GLOBAL_SCOPE` and its type name (`devtool.snapshotGlobalGuard`).
 - A body pipe's fields are listed in `Request.Body`.
 - With versioning, `Versioning` holds the route's version, the versioning `Key` and its `Type`.
@@ -101,10 +101,11 @@ omitted:
 | Field | Type | Description |
 |---|---|---|
 | `IsReload` (`is_reload`) | `bool` | `RenderOptions.IsReload` |
-| `Pages` (`pages`) | `[]*RenderPage` | Every page, sorted by name: `Name` (`name`, `bookings/list`) and `Layout` (`layout`, the layout file such as `b/layout.html`, omitted without one) |
+| `Pages` (`pages`) | `[]*RenderPage` | One per page route, sorted by name: `Name` (`name`, the template path without `.html`, `bookings/{id}`), `Route` (`route`, `/bookings/{id}`), `Layout` (`layout`, the layout file such as `b/layout.html`, omitted without one) and `Assets` (`assets`, the page set's CSS and JS files, layout first, omitted without any) |
 | `Partials` (`partials`) | `[]string` | Partial names, sorted (`partials/field`) |
-| `ErrorTemplate` (`error_template`) | `string` | `error.html`, or `built-in` without one |
+| `ErrorTemplates` (`error_templates`) | `[]string` | Error page files, sorted (`404.html`, `5xx.html`); omitted when only the built-in page exists |
 | `Assets` (`assets`) | `int` | Files under `assets/`, hidden ones not counted |
+| `Public` (`public`) | `int` | Files under `public/`, hidden ones not counted |
 | `Renders`, `Failures` (`renders`, `failures`) | `int64` | Renders that succeeded and failed so far |
 
 `Renders` and `Failures` are read from `Counters` each time the section is encoded, so the same
@@ -116,7 +117,7 @@ as plain numbers.
 - `GetConfigurationRequest` (no fields) and `GetConfigurationResponse` (`Controller *Controller`, `Render *Render`).
 - `Controller` (`Http []*HTTPComponent`).
 - `HTTPComponent`: `Id`, `Kind`, `Handler`, `HttpMethod`, `Route` (`string`), `ExceptionFilters`, `Middlewares`, `Guards`, `Interceptors` (`[]*Layer`), `Versioning *HTTPVersioning`, `Request *HTTPRequest`.
-- `Render` (see [Render](#render)) and `RenderPage` (`Name`, `Layout`). `PageKind` is `"page"`.
+- `Render` (see [Render](#render)) and `RenderPage` (`Name`, `Route`, `Layout`, `Assets`). `PageKind` is `"page"`.
 - `Layer`: `Scope LayerScope`, `Name string`.
 - `HTTPVersioning`: `Type int32`, `Value string`, `Key string`.
 - `HTTPRequest`: `Body`, `Form`, `Query`, `Header`, `Param`, `File` (`[]*Schema`).

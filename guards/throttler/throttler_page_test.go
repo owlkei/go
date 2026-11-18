@@ -20,7 +20,7 @@ func pagedThrottler() Throttler {
 }
 
 type pagedPage struct {
-	common.Page
+	common.HTTP
 	common.Guard
 }
 
@@ -30,7 +30,7 @@ func (c pagedPage) NewController() core.Controller {
 	return c
 }
 
-func (c pagedPage) READ_hit() common.View { return common.View{Name: "ok"} }
+func (c pagedPage) RENDER_hit() {}
 
 type pagedAPI struct {
 	common.HTTP
@@ -57,7 +57,7 @@ func pagedGet(app *core.App, target, accept string) *httptest.ResponseRecorder {
 
 func TestPageError_ThrottlerFollowsRoute(t *testing.T) {
 	app := core.New()
-	app.EnableRender(&core.RenderOptions{FS: fstest.MapFS{"ok.html": &fstest.MapFile{Data: []byte("OK")}}, Dir: "."})
+	app.EnableRender(&core.RenderOptions{FS: fstest.MapFS{"page/hit.html": &fstest.MapFile{Data: []byte("OK")}}, Dir: "."})
 	app.Create(core.NewModuleBuilder().Controllers(pagedPage{}, pagedAPI{}).Build())
 
 	if w := pagedGet(app, "/page/hit", "application/json"); w.Code != http.StatusOK || w.Body.String() != "OK" {

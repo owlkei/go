@@ -18,8 +18,6 @@ type (
 	RenderOptions = core.RenderOptions
 
 	HTTP             = common.HTTP
-	Page             = common.Page
-	View             = common.View
 	WS               = common.WS
 	Guard            = common.Guard
 	Interceptor      = common.Interceptor

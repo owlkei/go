@@ -91,6 +91,9 @@ type httpRoute struct {
 	interceptors []httpInterceptor
 	plan         *httpHandlerPlan
 	filters      []httpFilter
+	public       *publicEntry
+	template     string
+	pageRoute    string
 	isServe      bool
 	isPage       bool
 	isAsset      bool
@@ -174,6 +177,8 @@ func (http *HTTP) addRoute(mainHandler common.HTTPLayer, plan *httpHandlerPlan) 
 	route.plan = plan
 	route.isServe = mainHandler.Method == routing.SERVE
 	route.isPage = mainHandler.IsPage
+	route.template = mainHandler.Template
+	route.pageRoute = strings.Trim(mainHandler.Route, "/")
 	route.serveIndex = 0
 	if r := mainHandler.Route; route.isServe && len(r) >= 2 && r[len(r)-2:] == "*/" {
 		route.serveIndex = strings.Count(r, "/") - 1
@@ -373,6 +378,9 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 	ex.filters = route.filters
 	if route.isPage {
 		ctx.HTTPSetPage(c)
+		if c.Method == stdHTTP.MethodPost {
+			ctx.HTTPSetCode(c, stdHTTP.StatusUnprocessableEntity)
+		}
 	} else if c.Method == stdHTTP.MethodPost {
 		ctx.HTTPSetCode(c, stdHTTP.StatusCreated)
 	}
@@ -386,6 +394,10 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 	}
 	if route.isAsset {
 		http.serveAsset(ex)
+		return
+	}
+	if route.public != nil {
+		http.servePublic(ex, route.public)
 		return
 	}
 
@@ -460,7 +472,7 @@ func (http *HTTP) runPosts(ex *httpExchange, aggregations []*aggregation.Aggrega
 
 func (http *HTTP) writeResult(ex *httpExchange, route *httpRoute, result reflect.Value) {
 	if route.isPage {
-		http.writePage(ex, result)
+		http.writePage(ex, route, result)
 		return
 	}
 	if !route.isServe {

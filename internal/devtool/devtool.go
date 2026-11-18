@@ -61,14 +61,15 @@ type HTTPComponent struct {
 }
 
 type Render struct {
-	IsReload      bool                  `json:"is_reload,omitempty"`
-	Pages         []*RenderPage         `json:"pages,omitempty"`
-	Partials      []string              `json:"partials,omitempty"`
-	ErrorTemplate string                `json:"error_template,omitempty"`
-	Assets        int                   `json:"assets,omitempty"`
-	Renders       int64                 `json:"renders,omitempty"`
-	Failures      int64                 `json:"failures,omitempty"`
-	Counters      func() (int64, int64) `json:"-"`
+	IsReload       bool                  `json:"is_reload,omitempty"`
+	Pages          []*RenderPage         `json:"pages,omitempty"`
+	Partials       []string              `json:"partials,omitempty"`
+	ErrorTemplates []string              `json:"error_templates,omitempty"`
+	Assets         int                   `json:"assets,omitempty"`
+	Public         int                   `json:"public,omitempty"`
+	Renders        int64                 `json:"renders,omitempty"`
+	Failures       int64                 `json:"failures,omitempty"`
+	Counters       func() (int64, int64) `json:"-"`
 }
 
 func (r *Render) MarshalJSON() ([]byte, error) {
@@ -81,8 +82,10 @@ func (r *Render) MarshalJSON() ([]byte, error) {
 }
 
 type RenderPage struct {
-	Name   string `json:"name,omitempty"`
-	Layout string `json:"layout,omitempty"`
+	Name   string   `json:"name,omitempty"`
+	Route  string   `json:"route,omitempty"`
+	Layout string   `json:"layout,omitempty"`
+	Assets []string `json:"assets,omitempty"`
 }
 
 type Layer struct {

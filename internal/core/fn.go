@@ -1,8 +1,11 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"go/token"
+	"io"
+	"io/fs"
 	"net/http"
 	"path"
 	"reflect"
@@ -272,4 +275,33 @@ func hasHiddenSegment(rel string) bool {
 		}
 	}
 	return false
+}
+
+func serveFile(ex *httpExchange, fsys fs.FS, name string) {
+	f, err := fsys.Open(name)
+	if err != nil {
+		serveAssetError(ex)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		serveAssetError(ex)
+		return
+	}
+	content, ok := f.(io.ReadSeeker)
+	if !ok {
+		data, err := io.ReadAll(f)
+		if err != nil {
+			serveAssetError(ex)
+			return
+		}
+		content = bytes.NewReader(data)
+	}
+	http.ServeContent(&ex.writer, ex.Request, name, info.ModTime(), content)
+}
+
+func serveAssetError(ex *httpExchange) {
+	delete(ex.writer.Header(), etagHeader)
+	serveError(ex, http.StatusNotFound, notFoundBody)
 }

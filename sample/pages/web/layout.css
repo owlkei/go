@@ -1,0 +1,9 @@
+main {
+  max-width: 64rem;
+  margin-inline: auto;
+  padding: calc(var(--ok-spacing) * 6) calc(var(--ok-spacing) * 4);
+}
+
+header nav {
+  padding: calc(var(--ok-spacing) * 3) calc(var(--ok-spacing) * 4);
+}

@@ -8,13 +8,14 @@ import (
 
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/render"
 	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
+	"github.com/dangduoc08/ginject/internal/versioning"
 )
 
 var fieldNameByRole = map[string]string{
 	"http":            "HTTP",
-	"page":            "Page",
 	"guard":           "Guard",
 	"interceptor":     "Interceptor",
 	"exceptionFilter": "ExceptionFilter",
@@ -58,7 +59,8 @@ type container struct {
 	httpPlanByPattern    map[string]*httpHandlerPlan
 	wsPlanByEvent        map[string]*wsHandlerPlan
 
-	isRenderEnabled bool
+	render              *render.Engine
+	isVersioningEnabled bool
 }
 
 type layerKey struct {
@@ -373,26 +375,16 @@ func (c *container) addEvent(eventName, fnName string) {
 
 func (c *container) bindHTTPController(controller Controller) {
 	controllerType := reflect.TypeOf(controller)
-	_, isHTTP := controllerType.FieldByName(fieldNameByRole["http"])
-	_, isPage := controllerType.FieldByName(fieldNameByRole["page"])
-	if !isHTTP && !isPage {
+	if _, isHTTP := controllerType.FieldByName(fieldNameByRole["http"]); !isHTTP {
 		return
-	}
-	if isHTTP && isPage {
-		panic(errors.New(color.FmtRed("invalid controller: %v embeds both ginject.HTTP and ginject.Page", controllerType.Name())))
-	}
-	if isPage && !c.isRenderEnabled {
-		panic(errors.New(color.FmtRed("invalid render: %v embeds ginject.Page, call EnableRender before Create", controllerType.Name())))
 	}
 
 	controllerValue := reflect.ValueOf(controller)
-	var http common.HTTP
-	if isPage {
-		http = common.HTTP(controllerValue.FieldByName(fieldNameByRole["page"]).Interface().(common.Page))
-	} else {
-		http = controllerValue.FieldByName(fieldNameByRole["http"]).Interface().(common.HTTP)
+	http := controllerValue.FieldByName(fieldNameByRole["http"]).Interface().(common.HTTP)
+	pageVersion := ""
+	if c.isVersioningEnabled {
+		pageVersion = versioning.NeutralVersion
 	}
-	checkViewResults(controllerType, isPage)
 	controllerPath := controllerType.PkgPath()
 	controllerKey := genFieldKey(controllerType)
 	modulePrefixes := c.prefixesByController[controllerKey]
@@ -401,13 +393,22 @@ func (c *container) bindHTTPController(controller Controller) {
 		style = common.PathStyleKebab
 	}
 
+	templateByPattern := map[string]string{}
 	for j := 0; j < controllerType.NumMethod(); j++ {
 		methodName := controllerType.Method(j).Name
 
 		handler := controllerValue.Method(j).Interface()
-		common.AddHandlerToRouterMap(&http, modulePrefixes, style, methodName, handler)
-		if pattern, ok := common.HTTPFuncNameToPatternMap(&http)[methodName]; ok {
-			c.addRoute(pattern, methodName)
+		common.AddHandlerToRouterMapWithPageVersion(&http, modulePrefixes, style, methodName, handler, pageVersion)
+		pattern, ok := common.HTTPFuncNameToPatternMap(&http)[methodName]
+		if !ok {
+			continue
+		}
+		if common.PageOperation(methodName) != "" {
+			c.checkPageRoute(controllerType, methodName, pattern)
+		}
+		c.addRoute(pattern, methodName)
+		if common.PageOperation(methodName) != "" {
+			templateByPattern[pattern] = c.bindTemplate(controllerType.Name()+"."+methodName, pattern)
 		}
 	}
 	common.CheckExactPaths(&http)
@@ -438,29 +439,35 @@ func (c *container) bindHTTPController(controller Controller) {
 			Name:            name,
 			MainHandlerName: name,
 			Pattern:         pattern,
-			IsPage:          isPage && method != routing.SERVE,
+			Template:        templateByPattern[pattern],
+			IsPage:          common.PageOperation(name) != "",
 		})
 	}
 }
 
-var viewType = reflect.TypeFor[common.View]()
-
-func checkViewResults(controllerType reflect.Type, isPage bool) {
-	for j := 0; j < controllerType.NumMethod(); j++ {
-		method := controllerType.Method(j)
-		httpMethod, _, _ := common.ParseFuncNameToURL(method.Name, common.PathStyleKebab)
-		if httpMethod == "" || httpMethod == routing.SERVE {
-			continue
-		}
-		numOut := method.Type.NumOut()
-		returnsView := numOut > 0 && method.Type.Out(numOut-1) == viewType
-		if isPage && !returnsView {
-			panic(errors.New(color.FmtRed("invalid handler: %v.%v must return ginject.View", controllerType.Name(), method.Name)))
-		}
-		if !isPage && returnsView {
-			panic(errors.New(color.FmtRed("invalid handler: %v.%v returns ginject.View, which needs a ginject.Page controller", controllerType.Name(), method.Name)))
+func (c *container) checkPageRoute(controllerType reflect.Type, methodName, pattern string) {
+	handlerName := controllerType.Name() + "." + methodName
+	if c.render == nil {
+		panic(errors.New(color.FmtRed("invalid render: %v is a page route, call EnableRender before Create", handlerName)))
+	}
+	if common.PageOperation(methodName) == common.PageSubmit {
+		renderName := common.RenderNameOf(methodName)
+		if _, ok := controllerType.MethodByName(renderName); !ok {
+			panic(errors.New(color.FmtRed("invalid handler: %v needs %v.%v: a SUBMIT_ posts to the page that shows its form", handlerName, controllerType.Name(), renderName)))
 		}
 	}
+	if _, route, _ := routing.PatternToMethodRouteVersion(pattern); strings.ContainsRune(route, '*') {
+		panic(errors.New(color.FmtRed("invalid route: %v is a page route and its path %v holds a wildcard", handlerName, route)))
+	}
+}
+
+func (c *container) bindTemplate(handlerName, pattern string) string {
+	_, route, _ := routing.PatternToMethodRouteVersion(pattern)
+	name, err := c.render.Bind(route)
+	if err != nil {
+		panic(errors.New(color.FmtRed("invalid render: %v %v", handlerName, err)))
+	}
+	return name
 }
 
 func (c *container) bindHTTPExceptionFilters(controller Controller, controllerType reflect.Type, controllerPath string, http *common.HTTP) {

@@ -1,8 +1,8 @@
 # Common
 
-Internal package: applications use `ginject.HTTP`, `Page`, `View`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
+Internal package: applications use `ginject.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
 
-*Common is a part of `Ginject` framework: it holds the contracts a controller embeds (`HTTP`, `Page`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
+*Common is a part of `Ginject` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
 
 - [Common](#common)
   - [Key Features](#key-features)
@@ -18,8 +18,7 @@ Internal package: applications use `ginject.HTTP`, `Page`, `View`, `WS`, `Middle
     - [Path](#path)
     - [PathStyle](#pathstyle)
     - [AddHandlerToRouterMap](#addhandlertoroutermap)
-  - [`Page` Controller Embed](#page-controller-embed)
-  - [`View`](#view)
+    - [Page routes](#page-routes)
   - [`WS` Controller Embed](#ws-controller-embed)
     - [AddHandlerToEventMap](#addhandlertoeventmap)
   - [Layers](#layers)
@@ -139,7 +138,7 @@ A route name is `<OPERATION>[_<resource>][_BY_<param>[_AND_<param>…]][_ANY][_O
 
 | Token | Exported as | Meaning |
 |---|---|---|
-| `READ`, `CREATE`, `UPDATE`, `MODIFY`, `DELETE`, `PREFLIGHT`, `SERVE` | `HTTPOperations` (`map[string]string`, token → method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `SERVE`) | the operation, first token |
+| `READ`, `CREATE`, `UPDATE`, `MODIFY`, `DELETE`, `PREFLIGHT`, `RENDER`, `SUBMIT`, `SERVE` | `HTTPOperations` (`map[string]string`, token → method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `GET`, `POST`, `SERVE`) | the operation, first token |
 | `BY` | `TokenBy` | the first parameter of the current resource |
 | `AND` | `TokenAnd` | one more parameter of the current resource |
 | `OF` | `TokenOf` | a parent resource, placed before the current one |
@@ -296,7 +295,7 @@ Each map is `nil` until `AddHandlerToRouterMap` adds a route.
 
 Related types:
 - `Prefix` (`Value string`, `Handlers []any`): one call of `HTTP.Prefix`.
-- `HTTPLayer` (`Handler any`, `ControllerPath`, `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, all `string`, and `IsPage bool`): a layer bound to one route, as `core` stores it. `IsPage` is set on the main handler of a page route (a `Page` controller's route other than `SERVE`).
+- `HTTPLayer` (`Handler any`, `ControllerPath`, `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, `Template`, all `string`, and `IsPage bool`): a layer bound to one route, as `core` stores it. `Template string` is the template path a page route is bound to (`bookings/{id}`); `IsPage` is set on the main handler of a page route (`RENDER_`, `SUBMIT_`).
 
 ### Prefix
 
@@ -406,37 +405,19 @@ common.AddHandlerToRouterMap(&instance.HTTP, nil, common.PathStyleKebab, "READ_i
 #### Rules
 - `READ_items` adds one route: `HTTPPatternToFuncNameMap(h)["/items/||/[GET]/"]` is `READ_items`.
 - `READ_payment_intents` is `/payment-intents/` under `PathStyleKebab` and `/payment_intents/` under `PathStyleAsWritten`; prefixes keep their text (`Prefix("my_api")` and the module prefix `/pay_ments/` give `/pay_ments/my_api/payment-intents/`).
-- It never panics: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
+- It never panics on conflicts: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
 
-## `Page` Controller Embed
+`AddHandlerToRouterMapWithPageVersion(h, modulePrefixes, style, fnName, handler, pageVersion string)` is the same with the version given to page routes; `core` passes the neutral version when versioning is on, so a page route answers any version.
 
-`type Page HTTP` makes a controller a page controller: every method named by the HTTP route words becomes a route with the same method, path, prefixes and version as under `HTTP`, and its handlers return a [`View`](#view) that `core` renders as HTML (`App.EnableRender`). `Page` is a defined type with the same unexported maps, so `core` reads it as an `HTTP` value.
+### Page routes
 
-### Prefix
+`RENDER` (`GET`) and `SUBMIT` (`POST`) are page operations. `PageOperation(fnName string) string` returns `"RENDER"`, `"SUBMIT"` or `""` from the first word; `RenderNameOf("SUBMIT_new_OF_bookings")` is `RENDER_new_OF_bookings`.
 
-`(*Page).Prefix(v string, handlers ...any) *Page` is `HTTP.Prefix` for a page controller: same parameters, same rules, and it returns the receiver.
-
-```go
-func (instance BookingPages) NewController() core.Controller {
-	instance.Prefix("site")
-	return instance
-}
-```
-
-## `View`
-
-The result of a page handler.
-
-| Field | Type | Description |
-|---|---|---|
-| `Name` | `string` | The page name: its path inside the render `fs.FS` without `.html` (`bookings/list`) |
-| `Data` | `any` | `.` in the page and its layout; `nil` is allowed |
-
-```go
-func (instance BookingPages) READ_bookings() common.View {
-	return common.View{Name: "bookings/list", Data: map[string]any{"Bookings": instance.Bookings.All()}}
-}
-```
+#### Rules
+- `ParseFuncNameToURL("RENDER_bookings", style)` returns `GET`, `/bookings/`, `""`; `SUBMIT_bookings` returns `POST` on the same path.
+- `ANY`, `VERSION` or `FILE` in a page name panics `invalid route: ANY in RENDER_files_ANY: a page route has no wildcard` (`has no version`, `has no file extension`).
+- A `SUBMIT_` takes the exact path and the prefixes of its `RENDER_`: `Path("/moved", instance.RENDER_x)` and `Prefix("p", instance.RENDER_x)` move `SUBMIT_x` to `POST /p/moved/`.
+- `Path` or `Prefix` bound to a `SUBMIT_` panics `invalid route: Path("/y") is bound to 'SUBMIT_x': a SUBMIT_ uses the path of its RENDER_` (`Prefix("p")` alike).
 
 ## `WS` Controller Embed
 

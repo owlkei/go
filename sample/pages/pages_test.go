@@ -52,8 +52,9 @@ func wantHTML(t *testing.T, step string, rec *httptest.ResponseRecorder, code in
 }
 
 var (
-	nonceAttr = regexp.MustCompile(`<script nonce="([0-9a-f]{32})">`)
-	scriptSrc = regexp.MustCompile(`<script src="(/assets/owlky\.js\?v=([0-9a-f]{16}))"`)
+	nonceAttr  = regexp.MustCompile(`<script nonce="([0-9a-f]{32})">`)
+	scriptSrc  = regexp.MustCompile(`<script src="(/assets/owlky\.js\?v=([0-9a-f]{16}))"`)
+	layoutLink = regexp.MustCompile(`<link rel="stylesheet" href="(/assets/_pages/layout\.css\?v=[0-9a-f]{16})">`)
 )
 
 func TestPages_FormFlow(t *testing.T) {
@@ -62,7 +63,7 @@ func TestPages_FormFlow(t *testing.T) {
 	// The empty form.
 	rec := send(t, app, http.MethodGet, "/bookings/new", nil)
 	page := wantHTML(t, "form page", rec, http.StatusOK,
-		`<form method="post" action="/bookings" novalidate>`,
+		`<form method="post" action="/bookings/new" novalidate>`,
 		`<input id="field-guest" name="guest" type="text" data-ok-text-field-input placeholder=" " value="">`,
 		`name="nights" type="number" data-ok-text-field-input aria-describedby="field-nights-helper-text" placeholder=" " value="1">`,
 		`<link rel="stylesheet" href="/assets/owlky.min.css?v=`,
@@ -78,7 +79,7 @@ func TestPages_FormFlow(t *testing.T) {
 	}
 
 	// An invalid form is shown again with 422, its messages and the submitted values, escaped.
-	rec = send(t, app, http.MethodPost, "/bookings", url.Values{
+	rec = send(t, app, http.MethodPost, "/bookings/new", url.Values{
 		"guest":  {`"><script>alert(1)</script>`},
 		"email":  {"nope"},
 		"date":   {"tomorrow"},
@@ -100,12 +101,12 @@ func TestPages_FormFlow(t *testing.T) {
 	}
 
 	// Required fields.
-	rec = send(t, app, http.MethodPost, "/bookings", url.Values{})
+	rec = send(t, app, http.MethodPost, "/bookings/new", url.Values{})
 	wantHTML(t, "empty post", rec, http.StatusUnprocessableEntity,
 		"Enter the guest&#39;s name", "Enter an email address", "Choose an arrival date", "Enter the number of nights")
 
 	// A valid form is stored and the browser goes to the list.
-	rec = send(t, app, http.MethodPost, "/bookings", url.Values{
+	rec = send(t, app, http.MethodPost, "/bookings/new", url.Values{
 		"guest":  {"Ann <Lee>"},
 		"email":  {"ann@example.com"},
 		"date":   {"2026-12-01"},
@@ -127,11 +128,41 @@ func TestPages_FormFlow(t *testing.T) {
 		"Arrives on Tuesday, 1 December 2026 for 3 nights.",
 	)
 
-	// An unknown booking is the HTML error page, inside the layout.
+	// An unknown booking is 4xx.html, inside the layout.
 	wantHTML(t, "unknown id", send(t, app, http.MethodGet, "/bookings/99", nil), http.StatusNotFound,
 		"<title>Not Found · Ginject pages</title>",
 		`<div data-ok-alert-message>No booking has this number</div>`,
 	)
+
+	// The layout's own CSS is linked by {{pageAssets}} and served with its hash for good.
+	layoutCSS := layoutLink.FindStringSubmatch(page)
+	if layoutCSS == nil {
+		t.Fatalf("form page: no link to the layout's CSS from {{pageAssets}}\n%s", page)
+	}
+	rec = send(t, app, http.MethodGet, layoutCSS[1], nil)
+	if rec.Code != http.StatusOK || rec.Body.Len() == 0 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("layout.css: status %d, %d bytes, Content-Type %q, want 200, a body and text/css", rec.Code, rec.Body.Len(), rec.Header().Get("Content-Type"))
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+		t.Fatalf("layout.css: Cache-Control %q, want immutable", cc)
+	}
+	if got := strings.Index(page, layoutCSS[1]); got < strings.Index(page, "/assets/owlky.min.css") {
+		t.Fatalf("form page: the layout's CSS must come after the shared stylesheet\n%s", page)
+	}
+
+	// public/robots.txt is served at the root.
+	rec = send(t, app, http.MethodGet, "/robots.txt", nil)
+	if rec.Code != http.StatusOK || rec.Body.Len() == 0 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("robots.txt: status %d, %d bytes, Content-Type %q, want 200, a body and text/plain", rec.Code, rec.Body.Len(), rec.Header().Get("Content-Type"))
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" || rec.Header().Get("ETag") == "" {
+		t.Fatalf("robots.txt: Cache-Control %q, ETag %q, want no-cache and an ETag", cc, rec.Header().Get("ETag"))
+	}
+
+	// The old paths are gone.
+	if rec = send(t, app, http.MethodPost, "/bookings", url.Values{"guest": {"x"}}); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /bookings: status %d, want 405: the form posts to /bookings/new", rec.Code)
+	}
 
 	// owlky.js with its hash is cached for good.
 	src := scriptSrc.FindStringSubmatch(page)

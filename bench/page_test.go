@@ -36,13 +36,13 @@ var pageFiles = fstest.MapFS{
 }
 
 type pageController struct {
-	ginject.Page
+	ginject.HTTP
 }
 
 func (c pageController) NewController() ginject.Controller { return c }
 
-func (c pageController) READ_bookings() ginject.View {
-	return ginject.View{Name: "bookings", Data: map[string]any{"Rows": bookingRows()}}
+func (c pageController) RENDER_bookings() map[string]any {
+	return map[string]any{"Rows": bookingRows()}
 }
 
 type jsonController struct {

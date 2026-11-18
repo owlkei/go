@@ -183,8 +183,10 @@ func (app *App) Create(m *Module) {
 
 	app.stacks = newStackSampler(app.logger)
 	app.container.addInterface(loggerKey, app.logger)
-	app.container.wire(m)
+	app.container.isVersioningEnabled = app.http.isVersioningEnabled
 	app.initRender()
+	app.container.wire(m)
+	app.checkRenderBindings()
 	app.initWS()
 	app.initRoutes()
 	app.initMiddlewares()
@@ -248,6 +250,7 @@ func (app *App) initRoutes() {
 	for _, h := range app.container.httpMainHandlers {
 		app.http.addRoute(h, app.container.httpPlanByPattern[h.Pattern])
 	}
+	app.addPublicRoutes()
 	app.addAssetRoute()
 }
 
@@ -499,7 +502,7 @@ func (app *App) EnableRender(opts *RenderOptions) *App {
 	fsys, dir := renderFS(opts)
 	app.renderDir = dir
 	app.http.render = render.New(fsys, opts.IsReload)
-	app.container.isRenderEnabled = true
+	app.container.render = app.http.render
 
 	return app
 }

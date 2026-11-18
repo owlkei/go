@@ -21,11 +21,17 @@ var (
 	}
 )
 
-type nonceFailing struct{ common.Page }
+type nonceFailing struct{ common.HTTP }
 
 func (c nonceFailing) NewController() Controller { return c }
 
-func (c nonceFailing) READ_boom() common.View { panic(exception.NotFoundException("nothing here")) }
+func (c nonceFailing) RENDER_boom() { panic(exception.NotFoundException("nothing here")) }
+
+type noncePages struct{ common.HTTP }
+
+func (c noncePages) NewController() Controller { return c }
+func (c noncePages) RENDER_used()              {}
+func (c noncePages) RENDER_plain()             {}
 
 func nonceOf(t *testing.T, body string) string {
 	t.Helper()
@@ -48,9 +54,9 @@ func nonceOf(t *testing.T, body string) string {
 }
 
 func TestNonce_WithoutHelmet(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(nonceFilesMap), pgPages{})
+	app, _ := pgNew(t, pgFiles(nonceFilesMap), noncePages{})
 
-	w := createGet(app, pgView("used", ""))
+	w := createGet(app, "/used")
 	if w.Code != http.StatusOK {
 		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "R34: the page renders"))
 	}
@@ -61,20 +67,20 @@ func TestNonce_WithoutHelmet(t *testing.T) {
 }
 
 func TestNonce_PlainPageHasNone(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(nonceFilesMap), pgPages{})
+	app, _ := pgNew(t, pgFiles(nonceFilesMap), noncePages{})
 
-	w := createGet(app, pgView("plain", ""))
+	w := createGet(app, "/plain")
 	if w.Body.String() != "<p>plain</p>" || len(w.Header().Values("Content-Security-Policy")) != 0 {
 		t.Error(test.DiffMessage(w.Body.String(), "<p>plain</p>", "R30: a page without {{nonce}} is unchanged"))
 	}
 }
 
 func TestNonce_UniquePerResponse(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(nonceFilesMap), pgPages{})
+	app, _ := pgNew(t, pgFiles(nonceFilesMap), noncePages{})
 
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {
-		seen[nonceOf(t, createGet(app, pgView("used", "")).Body.String())] = true
+		seen[nonceOf(t, createGet(app, "/used").Body.String())] = true
 	}
 	if len(seen) != 1000 {
 		t.Error(test.DiffMessage(len(seen), 1000, "R33: 1,000 responses give 1,000 nonces"))
@@ -82,17 +88,17 @@ func TestNonce_UniquePerResponse(t *testing.T) {
 }
 
 func TestNonce_NeverFromClient(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(nonceFilesMap), pgPages{})
+	app, _ := pgNew(t, pgFiles(nonceFilesMap), noncePages{})
 	submitted := strings.Repeat("f", 32)
 
-	w := createRequest(app, http.MethodGet, pgView("used", submitted), "X-Nonce", submitted, "Content-Security-Policy", "script-src 'nonce-"+submitted+"'")
+	w := createRequest(app, http.MethodGet, "/used?x="+submitted, "X-Nonce", submitted, "Content-Security-Policy", "script-src 'nonce-"+submitted+"'")
 	if got := nonceOf(t, w.Body.String()); got == submitted {
 		t.Error(test.DiffMessage(got, "a server drawn value", "R33: a value submitted by a client never becomes a nonce"))
 	}
 }
 
 func TestNonce_Concurrent(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(nonceFilesMap), pgPages{})
+	app, _ := pgNew(t, pgFiles(nonceFilesMap), noncePages{})
 
 	var mu sync.Mutex
 	seen := map[string]bool{}
@@ -102,7 +108,7 @@ func TestNonce_Concurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
-				body := createGet(app, pgView("used", "")).Body.String()
+				body := createGet(app, "/used").Body.String()
 				found := nonceAttr.FindAllStringSubmatch(body, -1)
 				if len(found) != 3 || found[0][1] != found[1][1] || found[1][1] != found[2][1] || strings.Count(body, found[0][1]) != 4 {
 					t.Error(test.DiffMessage(body, "one nonce at every use", "R33: concurrent responses"))
@@ -122,7 +128,8 @@ func TestNonce_Concurrent(t *testing.T) {
 
 func TestNonce_ErrorPageSet(t *testing.T) {
 	files := pgFiles(map[string]string{
-		"error.html": `<script nonce="{{nonce}}"></script><style nonce="{{nonce}}"></style><i data-n="{{nonce}}"></i><b>{{.Code}}</b>`,
+		"boom.html": `boom`,
+		"404.html":  `<script nonce="{{nonce}}"></script><style nonce="{{nonce}}"></style><i data-n="{{nonce}}"></i><b>{{.Code}}</b>`,
 	})
 	app, _ := pgNew(t, files, nonceFailing{})
 

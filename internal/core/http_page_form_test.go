@@ -45,53 +45,52 @@ func (b pfBooking) Transform(f ctx.Form, _ common.ArgumentMetadata) any {
 	return dto
 }
 
-type pfPages struct{ common.Page }
+type pfPages struct{ common.HTTP }
 
 func (c pfPages) NewController() Controller {
 	c.Prefix("bookings")
 	return c
 }
 
-func (c pfPages) READ_new() common.View {
-	return common.View{Name: "form", Data: pfBooking{Errors: map[string]string{}}}
-}
+func (c pfPages) RENDER_new() pfBooking { return pfBooking{Errors: map[string]string{}} }
 
-func (c pfPages) READ_goto(h *ctx.HTTPContext) common.View {
-	h.Redirect("/bookings")
-	return common.View{Name: "marker"}
-}
+func (c pfPages) RENDER_goto(h *ctx.HTTPContext) { h.Redirect("/bookings") }
 
-func (c pfPages) CREATE_new(h *ctx.HTTPContext, form pfBooking) common.View {
-	if len(form.Errors) > 0 {
-		h.Status(http.StatusUnprocessableEntity)
-		return common.View{Name: "form", Data: form}
+func (c pfPages) SUBMIT_new(h *ctx.HTTPContext, form pfBooking) pfBooking {
+	if len(form.Errors) == 0 {
+		h.Redirect("/bookings")
 	}
-	h.Redirect("/bookings")
-	return common.View{Name: "marker"}
+	return form
 }
 
-func (c pfPages) CREATE_viaparam(redirect ctx.Redirect, form pfBooking) common.View {
-	if len(form.Errors) > 0 {
-		return common.View{Name: "form", Data: form}
+func (c pfPages) RENDER_viaparam() pfBooking { return pfBooking{Errors: map[string]string{}} }
+
+func (c pfPages) SUBMIT_viaparam(redirect ctx.Redirect, form pfBooking) pfBooking {
+	if len(form.Errors) == 0 {
+		redirect("/bookings")
 	}
-	redirect("/bookings")
-	return common.View{Name: "marker"}
+	return form
 }
 
-func (c pfPages) CREATE_explicit(h *ctx.HTTPContext, _ pfBooking) common.View {
+func (c pfPages) RENDER_explicit() {}
+
+func (c pfPages) SUBMIT_explicit(h *ctx.HTTPContext, _ pfBooking) {
 	h.Status(http.StatusTemporaryRedirect)
 	h.Redirect("/bookings")
-	return common.View{Name: "marker"}
 }
 
-func (c pfPages) CREATE_found(h *ctx.HTTPContext, _ pfBooking) common.View {
+func (c pfPages) RENDER_found() {}
+
+func (c pfPages) SUBMIT_found(h *ctx.HTTPContext, _ pfBooking) {
 	h.Status(http.StatusFound)
 	h.Redirect("/bookings")
-	return common.View{Name: "marker"}
 }
 
-func (c pfPages) CREATE_echo(form pfBooking) common.View {
-	return common.View{Name: "echo", Data: form}
+func (c pfPages) RENDER_echo() {}
+
+func (c pfPages) SUBMIT_echo(h *ctx.HTTPContext, form pfBooking) pfBooking {
+	h.Status(http.StatusOK)
+	return form
 }
 
 type pfAPI struct{ common.HTTP }
@@ -122,13 +121,17 @@ func (c pfAPI) CREATE_echo(form pfBooking) ctx.Map {
 }
 
 func pfFiles() map[string]string {
+	form := `<form method="post" action="/bookings/new">` +
+		`<input name="name" value="{{.Name}}">{{with .Errors.name}}<p class="err">{{.}}</p>{{end}}` +
+		`<input name="email" value="{{.Email}}">{{with .Errors.email}}<p class="err">{{.}}</p>{{end}}</form>`
 	return map[string]string{
-		"layout.html": `<html><body>{{template "content" .}}</body></html>`,
-		"form.html": `<form method="post" action="/bookings/new">` +
-			`<input name="name" value="{{.Name}}">{{with .Errors.name}}<p class="err">{{.}}</p>{{end}}` +
-			`<input name="email" value="{{.Email}}">{{with .Errors.email}}<p class="err">{{.}}</p>{{end}}</form>`,
-		"echo.html":   `name={{.Name}};email={{.Email}}`,
-		"marker.html": `MARKER`,
+		"layout.html":            `<html><body>{{template "content" .}}</body></html>`,
+		"bookings/new.html":      form,
+		"bookings/viaparam.html": form,
+		"bookings/echo.html":     `name={{.Name}};email={{.Email}}`,
+		"bookings/goto.html":     `MARKER`,
+		"bookings/explicit.html": `MARKER`,
+		"bookings/found.html":    `MARKER`,
 	}
 }
 
@@ -191,7 +194,7 @@ func TestPageForm_BindsLikeAPI(t *testing.T) {
 
 		page := pfPost(app, "/bookings/echo", b[0], b[1])
 		if page.Code != http.StatusOK {
-			t.Error(test.DiffMessage(page.Code, http.StatusOK, "R6, R25: a POST page answers 200 ("+name+")"))
+			t.Error(test.DiffMessage(page.Code, http.StatusOK, "P14: a SUBMIT_ that sets 200 answers 200 ("+name+")"))
 		}
 		if want := "<html><body>name=Ann &amp; Bob;email=ann@example.com</body></html>"; page.Body.String() != want {
 			t.Error(test.DiffMessage(page.Body.String(), want, "R25: the page route binds a "+name+" form with the same values, escaped"))
@@ -253,7 +256,7 @@ func TestPageForm_Redirect303(t *testing.T) {
 			t.Error(test.DiffMessage(got, "/bookings", "R27: Location ("+name+")"))
 		}
 		if strings.Contains(w.Body.String(), "MARKER") {
-			t.Error(test.DiffMessage(w.Body.String(), "no body from the returned View", "R27: the View is ignored ("+name+")"))
+			t.Error(test.DiffMessage(w.Body.String(), "no body from the page", "R27: the result is ignored ("+name+")"))
 		}
 	}
 
@@ -262,12 +265,12 @@ func TestPageForm_Redirect303(t *testing.T) {
 		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "R27, D4: a GET page redirects with 303 too"))
 	}
 	if strings.Contains(w.Body.String(), "MARKER") {
-		t.Error(test.DiffMessage(w.Body.String(), "no View body", "R27: the View is ignored on GET"))
+		t.Error(test.DiffMessage(w.Body.String(), "no page body", "R27: the page is not rendered on GET"))
 	}
 
 	w = pfPost(app, "/bookings/viaparam", pfURLEncoded, "")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "name is required") {
-		t.Error(test.DiffMessage(w.Code, http.StatusOK, "R6, R27: the invalid branch of the same handler is a 200 page"))
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "name is required") {
+		t.Error(test.DiffMessage(w.Code, http.StatusUnprocessableEntity, "P14: the invalid branch of the same handler renders with 422"))
 	}
 }
 

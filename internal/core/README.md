@@ -210,7 +210,7 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 | `BindGlobalExceptionFilters(...any)` | Exception filters for every HTTP route and WS event |
 | `EnableVersioning(*versioning.Options)` | Route versioning (`Key` defaults to `v`). `nil` is the zero options; the options are copied, so a later change of the caller's struct changes nothing |
 | `EnableWS(*WSOptions, ...common.MiddlewareFn)` | The WebSocket server, with handshake middlewares |
-| `EnableRender(*RenderOptions)` | Server-rendered pages for `common.Page` controllers (see [Pages](#pages)) |
+| `EnableRender(*RenderOptions)` | Server-rendered pages for `RENDER_` and `SUBMIT_` routes (see [Pages](#pages)) |
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
 | `SetLogger(log.LogAdapter)` | The app's logger (see [SetLogger and Logger](#setlogger-and-logger)) |
@@ -623,7 +623,7 @@ The HTTP layer and the built-in exception filter write the same response, with n
 
 | Where the error happened | Format |
 |---|---|
-| A page route (`common.Page`), from its first guard on: a guard returning `false`, a panic in a guard, pipe, interceptor, handler or filter | HTML |
+| A page route (`RENDER_`, `SUBMIT_`), from its first guard on: a guard returning `false`, a panic in a guard, pipe, interceptor, handler or filter | HTML |
 | An API route (`common.HTTP`) or a `SERVE_…` route, from its first guard on | JSON, whatever `Accept` says |
 | Before any guard: a global or module middleware (`csrf` 403, `hostcheck` 421, `loadshed` 503), no route (404, 405, 410) | HTML when a value of the `Accept` header contains `text/html` (ASCII case-insensitive, q-values are not read), else JSON. `*/*` alone, `application/xhtml+xml` alone or no `Accept` answer JSON. The response carries `Vary: Accept` |
 
@@ -646,9 +646,9 @@ The HTTP layer and the built-in exception filter write the same response, with n
 
 **HTML.**
 
-- `error.html` at the root of `FS`, inside the root `layout.html` when there is one, with the data `map[string]any{"Code": int, "Status": string, "Message": string, "RequestID": string}` (`RequestID` is `c.ID()`, the `X-Request-Id` of the response).
-- Without `error.html`, a built-in page: a complete HTML document with no layout, no style, no script and no external resource (it passes any CSP), holding the code, the status text and the message, escaped.
-- When `error.html` or its layout fails, the built-in page is sent with the same code and `RenderFailed` is logged. An error page is never empty and never a half page.
+- The first file that exists at the root of `Dir`: `<code>.html`, then `<N>xx.html` (`4xx.html`, `5xx.html`), inside the root `layout.html` when there is one, with the data `map[string]any{"Code": int, "Status": string, "Message": string, "RequestID": string}` (`RequestID` is `c.ID()`, the `X-Request-Id` of the response). `error.html` has no role (it stops `Create()`, see [Page rules](#page-rules)).
+- Without such a file, a built-in page: a complete HTML document with no layout, no style, no script and no external resource (it passes any CSP), holding the code, the status text and the message, escaped.
+- When the chosen file or its layout fails, the built-in page is sent with the same code and `RenderFailed` is logged with `template` (`404`, `5xx`); the next file is not tried. An error page is never empty and never a half page.
 - `Content-Type: text/html; charset=utf-8`; the same headers as JSON are removed or kept.
 - A filter of yours runs first on a page route and may answer by itself; an exception it panics with continues to the next filter and ends as an HTML error.
 
@@ -721,7 +721,7 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
 
 ## Pages
 
-`EnableRender(&RenderOptions{FS: web})` turns on server-rendered HTML. A controller that embeds `common.Page` instead of `common.HTTP` declares page routes: the same route words, prefixes, versions, modules, guards, interceptors, middlewares, pipes and filters, with handlers that return a `common.View` (`Name`, `Data`). The template files follow the conventions of [render](../render/README.md#file-conventions): `layout.html` per directory tree, top-level `partials/`, `error.html`, `assets/`, and every other `.html` is a page named by its path without `.html`.
+`EnableRender(&RenderOptions{FS: web})` turns on server-rendered HTML. In a `common.HTTP` controller, `RENDER_<route>` (or `RENDER`) is a page route: `GET` and `HEAD` on the path the same words give after `READ_`, with the same prefixes, `PathStyle`, `Path`, modules, guards, interceptors, middlewares, pipes and filters. `SUBMIT_<route>` is the `POST` on the path of the `RENDER_` of the same words in the same controller. The route picks the template: the final path without its outer slashes, as `<path>.html` or `<path>/index.html` in `Dir`, with parameters written `{name}` (`RENDER_bookings_BY_id` → `bookings/{id}.html`). The handler's result is the template's data. API routes and page routes may share a controller. The template files follow the conventions of [render](../render/README.md#file-conventions).
 
 ### `RenderOptions` fields
 
@@ -739,19 +739,40 @@ import (
 
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
 //go:embed web
 var web embed.FS
 
+type BookingForm struct {
+	Nights string `bind:"nights"`
+}
+
+func (instance BookingForm) Transform(f ctx.Form, _ common.ArgumentMetadata) any {
+	bound, _ := f.Bind(instance)
+	return bound
+}
+
 type BookingPages struct {
-	common.Page
+	common.HTTP
 }
 
 func (instance BookingPages) NewController() core.Controller { return instance }
 
-func (instance BookingPages) READ_bookings() common.View {
-	return common.View{Name: "bookings/list", Data: map[string]any{"Count": 3}}
+func (instance BookingPages) RENDER_bookings() map[string]any {
+	return map[string]any{"Count": 3}
+}
+
+func (instance BookingPages) RENDER_new_OF_bookings() BookingForm {
+	return BookingForm{Nights: "1"}
+}
+
+func (instance BookingPages) SUBMIT_new_OF_bookings(c *ctx.HTTPContext, form BookingForm) BookingForm {
+	if form.Nights != "" {
+		c.Redirect("/bookings")
+	}
+	return form
 }
 
 func main() {
@@ -761,21 +782,30 @@ func main() {
 }
 ```
 
+With `web/bookings/index.html` and `web/bookings/new.html`, `GET /bookings` renders the first, `GET /bookings/new` the second, and `POST /bookings/new` renders the second again with 422 or redirects with 303.
+
 ### Page rules
-- `Create()` panics `invalid controller: <Type> embeds both ginject.HTTP and ginject.Page` for a controller that embeds both, and `invalid render: <Type> embeds ginject.Page, call EnableRender before Create` for a `Page` controller without `EnableRender`.
-- A page handler (not `SERVE_…`) whose only or last result is not `common.View` (`any`, `string`, no result) panics `invalid handler: <Type>.<Method> must return ginject.View`; `(int, common.View)` and `SERVE_…` handlers are accepted. An `HTTP` controller handler whose last result is `common.View` panics `invalid handler: <Type>.<Method> returns ginject.View, which needs a ginject.Page controller`.
+- `Create()` panics `invalid render: <T>.<M> is a page route, call EnableRender before Create` for a `RENDER_` or `SUBMIT_` without `EnableRender`.
 - `EnableRender(nil)` or a nil `FS` panics `invalid render: EnableRender needs RenderOptions.FS`; a second call panics `invalid render: EnableRender called twice`; after `Create`, `invalid app: EnableRender must be called before Create`.
+- Template binding at `Create()`: no candidate panics `invalid render: <T>.<M> needs a template: <a> or <b>` (a parameter named differently in the file counts as missing); both panic `invalid render: <T>.<M> has two templates: <a> and <b>`; a path below `partials/`, `assets/` or `public/` panics `invalid render: <T>.<M> can have no template: <dir>/ is reserved`; a final path of one segment named like an error page (`RENDER_404`, `RENDER_5xx`, `Path("/404")`) panics `invalid render: <T>.<M> resolves to 404.html, which is an error page, not a route`. Under a prefix (`admin/404.html`) the name is an ordinary page. A last segment `index` or `layout` uses the directory form only (`courts/layout/index.html`).
+- `ANY`, `VERSION` or `FILE` in a page route name panics `invalid route: ANY in RENDER_files_ANY: a page route has no wildcard` (`has no version`, `has no file extension`); a final path holding `*` (from `Path` or a prefix) panics `invalid route: <T>.<M> is a page route and its path <route> holds a wildcard`.
+- A `SUBMIT_` without the `RENDER_` of the same words in its controller panics `invalid handler: <T>.SUBMIT_x needs <T>.RENDER_x: a SUBMIT_ posts to the page that shows its form`. `Path` or a `Prefix` bound to a `SUBMIT_` panics `invalid route: Path("/y") is bound to 'SUBMIT_x': a SUBMIT_ uses the path of its RENDER_`; `Path` and prefixes on the `RENDER_` move both.
+- Every `.html` file that is not a layout, a partial, a root error page or the template of a route (outside `assets/` and `public/`) panics `invalid render: <file> has no RENDER_ route: add one, move it to partials/, or delete it`, one line per file. `error.html` is such a file.
+- A root `200.html`, `302.html`, `3xx.html` or `600.html` panics `invalid render: <file> is not an error page: use 400.html to 599.html, 4xx.html or 5xx.html`.
 - `Create()` parses every template once; a parse error, a call of a template that does not exist or an `html/template` escaping error panics `invalid render: <file path>: <error>`.
-- A page answers inside its nearest layout with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and `Cache-Control: no-cache` unless a layer or the handler set `Cache-Control`. Its status is 200 for every method (POST too) unless `c.Status(code)` or the `(int, common.View)` result sets it. `c.Redirect(url)` (or the `ctx.Redirect` parameter) without a 3xx status answers `303 See Other` on a page route; an explicit 3xx is kept, and API routes still answer `301`.
+- A page answers inside its nearest layout with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and `Cache-Control: no-cache` unless a layer or the handler set `Cache-Control`. A `RENDER_` answers 200 and a `SUBMIT_` that renders 422, unless `c.Status(code)` or the `(int, data)` result sets it. `c.Redirect(url)` (or the `ctx.Redirect` parameter) without a 3xx status answers `303 See Other` on a page route; an explicit 3xx is kept, and API routes still answer `301`. `CREATE_`, `UPDATE_` and `DELETE_` stay API routes.
+- The data is the handler's only or last result after the interceptors, of any type (a map, a struct, a slice, a string, `nil`); a handler with no result renders with `nil`. A post-interceptor's replacement is the data, and an interceptor that answers without calling the handler supplies it.
+- With `EnableVersioning`, page routes answer any version and a request without one.
+- `PUT` on a page path answers 405 with an `Allow` header holding `GET` and, with a `SUBMIT_`, `POST`. A guard bound to `RENDER_x` only does not cover `SUBMIT_x`; `BindGuard(g)` covers both.
 - Forms bind on page routes as on API routes (urlencoded and multipart, through a `Form` pipe). A malformed form body answers `400` `Invalid form body` and one over `MaxRequestBodyBytes` `413` `Request body too large`, as HTML errors. `csrf.CSRF{}` refuses a cross-origin form POST with a 403 in the format `Accept` picks. `HEAD` answers the status and headers with no body.
-- Values in `Data` are escaped for their context by `html/template`: text, attributes, URLs (a `javascript:` URL becomes `#ZgotmplZ`) and scripts.
-- When the handler already answered (`c.Redirect`, `c.Text`), the returned `View` is ignored.
-- A `View` whose `Name` is no page (unknown, empty, `error`, a partial, a layout, `../x`), a template that fails while executing (a missing field, a failed `dict` or `asset`), a page larger than 8 MiB, or a result that is no `View` after the interceptors answers the fixed 500 as an [HTML error](#error-response), and logs one `Error` `RenderFailed` with `template` and `cause`. No byte of the failed page is sent and no file is opened. An interceptor that returns a `View` without calling the handler renders it.
-- Without `IsReload`, a file changed after `Create()` is never read. With `IsReload`, the next render sees a page, layout or partial that was added, removed or changed (name, size or modification time); a file that fails to parse answers the fixed 500 and logs `Error` `RenderReloadFailed` with `file` and `cause` until it is fixed, never the error text in the response.
+- Values in the data are escaped for their context by `html/template`: text, attributes, URLs (a `javascript:` URL becomes `#ZgotmplZ`) and scripts.
+- When the handler already answered (`c.Redirect`, `c.Text`), the result is ignored.
+- A template that fails while executing (a field the data's type does not have, a failed `dict` or `asset`) or a page larger than 8 MiB answers the fixed 500 as an [HTML error](#error-response) and logs one `Error` `RenderFailed` with `template` (the template path without `.html`) and `cause`. No byte of the failed page is sent and no file is opened. With `nil` data, `{{.X}}` renders nothing.
+- Without `IsReload`, a file changed after `Create()` is never read. With `IsReload`, the next render sees a page, layout, partial or page CSS or JS file that was added, removed or changed (name, size or modification time) and binds every route again (`x.html` moved to `x/index.html` keeps answering). A file that fails to parse, a bound template that is gone or doubled, or a set that lost its `{{pageAssets}}` answers the fixed 500 and logs `Error` `RenderReloadFailed` with `file` and `cause` until it is fixed, never the error text in the response. A new `.html` without a route and a new orphan CSS file are ignored until the restart.
 
 ### CSP nonce
 
-`{{nonce}}` in a page, its layout, a partial it reaches or `error.html` writes the response's nonce: 32 lowercase hexadecimal characters from `crypto/rand`, the same at every use in the page and in the `Content-Security-Policy` header that `helmet` sent. Put it on inline scripts and styles:
+`{{nonce}}` in a page, its layout, a partial it reaches or an error page writes the response's nonce: 32 lowercase hexadecimal characters from `crypto/rand`, the same at every use in the page and in the `Content-Security-Policy` header that `helmet` sent. Put it on inline scripts and styles:
 
 ```html
 <script nonce="{{nonce}}">document.documentElement.dataset.theme = "dark"</script>
@@ -790,15 +820,42 @@ func main() {
 
 ### Assets
 
-When `FS` has an `assets` directory, `Create()` adds a built-in route of the `SERVE` kind at `/assets/*` that serves `FS/assets`. Link files with `{{asset "css/app.css"}}`, which writes `/assets/css/app.css?v=<16 hex>` (the first 8 bytes of the file's SHA-256, hashed once at `Create()`).
+When `Dir` has an `assets` directory or a page CSS or JS file, `Create()` adds a built-in route of the `SERVE` kind at `/assets/*` that serves `FS/assets`. Link files with `{{asset "css/app.css"}}`, which writes `/assets/css/app.css?v=<16 hex>` (the first 8 bytes of the file's SHA-256, hashed once at `Create()`).
 
 #### Asset rules
 - `GET` and `HEAD /assets/<path>` serve `FS/assets/<path>` with the content type of its extension (`text/css`, `text/javascript`, `image/svg+xml`).
 - A directory, a missing file, a path with `..` or with a segment starting with `.` (except `.well-known`, which is served and hashed) answers `404` as JSON, whatever `Accept` says. Templates are not reachable through it.
 - Without `IsReload`, every file answers `ETag: "<16 hex>"`. With `?v=` equal to that hash it answers `Cache-Control: public, max-age=31536000, immutable`; without `v`, or with another value, `Cache-Control: no-cache`. `If-None-Match` with the ETag answers `304`.
 - With `IsReload`, assets answer `Cache-Control: no-cache` and no `ETag`, each request reads the file from `FS` (a file changed or added after `Create()` is served), and `{{asset}}` adds no `?v=`.
-- A user route of the same shape (`SERVE_ANY_OF_assets`) panics `route conflict: …` at `Create()`. Without an `assets` directory no route is added and `/assets/*` is free.
+- A user route of the same shape (`SERVE_ANY_OF_assets`) panics `route conflict: …` at `Create()`. Without an `assets` directory and page CSS or JS files no route is added and `/assets/*` is free.
 - Global middlewares and global guards run for the asset route like for any route; a refusal is JSON.
+
+### Public files
+
+When `Dir` has a `public` directory, `Create()` adds one `GET` route per file, after the controllers' routes, at the file's path below `public`: `public/robots.txt` → `/robots.txt`, `public/.well-known/security.txt` → `/.well-known/security.txt`. The routes are named `public/<path>` in the startup route log and the devtool snapshot.
+
+#### Public file rules
+- The response has the content type of the extension, `Cache-Control: no-cache` and `ETag: "<16 hex>"` (the first 8 bytes of the SHA-256, hashed at `Create()`); `If-None-Match` with it answers `304`. `HEAD` answers the headers.
+- `.html` files are sent as they are, never parsed. A directory has no index (`public/docs/index.html` is `/docs/index.html` only). Files with a segment starting with `.` other than `.well-known` are not served.
+- A route of the same method and path shape panics `route conflict: public/robots.txt method is conflicted with READ_robots_txt_FILE method` (also against a `RENDER_`). With `EnableVersioning` the routes are version-neutral.
+- With `IsReload`, `no-cache` and no `ETag`, and the file is read on each request; a file added after `Create()` answers 404 until the restart.
+- Errors on these routes are JSON; global middlewares and global guards apply. A path that matches no route follows the [error response](#error-response) rules for no route. Without a `public` directory no route is added.
+
+### Page CSS and JS
+
+`X.css`, `X.<any>.css`, `X.js` and `X.<any>.js` next to `X.html` belong to that page, layout or root error page (the longest `X` wins). `{{pageAssets}}`, usually in the layout's `<head>`, writes their tags: the layout's files, then the page's, each group sorted by path:
+
+```html
+<link rel="stylesheet" href="/assets/_pages/layout.css?v=…">
+<link rel="stylesheet" href="/assets/_pages/bookings/new.css?v=…">
+<script src="/assets/_pages/bookings/new.form.js?v=…" defer></script>
+```
+
+#### Page CSS and JS rules
+- A CSS or JS file that belongs to no template, or any under `partials/`, panics `invalid render: <file> belongs to no template: name it after a page or layout of its directory (X.css, X.<name>.css), or move it to assets/`.
+- A page set that owns a file and in which no template (layout, page, reached partial) calls `{{pageAssets}}` panics `invalid render: <page> has <file>, but no template of the page calls {{pageAssets}}: add it to <layout>`.
+- `GET` and `HEAD /assets/_pages/<path>` serve exactly these files with the asset rules below (`immutable` for a matching `?v=`, else `no-cache`, `ETag`, `304`); a template, a partial or an unowned file there answers 404 JSON. Path segments are percent-encoded in the tags (`%7Bid%7D.css`). A file or directory `assets/_pages` panics `invalid render: assets/_pages is reserved for page CSS and JS`.
+- The tags are same-origin files: `{{pageAssets}}` draws no nonce. With `IsReload` the tags carry no `?v=` and follow the files.
 
 ### Render events and devtool
 - With a trace listener, each render emits a `render` event (see [Trace events](#trace-events)).
@@ -869,7 +926,7 @@ WS handlers reply with their last result as the message.
 
 ### Trace events
 
-Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read. Each render of a page or an HTML error page emits a `render` event after the `handler` event and before `complete`: `Name` is the page name (`bookings/list`), `error` for `error.html` or `error (built-in)` for the built-in page, `Duration` the time to execute the template and place the nonce, and `Code` 500 when the render failed. A JSON error renders nothing.
+Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read. Each render of a page or an HTML error page emits a `render` event after the `handler` event and before `complete`: `Name` is the template path without `.html` (`bookings/{id}`, `404`, `4xx`) or `error (built-in)` for the built-in page, `Duration` the time to execute the template and place the nonce, and `Code` 500 when the render failed. A JSON error renders nothing.
 
 Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic), `Code` and, for an HTTP request or handshake, `ClientIP` (as `proxy.ClientIP` resolves it). `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
 

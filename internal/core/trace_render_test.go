@@ -5,12 +5,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/trace"
 )
 
-func traceRenderApp(t *testing.T, files map[string]string, listen bool) (*App, *traceRecorder) {
+func traceRenderApp(t *testing.T, files map[string]string, listen bool, controllers ...Controller) (*App, *traceRecorder) {
 	t.Helper()
+	if len(controllers) == 0 {
+		controllers = []Controller{pgPages{}}
+		files = pgPageFileMap(files)
+	}
 	app := New()
 	app.SetLogger(&lcRecordingLogger{})
 	var rec *traceRecorder
@@ -18,7 +23,7 @@ func traceRenderApp(t *testing.T, files map[string]string, listen bool) (*App, *
 		rec = newTraceRecorder(app)
 	}
 	app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
-	mustCreate(t, app, NewModuleBuilder().Controllers(pgPages{}).Build())
+	mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
 	return app, rec
 }
 
@@ -42,9 +47,9 @@ func traceStages(events []trace.Event, stage string) []trace.Event {
 }
 
 func TestTrace_RenderEvent(t *testing.T) {
-	app, rec := traceRenderApp(t, map[string]string{"bookings/list.html": "LIST"}, true)
+	app, rec := traceRenderApp(t, map[string]string{"bookings/list.html": "LIST"}, true, pgBookings{})
 
-	w := createGet(app, pgView("bookings/list", ""))
+	w := createGet(app, "/bookings/list")
 	if w.Code != http.StatusOK {
 		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "R41: the page renders"))
 	}
@@ -73,7 +78,7 @@ func TestTrace_RenderEvent(t *testing.T) {
 }
 
 func TestTrace_RenderEventOnFailure(t *testing.T) {
-	app, rec := traceRenderApp(t, map[string]string{"rows.html": `{{.Nope}}`}, true)
+	app, rec := traceRenderApp(t, map[string]string{"rows.html": `{{template "partials/x" (dict "odd")}}`, "partials/x.html": "x"}, true)
 
 	w := createGet(app, "/rows")
 	if w.Code != http.StatusInternalServerError {
@@ -93,17 +98,26 @@ func TestTrace_RenderEventOnFailure(t *testing.T) {
 }
 
 func TestTrace_RenderEventNamesTheErrorPage(t *testing.T) {
-	custom, rec := traceRenderApp(t, map[string]string{"error.html": `<p>{{.Code}}</p>`}, true)
+	custom, rec := traceRenderApp(t, map[string]string{"404.html": `<p>{{.Code}}</p>`}, true)
 	custom.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/missing", nil))
 	r := httptest.NewRequest(http.MethodGet, "/missing", nil)
 	r.Header.Set("Accept", "text/html")
 	custom.ServeHTTP(httptest.NewRecorder(), r)
 	renders := traceStages(rec.all(), trace.StageRender)
-	if len(renders) != 1 || renders[0].Name != "error" || renders[0].Transport != trace.TransportHTTP {
-		t.Error(test.DiffMessage(renders, "one render event named error (the JSON 404 renders nothing)", "R41: error.html"))
+	if len(renders) != 1 || renders[0].Name != "404" || renders[0].Transport != trace.TransportHTTP {
+		t.Error(test.DiffMessage(renders, "one render event named 404 (the JSON 404 renders nothing)", "R41: 404.html"))
 	}
 
-	builtIn, rec := traceRenderApp(t, map[string]string{"x.html": "X"}, true)
+	class, rec := traceRenderApp(t, map[string]string{"4xx.html": `<p>{{.Code}}</p>`}, true)
+	r = httptest.NewRequest(http.MethodGet, "/missing", nil)
+	r.Header.Set("Accept", "text/html")
+	class.ServeHTTP(httptest.NewRecorder(), r)
+	renders = traceStages(rec.all(), trace.StageRender)
+	if len(renders) != 1 || renders[0].Name != "4xx" {
+		t.Error(test.DiffMessage(renders, "one render event named 4xx", "R41: 4xx.html"))
+	}
+
+	builtIn, rec := traceRenderApp(t, nil, true)
 	r = httptest.NewRequest(http.MethodGet, "/missing", nil)
 	r.Header.Set("Accept", "text/html")
 	builtIn.ServeHTTP(httptest.NewRecorder(), r)
@@ -114,12 +128,12 @@ func TestTrace_RenderEventNamesTheErrorPage(t *testing.T) {
 }
 
 func TestTrace_NoRenderEventWhenOff(t *testing.T) {
-	app, _ := traceRenderApp(t, map[string]string{"bookings/list.html": "LIST", "rows.html": `{{.Nope}}`}, false)
+	app, _ := traceRenderApp(t, map[string]string{"bookings/list.html": "LIST", "rows.html": `{{template "partials/x" (dict "odd")}}`, "partials/x.html": "x"}, false, pgBookings{}, pgRowsOnly{})
 	var seen int
 	stop := app.tracer.Listen(func(trace.Event) { seen++ })
 	stop()
 
-	if w := createGet(app, pgView("bookings/list", "")); w.Body.String() != "LIST" {
+	if w := createGet(app, "/bookings/list"); w.Body.String() != "LIST" {
 		t.Error(test.DiffMessage(w.Body.String(), "LIST", "R41: the page still renders"))
 	}
 	if w := createGet(app, "/rows"); w.Code != http.StatusInternalServerError {
@@ -127,5 +141,25 @@ func TestTrace_NoRenderEventWhenOff(t *testing.T) {
 	}
 	if seen != 0 {
 		t.Error(test.DiffMessage(seen, 0, "R41: with tracing off no render event is emitted"))
+	}
+}
+
+type pgRowsOnly struct{ common.HTTP }
+
+func (c pgRowsOnly) NewController() Controller { return c }
+func (c pgRowsOnly) RENDER_rows()              {}
+
+func TestTrace_RenderEventNamesTheTemplatePath(t *testing.T) {
+	files := map[string]string{"bookings/index.html": "LIST", "bookings/{id}.html": "ONE {{.Who}}"}
+	app, rec := traceRenderApp(t, files, true, rnBookings{})
+
+	createGet(app, "/bookings")
+	createGet(app, "/bookings/7")
+	var names []string
+	for _, e := range traceStages(rec.all(), trace.StageRender) {
+		names = append(names, e.Name)
+	}
+	if len(names) != 2 || names[0] != "bookings/index" || names[1] != "bookings/{id}" {
+		t.Error(test.DiffMessage(names, []string{"bookings/index", "bookings/{id}"}, "R41: Name is the template path without .html"))
 	}
 }

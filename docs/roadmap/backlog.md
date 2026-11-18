@@ -304,3 +304,6 @@ Also in scope:
   together with the SSR auto-binding above.
 - **REST review again** after the API review (0007) and the SSR changes (R24 client text, `Vary: Accept`,
   the asset and public routes): `ginject-security` audit as in roadmap 0005, report in `docs/review/`.
+- Found 2026-11-18 (pages by route, step 17): a file in `public/` whose name holds `{` or `*` becomes a
+  route parameter or a wildcard, so a file name can widen what the public route matches. Refuse such
+  names at `Create()` (or escape them) in the security roadmap.
