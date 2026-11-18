@@ -5,35 +5,6 @@ import (
 	"testing"
 )
 
-type outputCounter struct {
-	header http.Header
-	bytes  int64
-}
-
-func (w *outputCounter) Header() http.Header { return w.header }
-func (w *outputCounter) WriteHeader(int)     {}
-func (w *outputCounter) Write(p []byte) (int, error) {
-	w.bytes += int64(len(p))
-	return len(p), nil
-}
-
-func benchCompress(b *testing.B, c Compress, body []byte, r *http.Request) {
-	b.Helper()
-	app := terminalApp(b, c, func(w http.ResponseWriter, r *http.Request) {
-		w.Header()["Content-Type"] = jsonType
-		_, _ = w.Write(body)
-	})
-	w := &outputCounter{header: http.Header{}}
-	b.ReportAllocs()
-	cpu := processCPU()
-	for b.Loop() {
-		clear(w.header)
-		app.ServeHTTP(w, r)
-	}
-	b.ReportMetric(float64(w.bytes)/float64(len(body))/float64(b.N), "bytes-out/byte-in")
-	b.ReportMetric(float64(processCPU()-cpu)/float64(b.N), "cpu-ns/op")
-}
-
 func BenchmarkCompress_JSON2K(b *testing.B) {
 	benchCompress(b, Compress{}, payload(2<<10), gzipRequest(http.MethodGet))
 }

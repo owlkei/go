@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +14,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
@@ -65,13 +64,6 @@ func TestCompress_RoundTrip_ExplicitWriteHeaderFirst(t *testing.T) {
 		_, _ = w.Write(body)
 	})
 	expectGzip(t, serve(app, gzipRequest(http.MethodGet)), body, "WriteHeader before the body: the decision waits for the first write")
-}
-
-type bigController struct{ common.HTTP }
-
-func (c bigController) NewController() core.Controller { return c }
-func (bigController) READ_big() map[string]string {
-	return map[string]string{"data": strings.Repeat("owlky ", 1000)}
 }
 
 func TestCompress_RoundTrip_ThroughRoute(t *testing.T) {
@@ -447,28 +439,6 @@ func TestCompress_Flush_NotCompressible(t *testing.T) {
 	}
 }
 
-type readerFromWriter struct {
-	header   http.Header
-	body     bytes.Buffer
-	code     int
-	readFrom int
-}
-
-func (w *readerFromWriter) Header() http.Header         { return w.header }
-func (w *readerFromWriter) WriteHeader(code int)        { w.code = code }
-func (w *readerFromWriter) Write(p []byte) (int, error) { return w.body.Write(p) }
-func (w *readerFromWriter) ReadFrom(r io.Reader) (int64, error) {
-	w.readFrom++
-	return io.Copy(&w.body, r)
-}
-
-type fileController struct{ common.HTTP }
-
-var fileRoot string
-
-func (c fileController) NewController() core.Controller { return c }
-func (c fileController) SERVE_ANY_OF_files() string     { return fileRoot }
-
 func TestCompress_ServeFileKeepsReadFrom(t *testing.T) {
 	fileRoot = filepath.Join(t.TempDir(), "public")
 	if err := os.MkdirAll(fileRoot, 0o755); err != nil {
@@ -775,5 +745,3 @@ func TestCompress_Allocations_SteadyState(t *testing.T) {
 		t.Error(test.DiffMessage(compressed, baseline, "Z6: compressing 16 KiB of JSON allocates nothing in steady state"))
 	}
 }
-
-var jsonType = []string{"application/json"}
