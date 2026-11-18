@@ -2,7 +2,10 @@ package devtool
 
 import (
 	"context"
+	"encoding/json"
 )
+
+const PageKind = "page"
 
 type LayerScope int32
 
@@ -36,6 +39,7 @@ type GetConfigurationRequest struct{}
 
 type GetConfigurationResponse struct {
 	Controller *Controller `json:"controller,omitempty"`
+	Render     *Render     `json:"render,omitempty"`
 }
 
 type Controller struct {
@@ -44,6 +48,7 @@ type Controller struct {
 
 type HTTPComponent struct {
 	Id               string          `json:"id,omitempty"`
+	Kind             string          `json:"kind,omitempty"`
 	Handler          string          `json:"handler,omitempty"`
 	HttpMethod       string          `json:"http_method,omitempty"`
 	Route            string          `json:"route,omitempty"`
@@ -53,6 +58,31 @@ type HTTPComponent struct {
 	Interceptors     []*Layer        `json:"interceptors,omitempty"`
 	Versioning       *HTTPVersioning `json:"versioning,omitempty"`
 	Request          *HTTPRequest    `json:"request,omitempty"`
+}
+
+type Render struct {
+	IsReload      bool                  `json:"is_reload,omitempty"`
+	Pages         []*RenderPage         `json:"pages,omitempty"`
+	Partials      []string              `json:"partials,omitempty"`
+	ErrorTemplate string                `json:"error_template,omitempty"`
+	Assets        int                   `json:"assets,omitempty"`
+	Renders       int64                 `json:"renders,omitempty"`
+	Failures      int64                 `json:"failures,omitempty"`
+	Counters      func() (int64, int64) `json:"-"`
+}
+
+func (r *Render) MarshalJSON() ([]byte, error) {
+	type plain Render
+	out := plain(*r)
+	if r.Counters != nil {
+		out.Renders, out.Failures = r.Counters()
+	}
+	return json.Marshal(out)
+}
+
+type RenderPage struct {
+	Name   string `json:"name,omitempty"`
+	Layout string `json:"layout,omitempty"`
 }
 
 type Layer struct {
@@ -90,5 +120,6 @@ type Devtool struct {
 func (devtool *Devtool) GetConfiguration(context.Context, *GetConfigurationRequest) (*GetConfigurationResponse, error) {
 	return &GetConfigurationResponse{
 		Controller: devtool.Controller,
+		Render:     devtool.Render,
 	}, nil
 }

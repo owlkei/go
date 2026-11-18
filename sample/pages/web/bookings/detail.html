@@ -1,0 +1,12 @@
+{{define "title"}}Booking #{{.ID}}{{end}}
+<div data-ok-paper data-ok-variant="elevation" data-ok-elevation="1" data-ok-card>
+  <div data-ok-card-content>
+    <p data-ok-typography data-ok-variant="body2" data-ok-color="textSecondary" data-ok-gutter-bottom>Booking #{{.ID}}</p>
+    <h1 data-ok-typography data-ok-variant="h5">{{.Guest}}</h1>
+    <p data-ok-typography data-ok-variant="body2" data-ok-color="textSecondary" data-ok-gutter-bottom>{{.Email}}</p>
+    <p data-ok-typography data-ok-variant="body2">Arrives on {{.Date.Format "Monday, 2 January 2006"}} for {{.Nights}} {{if eq .Nights 1}}night{{else}}nights{{end}}.</p>
+  </div>
+  <div data-ok-card-actions>
+    <a href="/bookings" data-ok-button data-ok-variant="text" data-ok-color="primary" data-ok-size="sm"><span data-ok-button-label>Back to bookings</span></a>
+  </div>
+</div>

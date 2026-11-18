@@ -48,7 +48,7 @@ func (c *HTTPContext) Body() Body {
 func readBodyException(err error) exception.Exception {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
-		return exception.RequestEntityTooLargeException(err.Error(), err)
+		return exception.RequestEntityTooLargeException("Request body too large", err)
 	}
 	return exception.BadRequestException("Cannot read request body", err)
 }

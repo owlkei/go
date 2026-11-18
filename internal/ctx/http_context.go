@@ -36,6 +36,7 @@ type HTTPContext struct {
 	next      Next
 	code      int
 	timestamp time.Time
+	isPage    bool
 }
 
 const (
@@ -114,6 +115,14 @@ func HTTPSetCode(c *HTTPContext, code int) {
 	c.code = code
 }
 
+func HTTPSetPage(c *HTTPContext) {
+	c.isPage = true
+}
+
+func HTTPIsPage(c *HTTPContext) bool {
+	return c.isPage
+}
+
 func HTTPTimestamp(c *HTTPContext) *time.Time {
 	return &c.timestamp
 }
@@ -171,6 +180,9 @@ func (c *HTTPContext) JSONP(data any, args ...any) {
 func (c *HTTPContext) Redirect(url string) {
 	if c.code < http.StatusMultipleChoices || c.code >= http.StatusBadRequest {
 		c.code = http.StatusMovedPermanently
+		if c.isPage {
+			c.code = http.StatusSeeOther
+		}
 	}
 	http.Redirect(c.ResponseWriter, c.Request, url, c.code)
 }

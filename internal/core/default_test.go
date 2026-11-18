@@ -111,11 +111,11 @@ func TestGlobalHTTPExceptionFilter_BodyBytes(t *testing.T) {
 		},
 		"empty message falls back": {
 			exception.InternalServerErrorException(""),
-			500, `{"code":500,"error":"Internal Server Error","message":"Unhandled exception has occurred"}`,
+			500, `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}`,
 		},
 		"zero value falls back": {
 			exception.Exception{},
-			500, `{"code":500,"error":"Internal Server Error","message":"Unhandled exception has occurred"}`,
+			500, `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}`,
 		},
 		"unknown code without text": {
 			exception.NewException("m", 599),

@@ -1,0 +1,36 @@
+{{define "title"}}Bookings{{end}}
+<h1 data-ok-typography data-ok-variant="h4" data-ok-gutter-bottom>Bookings</h1>
+<p>
+  <a href="/bookings/new" data-ok-button data-ok-variant="contained" data-ok-color="primary" data-ok-size="md"><span data-ok-button-label>New booking</span></a>
+</p>
+{{if .Bookings}}
+<section data-ok-table-container>
+  <section data-ok-scrollbar aria-label="Bookings" tabindex="0">
+    <table data-ok-table data-ok-size="medium" data-ok-padding="normal">
+      <thead>
+        <tr>
+          <th scope="col">Number</th>
+          <th scope="col">Guest</th>
+          <th scope="col">Arrival</th>
+          <th scope="col" data-ok-align="right">Nights</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Bookings}}
+        <tr>
+          <td><a href="/bookings/{{.ID}}" data-ok-typography data-ok-link data-ok-variant="inherit" data-ok-color="primary" data-ok-underline="always">#{{.ID}}</a></td>
+          <td>{{.Guest}}</td>
+          <td>{{.Date.Format "2 Jan 2006"}}</td>
+          <td data-ok-align="right">{{.Nights}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+</section>
+{{else}}
+<div role="alert" data-ok-alert data-ok-severity="info" data-ok-variant="outlined" data-ok-color="info">
+  <div data-ok-alert-icon><svg data-ok-icon="info-circle-linear" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="12" r="10" /><path d="M12 17V11" /><path stroke-linejoin="round" d="M12 8H12" /></svg></div>
+  <div data-ok-alert-message>No bookings yet. Create the first one.</div>
+</div>
+{{end}}

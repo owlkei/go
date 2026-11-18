@@ -11,17 +11,21 @@ import (
 	"github.com/dangduoc08/ginject/internal/httphook"
 )
 
+const cspHeader = "Content-Security-Policy"
+
 var errResponseEnded = errors.New("ginject: response writer used after the request ended")
 
 type responseWriter struct {
 	w     http.ResponseWriter
 	code  int
 	hooks []httphook.Hook
+	csp   *httphook.CSP
 }
 
 func (w *responseWriter) reset(rw http.ResponseWriter) {
 	w.w = rw
 	w.code = 0
+	w.csp = nil
 	if len(w.hooks) != 0 {
 		clear(w.hooks)
 		w.hooks = w.hooks[:0]
@@ -38,6 +42,20 @@ func (w *responseWriter) SetInner(inner http.ResponseWriter) {
 
 func (w *responseWriter) OnDone(h httphook.Hook) {
 	w.hooks = append(w.hooks, h)
+}
+
+func (w *responseWriter) SetCSP(p *httphook.CSP) {
+	w.csp = p
+}
+
+func (w *responseWriter) placeNonce(nonce string) {
+	if w.csp == nil || nonce == "" {
+		return
+	}
+	h := w.Header()
+	if w.csp.IsSent(h) {
+		h[cspHeader] = w.csp.Header(nonce)
+	}
 }
 
 // runHooks ends the response: hooks may pool the writers they set as inner (compress), so a late

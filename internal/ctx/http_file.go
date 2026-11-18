@@ -73,7 +73,7 @@ func (files File) Bind(s any) any {
 func storeFile(handler fileHandler, dataFile *DataFile) {
 	src, err := dataFile.Open()
 	if err != nil {
-		panic(exception.BadRequestException(err.Error()))
+		panic(exception.BadRequestException("Invalid file upload", err))
 	}
 	defer func() { _ = src.Close() }()
 	handler.Store(dataFile, src)

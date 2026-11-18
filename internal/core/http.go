@@ -13,6 +13,7 @@ import (
 	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject/internal/render"
 	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/str"
 	"github.com/dangduoc08/ginject/internal/trace"
@@ -24,9 +25,13 @@ import (
 const cacheControlHeader = "Cache-Control"
 
 var (
-	notFoundBody         = exception.NotFoundException(stdHTTP.StatusText(stdHTTP.StatusNotFound)).AppendJSON(nil)
-	methodNotAllowedBody = exception.MethodNotAllowedException(stdHTTP.StatusText(stdHTTP.StatusMethodNotAllowed)).AppendJSON(nil)
-	goneBody             = exception.GoneException("Deprecated URL usage").AppendJSON(nil)
+	notFoundException         = exception.NotFoundException(stdHTTP.StatusText(stdHTTP.StatusNotFound))
+	methodNotAllowedException = exception.MethodNotAllowedException(stdHTTP.StatusText(stdHTTP.StatusMethodNotAllowed))
+	goneException             = exception.GoneException("Deprecated URL usage")
+
+	notFoundBody         = notFoundException.AppendJSON(nil)
+	methodNotAllowedBody = methodNotAllowedException.AppendJSON(nil)
+	goneBody             = goneException.AppendJSON(nil)
 	invalidURLBody       = exception.BadRequestException("Invalid URL path").AppendJSON(nil)
 
 	accessDeniedException = exception.ForbiddenException("Access denied")
@@ -71,9 +76,11 @@ type HTTP struct {
 	tracer *trace.Tracer
 	logger log.Logger
 	stacks *stackSampler
+	render *render.Engine
 
 	routes            []*httpRoute
 	routeByPattern    map[string]*httpRoute
+	assetByName       map[string]assetEntry
 	globalMiddlewares []httpMiddleware
 	allowIndexes      []int
 }
@@ -85,6 +92,8 @@ type httpRoute struct {
 	plan         *httpHandlerPlan
 	filters      []httpFilter
 	isServe      bool
+	isPage       bool
+	isAsset      bool
 	serveIndex   int
 }
 
@@ -164,6 +173,7 @@ func (http *HTTP) addRoute(mainHandler common.HTTPLayer, plan *httpHandlerPlan) 
 	}
 	route.plan = plan
 	route.isServe = mainHandler.Method == routing.SERVE
+	route.isPage = mainHandler.IsPage
 	route.serveIndex = 0
 	if r := mainHandler.Route; route.isServe && len(r) >= 2 && r[len(r)-2:] == "*/" {
 		route.serveIndex = strings.Count(r, "/") - 1
@@ -222,6 +232,11 @@ func (http *HTTP) addFilter(layer common.HTTPLayer) {
 }
 
 func (http *HTTP) finishRoutes() {
+	for _, route := range http.routes {
+		if route.filters == nil {
+			route.filters = []httpFilter{}
+		}
+	}
 	http.allowIndexes = http.allowIndexes[:0]
 	for i, method := range allowMethods {
 		for pattern := range http.routeByPattern {
@@ -327,7 +342,7 @@ func (http *HTTP) runMiddleware(ex *httpExchange, m *httpMiddleware, w stdHTTP.R
 
 func (http *HTTP) answerNoRoute(ex *httpExchange, method, version string, isGone bool) {
 	if isGone {
-		writeJSONError(&ex.writer, stdHTTP.StatusGone, goneBody)
+		http.writeEarlyError(ex, &goneException, goneBody)
 		return
 	}
 	urlPath := ex.URL.Path
@@ -338,11 +353,11 @@ func (http *HTTP) answerNoRoute(ex *httpExchange, method, version string, isGone
 		}
 	}
 	if mask == 0 {
-		writeJSONError(&ex.writer, stdHTTP.StatusNotFound, notFoundBody)
+		http.writeEarlyError(ex, &notFoundException, notFoundBody)
 		return
 	}
 	ex.writer.Header()["Allow"] = []string{allowByMask[mask]}
-	writeJSONError(&ex.writer, stdHTTP.StatusMethodNotAllowed, methodNotAllowedBody)
+	http.writeEarlyError(ex, &methodNotAllowedException, methodNotAllowedBody)
 }
 
 func (http *HTTP) hasRoute(method, urlPath, version string, buf []string) bool {
@@ -356,7 +371,9 @@ func (http *HTTP) hasRoute(method, urlPath, version string, buf []string) bool {
 func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 	c := &ex.HTTPContext
 	ex.filters = route.filters
-	if c.Method == stdHTTP.MethodPost {
+	if route.isPage {
+		ctx.HTTPSetPage(c)
+	} else if c.Method == stdHTTP.MethodPost {
 		ctx.HTTPSetCode(c, stdHTTP.StatusCreated)
 	}
 
@@ -366,6 +383,10 @@ func (http *HTTP) serveRoute(ex *httpExchange, route *httpRoute) {
 			http.catch(ex, &refusal)
 			return
 		}
+	}
+	if route.isAsset {
+		http.serveAsset(ex)
+		return
 	}
 
 	for i := range route.interceptors {
@@ -438,6 +459,10 @@ func (http *HTTP) runPosts(ex *httpExchange, aggregations []*aggregation.Aggrega
 }
 
 func (http *HTTP) writeResult(ex *httpExchange, route *httpRoute, result reflect.Value) {
+	if route.isPage {
+		http.writePage(ex, result)
+		return
+	}
 	if !route.isServe {
 		returnHTTP(&ex.HTTPContext, result)
 		return
@@ -556,15 +581,6 @@ func setDefaultCacheControl(h stdHTTP.Header) {
 	}
 }
 
-func hasHiddenSegment(rel string) bool {
-	for segment := range strings.SplitSeq(rel, "/") {
-		if len(segment) > 0 && segment[0] == '.' && segment != ".well-known" {
-			return true
-		}
-	}
-	return false
-}
-
 func (http *HTTP) recoverRequest(ex *httpExchange) {
 	rec := recover()
 	if rec == nil {
@@ -584,7 +600,8 @@ func (http *HTTP) recoverRequest(ex *httpExchange) {
 	if code != 0 {
 		http.logAfterResponse(ex, rec)
 	} else {
-		code = writeHTTPError(ex, http.exceptionOf(ex, rec))
+		code = http.writeEarlyError(ex, http.exceptionOf(ex, rec), nil)
+		ctx.HTTPSetCode(&ex.HTTPContext, code)
 	}
 	if m := ex.middleware; m != nil {
 		ex.middleware = nil
@@ -613,7 +630,8 @@ func (http *HTTP) catch(ex *httpExchange, rec any) {
 		http.logAfterResponse(ex, rec)
 		return
 	}
-	writeHTTPError(ex, http.exceptionOf(ex, rec))
+	c := &ex.HTTPContext
+	ctx.HTTPSetCode(c, http.writeError(c, &ex.writer, http.exceptionOf(ex, rec), ctx.HTTPIsPage(c)))
 }
 
 func (http *HTTP) runFilter(ex *httpExchange, f *httpFilter, e *exception.Exception) (any, bool) {
@@ -657,10 +675,4 @@ func (http *HTTP) logAfterResponse(ex *httpExchange, rec any) {
 		return
 	}
 	l.Error("ErrorAfterResponse", "method", c.Method, "path", c.URL.Path, "code", ex.writer.status(), "panic", value)
-}
-
-func writeHTTPError(ex *httpExchange, e *exception.Exception) int {
-	code := writeErrorResponse(&ex.writer, e)
-	ctx.HTTPSetCode(&ex.HTTPContext, code)
-	return code
 }

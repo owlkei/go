@@ -45,6 +45,7 @@ type HTTPLayer struct {
 	Method          string
 	Pattern         string
 	MainHandlerName string
+	IsPage          bool
 }
 
 type HTTP struct {

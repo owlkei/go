@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-ok-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{block "title" .}}Bookings{{end}} · Ginject pages</title>
+  <link rel="stylesheet" href="{{asset "owlky.min.css"}}">
+  {{/* The one inline script: follow the system's light or dark mode before the first paint. Its nonce is the
+       request's CSP nonce, which helmet adds to script-src. */}}
+  <script nonce="{{nonce}}">
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      document.documentElement.setAttribute("data-ok-theme", "dark");
+    }
+  </script>
+  <script src="{{asset "owlky.js"}}" defer></script>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main">
+      <a href="/bookings" data-ok-typography data-ok-link data-ok-variant="h6" data-ok-color="inherit" data-ok-underline="hover">Bookings</a>
+    </nav>
+  </header>
+  <main>
+{{template "content" .}}
+  </main>
+</body>
+</html>

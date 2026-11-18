@@ -7,6 +7,7 @@ import (
 	"path"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dangduoc08/ginject/exception"
@@ -207,33 +208,37 @@ func asException(rec any) (*exception.Exception, bool) {
 	return nil, false
 }
 
-func writeErrorResponse(w http.ResponseWriter, e *exception.Exception) int {
+func clientText(e *exception.Exception) (int, string, string) {
 	code := e.Code()
-	if code < http.StatusBadRequest || code > 599 {
-		code = http.StatusInternalServerError
+	if code == http.StatusInternalServerError || code < http.StatusBadRequest || code > 599 {
+		return http.StatusInternalServerError, internalServerErrorException.Error(), internalServerErrorException.Message()
 	}
-	rawErrorText, rawMessage := e.Error(), e.Message()
-	errorText, message := rawErrorText, rawMessage
-	if errorText == "" {
-		errorText = http.StatusText(code)
+	status := ""
+	if e.Unwrap() == nil {
+		status = e.Error()
+	} else {
+		status = e.StatusText()
 	}
-	if errorText == "" {
-		errorText = defaultException.Error()
+	if status == "" {
+		status = defaultException.Error()
 	}
+	message := e.Message()
 	if message == "" {
 		message = defaultException.Message()
 	}
+	return code, status, message
+}
 
+func errorJSON(e *exception.Exception, code int, status, message string) []byte {
 	switch {
-	case code == http.StatusInternalServerError && errorText == internalServerErrorException.Error() && message == internalServerErrorException.Message():
-		writeJSONError(w, code, internalErrorBody)
-	case code == e.Code() && errorText == rawErrorText && message == rawMessage:
-		writeJSONError(w, code, e.AppendJSON(nil))
+	case code == http.StatusInternalServerError:
+		return internalErrorBody
+	case code == e.Code() && message == e.Message() && e.Unwrap() == nil && status == e.Error():
+		return e.AppendJSON(nil)
 	default:
-		normalized := exception.NewException(message, code, errorText)
-		writeJSONError(w, code, normalized.AppendJSON(nil))
+		normalized := exception.NewException(message, code, status)
+		return normalized.AppendJSON(nil)
 	}
-	return code
 }
 
 func writeJSONError(w http.ResponseWriter, code int, body []byte) {
@@ -259,3 +264,12 @@ func logPanic(logger log.Logger, stacks *stackSampler, msg string, c *ctx.HTTPCo
 }
 
 var publisherKey = genFieldKey(reflect.TypeFor[common.Publisher]())
+
+func hasHiddenSegment(rel string) bool {
+	for segment := range strings.SplitSeq(rel, "/") {
+		if len(segment) > 0 && segment[0] == '.' && segment != ".well-known" {
+			return true
+		}
+	}
+	return false
+}

@@ -15,8 +15,11 @@ type (
 	Provider      = core.Provider
 	ServerOptions = core.ServerOptions
 	WSOptions     = core.WSOptions
+	RenderOptions = core.RenderOptions
 
 	HTTP             = common.HTTP
+	Page             = common.Page
+	View             = common.View
 	WS               = common.WS
 	Guard            = common.Guard
 	Interceptor      = common.Interceptor

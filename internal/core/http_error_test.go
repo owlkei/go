@@ -206,7 +206,7 @@ func TestHTTPError_NilExceptionPointerIsNotAnException(t *testing.T) {
 
 func TestHTTPError_EmptyFieldsFallBack(t *testing.T) {
 	lcExpectBothAnswer(t, exception.NotFoundException(""), http.StatusNotFound, `{"code":404,"error":"Not Found","message":"Unhandled exception has occurred"}`, "E2: an empty message becomes the default message")
-	lcExpectBothAnswer(t, exception.Exception{}, http.StatusInternalServerError, `{"code":500,"error":"Internal Server Error","message":"Unhandled exception has occurred"}`, "E2, E6: the zero exception answers 500 with the default texts")
+	lcExpectBothAnswer(t, exception.Exception{}, http.StatusInternalServerError, wantInternalErrorJSON, "E2, E6, R24: the zero exception answers the fixed 500")
 }
 
 func TestHTTPError_StringPanicIsFixed500(t *testing.T) {
@@ -544,7 +544,7 @@ func TestHTTPError_ServesAfterAbortHandler(t *testing.T) {
 func TestHTTPError_InvalidCodeAnswers500(t *testing.T) {
 	for _, code := range []int{0, 7, 200, 399, 600, 999, 1008, 4001, -1} {
 		ex := exception.NewException("x", code, "custom error")
-		lcExpectBothAnswer(t, ex, http.StatusInternalServerError, `{"code":500,"error":"custom error","message":"x"}`, "bug 14, E6: code "+strconv.Itoa(code)+" answers 500 and keeps error and message")
+		lcExpectBothAnswer(t, ex, http.StatusInternalServerError, wantInternalErrorJSON, "bug 14, E6, R24: code "+strconv.Itoa(code)+" answers the fixed 500")
 	}
 }
 
@@ -557,8 +557,8 @@ func TestHTTPError_InvalidCodeNeverCallsWriteHeaderWithIt(t *testing.T) {
 	if w.status != http.StatusInternalServerError {
 		t.Error(test.DiffMessage(w.status, http.StatusInternalServerError, "bug 14, E6: WriteHeader is called with 500, never with 7"))
 	}
-	if got := w.body.String(); got != `{"code":500,"error":"custom error","message":"x"}` {
-		t.Error(test.DiffMessage(got, `{"code":500,"error":"custom error","message":"x"}`, "E6: the body is written"))
+	if got := w.body.String(); got != wantInternalErrorJSON {
+		t.Error(test.DiffMessage(got, wantInternalErrorJSON, "E6, R24: the fixed body is written"))
 	}
 }
 

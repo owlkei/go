@@ -1,0 +1,18 @@
+{{define "title"}}New booking{{end}}
+<h1 data-ok-typography data-ok-variant="h4" data-ok-gutter-bottom>New booking</h1>
+{{if .Errors}}
+<div role="alert" data-ok-alert data-ok-severity="error" data-ok-variant="standard" data-ok-color="error">
+  <div data-ok-alert-icon><svg data-ok-icon="danger-circle-linear" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="12" r="10" /><path d="M12 7V13" /><path stroke-linejoin="round" d="M12 16H12" /></svg></div>
+  <div data-ok-alert-message>Check the fields marked below.</div>
+</div>
+{{end}}
+<form method="post" action="/bookings" novalidate>
+  {{template "partials/field" dict "Name" "guest" "Label" "Guest name" "Value" .Guest "Error" .Errors.guest}}
+  {{template "partials/field" dict "Name" "email" "Label" "Email" "Type" "email" "Value" .Email "Error" .Errors.email}}
+  {{template "partials/field" dict "Name" "date" "Label" "Arrival date" "Type" "date" "Value" .Date "Error" .Errors.date "Help" "YYYY-MM-DD"}}
+  {{template "partials/field" dict "Name" "nights" "Label" "Nights" "Type" "number" "Value" .Nights "Error" .Errors.nights "Help" "From 1 to 30"}}
+  <p>
+    <button type="submit" data-ok-button data-ok-variant="contained" data-ok-color="primary" data-ok-size="md"><span data-ok-button-label>Book</span></button>
+    <a href="/bookings" data-ok-button data-ok-variant="text" data-ok-color="inherit" data-ok-size="md"><span data-ok-button-label>Cancel</span></a>
+  </p>
+</form>

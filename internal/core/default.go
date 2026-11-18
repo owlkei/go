@@ -5,10 +5,12 @@ import (
 	"github.com/dangduoc08/ginject/internal/ctx"
 )
 
-type globalHTTPExceptionFilter struct{}
+type globalHTTPExceptionFilter struct {
+	http *HTTP
+}
 
 func (g globalHTTPExceptionFilter) Catch(c *ctx.HTTPContext, ex *exception.Exception) {
-	ctx.HTTPSetCode(c, writeErrorResponse(c.ResponseWriter, ex))
+	ctx.HTTPSetCode(c, g.http.writeError(c, c.ResponseWriter, ex, ctx.HTTPIsPage(c)))
 }
 
 type globalWSExceptionFilter struct{}

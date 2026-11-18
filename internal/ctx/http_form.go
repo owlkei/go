@@ -50,7 +50,7 @@ func (c *HTTPContext) parseMultipartForm() {
 func formException(err error) exception.Exception {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
-		return exception.RequestEntityTooLargeException(err.Error(), err)
+		return exception.RequestEntityTooLargeException("Request body too large", err)
 	}
 	return exception.BadRequestException("Invalid form body", err)
 }

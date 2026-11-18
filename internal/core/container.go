@@ -14,6 +14,7 @@ import (
 
 var fieldNameByRole = map[string]string{
 	"http":            "HTTP",
+	"page":            "Page",
 	"guard":           "Guard",
 	"interceptor":     "Interceptor",
 	"exceptionFilter": "ExceptionFilter",
@@ -55,6 +56,8 @@ type container struct {
 	wsMainHandlers       []common.WSLayer
 	httpPlanByPattern    map[string]*httpHandlerPlan
 	wsPlanByEvent        map[string]*wsHandlerPlan
+
+	isRenderEnabled bool
 }
 
 type layerKey struct {
@@ -365,12 +368,26 @@ func (c *container) addEvent(eventName, fnName string) {
 
 func (c *container) bindHTTPController(controller Controller) {
 	controllerType := reflect.TypeOf(controller)
-	if _, ok := controllerType.FieldByName(fieldNameByRole["http"]); !ok {
+	_, isHTTP := controllerType.FieldByName(fieldNameByRole["http"])
+	_, isPage := controllerType.FieldByName(fieldNameByRole["page"])
+	if !isHTTP && !isPage {
 		return
+	}
+	if isHTTP && isPage {
+		panic(errors.New(color.FmtRed("invalid controller: %v embeds both ginject.HTTP and ginject.Page", controllerType.Name())))
+	}
+	if isPage && !c.isRenderEnabled {
+		panic(errors.New(color.FmtRed("invalid render: %v embeds ginject.Page, call EnableRender before Create", controllerType.Name())))
 	}
 
 	controllerValue := reflect.ValueOf(controller)
-	http := controllerValue.FieldByName(fieldNameByRole["http"]).Interface().(common.HTTP)
+	var http common.HTTP
+	if isPage {
+		http = common.HTTP(controllerValue.FieldByName(fieldNameByRole["page"]).Interface().(common.Page))
+	} else {
+		http = controllerValue.FieldByName(fieldNameByRole["http"]).Interface().(common.HTTP)
+	}
+	checkViewResults(controllerType, isPage)
 	controllerPath := controllerType.PkgPath()
 	modulePrefixes := c.prefixesByController[genFieldKey(controllerType)]
 
@@ -410,7 +427,28 @@ func (c *container) bindHTTPController(controller Controller) {
 			Name:            name,
 			MainHandlerName: name,
 			Pattern:         pattern,
+			IsPage:          isPage && method != routing.SERVE,
 		})
+	}
+}
+
+var viewType = reflect.TypeFor[common.View]()
+
+func checkViewResults(controllerType reflect.Type, isPage bool) {
+	for j := 0; j < controllerType.NumMethod(); j++ {
+		method := controllerType.Method(j)
+		httpMethod, _, _ := common.ParseFuncNameToURL(method.Name)
+		if httpMethod == "" || httpMethod == routing.SERVE {
+			continue
+		}
+		numOut := method.Type.NumOut()
+		returnsView := numOut > 0 && method.Type.Out(numOut-1) == viewType
+		if isPage && !returnsView {
+			panic(errors.New(color.FmtRed("invalid handler: %v.%v must return ginject.View", controllerType.Name(), method.Name)))
+		}
+		if !isPage && returnsView {
+			panic(errors.New(color.FmtRed("invalid handler: %v.%v returns ginject.View, which needs a ginject.Page controller", controllerType.Name(), method.Name)))
+		}
 	}
 }
 

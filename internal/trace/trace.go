@@ -13,6 +13,7 @@ const (
 	StageExceptionFilter = "exception_filter"
 	StagePipe            = "pipe"
 	StageHandler         = "handler"
+	StageRender          = "render"
 	StageComplete        = "complete"
 )
 

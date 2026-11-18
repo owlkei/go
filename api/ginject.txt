@@ -25,14 +25,17 @@ pkg ginject, type Middleware = common.Middleware
 pkg ginject, type MiddlewareFn = common.MiddlewareFn
 pkg ginject, type Module = *core.Module
 pkg ginject, type Next = ctx.Next
+pkg ginject, type Page = common.Page
 pkg ginject, type Param = ctx.Param
 pkg ginject, type Provider = core.Provider
 pkg ginject, type Publisher = common.Publisher
 pkg ginject, type Query = ctx.Query
 pkg ginject, type Redirect = ctx.Redirect
+pkg ginject, type RenderOptions = core.RenderOptions
 pkg ginject, type ServerOptions = core.ServerOptions
 pkg ginject, type VersioningOptions = versioning.Options
 pkg ginject, type VersioningType = versioning.Type
+pkg ginject, type View = common.View
 pkg ginject, type WS = common.WS
 pkg ginject, type WSContext = *ctx.WSContext
 pkg ginject, type WSOptions = core.WSOptions
@@ -238,7 +241,10 @@ reach common.HTTP, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
 reach common.Interceptor, method (*common.Interceptor) BindInterceptor(any, ...any) *common.Interceptor
 reach common.Middleware, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
 reach common.MiddlewareFn, method (common.MiddlewareFn) Use(*http.Request, http.ResponseWriter, ctx.Next)
+reach common.Page, method (*common.Page) Prefix(string, ...any) *common.Page
 reach common.Publisher, method (common.Publisher) Publish(string, ...any) error
+reach common.View, field Data any
+reach common.View, field Name string
 reach core.App, method (*core.App) BindGlobalExceptionFilters(...any) *core.App
 reach core.App, method (*core.App) BindGlobalGuards(...any) *core.App
 reach core.App, method (*core.App) BindGlobalInterceptors(...any) *core.App
@@ -246,6 +252,7 @@ reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn)
 reach core.App, method (*core.App) Create(*core.Module)
 reach core.App, method (*core.App) EnableAccessLog() *core.App
 reach core.App, method (*core.App) EnableDevtool() *core.App
+reach core.App, method (*core.App) EnableRender(*core.RenderOptions) *core.App
 reach core.App, method (*core.App) EnableVersioning(*versioning.Options) *core.App
 reach core.App, method (*core.App) EnableWS(*core.WSOptions, ...common.MiddlewareFn) *core.App
 reach core.App, method (*core.App) Get(core.Provider) any
@@ -268,6 +275,9 @@ reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Contr
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
 reach core.Provider, method (core.Provider) NewProvider() core.Provider
+reach core.RenderOptions, field Dir string
+reach core.RenderOptions, field FS fs.FS
+reach core.RenderOptions, field IsReload bool
 reach core.ServerOptions, field IsH2C bool
 reach core.ServerOptions, field MaxRequestBodyBytes int64
 reach core.ServerOptions, field ShutdownTimeout time.Duration

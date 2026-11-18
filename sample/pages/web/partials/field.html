@@ -1,0 +1,9 @@
+{{/* An outlined Owlky text field. Pass dict "Name" "Label" "Value" "Error", optional "Type" and "Help". */}}
+<div data-ok-text-field data-ok-variant="outlined" data-ok-size="medium" data-ok-color="default" data-ok-margin="normal" {{if .Error}}data-ok-error {{end}}data-ok-full-width>
+  <label data-ok-text-field-label for="field-{{.Name}}">{{.Label}}</label>
+  <div data-ok-text-field-control>
+    <input id="field-{{.Name}}" name="{{.Name}}" type="{{or .Type "text"}}" data-ok-text-field-input {{if .Error}}aria-invalid="true" {{end}}{{if or .Error .Help}}aria-describedby="field-{{.Name}}-helper-text" {{end}}placeholder=" " value="{{.Value}}">
+    <fieldset data-ok-text-field-outline aria-hidden="true"><legend><span>{{.Label}}</span></legend></fieldset>
+  </div>
+  {{if .Error}}<div data-ok-text-field-helper id="field-{{.Name}}-helper-text">{{.Error}}</div>{{else if .Help}}<div data-ok-text-field-helper id="field-{{.Name}}-helper-text">{{.Help}}</div>{{end}}
+</div>

@@ -2,10 +2,12 @@ package helmet
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject/internal/httphook"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 )
@@ -22,7 +24,20 @@ const (
 	defaultReferrerPolicy            = "no-referrer"
 	defaultStrictTransportSecurity   = "max-age=63072000; includeSubDomains"
 	strictTransportSecurityHeader    = "Strict-Transport-Security"
+	contentSecurityPolicyHeader      = "Content-Security-Policy"
+	defaultSrc                       = "default-src"
+	nonceSource                      = " 'nonce-"
 )
+
+var nonceTargets = [...]struct {
+	name       string
+	isInserted bool
+}{
+	{"script-src", true},
+	{"style-src", true},
+	{"script-src-elem", false},
+	{"style-src-elem", false},
+}
 
 var alwaysSent = [][2]string{
 	{"X-Content-Type-Options", "nosniff"},
@@ -49,9 +64,11 @@ type header struct {
 }
 
 type compiledHelmet struct {
-	headers   []header
-	hsts      []string
-	effective []inspect.Field
+	headers         []header
+	hsts            []string
+	csp             *httphook.CSP
+	nonceDirectives []string
+	effective       []inspect.Field
 }
 
 func (instance Helmet) NewMiddleware() common.MiddlewareFn {
@@ -63,7 +80,7 @@ func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ctx.Next
 }
 
 func loadHelmetOptions(h *Helmet) *compiledHelmet {
-	c := &compiledHelmet{}
+	c := &compiledHelmet{nonceDirectives: []string{}}
 	configurable := [][3]string{
 		{"Content-Security-Policy", h.ContentSecurityPolicy, defaultContentSecurityPolicy},
 		{"Cross-Origin-Embedder-Policy", h.CrossOriginEmbedderPolicy, defaultCrossOriginEmbedderPolicy},
@@ -90,12 +107,102 @@ func loadHelmetOptions(h *Helmet) *compiledHelmet {
 			c.hsts = []string{value}
 			continue
 		}
-		c.headers = append(c.headers, header{key: http.CanonicalHeaderKey(key), value: []string{value}})
+		compiled := header{key: http.CanonicalHeaderKey(key), value: []string{value}}
+		if key == contentSecurityPolicyHeader {
+			c.csp, c.nonceDirectives = compileNonce(compiled.value)
+		}
+		c.headers = append(c.headers, compiled)
 	}
 	for _, fixed := range alwaysSent {
 		c.headers = append(c.headers, header{key: http.CanonicalHeaderKey(fixed[0]), value: []string{fixed[1]}})
 	}
 	return c
+}
+
+func compileNonce(value []string) (*httphook.CSP, []string) {
+	var directives []string
+	for d := range strings.SplitSeq(value[0], ";") {
+		if d = strings.TrimSpace(d); d != "" {
+			directives = append(directives, d)
+		}
+	}
+	indexByName := map[string]int{}
+	for i, d := range directives {
+		name, _, _ := strings.Cut(d, " ")
+		name = strings.ToLower(name)
+		if _, ok := indexByName[name]; !ok {
+			indexByName[name] = i
+		}
+	}
+
+	names := []string{}
+	isNonced := make([]bool, len(directives))
+	var inserted []string
+	defaultIndex, hasDefault := indexByName[defaultSrc]
+	defaultSources := ""
+	if hasDefault {
+		defaultSources = sourcesOf(directives[defaultIndex])
+	}
+	for _, target := range nonceTargets {
+		if i, ok := indexByName[target.name]; ok {
+			if allowsNonce(sourcesOf(directives[i])) {
+				isNonced[i] = true
+				names = append(names, target.name)
+			}
+			continue
+		}
+		if target.isInserted && hasDefault && allowsNonce(defaultSources) {
+			inserted = append(inserted, target.name+" "+defaultSources)
+			names = append(names, target.name)
+		}
+	}
+	if len(names) == 0 {
+		return nil, names
+	}
+
+	var parts []string
+	var b strings.Builder
+	cut := func() {
+		b.WriteString(nonceSource)
+		parts = append(parts, b.String())
+		b.Reset()
+		b.WriteByte('\'')
+	}
+	for i, d := range directives {
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(d)
+		if isNonced[i] {
+			cut()
+		}
+		if hasDefault && i == defaultIndex {
+			for _, extra := range inserted {
+				b.WriteString("; ")
+				b.WriteString(extra)
+				cut()
+			}
+		}
+	}
+	parts = append(parts, b.String())
+	return &httphook.CSP{Value: value, Parts: parts}, names
+}
+
+func sourcesOf(directive string) string {
+	_, sources, _ := strings.Cut(directive, " ")
+	return strings.TrimSpace(sources)
+}
+
+func allowsNonce(sources string) bool {
+	if sources == "" {
+		return false
+	}
+	for source := range strings.FieldsSeq(sources) {
+		if strings.EqualFold(source, "'unsafe-inline'") || strings.EqualFold(source, "'none'") {
+			return false
+		}
+	}
+	return true
 }
 
 func hasControlCharacter(s string) bool {
@@ -115,9 +222,16 @@ func (c *compiledHelmet) Use(r *http.Request, w http.ResponseWriter, next ctx.Ne
 	if c.hsts != nil && tracecontext.IsHTTPS(r) {
 		h[strictTransportSecurityHeader] = c.hsts
 	}
+	if c.csp != nil {
+		if cw, ok := w.(httphook.CSPWriter); ok {
+			cw.SetCSP(c.csp)
+		}
+	}
 	next()
 }
 
 func (c *compiledHelmet) Snapshot() inspect.Snapshot {
-	return inspect.Snapshot{Name: "helmet", Fields: append([]inspect.Field(nil), c.effective...)}
+	fields := append(make([]inspect.Field, 0, len(c.effective)+1), c.effective...)
+	fields = append(fields, inspect.Field{Key: "nonce_directives", Value: append([]string{}, c.nonceDirectives...)})
+	return inspect.Snapshot{Name: "helmet", Fields: fields}
 }

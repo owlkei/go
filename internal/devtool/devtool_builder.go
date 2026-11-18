@@ -29,6 +29,8 @@ type devtoolBuilder struct {
 	interceptorsByPattern     map[string][]*common.HTTPLayer
 
 	httpMainHandlers []common.HTTPLayer
+
+	render *Render
 }
 
 func DevtoolBuilder() *devtoolBuilder {
@@ -87,6 +89,12 @@ func (devtoolBuilder *devtoolBuilder) AddHTTPMainHandlers(httpMainHandlers []com
 	sort.Slice(devtoolBuilder.httpMainHandlers, func(i, j int) bool {
 		return devtoolBuilder.httpMainHandlers[i].Route < devtoolBuilder.httpMainHandlers[j].Route
 	})
+
+	return devtoolBuilder
+}
+
+func (devtoolBuilder *devtoolBuilder) AddRender(render *Render) *devtoolBuilder {
+	devtoolBuilder.render = render
 
 	return devtoolBuilder
 }
@@ -185,6 +193,7 @@ func (devtoolBuilder *devtoolBuilder) Build() *Devtool {
 			Controller: &Controller{
 				Http: []*HTTPComponent{},
 			},
+			Render: devtoolBuilder.render,
 		},
 	}
 
@@ -241,6 +250,9 @@ func (devtoolBuilder *devtoolBuilder) Build() *Devtool {
 			}
 		}
 
+		if moduleHandler.IsPage {
+			httpComponent.Kind = PageKind
+		}
 		httpComponent.Id = generateHandlerID(moduleHandler.ControllerPath + httpComponent.Handler)
 		devtool.Controller.Http = append(devtool.Controller.Http, httpComponent)
 	}

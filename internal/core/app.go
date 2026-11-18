@@ -16,6 +16,7 @@ import (
 	"github.com/dangduoc08/ginject/internal/devtool"
 	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/memorybroker"
+	"github.com/dangduoc08/ginject/internal/render"
 	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/internal/versioning"
@@ -29,6 +30,7 @@ var loggerKey = genFieldKey(reflect.TypeFor[log.Logger]())
 
 type App struct {
 	http      *HTTP
+	renderDir string
 	ctxPool   sync.Pool
 	wsCtxPool sync.Pool
 
@@ -182,6 +184,7 @@ func (app *App) Create(m *Module) {
 	app.stacks = newStackSampler(app.logger)
 	app.container.addInterface(loggerKey, app.logger)
 	app.container.wire(m)
+	app.initRender()
 	app.initWS()
 	app.initRoutes()
 	app.initMiddlewares()
@@ -245,6 +248,7 @@ func (app *App) initRoutes() {
 	for _, h := range app.container.httpMainHandlers {
 		app.http.addRoute(h, app.container.httpPlanByPattern[h.Pattern])
 	}
+	app.addAssetRoute()
 }
 
 func (app *App) initExceptionFilters() {
@@ -265,6 +269,11 @@ func (app *App) initExceptionFilters() {
 		for i := len(app.globalExceptionFilters) - 1; i >= 0; i-- {
 			gef := app.globalExceptionFilters[i]
 			name := reflect.TypeOf(gef).String()
+			if builtIn, ok := gef.(globalHTTPExceptionFilter); ok {
+				builtIn.http = app.http
+				app.http.addGlobalFilter(name, builtIn.Catch)
+				continue
+			}
 			newGef, err := injectDependencies(gef, "exceptionFilter", app.container.providerByKey, app.container)
 			if err != nil {
 				panic(err)
@@ -479,6 +488,22 @@ func (app *App) EnableVersioning(opts *versioning.Options) *App {
 	return app
 }
 
+func (app *App) EnableRender(opts *RenderOptions) *App {
+	app.mustBeBeforeCreate("EnableRender")
+	if opts == nil || opts.FS == nil {
+		panic(color.FmtRed("invalid render: EnableRender needs RenderOptions.FS"))
+	}
+	if app.http.render != nil {
+		panic(color.FmtRed("invalid render: EnableRender called twice"))
+	}
+	fsys, dir := renderFS(opts)
+	app.renderDir = dir
+	app.http.render = render.New(fsys, opts.IsReload)
+	app.container.isRenderEnabled = true
+
+	return app
+}
+
 func (app *App) EnableDevtool() *App {
 	app.mustBeBeforeCreate("EnableDevtool")
 	app.isDevtoolEnabled = true
@@ -540,6 +565,7 @@ func (app *App) initDevtool() {
 		AddInterceptors(app.globalInterceptors, app.container.httpInterceptors).
 		AddVersioning(app.http.versioning).
 		AddHTTPMainHandlers(app.container.httpMainHandlers).
+		AddRender(app.renderSnapshot()).
 		Build()
 }
 
