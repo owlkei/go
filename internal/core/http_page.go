@@ -114,9 +114,9 @@ func (http *HTTP) writePage(ex *httpExchange, route *httpRoute, result reflect.V
 		data = result.Interface()
 	}
 
-	buf, err := http.renderPage(c, route, data)
+	buf, name, err := http.renderPage(c, route, data)
 	if err != nil {
-		http.renderFailed(ex, route.template, err)
+		http.renderFailed(ex, name, err)
 		return
 	}
 	ex.writer.placeNonce(buf.Nonce())
@@ -144,14 +144,23 @@ func (http *HTTP) renderFailed(ex *httpExchange, name string, err error) {
 	ctx.HTTPSetCode(c, stdHTTP.StatusInternalServerError)
 }
 
-func (http *HTTP) renderPage(c *ctx.HTTPContext, route *httpRoute, data any) (*render.Buffer, error) {
+func (http *HTTP) renderPage(c *ctx.HTTPContext, route *httpRoute, data any) (*render.Buffer, string, error) {
 	if !http.tracer.Enabled() {
-		return http.render.Render(route.pageRoute, data)
+		buf, name, err := http.render.RenderPage(route.pageRoute, data)
+		return buf, renderedName(name, route), err
 	}
 	start := time.Now()
-	buf, err := http.render.Render(route.pageRoute, data)
-	http.emitRender(c, route.template, time.Since(start), err != nil)
-	return buf, err
+	buf, name, err := http.render.RenderPage(route.pageRoute, data)
+	name = renderedName(name, route)
+	http.emitRender(c, name, time.Since(start), err != nil)
+	return buf, name, err
+}
+
+func renderedName(name string, route *httpRoute) string {
+	if name == "" {
+		return route.template
+	}
+	return name
 }
 
 func (http *HTTP) renderErrorPage(c *ctx.HTTPContext, code int, data any) (*render.Buffer, error) {

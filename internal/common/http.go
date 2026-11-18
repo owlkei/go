@@ -68,20 +68,15 @@ type HTTPLayer struct {
 
 type HTTP struct {
 	prefixes             []Prefix
-	exactPaths           []exactPath
 	patternToFuncNameMap map[string]string
 	funcNameToPatternMap map[string]string
 	routerMap            map[string]any
 }
 
-type exactPath struct {
-	value  string
-	fnName string
-}
-
 type Prefix struct {
 	Value    string
 	Handlers []any
+	exactFor string
 }
 
 func (r *HTTP) addToRouters(fnName, route, version, method string, injectableHandler any) {
@@ -108,6 +103,9 @@ func (r *HTTP) getPrefixes() []map[string]string {
 	prefixes := make([]map[string]string, 0, len(r.prefixes))
 
 	for _, prefixConf := range r.prefixes {
+		if prefixConf.exactFor != "" {
+			continue
+		}
 		prefixValue := str.Enclose(prefixConf.Value, '/')
 		prefixHandlers := prefixConf.Handlers
 
@@ -156,18 +154,18 @@ func (r *HTTP) Path(v string, handlers ...any) *HTTP {
 	}
 
 	refuseSubmitTarget("Path", v, handlers)
-	paths := r.exactPaths[:len(r.exactPaths):len(r.exactPaths)]
+	entries := r.prefixes[:len(r.prefixes):len(r.prefixes)]
 	for _, handler := range handlers {
 		name, isFunc := handlerName(handler)
 		if !isFunc {
 			panic(errors.New(color.FmtRed("invalid route: Path(%q) is bound to '%s', which is not a handler of the controller", v, name)))
 		}
-		if previous, ok := findExactPath(paths, name); ok {
-			panic(errors.New(color.FmtRed("invalid route: %s has two exact paths: %q and %q", name, previous.value, v)))
+		if previous, ok := findExactPath(entries, name); ok {
+			panic(errors.New(color.FmtRed("invalid route: %s has two exact paths: %q and %q", name, previous.Value, v)))
 		}
-		paths = append(paths, exactPath{value: v, fnName: name})
+		entries = append(entries, Prefix{Value: v, exactFor: name})
 	}
-	r.exactPaths = paths
+	r.prefixes = entries
 
 	return r
 }
@@ -180,13 +178,13 @@ func refuseSubmitTarget(call, v string, handlers []any) {
 	}
 }
 
-func findExactPath(paths []exactPath, fnName string) (exactPath, bool) {
-	for _, path := range paths {
-		if path.fnName == fnName {
-			return path, true
+func findExactPath(entries []Prefix, fnName string) (Prefix, bool) {
+	for _, entry := range entries {
+		if entry.exactFor == fnName {
+			return entry, true
 		}
 	}
-	return exactPath{}, false
+	return Prefix{}, false
 }
 
 func AddHandlerToRouterMap(r *HTTP, modulePrefixes []string, style PathStyle, fnName string, handler any) {
@@ -207,8 +205,8 @@ func AddHandlerToRouterMapWithPageVersion(r *HTTP, modulePrefixes []string, styl
 	case PageRender:
 		version = pageVersion
 	}
-	if path, ok := findExactPath(r.exactPaths, pathName); ok {
-		route = str.Enclose(path.value, '/')
+	if path, ok := findExactPath(r.prefixes, pathName); ok {
+		route = str.Enclose(path.Value, '/')
 	}
 	route = r.addPrefixesToRoute(route, pathName, r.getPrefixes())
 	for _, modulePrefix := range modulePrefixes {
@@ -231,9 +229,12 @@ func RenderNameOf(submitName string) string {
 }
 
 func CheckExactPaths(r *HTTP) {
-	for _, path := range r.exactPaths {
-		if _, ok := r.funcNameToPatternMap[path.fnName]; !ok {
-			panic(errors.New(color.FmtRed("invalid route: Path(%q) is bound to '%s', which is not a handler of the controller", path.value, path.fnName)))
+	for _, entry := range r.prefixes {
+		if entry.exactFor == "" {
+			continue
+		}
+		if _, ok := r.funcNameToPatternMap[entry.exactFor]; !ok {
+			panic(errors.New(color.FmtRed("invalid route: Path(%q) is bound to '%s', which is not a handler of the controller", entry.Value, entry.exactFor)))
 		}
 	}
 }

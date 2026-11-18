@@ -244,17 +244,23 @@ func (e *Engine) CheckBindings() error {
 }
 
 func (e *Engine) Render(route string, data any) (*Buffer, error) {
+	buf, _, err := e.RenderPage(route, data)
+	return buf, err
+}
+
+func (e *Engine) RenderPage(route string, data any) (*Buffer, string, error) {
 	s, err := e.current()
 	if err != nil {
 		e.failures.Add(1)
-		return nil, err
+		return nil, "", err
 	}
 	set := s.setByRoute[strings.Trim(route, "/")]
 	if set == nil {
 		e.failures.Add(1)
-		return nil, ErrNoTemplate
+		return nil, "", ErrNoTemplate
 	}
-	return e.execute(set, data)
+	buf, err := e.execute(set, data)
+	return buf, set.name, err
 }
 
 func (e *Engine) RenderError(code int, data any) (*Buffer, error) {

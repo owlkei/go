@@ -179,6 +179,8 @@ From the tests (`render_test.go`, `render_pages_test.go`):
 
 `Render(route string, data any) (*Buffer, error)` executes the template bound to `route` with `data` into a pooled buffer.
 
+`RenderPage(route string, data any) (*Buffer, string, error)` does the same and also returns the name of the template that rendered (`x/index.html` once a reload moved `x.html` there), or `""` when no set was found. `internal/core` names that template in trace events and `RenderFailed` logs.
+
 #### Parameters
 
 | Position | Type | Description |

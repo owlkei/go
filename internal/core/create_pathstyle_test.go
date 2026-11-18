@@ -50,6 +50,7 @@ func TestPathStyle_OldSpellingIs404(t *testing.T) {
 	app := New()
 	mustCreate(t, app, NewModuleBuilder().Controllers(psRootController{}).Build())
 
+	psExpect(t, app, "B12: the route exists under its kebab spelling", "/root-page", http.StatusOK)
 	lcExpectResponse(t, createGet(app, "/root_page"), http.StatusNotFound, wantNotFoundJSON, "B12: the underscore spelling is not a route under kebab")
 }
 
