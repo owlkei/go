@@ -56,6 +56,12 @@ func (app *App) startEntries() {
 		return
 	}
 	c.logPending()
+	c.mu.Lock()
+	failures := c.resolveUnknownsLocked()
+	c.broadcastLocked()
+	after := time.Since(c.createStart)
+	c.mu.Unlock()
+	c.logFailures(failures, after, nil, "")
 	c.asyncCtx, c.asyncCancel = context.WithCancel(context.Background())
 	for _, e := range c.entries {
 		go app.runEntry(e)
@@ -227,6 +233,10 @@ func (c *container) lateFactoryArgs(ctx context.Context, e *asyncEntry, fn any) 
 			err = fmt.Errorf("%v", rec)
 		}
 	}()
+	importer := e.parent
+	if e.factory == nil || !sameImport(fn, e.factory) {
+		importer = e.importers[factoryPointer(fn)]
+	}
 	t := reflect.TypeOf(fn)
 	args = make([]reflect.Value, 0, t.NumIn())
 	for i := 0; i < t.NumIn(); i++ {
@@ -235,14 +245,12 @@ func (c *container) lateFactoryArgs(ctx context.Context, e *asyncEntry, fn any) 
 			continue
 		}
 		key := genFieldKey(t.In(i))
-		if p, ok := c.providerByKey[key]; ok {
-			args = append(args, reflect.ValueOf(p))
-			continue
-		}
-		if owner := c.ownerOfKey(key); owner != nil && c.stateOf(owner) == e.state {
-			c.initModule(owner)
-			args = append(args, reflect.ValueOf(c.provide(key)))
-			continue
+		if owner := c.siblingDeclarer(&factoryNode{fn: fn, parent: importer}, key); owner != nil {
+			if s := c.stateOf(owner); s != nil && (s == e.state || s.status() == moduleReady) {
+				c.initModule(owner)
+				args = append(args, reflect.ValueOf(c.provide(key)))
+				continue
+			}
 		}
 		if p, ok := c.global(key); ok {
 			args = append(args, reflect.ValueOf(p))
@@ -285,7 +293,7 @@ func (app *App) adoptUnit(ctx context.Context, e *asyncEntry, fn any, m *Module)
 	}
 	defer c.releaseWire(e)
 
-	modules, factories := c.newModulesOf(m)
+	modules, factories := c.newModulesOf(m, e.importers)
 	for _, nm := range modules {
 		if len(nm.controllers) > 0 {
 			c.fail(e.state, "module '"+nm.Name+"' declares controllers ("+moduleControllerTypes(nm)+") but comes from an async factory: put them in a static module that imports it", "")
@@ -348,7 +356,7 @@ func moduleControllerTypes(m *Module) string {
 	return strings.Join(names, ", ")
 }
 
-func (c *container) newModulesOf(m *Module) ([]*Module, []any) {
+func (c *container) newModulesOf(m *Module, importers map[uintptr]*Module) ([]*Module, []any) {
 	var modules []*Module
 	var factories []any
 	seen := make(map[*Module]struct{})
@@ -367,6 +375,9 @@ func (c *container) newModulesOf(m *Module) ([]*Module, []any) {
 					walk(child)
 				} else if !slices.ContainsFunc(factories, func(fn any) bool { return sameImport(fn, imported) }) {
 					factories = append(factories, imported)
+					if _, ok := importers[factoryPointer(imported)]; !ok {
+						importers[factoryPointer(imported)] = m
+					}
 				}
 			}
 		}
@@ -408,7 +419,14 @@ func (app *App) buildEntry(ctx context.Context, e *asyncEntry) {
 		return
 	}
 	defer c.releaseWire(e)
-	if !app.buildState(e.state) || !c.markReady(e.state) {
+	opened, ok := app.buildState(e.state)
+	if !ok {
+		return
+	}
+	if c.afterGateOpen != nil {
+		c.afterGateOpen()
+	}
+	if !c.markReady(e.state, opened) {
 		return
 	}
 	app.callOnReadyOf([]*moduleState{e.state})
@@ -422,7 +440,7 @@ func (app *App) buildDependents() []*moduleState {
 		if s == nil {
 			return built
 		}
-		if app.buildState(s) && app.container.markReady(s) {
+		if opened, ok := app.buildState(s); ok && app.container.markReady(s, opened) {
 			built = append(built, s)
 		}
 	}
@@ -466,12 +484,12 @@ func (app *App) callBackgroundOnReady(m *Module) {
 	m.OnReady()
 }
 
-func (app *App) buildState(s *moduleState) (ok bool) {
+func (app *App) buildState(s *moduleState) (opened []openedGate, ok bool) {
 	c := app.container
 	defer func() {
 		if rec := recover(); rec != nil {
 			c.fail(s, fmt.Sprint(rec), panicStack())
-			ok = false
+			opened, ok = nil, false
 		}
 	}()
 
@@ -480,7 +498,7 @@ func (app *App) buildState(s *moduleState) (ok bool) {
 	c.mu.RUnlock()
 	for _, m := range modules {
 		if c.isStoppingNow() {
-			return false
+			return nil, false
 		}
 		c.initModule(m)
 		for _, p := range m.providers {
@@ -488,8 +506,7 @@ func (app *App) buildState(s *moduleState) (ok bool) {
 		}
 	}
 
-	gates := make([]*moduleGate, 0, len(modules))
-	lives := make([]*moduleLive, 0, len(modules))
+	opened = make([]openedGate, 0, len(modules))
 	for _, m := range modules {
 		gate := c.gateByModule[m]
 		if gate == nil {
@@ -498,21 +515,11 @@ func (app *App) buildState(s *moduleState) (ok bool) {
 		live, err := app.buildLive(gate)
 		if err != nil {
 			c.fail(s, err.Error(), "")
-			return false
+			return nil, false
 		}
-		gates = append(gates, gate)
-		lives = append(lives, live)
+		opened = append(opened, openedGate{gate: gate, live: live})
 	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.isStopping || s.status() != modulePending {
-		return false
-	}
-	for i, gate := range gates {
-		gate.live.Store(lives[i])
-	}
-	return true
+	return opened, true
 }
 
 func (app *App) buildLive(gate *moduleGate) (*moduleLive, error) {

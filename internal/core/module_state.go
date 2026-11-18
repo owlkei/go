@@ -66,6 +66,7 @@ type asyncEntry struct {
 	module        *Module
 	factory       any
 	unitFactories []any
+	importers     map[uintptr]*Module
 	isCalled      bool
 	isDiscovering bool
 	phase         entryPhase
@@ -104,6 +105,11 @@ type moduleGate struct {
 type moduleLive struct {
 	http []*httpRoute
 	ws   []wsLive
+}
+
+type openedGate struct {
+	gate *moduleGate
+	live *moduleLive
 }
 
 type gateRef struct {
@@ -149,8 +155,8 @@ type moduleLifecycle struct {
 	gateByPattern     map[string]gateRef
 	gateByEvent       map[string]gateRef
 	readyOrder        []*Module
-	openDiscoveries   int
 	hasAsyncFactory   bool
+	afterGateOpen     func()
 }
 
 func newModuleLifecycle() moduleLifecycle {
@@ -197,7 +203,7 @@ func (c *container) collectEntries(root *Module) {
 }
 
 func (c *container) addEntry(parent *Module, imported any) {
-	e := &asyncEntry{c: c, parent: parent, done: make(chan struct{})}
+	e := &asyncEntry{c: c, parent: parent, importers: make(map[uintptr]*Module), done: make(chan struct{})}
 	c.entryByImport[importKey(imported)] = e
 	c.entries = append(c.entries, e)
 	if static, ok := imported.(*Module); ok {
@@ -214,7 +220,6 @@ func (c *container) addEntry(parent *Module, imported any) {
 	}
 	if e.factory != nil || len(e.unitFactories) > 0 {
 		e.isDiscovering = true
-		c.openDiscoveries++
 	}
 }
 
@@ -238,6 +243,7 @@ func (c *container) assignUnit(e *asyncEntry, m *Module) {
 			}
 			if !slices.ContainsFunc(e.unitFactories, func(fn any) bool { return sameImport(fn, imported) }) {
 				e.unitFactories = append(e.unitFactories, imported)
+				e.importers[factoryPointer(imported)] = m
 				c.hasAsyncFactory = true
 			}
 		}
@@ -653,7 +659,7 @@ func (c *container) settle(entry *Module, err error) {
 		c.fail(s, err.Error(), "")
 		return
 	}
-	c.markReady(s)
+	c.markReady(s, nil)
 }
 
 type stateFailure struct {
@@ -707,7 +713,6 @@ func (c *container) closeDiscoveryLocked(e *asyncEntry) []stateFailure {
 		return nil
 	}
 	e.isDiscovering = false
-	c.openDiscoveries--
 	return c.resolveUnknownsLocked()
 }
 
@@ -723,7 +728,7 @@ func (c *container) resolveUnknownsLocked() []stateFailure {
 		}
 		s.deps = slices.DeleteFunc(s.deps, func(d *moduleState) bool { return d.status() == moduleReady })
 	}
-	if c.openDiscoveries > 0 {
+	if c.hasRunnableDiscoveryLocked() {
 		return nil
 	}
 	var failures []stateFailure
@@ -735,16 +740,46 @@ func (c *container) resolveUnknownsLocked() []stateFailure {
 	return failures
 }
 
+func (c *container) hasRunnableDiscoveryLocked() bool {
+	stuck := make(map[*moduleState]struct{})
+	for _, s := range c.states {
+		if s.status() == modulePending && len(s.unknown) > 0 {
+			stuck[s] = struct{}{}
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, s := range c.states {
+			if _, ok := stuck[s]; ok || s.status() != modulePending {
+				continue
+			}
+			if slices.ContainsFunc(s.deps, func(d *moduleState) bool { _, ok := stuck[d]; return ok }) {
+				stuck[s] = struct{}{}
+				changed = true
+			}
+		}
+	}
+	for _, e := range c.entries {
+		if _, ok := stuck[e.state]; e.isDiscovering && e.state.status() == modulePending && !ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *container) broadcastLocked() {
 	close(c.changed)
 	c.changed = make(chan struct{})
 }
 
-func (c *container) markReady(s *moduleState) bool {
+func (c *container) markReady(s *moduleState, opened []openedGate) bool {
 	c.mu.Lock()
 	if c.isStopping || s.status() != modulePending {
 		c.mu.Unlock()
 		return false
+	}
+	for _, o := range opened {
+		o.gate.live.Store(o.live)
 	}
 	s.readyAfter = time.Since(c.createStart)
 	s.value.Store(uint32(moduleReady))

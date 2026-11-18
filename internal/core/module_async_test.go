@@ -745,3 +745,154 @@ func TestModuleLog_PendingReadyFailed(t *testing.T) {
 		t.Error(test.DiffMessage(dependent, "cause needs 'badm'", "V: a dependent names what it needs"))
 	}
 }
+
+func lfSettledWithin(t *testing.T, ch <-chan struct{}, what string) bool {
+	t.Helper()
+	select {
+	case <-ch:
+		return true
+	case <-time.After(time.Second):
+		t.Error(test.DiffMessage("still pending", "settled", what))
+		return false
+	}
+}
+
+type lfMissingProvA struct{}
+
+func (p lfMissingProvA) NewProvider() Provider { return p }
+
+type lfMissingProvB struct{}
+
+func (p lfMissingProvB) NewProvider() Provider { return p }
+
+func TestAsync_UnknownParamOfOnlyFactoryFails(t *testing.T) {
+	factory := func(m lfMissingProv) (*Module, error) { return lfNamed("never", NewModuleBuilder()), nil }
+	app, logger := lfWatchApp(t)
+	lfRelease(t, app)
+	lfCreate(t, app, NewModuleBuilder().AsyncImports(factory).Build())
+
+	if !lfSettledWithin(t, app.container.settledFactory(factory), "A7: the only factory's unknown parameter fails it") {
+		return
+	}
+	if got := app.container.statusOfFactory(factory); got != moduleFailed {
+		t.Error(test.DiffMessage(got.String(), "failed", "A7: the factory's entry is failed"))
+	}
+	want := "can't resolve " + reflect.TypeFor[lfMissingProv]().String()
+	entries := logger.named("ModuleFailed")
+	if len(entries) != 1 || lfCause(entries[0]) != want {
+		t.Error(test.DiffMessage(entries, "one ModuleFailed with cause "+want, "A7"))
+	}
+}
+
+func TestAsync_UnknownParamsOfTwoFactoriesFail(t *testing.T) {
+	factoryA := func(m lfMissingProvA) (*Module, error) { return lfNamed("a", NewModuleBuilder()), nil }
+	factoryB := func(m lfMissingProvB) (*Module, error) { return lfNamed("b", NewModuleBuilder()), nil }
+	app, logger := lfWatchApp(t)
+	lfRelease(t, app)
+	lfCreate(t, app, NewModuleBuilder().AsyncImports(factoryA, factoryB).Build())
+
+	okA := lfSettledWithin(t, app.container.settledFactory(factoryA), "A7: factory A fails")
+	okB := lfSettledWithin(t, app.container.settledFactory(factoryB), "A7: factory B fails")
+	if !okA || !okB {
+		return
+	}
+	for name, fn := range map[string]any{"A": factoryA, "B": factoryB} {
+		if got := app.container.statusOfFactory(fn); got != moduleFailed {
+			t.Error(test.DiffMessage(got.String(), "failed", "A7: factory "+name+" is failed"))
+		}
+	}
+	causes := []string{}
+	for _, e := range logger.named("ModuleFailed") {
+		causes = append(causes, lfCause(e))
+	}
+	slices.Sort(causes)
+	want := []string{
+		"can't resolve " + reflect.TypeFor[lfMissingProvA]().String(),
+		"can't resolve " + reflect.TypeFor[lfMissingProvB]().String(),
+	}
+	slices.Sort(want)
+	if !slices.Equal(causes, want) {
+		t.Error(test.DiffMessage(causes, want, "A7: each factory fails with its own cause"))
+	}
+}
+
+func TestAsync_ShutdownBetweenGateAndReadyNeverServes(t *testing.T) {
+	var shutdowns atomic.Int32
+	ent := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}).Controllers(lfSQLCtl{}))
+	ent.OnShutdown = func() { shutdowns.Add(1) }
+	app, _ := lfWatchApp(t)
+	lfRelease(t, app)
+	app.container.afterGateOpen = func() { app.beginAsyncShutdown() }
+	lfCreate(t, app, NewModuleBuilder().AsyncImports(ent).Build())
+
+	entry := app.container.entryByImport[importKey(ent)]
+	lfWait(t, entry.done, "the entry to end")
+
+	status := lfStatus(app, ent)
+	code := lfCode(app, "/lfsql/hello")
+	app.container.mu.RLock()
+	inOrder := slices.Contains(app.container.readyOrder, ent)
+	app.container.mu.RUnlock()
+	lfStop(t, app)
+
+	if code == http.StatusOK && status != moduleReady {
+		t.Error(test.DiffMessage(status.String(), "ready", "A11: a route answered 200 while the module is not ready"))
+	}
+	if status == moduleReady && (!inOrder || shutdowns.Load() != 1) {
+		t.Error(test.DiffMessage([]any{inOrder, shutdowns.Load()}, []any{true, int32(1)}, "A12: a ready module is in readyOrder and gets OnShutdown"))
+	}
+	if status != moduleReady && code == http.StatusOK {
+		t.Error(test.DiffMessage(code, http.StatusServiceUnavailable, "A11: a module that never got ready keeps its gate closed"))
+	}
+}
+
+type lfLateSpy struct {
+	called atomic.Int32
+}
+
+func lfLateApp(t *testing.T, unitImportsHolder bool) (*App, *lfLateSpy, any) {
+	t.Helper()
+	spy := &lfLateSpy{}
+	late := func(db lfSQL) (*Module, error) {
+		spy.called.Add(1)
+		_ = db
+		return lfNamed("late", NewModuleBuilder()), nil
+	}
+	holder := lfNamed("holder", NewModuleBuilder().Providers(lfSQL{Ready: true}))
+	unitBuilder := NewModuleBuilder().AsyncImports(late)
+	if unitImportsHolder {
+		unitBuilder = unitBuilder.Imports(holder)
+	}
+	unit := lfNamed("unit", unitBuilder)
+	first := func() (*Module, error) { return unit, nil }
+	app, _ := lfWatchApp(t)
+	lfRelease(t, app)
+	lfCreate(t, app, NewModuleBuilder().Imports(holder).AsyncImports(first).Build())
+	return app, spy, first
+}
+
+func TestAsync_LateFactoryDoesNotSeeInvisibleProvider(t *testing.T) {
+	app, spy, first := lfLateApp(t, false)
+
+	lfSettledWithin(t, app.container.settledFactory(first), "S1: the unit settles")
+
+	if n := spy.called.Load(); n != 0 {
+		t.Error(test.DiffMessage(n, 0, "S1: a late factory is never given a provider its importer can't see"))
+	}
+	if got := app.container.statusOfFactory(first); got == moduleReady {
+		t.Error(test.DiffMessage(got.String(), "failed", "S1: the unresolved parameter fails the unit"))
+	}
+}
+
+func TestAsync_LateFactoryResolvesVisibleSiblingProvider(t *testing.T) {
+	app, spy, first := lfLateApp(t, true)
+
+	lfSettledWithin(t, app.container.settledFactory(first), "S1: the unit settles")
+
+	if n := spy.called.Load(); n != 1 {
+		t.Error(test.DiffMessage(n, 1, "S1: a visible provider is injected into the late factory"))
+	}
+	if got := app.container.statusOfFactory(first); got != moduleReady {
+		t.Error(test.DiffMessage(got.String(), "ready", "S1: the unit becomes ready"))
+	}
+}

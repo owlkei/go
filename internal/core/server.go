@@ -129,7 +129,7 @@ func (app *App) Stop() {
 	app.serveMu.Unlock()
 
 	self := goroutineID()
-	if hooksGoroutine != 0 && hooksGoroutine == self || app.container.isEntryGoroutine(self) {
+	if (hooksGoroutine != 0 && hooksGoroutine == self) || app.container.isEntryGoroutine(self) {
 		return
 	}
 	<-app.shutdownDone
