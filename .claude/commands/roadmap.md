@@ -39,7 +39,7 @@ Before the first step:
 
 - Record `git status --porcelain` in your notes: files that were already modified or untracked are
   the user's, and you never stage them.
-- Work on the current branch (normally `master`): no separate roadmap branch (the user's choice,
+- Work on the current branch (normally `main`): no separate roadmap branch (the user's choice,
   2026-11-16). Record the starting commit so the report can list `git log --oneline <start>..HEAD`.
 
 Set `Running`. Take steps in dependency order; for each, set `doing`, then:
