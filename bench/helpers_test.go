@@ -1,15 +1,56 @@
 package bench
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/dangduoc08/ginject"
+	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/middlewares/helmet"
 )
+
+type discardWriter struct {
+	header http.Header
+	code   int
+}
+
+func (w *discardWriter) Header() http.Header { return w.header }
+
+func (w *discardWriter) WriteHeader(code int) { w.code = code }
+
+func (w *discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+type bodyReader struct {
+	*bytes.Reader
+}
+
+func (bodyReader) Close() error { return nil }
+
+func benchmarkHandler(b *testing.B, handler http.Handler) {
+	for _, s := range Scenarios {
+		b.Run(s.Name, func(b *testing.B) {
+			r := s.Request()
+			payload := []byte(s.Body)
+			reader := bodyReader{bytes.NewReader(payload)}
+			w := &discardWriter{header: http.Header{}}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				reader.Reset(payload)
+				r.Body = reader
+				r.ContentLength = int64(len(payload))
+				clear(w.header)
+				w.code = 0
+				handler.ServeHTTP(w, r)
+			}
+		})
+	}
+}
 
 type bookingRow struct {
 	ID    int
@@ -67,23 +108,6 @@ func newPageApp(render bool) ginject.App {
 	return app
 }
 
-func BenchmarkGinjectPage(b *testing.B) {
-	app := newPageApp(true)
-	for _, s := range []struct{ name, path string }{{"JSONList", "/json"}, {"PageList", "/bookings"}} {
-		b.Run(s.name, func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet, s.path, nil)
-			b.ReportAllocs()
-			for b.Loop() {
-				w := httptest.NewRecorder()
-				app.ServeHTTP(w, req)
-				if w.Code != http.StatusOK {
-					b.Fatalf("status %d", w.Code)
-				}
-			}
-		})
-	}
-}
-
 func heapAfterGC() uint64 {
 	var m runtime.MemStats
 	runtime.GC()
@@ -92,16 +116,15 @@ func heapAfterGC() uint64 {
 	return m.HeapAlloc
 }
 
-func BenchmarkGinjectPageIdleMemory(b *testing.B) {
-	for b.Loop() {
-		before := heapAfterGC()
-		withoutRender := newPageApp(false)
-		mid := heapAfterGC()
-		withRender := newPageApp(true)
-		after := heapAfterGC()
-		b.ReportMetric(float64(mid-before), "B-app")
-		b.ReportMetric(float64(after-mid), "B-app+render")
-		runtime.KeepAlive(withoutRender)
-		runtime.KeepAlive(withRender)
+func checkScenarios(t *testing.T, name string, handler http.Handler) {
+	for _, s := range Scenarios {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, s.Request())
+		if w.Code != s.Status {
+			t.Error(test.DiffMessage(w.Code, s.Status, name+" "+s.Name+" status, body "+w.Body.String()))
+		}
+		if s.Contains != "" && !strings.Contains(w.Body.String(), s.Contains) {
+			t.Error(test.DiffMessage(w.Body.String(), s.Contains, name+" "+s.Name+" body"))
+		}
 	}
 }
