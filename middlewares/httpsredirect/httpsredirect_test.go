@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -13,27 +12,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
-
-const invalidHostBody = `{"code":400,"error":"Bad Request","message":"Invalid host"}`
-
-func plainRequest(method, host, target string) *http.Request {
-	r := request(method, target)
-	r.Host = host
-	return r
-}
-
-func expectRedirect(t *testing.T, w *httptest.ResponseRecorder, location, desc string) {
-	t.Helper()
-	if w.Code != http.StatusPermanentRedirect {
-		t.Error(test.DiffMessage(w.Code, http.StatusPermanentRedirect, "R2: "+desc+": status"))
-	}
-	if got := w.Header().Get("Location"); got != location {
-		t.Error(test.DiffMessage(got, location, "R2: "+desc+": Location"))
-	}
-	if w.Body.Len() != 0 {
-		t.Error(test.DiffMessage(w.Body.String(), "", "R2: "+desc+": no body"))
-	}
-}
 
 func TestHTTPSRedirect_HTTPS_Passes(t *testing.T) {
 	app := newApp(t, HTTPSRedirect{})

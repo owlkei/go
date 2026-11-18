@@ -2,12 +2,12 @@ package httpsredirect
 
 import (
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/ctx"
@@ -20,19 +20,29 @@ func noop() {}
 type okController struct{ common.HTTP }
 
 func (c okController) NewController() core.Controller { return c }
-func (okController) READ_ok() string                  { return "ok" }
-func (okController) CREATE_ok() string                { return "ok" }
-func (okController) UPDATE_ok() string                { return "ok" }
-func (okController) MODIFY_ok() string                { return "ok" }
-func (okController) DELETE_ok() string                { return "ok" }
-func (okController) PREFLIGHT_ok() string             { return "options-route" }
+
+func (okController) READ_ok() string { return "ok" }
+
+func (okController) CREATE_ok() string { return "ok" }
+
+func (okController) UPDATE_ok() string { return "ok" }
+
+func (okController) MODIFY_ok() string { return "ok" }
+
+func (okController) DELETE_ok() string { return "ok" }
+
+func (okController) PREFLIGHT_ok() string { return "options-route" }
 
 type silentLogger struct{}
 
 func (silentLogger) Debug(string, ...any) {}
-func (silentLogger) Info(string, ...any)  {}
-func (silentLogger) Warn(string, ...any)  {}
+
+func (silentLogger) Info(string, ...any) {}
+
+func (silentLogger) Warn(string, ...any) {}
+
 func (silentLogger) Error(string, ...any) {}
+
 func (silentLogger) Fatal(string, ...any) {}
 
 type probeMiddleware struct{ Name string }
@@ -69,8 +79,10 @@ type discardWriter struct {
 	code   int
 }
 
-func (w *discardWriter) Header() http.Header         { return w.header }
-func (w *discardWriter) WriteHeader(code int)        { w.code = code }
+func (w *discardWriter) Header() http.Header { return w.header }
+
+func (w *discardWriter) WriteHeader(code int) { w.code = code }
+
 func (w *discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
@@ -125,5 +137,26 @@ func expectRefusal(t *testing.T, w *httptest.ResponseRecorder, code int, body, d
 	}
 	if got := w.Header().Get("Content-Type"); got != "application/json" {
 		t.Error(test.DiffMessage(got, "application/json", "G1: "+desc+": Content-Type"))
+	}
+}
+
+const invalidHostBody = `{"code":400,"error":"Bad Request","message":"Invalid host"}`
+
+func plainRequest(method, host, target string) *http.Request {
+	r := request(method, target)
+	r.Host = host
+	return r
+}
+
+func expectRedirect(t *testing.T, w *httptest.ResponseRecorder, location, desc string) {
+	t.Helper()
+	if w.Code != http.StatusPermanentRedirect {
+		t.Error(test.DiffMessage(w.Code, http.StatusPermanentRedirect, "R2: "+desc+": status"))
+	}
+	if got := w.Header().Get("Location"); got != location {
+		t.Error(test.DiffMessage(got, location, "R2: "+desc+": Location"))
+	}
+	if w.Body.Len() != 0 {
+		t.Error(test.DiffMessage(w.Body.String(), "", "R2: "+desc+": no body"))
 	}
 }
