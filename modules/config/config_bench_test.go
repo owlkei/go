@@ -1,10 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -31,24 +27,6 @@ func BenchmarkFlatten(b *testing.B) {
 		}
 		flatten(org, make(map[string]any), "")
 	}
-}
-
-func envFixture(b *testing.B) string {
-	b.Helper()
-	var sb strings.Builder
-	sb.WriteString("# bench fixture\n")
-	for i := 0; i < 40; i++ {
-		n := strconv.Itoa(i)
-		sb.WriteString("BENCH_KEY_" + n + "=value-" + n + " # comment\n")
-		sb.WriteString("BENCH_URL_" + n + "=postgres://host/db?sslmode=disable&n=" + n + "\n")
-		sb.WriteString("BENCH_QUOTED_" + n + "=\"line one\\nline two ${BENCH_KEY_" + n + "}\"\n")
-		sb.WriteString("BENCH_SINGLE_" + n + "='literal ${BENCH_KEY_" + n + "}'\n")
-	}
-	path := filepath.Join(b.TempDir(), ".env")
-	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
-		b.Fatal(err)
-	}
-	return path
 }
 
 func BenchmarkRegister_File(b *testing.B) {

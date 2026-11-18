@@ -6,10 +6,76 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
 )
+
+func envFixture(b *testing.B) string {
+	b.Helper()
+	var sb strings.Builder
+	sb.WriteString("# bench fixture\n")
+	for i := 0; i < 40; i++ {
+		n := strconv.Itoa(i)
+		sb.WriteString("BENCH_KEY_" + n + "=value-" + n + " # comment\n")
+		sb.WriteString("BENCH_URL_" + n + "=postgres://host/db?sslmode=disable&n=" + n + "\n")
+		sb.WriteString("BENCH_QUOTED_" + n + "=\"line one\\nline two ${BENCH_KEY_" + n + "}\"\n")
+		sb.WriteString("BENCH_SINGLE_" + n + "='literal ${BENCH_KEY_" + n + "}'\n")
+	}
+	path := filepath.Join(b.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	return path
+}
+
+func projectDir(t *testing.T, envContent string, withEnv bool) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/app\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if withEnv {
+		if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envContent), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func nested(depth int) map[string]any {
+	root := map[string]any{}
+	current := root
+	for i := 0; i < depth; i++ {
+		next := map[string]any{}
+		current["n"] = next
+		current = next
+	}
+	current["leaf"] = canary
+	return root
+}
+
+type boundConfig struct {
+	Name  string  `bind:"TT_TR_NAME"`
+	Port  int     `bind:"TT_TR_PORT"`
+	Big   int64   `bind:"TT_TR_BIG"`
+	Small uint    `bind:"TT_TR_SMALL"`
+	On    bool    `bind:"TT_TR_ON"`
+	Ratio float64 `bind:"TT_TR_RATIO"`
+	Half  float32 `bind:"TT_TR_HALF"`
+}
+
+func newService(t *testing.T) ConfigService {
+	t.Helper()
+	return registerWith(t, &ConfigModuleOptions{IsIgnoreEnvFile: true})
+}
+
+type holder struct {
+	Label  string
+	Config ConfigService
+}
 
 const canary = "S3CR3T-canary-4f9a"
 

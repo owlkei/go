@@ -12,21 +12,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-type boundConfig struct {
-	Name  string  `bind:"TT_TR_NAME"`
-	Port  int     `bind:"TT_TR_PORT"`
-	Big   int64   `bind:"TT_TR_BIG"`
-	Small uint    `bind:"TT_TR_SMALL"`
-	On    bool    `bind:"TT_TR_ON"`
-	Ratio float64 `bind:"TT_TR_RATIO"`
-	Half  float32 `bind:"TT_TR_HALF"`
-}
-
-func newService(t *testing.T) ConfigService {
-	t.Helper()
-	return registerWith(t, &ConfigModuleOptions{IsIgnoreEnvFile: true})
-}
-
 func TestConfigService_GetSet(t *testing.T) {
 	svc := newService(t)
 	if svc.Get("TT_GS_MISSING") != nil {
@@ -144,11 +129,6 @@ func TestConfigService_Transform_SkipsMapsAndSlices(t *testing.T) {
 	if got.Name != "kept" || got.Port != 0 || got.On || got.Ratio != 0 || got.Big != 0 {
 		t.Error(test.DiffMessage(fmt.Sprintf("%+v", got), "{Name:kept, the rest zero}", "E15: skipped values bind nothing"))
 	}
-}
-
-type holder struct {
-	Label  string
-	Config ConfigService
 }
 
 func TestConfigService_NotPrintable(t *testing.T) {

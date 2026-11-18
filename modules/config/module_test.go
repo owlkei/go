@@ -14,20 +14,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func projectDir(t *testing.T, envContent string, withEnv bool) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/app\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if withEnv {
-		if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envContent), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return root
-}
-
 func TestRegister_DefaultFileAtModuleRoot(t *testing.T) {
 	root := projectDir(t, "TT_ROOT_KEY=found\n", true)
 	sub := filepath.Join(root, "internal", "pkg")
@@ -210,18 +196,6 @@ func TestRegister_LoadsFlatten(t *testing.T) {
 	if _, ok := svc.Get("database").(map[string]any); !ok {
 		t.Error(test.DiffMessage(svc.Get("database"), "the parent map", "E12: the parent key is kept"))
 	}
-}
-
-func nested(depth int) map[string]any {
-	root := map[string]any{}
-	current := root
-	for i := 0; i < depth; i++ {
-		next := map[string]any{}
-		current["n"] = next
-		current = next
-	}
-	current["leaf"] = canary
-	return root
 }
 
 func TestRegister_LoadsTooDeep(t *testing.T) {
