@@ -4,10 +4,6 @@ import (
 	"testing"
 )
 
-var benchNoop = func(data any) any { return data }
-var benchPredicate = func(data any) bool { return true }
-var benchFalse = func(data any) bool { return false }
-
 func BenchmarkNewAggregation(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
