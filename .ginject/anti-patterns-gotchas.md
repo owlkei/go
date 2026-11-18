@@ -206,6 +206,22 @@ app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginj
 
 **Rule**: Call next() exactly once per middleware
 
+### 3.3 GOTCHA: Route Names From an Older Grammar
+
+Design 0019 changed the route DSL; names that used to register a path now stop `Create()` or move:
+
+- **Multi-word resources are kebab-case**: `READ_user_profile` is `GET /user-profile`, not
+  `/user_profile` (that is a 404). Keep `_` only with `ModuleBuilder().PathStyle(ginject.PathStyleAsWritten)`.
+- **Upper-case words are route words only**: `READ_orgs_FB`, `READ_logo_PNG_FILE`,
+  `SUBSCRIBE_chat_PERSON_ANY` panic `invalid route: <W> in <Name> is upper case but not a route word…`.
+  Write `READ_orgs_fb` / `READ_orgsFB`, `READ_logo_png_FILE`, `SUBSCRIBE_chat_person_ANY`.
+- **Malformed names panic** instead of guessing: `READ_users_BY`, `READ_OF_users`, `READ_txt_FILE`,
+  `READ_files_BY_name_ANY_x` (routing-system.md §1.6).
+- **A path no name can spell** goes through `instance.Path("/oauth2/token", instance.CREATE_token)`,
+  never an escape inside the name (`__` is not an escape: `BY_user__id` is the parameter `user__id`).
+- **Pages are `RENDER_` / `SUBMIT_`**, not a `ginject.Page` embed returning `ginject.View` (both
+  removed). A guard bound to `RENDER_x` only does not cover `SUBMIT_x`.
+
 ---
 
 ## 4. WebSocket Gotchas

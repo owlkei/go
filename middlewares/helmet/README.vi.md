@@ -105,9 +105,11 @@ Giúp `Helmet` là một `ginject.MiddlewareFn`. Chỉ dùng trong test; framewo
 ## Nonce
 
 `helmet` biên dịch sẵn dạng nonce của policy trong `NewMiddleware()`. Trên trang do Ginject render
-(`EnableRender`) có gọi `{{nonce}}`, `Content-Security-Policy` của response mang `'nonce-<N>'`, với
-`<N>` đúng là giá trị 32 ký tự mà trang ghi ra. Mọi response khác (API route, asset, trang không có
-`{{nonce}}`) gửi policy tĩnh, giữ nguyên từng byte.
+(`EnableRender`: một route `RENDER_` hoặc `SUBMIT_`, hoặc một trang lỗi HTML) có gọi `{{nonce}}`,
+`Content-Security-Policy` của response mang `'nonce-<N>'`, với `<N>` đúng là giá trị 32 ký tự mà trang
+ghi ra. Mọi response khác (API route, asset, file trong `public/`, trang không có `{{nonce}}`) gửi
+policy tĩnh, giữ nguyên từng byte. Các file CSS và JS của trang mà `{{pageAssets}}` liên kết là file
+cùng origin dưới `/assets/_pages/`, được `'self'` cho phép: chúng không cần nonce.
 
 ```html
 <script nonce="{{nonce}}">document.documentElement.dataset.theme = "dark"</script>

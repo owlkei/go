@@ -299,7 +299,7 @@ Topic: "users.created"
 | `*` | single-segment topics (`users`) | `users.created` |
 | `**` | Any topic | (nothing) |
 
-`SUBSCRIBE_chat_ANY` registers `chat.*`, so it handles one segment after `chat` only. The method-name DSL has no token for `**` yet (WebSocket roadmap).
+`SUBSCRIBE_chat_ANY` registers `chat.*`, so it handles one segment after `chat` only. `SUBSCRIBE_chat_ALL` registers `chat.**` (one or more segments: `chat.room1.typing`, not `chat`); `ALL` must be the last word (§5.2).
 
 ---
 
@@ -307,37 +307,53 @@ Topic: "users.created"
 
 ### 5.1 Handler Method Naming
 
-**WS Controllers embed `common.WS`**:
+**WS Controllers embed `common.WS`** (`ginject.WS`); every exported method whose name starts with
+`SUBSCRIBE_` is an event handler (`common.ParseWSFuncNameToEvent`, `internal/common/fn.go`):
+
 ```go
 type ChatController struct {
-    common.WS
+    ginject.WS
 }
-```
 
-**Handler methods = event names**:
-```go
-func (c ChatController) ON_MESSAGE_CREATED() string {
-    // Routes to topic: "message.created"
+func (c ChatController) SUBSCRIBE_message_created(payload ginject.WSPayload) string { // "message.created"
     return "event received"
 }
 
-func (c ChatController) ON_ROOM_MESSAGE() string {
-    // Routes to topic: "room.message"
-    return "ok"
+func (c ChatController) SUBSCRIBE_chat_ANY(payload ginject.WSPayload) ginject.WSPayload { // "chat.*"
+    return payload
+}
+
+func (c ChatController) SUBSCRIBE_chat_ALL(payload ginject.WSPayload) ginject.WSPayload { // "chat.**"
+    return payload
 }
 ```
 
 ### 5.2 Method Name → Topic Conversion
 
-**Algorithm**: Convert method name to topic
+```
+Method: SUBSCRIBE_chat_ANY_typing
+1. drop SUBSCRIBE_                       → chat_ANY_typing
+2. split at _, drop empty words          → chat, ANY, typing
+3. ANY → *, ALL → ** (ALL last only), other words lower-cased
+4. join with .                           → chat.*.typing
+```
 
-```
-Method: ON_MESSAGE_CREATED
-Step 1: Remove ON_ prefix → MESSAGE_CREATED
-Step 2: Convert to lowercase → message_created
-Step 3: Replace _ with . → message.created
-Result Topic: "message.created"
-```
+| Method | Topic |
+|---|---|
+| `SUBSCRIBE_chat_message` | `chat.message` |
+| `SUBSCRIBE_Chat_Message`, `SUBSCRIBE_chatRoom` | `chat.message`, `chatroom` (lower-cased) |
+| `SUBSCRIBE_chat_ANY` | `chat.*` |
+| `SUBSCRIBE_ANY` | `*` |
+| `SUBSCRIBE_chat_ALL` | `chat.**` |
+| `SUBSCRIBE_ALL` | `**` |
+| `SUBSCRIBE_chat_ANY_ALL` | `chat.*.**` |
+
+Panics at `Create()` (`invalid route: …`, the same rules as HTTP names, design 0019):
+- an upper-case word that is not `ANY` or `ALL` (`SUBSCRIBE_chat_V2`): `V2 in SUBSCRIBE_chat_V2 is upper case but not a route word; write it in lower case or camelCase`;
+- `ALL` not last (`SUBSCRIBE_chat_ALL_x`, `SUBSCRIBE_ALL_chat`): `ALL in <Name> must be the last word`.
+
+`PathStyle` does not apply to events (`_` is the segment separator). Two handlers of one topic
+panic `event conflict: …`.
 
 ---
 

@@ -184,6 +184,13 @@ the WebSocket roadmap:
 
 ## `loadshed` and long-lived requests (found in roadmap 0006)
 
+- Found 2026-11-18: `TestAdaptive_NoRefusalBelowCapacity_1CPU` (L12) refuses requests when the host is
+  busy (load average 3-4 from other processes), at `402b10f` too. The test measures capacity and then
+  offers 70 % of it, so another process taking CPU mid-run makes 70 % of the measured capacity more
+  than the CPU left. Make the acceptance step measure capacity again right before the check, or run it
+  only on a quiet runner.
+
+
 Every request in flight holds one slot of the concurrency limit for its whole life, so a few SSE
 clients, long polls or large downloads can fill the limit of a small machine and leave nothing for
 ordinary requests. Options to design: exclude routes or requests marked long-lived from the limit
@@ -229,6 +236,15 @@ Ginject gets a command-line tool. Commands discussed so far:
 - Later: the local devtools binary (`ginject devtools`) discussed for the devtools platform.
 
 ## Route DSL changes
+
+Follow-ups found by the roadmap 0008 review (2026-11-18), not decided:
+- Words after `BY`/`AND` and after `VERSION` absorb any all-upper-case word: `READ_users_BY_id_CREATE_x`
+  → `{id_CREATE_x}`, `READ_users_BY_id_ALL` → `{id_ALL}`, `READ_x_VERSION_OF_y` → version `OF_y`. A
+  future token would then change such a route silently, which the upper-case rule exists to prevent.
+  Proposal: stop a parameter name or a version at any all-upper-case word that is not a token, and
+  panic as the upper-case rule does.
+- Odd names accepted without a panic: `READ_logo_png_FILE_FILE` → `/logo.png`, `READ_ANY_ANY_FILE` →
+  `/*.*`, `SERVE_x_ANY_ANY` → `/x*/*`.
 
 Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
 
@@ -307,3 +323,31 @@ Also in scope:
 - Found 2026-11-18 (pages by route, step 17): a file in `public/` whose name holds `{` or `*` becomes a
   route parameter or a wildcard, so a file name can widen what the public route matches. Refuse such
   names at `Create()` (or escape them) in the security roadmap.
+- **Injection review (raised by the maintainer, 2026-11-18).** Ginject has no database layer yet, so
+  SQL injection is a rule for the storage roadmap: its API takes parameters only (placeholders through
+  `database/sql`), never a query built by string concatenation, and offers no raw-string escape helper;
+  `gosec` (G201/G202, already used by `ginject-security` audits) runs in CI. No input-sanitizing
+  "anti-injection" middleware: escaping belongs at the sink (SQL parameters, `html/template`, headers).
+  Review every other sink in this roadmap: HTML (`html/template`, `template.HTML` in data), headers and
+  redirects (CR/LF, open redirect), logs (control characters: escaped in all formats, verify Text),
+  paths (static, `assets/`, `public/`, file uploads), template names (table built at `Create()`), JSON
+  (encoder), and later commands and queries in the storage and HTTP client roadmaps.
+
+## Regroup test files
+
+Taken by roadmap 0008 (step 20, 2026-11-18: after its review, before its `make check`).
+
+### Plan
+
+The rule is in `.ginject/conventions.md` › Tests › Files. Move every test into the `_test.go` of the
+code file that implements it (`internal/core`: 14 `create_*_test.go` → `app_test.go` /
+`container_test.go`; `http_page_*_test.go` → `http_page_test.go`; `http_page_error_test.go` and
+`http_error_page_test.go` → `http_error_test.go`; root `surface_*_test.go` → `surface_test.go`; the same
+in every package), helpers into one `helpers_test.go` per package. Moves only, no test changed: the
+count of tests and benchmarks per package is the same before and after (`go test -list .`), and
+`make check` passes. One commit per package.
+- Found 2026-11-18 (review of roadmap 0008): `public/` file names holding `*` or `{…}` register a wildcard
+  or a parameter route (`public/*` answers `GET /anything`, `public/{id}/x` answers `GET /zz/x`), and
+  `public/{id}.txt` panics with a route message that doesn't name the file. Refuse such names with an
+  `invalid render: public/<name> …` panic, or register them as literal segments. A file with a space
+  in its name can't be reached (cause not found yet).

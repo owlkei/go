@@ -16,6 +16,7 @@ Internal package: applications use `ginject.New()`, `ginject.ModuleBuilder()` an
     - [Configuration methods](#configuration-methods)
   - [Modules and lifecycle](#modules-and-lifecycle)
     - [ModuleBuilder](#modulebuilder)
+    - [PathStyle](#pathstyle)
     - [`Module` fields](#module-fields)
     - [Prefix and ID](#prefix-and-id)
     - [Provider and Controller](#provider-and-controller)
@@ -228,18 +229,20 @@ func NewModuleBuilder() *ModuleBuilder
 func (m *ModuleBuilder) Imports(modules ...any) *ModuleBuilder
 func (m *ModuleBuilder) Providers(providers ...Provider) *ModuleBuilder
 func (m *ModuleBuilder) Controllers(controllers ...Controller) *ModuleBuilder
+func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder
 func (m *ModuleBuilder) Build() *Module
 ```
 
-`NewModuleBuilder()` starts a module (the root package's `ginject.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `Build()` returns the `*Module`.
+`NewModuleBuilder()` starts a module (the root package's `ginject.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
 
 #### Parameters
 - `Imports`: `...any`, each a `*Module` or a module func whose type starts with `func(` and returns `*core.Module`.
 - `Providers`: `...Provider`, provider values (see [Provider and Controller](#provider-and-controller)).
 - `Controllers`: `...Controller`, controller values.
+- `PathStyle`: `common.PathStyleKebab` or `common.PathStyleAsWritten` (`ginject.PathStyleKebab`, `ginject.PathStyleAsWritten`).
 
 #### Returns
-- `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `Providers`, `Controllers`: the same builder.
+- `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `Providers`, `Controllers`, `PathStyle`: the same builder.
 - `Build`: `*Module`, a new module with its own `ID()` and a resolved `Name`.
 
 #### Usage
@@ -259,6 +262,24 @@ var AppModule = core.NewModuleBuilder().
 - An import that is neither a `*Module` nor a module func panics `invalid module: can't pass '<type>' type as module` when `Build` runs.
 - `Name` is `<package>.<variable>` of the variable the module is assigned to (a `var X = func() *core.Module {…}` or a `var X = factory()` included), else `<package>.<function>` of the function that calls `Build`. A module built as an argument of `Imports` gets its own factory's name, never the outer variable's.
 - Chained calls accumulate: `Providers(p1).Providers(p2)` lists both.
+- `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` at the call. Called twice, the last call wins.
+
+### PathStyle
+
+The style of a controller is the explicit style of the first module that set one, in this order: the module that lists the controller, then each module that imports it (directly or through other modules) in the order `Create()` discovers them (depth first, `Imports` order: the order in which module prefixes are stacked). No module set one: `PathStyleKebab`.
+
+- A root with `PathStyle(PathStyleAsWritten)` and modules without a style: `READ_payment_intents` is `/payment_intents/` in the root's own controllers and in every imported module, static or a module func.
+- An imported module with `PathStyle(PathStyleKebab)` under an as-written root keeps `/payment-intents/`, and so do the modules it imports that set none (the nearest explicit setting wins).
+- Two parents `A` (as written) and `B` (kebab) both import `M` (no style): `Imports(A, B)` gives `M` as written, `Imports(B, A)` kebab. `M`'s controller is still bound once.
+- The style applies to resource words only: never to prefixes, `Path`, parameters, versions or WebSocket events.
+- Two apps that build their modules separately do not share a style.
+
+```go
+var BillingModule = core.NewModuleBuilder().
+	PathStyle(common.PathStyleAsWritten).
+	Controllers(BillingController{}).
+	Build()
+```
 
 ### `Module` fields
 
@@ -372,6 +393,7 @@ Inside one app, a guard, interceptor, exception filter or middleware is construc
 - `Create(nil)` panics `invalid module: Create needs a root module`.
 - A second `Create` on one app panics `invalid app: Create called twice`.
 - A configuration method after `Create` panics `invalid app: <Method> must be called before Create`.
+- A route name the parser would misread panics `invalid route: …` (an upper-case word that is not a route word, `BY` without a name, a word after the parameters, `OF` with nothing on one side, `FILE` without a name and an extension, `ALL` not last in a WebSocket name): see [common › Route DSL](../common/README.md#route-dsl). So do the misuses of `Path` ([common › Path](../common/README.md#path)).
 - Two routes of one app with the same method, version and shape (parameter names don't count) panic `route conflict: <fn> method is conflicted with <fn> method`; two handlers of one event panic `event conflict: <fn> event is conflicted with <fn> event`.
 
 ## Server

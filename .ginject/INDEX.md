@@ -153,6 +153,19 @@ error from a guard onwards → module exception filter → global exception filt
 2. Create method: `READ()` / `CREATE()` / etc.
 3. Add parameters (injected automatically)
 4. Register in `ModuleBuilder().Controllers(...)`
+5. URLs are kebab-case (`READ_user_profile` → `/user-profile`); `PathStyle`, `Path` and the names that panic: [routing-system.md](routing-system.md) §1
+
+### "I need a server-rendered page"
+**Files to read**:
+1. `README.md` › Pages, `internal/core/README.md` › Pages
+2. [routing-system.md](routing-system.md) §6.3, [request-pipeline.md](request-pipeline.md) §1.3a
+
+**Steps**:
+1. `app.EnableRender(&ginject.RenderOptions{FS: web})` before `Create` (`//go:embed web`)
+2. In a `ginject.HTTP` controller: `RENDER_bookings()` → `GET /bookings`, template `web/bookings/index.html` (or `bookings.html`); return the data
+3. A form: `SUBMIT_<same words>(c ginject.HTTPContext, form MyForm)` posts to the same URL; return the form to re-render with 422, or `c.Redirect(url)` for 303
+4. Error pages: `web/404.html`, `web/4xx.html`, `web/5xx.html`; root-URL files in `web/public/`; page CSS / JS as `X.css` / `X.js` next to `X.html`, linked by `{{pageAssets}}`
+5. Bind `helmet.Helmet{}` and `csrf.CSRF{}` globally
 
 ### "I need to validate input"
 **Files to read**:
@@ -183,7 +196,7 @@ error from a guard onwards → module exception filter → global exception filt
 **Steps**:
 1. Call `app.EnableWS(&ginject.WSOptions{Path: "/ws"})` before `app.Create()`
 2. Embed `ginject.WS` in controller
-3. Create method: `SUBSCRIBE_chat_PERSON_ANY()` (see [websocket-system.md](websocket-system.md))
+3. Create method: `SUBSCRIBE_chat_ANY()` (`chat.*`; `SUBSCRIBE_chat_ALL` for every deeper topic) (see [websocket-system.md](websocket-system.md))
 4. Inject `ginject.Publisher` for fanout
 5. Call `publisher.Publish(topic, data)`
 

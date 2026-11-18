@@ -65,11 +65,12 @@ One writer for the HTTP layer, `recoverRequest`, `answerNoRoute` and the built-i
 response writes it and returns without `next()`.
 
 - Format: JSON without `EnableRender`. With it: a page route from its first guard on is HTML
-  (`ctx.HTTPIsPage`), an API / `SERVE` route JSON; before any guard (middlewares, 404, 405, 410)
+  (`ctx.HTTPIsPage`), an API / `SERVE` / asset / public file route JSON; before any guard (middlewares, 404, 405, 410)
   HTML when an `Accept` value contains `text/html`, else JSON, plus `Vary: Accept`.
 - JSON body `{"code":<int>,"error":<string>,"message":<string>}`, `Content-Type: application/json`;
-  HTML is `error.html` in the root layout (data `Code`, `Status`, `Message`, `RequestID`) or a
-  built-in page when it is missing or fails (`RenderFailed`). `Content-Length`, `Content-Encoding`,
+  HTML is the first root file of `<code>.html`, `<N>xx.html` (`4xx.html`, `5xx.html`) in the root
+  layout (data `Code`, `Status`, `Message`, `RequestID`; `render.RenderError`), or a built-in page
+  when none exists or the chosen one fails (`RenderFailed`; the next file is not tried). `Content-Length`, `Content-Encoding`,
   `ETag` and `Last-Modified` set earlier are removed, other headers (`X-Request-Id`, `Traceparent`,
   CORS, `Allow`, `Retry-After`) stay.
 - Client text (`clientText` in `internal/core/fn.go`, design 0018 R24): code 500 or outside 400-599
@@ -106,26 +107,31 @@ response writes it and returns without `next()`.
   (`serveFromRoot` in `internal/core/http.go`): dot segments other than `.well-known` and symbolic links
   leaving the served directory answer 404.
 
-### 1.3a Page routes (design 0018)
+### 1.3a Page routes (design 0018 amendment 2)
 
-A route of a controller that embeds `common.Page` (`HTTPLayer.IsPage` → `httpRoute.isPage`; never a
-`SERVE_…` handler) runs the same boxes. The differences:
+A `RENDER_` (GET, HEAD) or `SUBMIT_` (POST on the path of the `RENDER_` with the same words, same
+controller) route of a `common.HTTP` controller (`HTTPLayer.IsPage` → `httpRoute.isPage`, the bound
+template in `HTTPLayer.Template`) runs the same boxes. The differences:
 
-- `serveRoute` marks the context (`ctx.HTTPSetPage`) before the first guard: the default status stays
-  200 for every method (no 201 for POST), `c.Redirect` without a 3xx status answers 303 (API: 301),
-  and errors from the first guard on are HTML (§ 1.2).
+- `serveRoute` marks the context (`ctx.HTTPSetPage`) before the first guard: the default status is
+  200 for `RENDER_` and 422 for a `SUBMIT_` that renders (no 201), `c.Redirect` without a 3xx status
+  answers 303 (API: 301), and errors from the first guard on are HTML (§ 1.2).
 - `writeResult` → `writePage` (`internal/core/http_page.go`) after the post-interceptors: if the
-  writer already has a status (redirect, direct write) nothing is written; a result that is not a
-  `common.View` (a post-interceptor replaced it) or a failed render → fixed 500 HTML +
-  `RenderFailed` (`RenderReloadFailed` with `IsReload`); else the whole page from a pooled
-  `render.Buffer`, `Content-Type: text/html; charset=utf-8`, `Content-Length`, `Cache-Control:
-  no-cache` unless set, and the nonce placed into `helmet`'s precompiled CSP form. `HEAD` writes no
-  body.
-- With a tracer listener: one `render` stage event after `handler`, before `complete` (`error` /
-  `error (built-in)` for error pages).
-- The asset route (`/assets/*`, `addAssetRoute` in `internal/core/http_asset.go`) exists only when
-  `RenderOptions.FS` has an `assets` directory; it is a `SERVE` route (JSON errors), runs the global
-  middlewares and guards, and answers `ETag` + `immutable` for a matching `?v=` hash.
+  writer already has a status (redirect, direct write) nothing is written; else the only or last
+  result (any type, `nil` without one) is the data of the route's template, rendered into a pooled
+  `render.Buffer`: `Content-Type: text/html; charset=utf-8`, `Content-Length`, `Cache-Control:
+  no-cache` unless set, and the nonce placed into `helmet`'s precompiled CSP form. A failed render →
+  fixed 500 HTML + `RenderFailed` (`RenderReloadFailed` with `IsReload`). `HEAD` writes no body.
+- Page routes are version-neutral; `PUT` on a page path answers 405 with `Allow: GET, HEAD, POST`.
+  A layer bound to `RENDER_x` only does not run on `SUBMIT_x`.
+- With a tracer listener: one `render` stage event after `handler`, before `complete` (name = the
+  template path, `404` / `4xx` for error pages, `error (built-in)`).
+- The asset route (`/assets/*`, `addAssetRoute` in `internal/core/http_asset.go`) exists when
+  `Dir/assets` or a page CSS / JS file exists; it is a `SERVE` route (JSON errors), runs the global
+  middlewares and guards, answers `ETag` + `immutable` for a matching `?v=` hash, and serves
+  `/assets/_pages/<path>` (only the CSS / JS files that templates own).
+- Public files: one `GET` route per file of `Dir/public` at its path below `public`
+  (`public/<path>` in the route log), `no-cache` + `ETag`, JSON errors, global middlewares and guards.
 
 ### 1.4 Where it lives in the code
 
@@ -531,7 +537,7 @@ the route's filters receive ForbiddenException("Access denied")
 the built-in filter answers 403 {"code":403,"error":"Forbidden","message":"Access denied"} unless a user filter handles it
 ```
 
-On a page route (`common.Page`, with `EnableRender`) the same 403 is the HTML error page.
+On a page route (`RENDER_`, `SUBMIT_`, with `EnableRender`) the same 403 is the HTML error page (`403.html`, `4xx.html` or the built-in page).
 
 ### 7.3 Timeout Handling
 

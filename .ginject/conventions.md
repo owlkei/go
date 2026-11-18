@@ -144,6 +144,15 @@ Correctness and race-freedom come first, always. Then the rule depends on where 
 
 ## Tests
 
+- **Files (decided 2026-11-18):** tests sit next to the code that implements the behavior: `x.go` ↔
+  `x_test.go`, benchmarks in `x_bench_test.go`. A test that goes through the whole app (`New`, `Create`,
+  `ServeHTTP`) belongs to the file of the code that implements the behavior, not the entry it calls
+  through (an HTML error page → `http_error_test.go`). One `helpers_test.go` per package for test-only
+  helpers; fixtures in `testdata/`; the root package's surface tests in `surface_test.go`. A test file
+  named after a topic (`http_page_form_test.go`) is not allowed, except a test of a whole specification
+  named after it (`lifecycle_test.go` for core's request lifecycle). A test file near 1,500 lines means
+  the code file is too large: split the code, and its tests follow. Existing files are being regrouped
+  (backlog › "Regroup test files").
 - **Name:** `Test<Subject>_<Behavior>` (818 of 998 tests have one or two underscores):
   `TestMemoryCache_GetMiss`, `TestWSConnection_TrySend_ConcurrentSendsNoRace`.
 - **One function per behavior**, not table tests (`t.Run` appears in one test file).

@@ -69,15 +69,17 @@ requests. Non-browser clients send neither.
 
 ## Forms on rendered pages
 
-A page that Ginject renders (`EnableRender`, a `ginject.Page` controller) needs nothing more for its
-forms: no token, no hidden field and no template function. Browsers send `Sec-Fetch-Site` with the
-form post, and `csrf` refuses it when it comes from another origin.
+A page that Ginject renders (`EnableRender`, a `RENDER_` route) needs nothing more for its forms: no
+token, no hidden field and no template function. The form posts to its own URL, which the
+`SUBMIT_` route of the same words answers (`<form method="post" action="/bookings/new">` reaches
+`SUBMIT_new_OF_bookings`). Browsers send `Sec-Fetch-Site` with the form post, and `csrf` refuses it
+when it comes from another origin.
 
 - `csrf` is a middleware, so its refusal comes before any route: a request whose `Accept` header
   holds `text/html`, as a browser's form post does, gets the app's HTML error page (`403`, with
-  `error.html` when the templates have one); any other request gets the JSON body above. The
-  response carries `Vary: Accept`.
-- A same-origin form post passes and reaches the page handler and its `Form` pipe.
+  `403.html` or `4xx.html` when the templates have one, else the built-in page); any other request
+  gets the JSON body above. The response carries `Vary: Accept`.
+- A same-origin form post passes and reaches the `SUBMIT_` handler and its `Form` pipe.
 - Without `EnableRender`, every refusal is the JSON body.
 
 See [Pages › Forms](../../README.md#forms) in the main README.

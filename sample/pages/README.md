@@ -1,6 +1,6 @@
 # sample/pages
 
-A small booking site rendered on the server: Ginject page routes, `html/template` views and
+A small booking site rendered on the server: Ginject page routes (`RENDER_`, `SUBMIT_`), `html/template` and
 [Owlky](https://github.com/dangduoc08/owlky)'s framework-free HTML components. It has no JavaScript of
 its own apart from one inline line that picks the light or dark theme.
 

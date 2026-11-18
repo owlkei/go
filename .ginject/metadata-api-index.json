@@ -25,8 +25,6 @@
       "WSOptions": "core.WSOptions",
       "RenderOptions": "core.RenderOptions",
       "HTTP": "common.HTTP",
-      "Page": "common.Page",
-      "View": "common.View",
       "WS": "common.WS",
       "Guard": "common.Guard",
       "Interceptor": "common.Interceptor",
@@ -51,13 +49,16 @@
       "DataFile": "*ctx.DataFile",
       "Aggregation": "*aggregation.Aggregation",
       "VersioningOptions": "versioning.Options",
-      "VersioningType": "versioning.Type"
+      "VersioningType": "versioning.Type",
+      "PathStyle": "common.PathStyle"
     },
     "root_constants": [
       "VersioningQuery = 1",
       "VersioningHeader = 2",
       "VersioningCustom = 3",
-      "VersioningMediaType = 4"
+      "VersioningMediaType = 4",
+      "PathStyleKebab = 1",
+      "PathStyleAsWritten = 2"
     ],
     "note": "The packages below are documented by their internal name (core, ctx, common, aggregation, versioning live under internal/); applications reach them only through the root aliases. log.Logger and log.LogAdapter moved from common to log."
   },
@@ -151,7 +152,7 @@
             {
               "name": "EnableRender",
               "signature": "EnableRender(opts *RenderOptions) *App",
-              "purpose": "Server-rendered HTML pages for common.Page controllers (before Create; nil opts or nil FS panics `invalid render: EnableRender needs RenderOptions.FS`, a second call `invalid render: EnableRender called twice`); templates parsed once at Create (design 0018)"
+              "purpose": "Server-rendered HTML pages: RENDER_ / SUBMIT_ routes of common.HTTP controllers (before Create; nil opts or nil FS panics `invalid render: EnableRender needs RenderOptions.FS`, a second call `invalid render: EnableRender called twice`); templates parsed once and bound to their routes at Create (design 0018 amendment 2)"
             },
             {
               "name": "EnableDevtool",
@@ -191,6 +192,7 @@
             "Imports(modules ...any) *ModuleBuilder - *Module values or module funcs (func(...) *core.Module)",
             "Providers(providers ...Provider) *ModuleBuilder",
             "Controllers(controllers ...Controller) *ModuleBuilder",
+            "PathStyle(style common.PathStyle) *ModuleBuilder - PathStyleKebab (default: READ_user_profile -> /user-profile) or PathStyleAsWritten (/user_profile); inherited by imports like Prefix, an explicit setting wins; another value panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten`",
             "Build() *Module"
           ],
           "notes": "No Export or IsGlobal builder methods exist: set m.IsGlobal on the built module."
@@ -211,7 +213,8 @@
         "RenderOptions": {
           "description": "Argument of EnableRender (root alias ginject.RenderOptions)",
           "fields": {
-            "FS": "fs.FS, required: templates (layout.html per directory, top-level partials/, root error.html, every other .html is a page named by its path without .html) and assets/ served at /assets/*",
+            "FS": "fs.FS, required: holds Dir. In Dir: layout.html per directory, top-level partials/, root error pages <400-599>.html / 4xx.html / 5xx.html, assets/ served at /assets/*, public/ served at the root URL, X.css / X.js next to X.html (linked by {{pageAssets}}, served at /assets/_pages/...), every other .html is the template of the page route with that path (<path>.html or <path>/index.html) and stops Create without one",
+            "Dir": "string: the directory of FS holding the files (default web, . for the root of FS)",
             "IsReload": "bool: re-parse when a template file's name, size or modification time changed, checked per render; assets read per request, no-cache, no ?v= (development only)"
           }
         },
@@ -296,7 +299,7 @@
       },
       "embedded_types": {
         "HTTP": "Embed in controller to enable HTTP routing (there is NO common.REST type — do not generate it)",
-        "Page": "Embed instead of HTTP for server-rendered HTML page routes (same route words, prefixes, layers, pipes). Handlers return common.View{Name, Data}. Embedding both HTTP and Page panics `invalid controller: <Type> embeds both ginject.HTTP and ginject.Page`; needs EnableRender. Has its own Prefix(path, handlers...) *Page. Default status 200 for every method, c.Redirect without a 3xx status answers 303, errors from the first guard on are HTML",
+        "HTTP methods": "Prefix(v string, handlers ...any) *HTTP (controller prefix, may hold {param}); Path(v string, handlers ...any) *HTTP (exact path replacing what the name spells; prefixes, method and version still apply). There is no Page embed and no View type: RENDER_ / SUBMIT_ methods of an HTTP controller are page routes (needs EnableRender), the result is the template's data; 200 for RENDER_, 422 for a SUBMIT_ that renders, c.Redirect without a 3xx status answers 303, errors from the first guard on are HTML",
         "WS": "Embed in controller to enable WebSocket routing",
         "Middleware": "Separate embeddable type providing BindMiddleware(MiddlewareFn, ...any) *Middleware — not a field on HTTP/WS",
         "Guard": "Separate embeddable type providing BindGuard(any, ...any) *Guard",
@@ -313,15 +316,20 @@
           "UPDATE": "PUT",
           "MODIFY": "PATCH",
           "DELETE": "DELETE",
-          "PREFLIGHT": "OPTIONS"
+          "PREFLIGHT": "OPTIONS",
+          "RENDER": "GET page (template by route, needs EnableRender)",
+          "SUBMIT": "POST on the path of the RENDER_ with the same words (same controller)",
+          "SERVE": "static files (GET)"
         },
         "path_separators": {
-          "BY": "path parameter (`:paramName`)",
-          "AND": "additional path segment",
-          "OF": "sub-resource",
-          "ANY": "wildcard segment",
-          "FILE": "file serving"
+          "BY": "path parameter ({name}, the exact text of the method name)",
+          "AND": "one more parameter of the current resource",
+          "OF": "parent resource, placed before the current one",
+          "ANY": "wildcard *",
+          "FILE": "the joint before the preceding word becomes '.' (READ_robots_txt_FILE -> /robots.txt)",
+          "ALL": "WebSocket only, last word: ** (one or more segments)"
         },
+        "path_style": "resource words joined with '-' (PathStyleKebab, default) or '_' (PathStyleAsWritten, set with ModuleBuilder().PathStyle); never applied to prefixes, Path, parameters, versions or events. An upper-case word that is not a route word panics `invalid route: <W> in <Name> is upper case but not a route word; write it in lower case or camelCase`",
         "versioning": {
           "VERSION_X": "API version tag (e.g., VERSION_1, VERSION_2)"
         }
@@ -329,8 +337,11 @@
       "examples": {
         "READ_BY_ID": "GET /{ID}",
         "READ_BY_ID_AND_NAME": "GET /{ID}/{NAME}",
-        "CREATE_OF_COMMENTS": "POST /comments",
-        "DELETE_BY_ID_VERSION_2": "DELETE /{ID} (version 2)",
+        "READ_user_profile": "GET /user-profile (/user_profile with PathStyleAsWritten)",
+        "READ_new_OF_bookings": "GET /bookings/new",
+        "CREATE_comments_OF_posts_BY_post_id": "POST /posts/{post_id}/comments",
+        "DELETE_users_BY_id_VERSION_2": "DELETE /users/{id} (version 2)",
+        "RENDER_bookings_BY_id": "GET /bookings/{id}, template bookings/{id}.html",
         "READ_ANY": "GET /*"
       },
       "notes": [
@@ -339,14 +350,18 @@
       ]
     },
     "render": {
-      "responsibility": "internal/render, not importable: html/template sets of RenderOptions.FS parsed once at Create, pooled buffers (dropped past 256 KiB, 8 MiB page limit), the {{nonce}} placeholder overwritten in place, the asset hash table (docs: internal/render/README.md)",
+      "responsibility": "internal/render, not importable: html/template sets of RenderOptions.FS parsed once at Create and bound to page routes by path (Bind), error pages by status, pooled buffers (dropped past 256 KiB, 8 MiB page limit), the {{nonce}} placeholder overwritten in place, the asset hash table (docs: internal/render/README.md)",
       "template_functions": {
         "nonce": "the response's CSP nonce, 32 lowercase hex from crypto/rand, same in helmet's header",
         "asset": "/assets/<path>?v=<first 8 bytes of SHA-256 as hex>; no ?v= with IsReload; unknown file fails the render",
-        "dict": "map[string]any from key/value pairs, for partials"
+        "dict": "map[string]any from key/value pairs, for partials",
+        "pageAssets": "<link> / <script defer> tags of the CSS and JS files named after the layout and the page, at /assets/_pages/<path>?v=<hash>; built once per page set"
       },
       "errors": [
-        "ErrUnknownPage",
+        "ErrNoTemplate",
+        "ErrTwoTemplates",
+        "ErrReservedDir",
+        "ErrErrorPageName",
         "ErrPageTooLarge",
         "ErrNoErrorPage",
         "*FileError{File, Err}"
@@ -532,8 +547,8 @@
     "Code after next() runs before the next layer, not after the handler: post-handler work belongs in an interceptor's Pipe operators",
     "Configuration methods (BindGlobal*, Enable*, SetLogger) only before Create",
     "Providers are fields, never handler parameters",
-    "Page handlers return ginject.View (only or last result); API handlers never do. Template functions are fixed (nonce, asset, dict): no user FuncMap",
-    "Errors: a matched page route from its first guard on answers HTML, an API / SERVE / asset route JSON; before any guard (middlewares, 404, 405, 410) HTML only when Accept contains text/html. A cause's text and a 500's own message never reach the client"
+    "Pages are RENDER_ / SUBMIT_ routes: the route picks the template (<path>.html or <path>/index.html), the only or last result is the data; there is no ginject.Page or ginject.View. Template functions are fixed (nonce, asset, dict, pageAssets): no user FuncMap",
+    "Errors: a matched page route from its first guard on answers HTML (<code>.html, then <N>xx.html, then built-in), an API / SERVE / asset / public file route JSON; before any guard (middlewares, 404, 405, 410) HTML only when Accept contains text/html. A cause's text and a 500's own message never reach the client"
   ],
   "common_mistakes": [
     "Type mismatch between provider and handler parameter",

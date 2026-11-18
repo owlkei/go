@@ -201,9 +201,11 @@ only; the framework always calls `NewMiddleware`.
 ## Nonce
 
 `helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Ginject
-(`EnableRender`) that calls `{{nonce}}`, the response's `Content-Security-Policy` carries
-`'nonce-<N>'`, where `<N>` is the same 32-character value the page writes. Every other response
-(API routes, assets, pages without `{{nonce}}`) sends the static policy, byte for byte.
+(`EnableRender`: a `RENDER_` or `SUBMIT_` route, or an HTML error page) that calls `{{nonce}}`, the
+response's `Content-Security-Policy` carries `'nonce-<N>'`, where `<N>` is the same 32-character
+value the page writes. Every other response (API routes, assets, public files, pages without
+`{{nonce}}`) sends the static policy, byte for byte. The page CSS and JS files that `{{pageAssets}}`
+links are same-origin files under `/assets/_pages/`, allowed by `'self'`: they need no nonce.
 
 ```html
 <script nonce="{{nonce}}">document.documentElement.dataset.theme = "dark"</script>

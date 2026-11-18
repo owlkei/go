@@ -127,7 +127,7 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
 
 | Path | Holds | Importable by applications |
 |---|---|---|
-| `/` (package `ginject`: `aliases.go`, `trace.go`) | `New`, `ModuleBuilder`, `TraceTransport` and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `RenderOptions`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
+| `/` (package `ginject`: `aliases.go`, `trace.go`) | `New`, `ModuleBuilder`, `TraceTransport` and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `RenderOptions`, `PathStyle`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
 | `exception`, `log`, `middlewares/*`, `modules/*`, `guards/*` | exceptions, the logger and `log.Logger` / `log.LogAdapter`, built-in middlewares, modules and the throttler guard | yes |
 | `internal/core`, `internal/common`, `internal/ctx` | the container and server, the controller embeds and layers, the request contexts | no (root aliases) |
 | `internal/render` | the `html/template` engine behind `EnableRender`: template sets, pooled buffers, the nonce, the asset table (design 0018) | no |
@@ -148,7 +148,7 @@ Ginject is a NestJS-inspired dependency injection web framework for Go. The core
   `ginject.WSContext`, `ginject.Aggregation`. Runtime errors start with `ginject:` (`cache:` for the memory store).
 - Naming: settings structs `XxxOptions` passed as `opts *XxxOptions` (`nil` = defaults); option booleans
   `Is…`; accessors without `Get` (`Code()`, `ID()`); enum-like constants `<Type><Value>` (`log.LevelDebug`,
-  `log.FormatJSON`, `throttler.StrategyFixedWindow`, `proxy.HeaderXForwarded`, `ginject.VersioningHeader`).
+  `log.FormatJSON`, `throttler.StrategyFixedWindow`, `proxy.HeaderXForwarded`, `ginject.VersioningHeader`, `ginject.PathStyleKebab`).
 
 ### DI Container (`internal/core/`)
 
@@ -157,16 +157,17 @@ Written as an application writes it (root aliases):
 - **Provider**: any struct implementing `NewProvider() ginject.Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
 - **Controller**: any struct implementing `NewController() ginject.Controller`. Must embed `ginject.HTTP` (API and page routes) and/or `ginject.WS` (WebSocket) to register routes. There is no `REST` embed.
 - **Page** (design 0018 amendment 2, `README.md` › Pages, `internal/core/README.md` › Pages): `app.EnableRender(&ginject.RenderOptions{FS: web, IsReload: dev})` (`Dir` defaults to `web`; with an `embed.FS`, `IsReload` reads it from disk) before `Create`. In a `ginject.HTTP` controller, `RENDER_<route>` is a GET page and `SUBMIT_<route>` the POST on the same path; the route picks the template (`<path>.html` or `<path>/index.html` after prefixes and `PathStyle`, `{id}` for parameters), the handler's result is the data. Files in `Dir`: `layout.html` per directory tree, top-level `partials/`, root `<400–599>.html` / `4xx.html` / `5xx.html` error pages, `assets/` (served at `/assets/*`), `public/` (served at the root URL), `X.css` / `X.js` next to `X.html` (linked by `{{pageAssets}}`, served at `/assets/_pages/…`); an `.html` without a route stops `Create`. Fixed template functions `nonce`, `asset`, `dict`, `pageAssets` (no user `FuncMap`). `RENDER_` answers 200, a `SUBMIT_` that renders 422, `c.Redirect` → 303. Forms: a `Form` pipe (exported fields only) + `Bind` + `FieldLevel`. `html/template` strips JavaScript comments in inline scripts.
-- **Module**: built with `ginject.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()` (inside the engine: `core.NewModuleBuilder()`). Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`internal/core/README.md` › Modules and lifecycle).
+- **Module**: built with `ginject.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()` (inside the engine: `core.NewModuleBuilder()`); `.PathStyle(ginject.PathStyleAsWritten)` keeps `_` in its URLs and those of its imports (default `ginject.PathStyleKebab`; inherited like `Prefix`, an explicit setting wins). Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`internal/core/README.md` › Modules and lifecycle).
 - **App**: created via `ginject.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `ginject.ServerOptions`: `ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`; `internal/core/README.md` › Server).
 
 ### REST Route Convention
 
-Controller method names are parsed into HTTP routes — no annotations needed. Naming tokens: `READ`→GET, `CREATE`→POST, `UPDATE`→PUT, `MODIFY`→PATCH, `DELETE`→DELETE, `PREFLIGHT`→OPTIONS. Separator tokens: `BY` (path param), `AND` (additional segment), `OF` (sub-resource), `ANY` (wildcard), `VERSION` (version tag), `FILE` (file serving).
+Controller method names are parsed into HTTP routes — no annotations needed (design 0019; `README.md` › Routes from method names, `internal/common/README.md` › Route DSL). Operation tokens: `READ`→GET, `CREATE`→POST, `UPDATE`→PUT, `MODIFY`→PATCH, `DELETE`→DELETE, `PREFLIGHT`→OPTIONS, `RENDER`→GET page, `SUBMIT`→POST on its `RENDER_`'s path, `SERVE`→static files. Route words: `BY` (path param), `AND` (another param), `OF` (parent resource, placed first), `ANY` (wildcard `*`), `FILE` (`READ_robots_txt_FILE` → `/robots.txt`), `VERSION` (version tag); WebSocket: `ANY` (`*`), `ALL` (`**`, last word only).
 
-Example: `READ_BY_ID_AND_NAME` → `GET /{ID}/{NAME}` (parameter names keep the method name's case; `READ_users_BY_id` → `GET /users/{id}`)
-
-Versioning adds a `_VERSION_X` suffix: `READ_VERSION_1` → version 1 of that route.
+- Words of one resource are kebab-case: `READ_user_profile` → `GET /user-profile` (`/user_profile` with `PathStyleAsWritten`). camelCase, parameter names, versions, `Prefix` and `Path` strings are never rewritten. Non-resource segments go through `OF`: `READ_new_OF_bookings` → `GET /bookings/new`.
+- Example: `READ_BY_ID_AND_NAME` → `GET /{ID}/{NAME}` (parameter names keep the method name's case; `READ_users_BY_id` → `GET /users/{id}`). Versioning adds a `_VERSION_X` suffix: `READ_VERSION_1` → version 1 of that route.
+- `instance.Path("/oauth2/token", instance.CREATE_token)` in `NewController()` gives a handler an exact path; method, version and prefixes still apply.
+- An upper-case word that is not a route word (`READ_orgs_FB`, `SUBSCRIBE_chat_V2`) and a malformed name (`READ_users_BY`, `READ_OF_users`, `READ_txt_FILE`) stop `Create()` with `invalid route:`.
 
 ### Request Pipeline (per route)
 
@@ -231,7 +232,7 @@ There is no HTTP client or persistence module: outbound calls use `net/http` wit
 
 ### WebSocket
 
-Controllers embed `ginject.WS` (alongside or instead of `ginject.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_PERSON_ANY`); enable the endpoint with `app.EnableWS(&ginject.WSOptions{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `ginject.WSPayload` for incoming events and fan out through `ginject.Publisher`.
+Controllers embed `ginject.WS` (alongside or instead of `ginject.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_ANY` → `chat.*`, `SUBSCRIBE_chat_ALL` → `chat.**`); enable the endpoint with `app.EnableWS(&ginject.WSOptions{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `ginject.WSPayload` for incoming events and fan out through `ginject.Publisher`.
 
 ### Bootstrap-time Error Convention
 
@@ -241,9 +242,9 @@ Message format is `"<category>: <detail>"`:
 - `"route conflict: ..."` (`internal/core/container.go`, per app: the same method, version and route shape; routes that differ only in parameter names conflict; `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`)
 - `"event conflict: ..."` (`internal/core/container.go`, per app)
 - `"invalid handler: ..."` (`internal/routing/router.go`; `internal/core/container.go`: a `SUBMIT_` without the `RENDER_` of the same words in its controller)
-- `"invalid route: ..."` (`internal/routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments; `internal/common`: `ANY`, `VERSION` or `FILE` in a page route name, `Path` or `Prefix` bound to a `SUBMIT_`; `internal/core/container.go`: a page route whose path holds a wildcard)
+- `"invalid route: ..."` (`internal/routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments; `internal/common`: an upper-case word that is not a route word, `BY` / `AND` without a name, a word after the parameters, `OF` with nothing on one side, `FILE` without a name and an extension, `ALL` not last, `ANY`, `VERSION` or `FILE` in a page route name, a `Path` without a handler, bound to a non-route, set twice or holding `?` / `#`, `Path` or `Prefix` bound to a `SUBMIT_`; `internal/core/container.go`: a page route whose path holds a wildcard)
 - `"invalid render: ..."` (`internal/core/app.go`, `container.go`, `http_page.go`: `EnableRender` without `FS` or called twice, a `RENDER_` / `SUBMIT_` without `EnableRender`, a page route with no template, two templates, a reserved directory or an error page name, an `.html` file without a route, an unusable error page name, a CSS or JS file that belongs to no template, a page set with such files and no `{{pageAssets}}`, `assets/_pages`, a template that fails to parse, calls a missing template or fails to escape, with its file path)
-- `"invalid module: ..."` (`internal/core/module_builder.go`; `Create(nil)` in `internal/core/app.go`)
+- `"invalid module: ..."` (`internal/core/module_builder.go`: an import that is not a module, `PathStyle` with another value than the two constants; `Create(nil)` in `internal/core/app.go`)
 - `"invalid app: ..."` (`internal/core/app.go`: `Create` called twice, a configuration method (`EnableRender` too) or `SetLogger` after `Create`, `SetLogger(nil)`)
 - `"dependency injection: ..."` (`internal/core/fn.go`, `internal/core/fn_plan.go`, `internal/core/container.go`)
 - `"invalid config: ..."` (`modules/config`: a bad `.env` file or line with its path and line number, never a value; contradicting options; too deeply nested `Loads`; `Set` on a zero `ConfigService`)

@@ -53,7 +53,7 @@ func main() {
 | `SpanID` | `string` | the span of the event: the unit's ID on `complete`, a fresh 16-hex ID on every other stage |
 | `ParentID` | `string` | `complete`: the incoming `traceparent` parent ID or `""` (HTTP, handshake), the connection ID (WS message); every other stage: the unit's ID |
 | `Stage` | `string` | every event, one of the stages below |
-| `Name` | `string` | every stage event: the middleware, guard, interceptor, filter or pipe type, the handler's method name, or, on `render`, the page name (`bookings/list`), `error` (`error.html`) or `error (built-in)` |
+| `Name` | `string` | every stage event: the middleware, guard, interceptor, filter or pipe type, the handler's method name, or, on `render`, the template path without `.html` (`bookings/{id}`, or the error page: `404`, `4xx`) or `error (built-in)` |
 | `Transport` | `string` | every event: `TransportHTTP` or `TransportWS` |
 | `Duration` | `time.Duration` | every event; for `complete`, the wall-clock time of the request |
 | `Operation` | `string` | `complete`: the HTTP method, or the WS message type |

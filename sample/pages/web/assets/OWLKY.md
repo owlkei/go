@@ -8,7 +8,7 @@ These two files are copied, unchanged, from the Owlky repository (`github.com/da
 | `owlky.min.css` | `packages/styles/dist/owlky.min.css` (the prebuilt stylesheet) | 221,798 |
 | `owlky.js` | `packages/html/dist/owlky.js` (the framework-free HTML runtime, CDN IIFE loader) | 133,808 |
 
-The markup in `../bookings/*.html`, `../partials/field.html`, `../layout.html` and `../error.html` follows
+The markup in `../bookings/*.html`, `../partials/field.html`, `../layout.html`, `../4xx.html` and `../5xx.html` follows
 Owlky's framework-free HTML snippets (`packages/html/src/components/*/examples/*.html`).
 
 ## License

@@ -75,8 +75,9 @@ func main() {
 ```
 
 The exception has a cause, so the client gets the status text in `error` and the framework logs the
-cause at `Debug` (`ExceptionCause`). On a page route of a server-rendered app (`ginject.Page`), the
-same three values fill the HTML error page as `.Code`, `.Status` and `.Message`.
+cause at `Debug` (`ExceptionCause`). On a page route of a server-rendered app (`RENDER_`, `SUBMIT_`),
+the same three values fill the HTML error page of the status (`404.html`, then `4xx.html`) as
+`.Code`, `.Status` and `.Message`.
 
 ## `ExceptionOptions` Fields
 

@@ -16,9 +16,16 @@ Feature Request
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Providers go in exported controller fields (injected at Create())
   │
+  ├─ "I need a server-rendered HTML page"
+  │   ├─ app.EnableRender(&ginject.RenderOptions{FS: web}) before Create
+  │   ├─ Embed ginject.HTTP; RENDER_<route> = GET page, SUBMIT_<route> = its form POST (same words)
+  │   ├─ The route picks the template: web/<path>.html or web/<path>/index.html ({id} for parameters)
+  │   ├─ Return the template's data (any type); SUBMIT_ re-renders with 422 or c.Redirect → 303
+  │   └─ No ginject.Page / ginject.View: they don't exist
+  │
   ├─ "I need WebSocket support"
   │   ├─ Embed ginject.WS in controller
-  │   ├─ Create method: SUBSCRIBE_<topic> (e.g. SUBSCRIBE_chat_PERSON_ANY)
+  │   ├─ Create method: SUBSCRIBE_<topic> (e.g. SUBSCRIBE_chat_ANY → chat.*, SUBSCRIBE_chat_ALL → chat.**)
   │   ├─ Inject ginject.WSContext, *websocket.Conn, ginject.Publisher
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Use publisher.Publish() for fanout

@@ -129,7 +129,8 @@ There is no deadline check before handler invocation — `ctx.HTTPContext.IsDead
 | `panic(exception.BadRequestException(...))` | Validation failure | Caught by exception filter |
 | `return nil` from handler | No return value | OK, handler can return any type |
 | `dependency injection: can't set value to unexported '<field>' field of the <pkg>.<Pipe> pipe` | A pipe (form DTO) with an unexported field | Panic at `Create()`: pipe fields are injected like a controller's, so keep them exported |
-| `invalid handler: <Type>.<Method> must return ginject.View` | A page handler with another last result | Panic at `Create()` |
+| `invalid handler: <Type>.SUBMIT_x needs <Type>.RENDER_x: a SUBMIT_ posts to the page that shows its form` | A `SUBMIT_` without the `RENDER_` of the same words in its controller | Panic at `Create()` |
+| `invalid render: <Type>.<Method> needs a template: <a> or <b>` | A `RENDER_` / `SUBMIT_` whose path has no template file | Panic at `Create()` |
 
 ---
 
@@ -153,13 +154,14 @@ status text; the second is written; a third is ignored. `returnHTTP(c, v)` by ki
 Interceptors call `returnHTTP(c, reflect.ValueOf(data))`, so their data is written by its dynamic
 kind. `SERVE_…` routes serve the returned path instead.
 
-Page routes (`common.Page`, design 0018) never call `returnHTTP`: `writeResult` sends the result to
-`writePage` (`internal/core/http_page.go`), which renders a `common.View{Name, Data}` and ignores it
-when a response was already written. `(int, common.View)` sets the status like any two-result
-handler; the default is 200 for every method. A result that is not a `View` after the interceptors
-(an interceptor's own data included) is a render failure: fixed 500 HTML and `RenderFailed`. The
-result shape is checked at `Create()` (`checkViewResults` in `internal/core/container.go`): last
-result `common.View` in a page controller, never in an HTTP one.
+Page routes (`RENDER_`, `SUBMIT_`; design 0018 amendment 2) never call `returnHTTP`: `writeResult`
+sends the result to `writePage` (`internal/core/http_page.go`), which renders the template bound to
+the route at `Create()` with the only or last result as its data (any type; `nil` when the handler
+has none; an interceptor's data or a post-interceptor's replacement is the data), and ignores it
+when a response was already written. `(int, data)` sets the status like any two-result handler; the
+default is 200 for `RENDER_` and 422 for `SUBMIT_`, and a redirect without a 3xx status answers 303.
+The result type is never checked at `Create()`: a template that fails on it (a missing field) is a
+render failure at run time, fixed 500 HTML and `RenderFailed`.
 
 ### 5.2 WebSocket Handlers
 

@@ -10,6 +10,7 @@ specification the builder must satisfy, and the builder is not allowed to change
 
 ## Rules
 
+- Put each test in the `_test.go` file of the code file that implements the behavior (`x.go` → `x_test.go`; `.ginject/conventions.md` › Tests › Files); never create a topic-named test file.
 - Write only `*_test.go` files (and `*_bench_test.go` when the design's test plan asks for a
   benchmark). Never create or edit any other file.
 - Test the design, not an implementation: one or more tests per behavior rule (B1, B2, …) and per
