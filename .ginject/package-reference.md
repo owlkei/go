@@ -100,7 +100,7 @@ type Module struct {
 
     imports        []any
     staticModules  []*Module
-    dynamicModules []any
+    moduleFactories []any
     providers      []Provider
     controllers    []Controller
 
@@ -125,7 +125,7 @@ func ModuleBuilder() *core.ModuleBuilder
 
 | Method | Signature | Notes |
 |--------|-----------|-------|
-| `Imports` | `Imports(modules ...any) *ModuleBuilder` | Takes `...any`, not `...*Module` — also accepts dynamic-module factory values |
+| `Imports` | `Imports(modules ...any) *ModuleBuilder` | Takes `...any`, not `...*Module` — also accepts module factory values |
 | `Providers` | `Providers(providers ...Provider) *ModuleBuilder` | |
 | `Controllers` | `Controllers(controllers ...Controller) *ModuleBuilder` | |
 | `PathStyle` | `PathStyle(style common.PathStyle) *ModuleBuilder` | `ginject.PathStyleKebab` (default, `READ_user_profile` → `/user-profile`) or `ginject.PathStyleAsWritten` (`/user_profile`); inherited by imports like `Prefix`, an explicit setting wins; another value panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` |

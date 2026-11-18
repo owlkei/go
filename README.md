@@ -270,7 +270,7 @@ func main() {
   [Routes from method names](#routes-from-method-names).
 - **Global modules:** set `IsGlobal = true` on a module to make its providers visible to every
   module, without an import. The root module's providers are always global.
-- **Module functions:** `Imports` also takes a function that returns a `ginject.Module`. Ginject
+- **Module factories:** `Imports` also takes a function that returns a `ginject.Module`. Ginject
   calls it once per app and injects its arguments from the global providers, so a module can
   depend on configuration. This is how `config.Register(…)` and `cache.Register(…)` work.
 - **Hooks:** a module's `OnInit` runs before its providers are constructed, `OnReady` at the end

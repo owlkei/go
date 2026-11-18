@@ -25,7 +25,7 @@ type Module struct {
 
     imports        []any
     staticModules  []*Module
-    dynamicModules []any
+    moduleFactories []any
     providers      []Provider
     controllers    []Controller
 

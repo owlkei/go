@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func BenchmarkIsDynamicModule(b *testing.B) {
+func BenchmarkIsModuleFactory(b *testing.B) {
 	s := "func(pkg.Provider) *core.Module"
 	b.ReportAllocs()
 	for b.Loop() {
-		isDynamicModule(s)
+		isModuleFactory(s)
 	}
 }
 

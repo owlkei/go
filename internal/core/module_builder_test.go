@@ -12,7 +12,7 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func TestIsDynamicModule(t *testing.T) {
+func TestIsModuleFactory(t *testing.T) {
 	cases := []struct {
 		in   string
 		want bool
@@ -25,9 +25,9 @@ func TestIsDynamicModule(t *testing.T) {
 		{"", false},
 	}
 	for _, c := range cases {
-		got := isDynamicModule(c.in)
+		got := isModuleFactory(c.in)
 		if got != c.want {
-			t.Error(test.DiffMessage(got, c.want, "isDynamicModule("+c.in+")"))
+			t.Error(test.DiffMessage(got, c.want, "isModuleFactory("+c.in+")"))
 		}
 	}
 }
@@ -95,7 +95,7 @@ func TestGetModuleTypeStaticOnly(t *testing.T) {
 		t.Error(test.DiffMessage(len(statics), 2, "static modules count"))
 	}
 	if len(dynamics) != 0 {
-		t.Error(test.DiffMessage(len(dynamics), 0, "dynamic modules count"))
+		t.Error(test.DiffMessage(len(dynamics), 0, "module factories count"))
 	}
 }
 

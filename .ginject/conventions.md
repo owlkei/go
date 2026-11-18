@@ -71,7 +71,7 @@ don't mass-rewrite the exceptions.
   it; the option type's own `Use` calls `instance.NewMiddleware().Use(...)` and is for tests only.
   Invalid options panic in `NewMiddleware` as `invalid <package>: <detail>` (`color.FmtRed`), and a
   refusal on the request path is `panic(&prebuiltException)`, answered by the HTTP layer.
-- **Dynamic modules** are `Register(opts *<X>ModuleOptions) *core.Module` that accept `nil` and
+- **Built-in modules** are built by `Register(opts *<X>ModuleOptions) *core.Module` that accept `nil` and
   apply defaults, then set `IsGlobal` / `OnInit` on the built module
   (`modules/cache/module.go:16`). `OnInit` types are named `<X>OnInitFn`.
 

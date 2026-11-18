@@ -1318,14 +1318,14 @@ func TestCreate_StaticSubmoduleGlobalProvider_VisibleToOtherModules(t *testing.T
 	}
 }
 
-func TestCreate_DynamicModule_MissingGlobalDependencyPanics(t *testing.T) {
+func TestCreate_ModuleFactory_MissingGlobalDependencyPanics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error(test.DiffMessage(nil, "panic", "a dynamic module factory whose argument has no global provider must panic during bootstrap"))
+			t.Error(test.DiffMessage(nil, "panic", "a module factory whose argument has no global provider must panic during bootstrap"))
 		}
 	}()
 
-	root := NewModuleBuilder().Imports(mtDynamicModuleNeedingProvider).Build()
+	root := NewModuleBuilder().Imports(mtModuleFactoryNeedingProvider).Build()
 	New().Create(root)
 }
 
@@ -1560,7 +1560,7 @@ func TestCreate_ConcurrentInvocation_NoDataRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestCreate_Hooks_ReachNestedStaticAndDynamicImportsAtAnyDepth(t *testing.T) {
+func TestCreate_Hooks_ReachNestedModuleAndFactoryImportsAtAnyDepth(t *testing.T) {
 	rec := &createRecorder{}
 
 	grandchild := hkModule(rec, "grandchild")

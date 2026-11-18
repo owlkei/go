@@ -184,7 +184,7 @@ func (c *container) discover(m *Module) {
 		if staticModule, ok := imported.(*Module); ok {
 			imports = append(imports, staticModule)
 		} else {
-			imports = append(imports, c.callModuleFunc(imported))
+			imports = append(imports, c.callModuleFactory(imported))
 		}
 	}
 	c.importsByModule[m] = imports
@@ -241,7 +241,7 @@ func appendControllerKeys(keys []string, seen map[string]struct{}, add []string)
 	return keys
 }
 
-func (c *container) callModuleFunc(moduleFunc any) *Module {
+func (c *container) callModuleFactory(moduleFunc any) *Module {
 	ptr := reflect.ValueOf(moduleFunc).Pointer()
 	if m, ok := c.moduleByFunc[ptr]; ok {
 		return m

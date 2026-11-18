@@ -11,11 +11,11 @@ type Module struct {
 	prefixes  []string
 	pathStyle common.PathStyle
 
-	imports        []any
-	staticModules  []*Module
-	dynamicModules []any
-	providers      []Provider
-	controllers    []Controller
+	imports         []any
+	staticModules   []*Module
+	moduleFactories []any
+	providers       []Provider
+	controllers     []Controller
 
 	IsGlobal   bool
 	OnInit     func()

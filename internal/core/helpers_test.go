@@ -5989,7 +5989,7 @@ func makeBenchStaticSubmodules(n int) []any {
 	return imports
 }
 
-func benchCollectModulesDynamicFactory() *Module {
+func benchCollectModulesFactory() *Module {
 	return NewModuleBuilder().Build()
 }
 
@@ -6057,7 +6057,7 @@ type mtDynMissingProvider struct{}
 
 func (p mtDynMissingProvider) NewProvider() Provider { return p }
 
-func mtDynamicModuleNeedingProvider(_ mtDynMissingProvider) *Module {
+func mtModuleFactoryNeedingProvider(_ mtDynMissingProvider) *Module {
 	return NewModuleBuilder().Build()
 }
 

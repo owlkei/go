@@ -87,11 +87,11 @@ func BenchmarkCreate_StaticSubmodules(b *testing.B) {
 	}
 }
 
-func BenchmarkCreate_DynamicSubmodules(b *testing.B) {
+func BenchmarkCreate_FactorySubmodules(b *testing.B) {
 	const n = 100
 	imports := make([]any, n)
 	for i := range imports {
-		imports[i] = benchCollectModulesDynamicFactory
+		imports[i] = benchCollectModulesFactory
 	}
 	root := NewModuleBuilder().Imports(imports...).Build()
 	b.ReportAllocs()

@@ -44,7 +44,7 @@ func (m *ModuleBuilder) Imports(modules ...any) *ModuleBuilder {
 
 func (m *ModuleBuilder) getModuleType() ([]*Module, []any) {
 	staticModules := make([]*Module, 0, len(m.imports))
-	var dynamicModules []any
+	var moduleFactories []any
 	var errors []string
 
 	for _, arg := range m.imports {
@@ -53,8 +53,8 @@ func (m *ModuleBuilder) getModuleType() ([]*Module, []any) {
 			staticModules = append(staticModules, module)
 		default:
 			moduleType := reflect.TypeOf(module)
-			if isDynamicModule(moduleType.String()) {
-				dynamicModules = append(dynamicModules, module)
+			if isModuleFactory(moduleType.String()) {
+				moduleFactories = append(moduleFactories, module)
 			} else {
 				errors = append(errors, fmt.Sprintf("can't pass '%v' type as module", moduleType))
 			}
@@ -65,10 +65,10 @@ func (m *ModuleBuilder) getModuleType() ([]*Module, []any) {
 		panic(color.FmtRed("invalid module: %s", strings.Join(errors, "\n       ")))
 	}
 
-	return staticModules, dynamicModules
+	return staticModules, moduleFactories
 }
 
-func isDynamicModule(moduleType string) bool {
+func isModuleFactory(moduleType string) bool {
 	return strings.HasPrefix(moduleType, "func(") && strings.HasSuffix(moduleType, "*core.Module")
 }
 
@@ -91,15 +91,15 @@ func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder {
 }
 
 func (m *ModuleBuilder) Build() *Module {
-	staticModules, dynamicModules := m.getModuleType()
+	staticModules, moduleFactories := m.getModuleType()
 
 	module := &Module{
-		imports:        slices.Clone(m.imports),
-		staticModules:  staticModules,
-		dynamicModules: dynamicModules,
-		providers:      m.providers,
-		controllers:    m.controllers,
-		pathStyle:      m.pathStyle,
+		imports:         slices.Clone(m.imports),
+		staticModules:   staticModules,
+		moduleFactories: moduleFactories,
+		providers:       m.providers,
+		controllers:     m.controllers,
+		pathStyle:       m.pathStyle,
 	}
 
 	module.id = strconv.FormatUint(uint64(reflect.ValueOf(module).Pointer()), 10)

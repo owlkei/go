@@ -215,10 +215,9 @@ Anything else panics at `Create()` with `"dependency injection: ..."`.
 
 These are the root aliases of `internal/ctx` and `internal/common` types (`aliases.go`); the root package is the only way applications name them.
 
-### Modules: Static vs Dynamic
+### Modules and module factories
 
-- **Static modules**: `var Module = func() ginject.Module { return ginject.ModuleBuilder()....Build() }` — pass the func itself to `Imports(...)`; the framework builds it once.
-- **Dynamic modules**: a package-level `Register(opts *<X>ModuleOptions) *core.Module` (`ginject.Module`) that returns a configured module (every built-in module, e.g. `config.Register(&config.ConfigModuleOptions{...})`).
+Two kinds, passed to `Imports(...)`: a **Module** (a `ginject.Module` value: `ginject.ModuleBuilder()....Build()`, or what a function such as `config.Register(&config.ConfigModuleOptions{...})` returns; `Register` is only a name) and a **Module factory** (a function value returning a `ginject.Module`, whose parameters are injected; the framework calls it once per app). **Global** (`IsGlobal`) is a property of either, not a kind.
 
 ### Built-in Modules (`modules/`)
 

@@ -1026,7 +1026,7 @@ Benchmark results on darwin/amd64 (Intel Core i7-9750H @ 2.60GHz, Go 1.27.4), `g
 | BenchmarkCreate_FiveControllers (cold) | 41706 | 27392 | 378 |
 | BenchmarkCreate_ChainedProviders (cold) | 118651 | 78177 | 697 |
 | BenchmarkCreate_StaticSubmodules (cold) | 73707 | 69824 | 496 |
-| BenchmarkCreate_DynamicSubmodules (cold) | 62788 | 6720 | 66 |
+| BenchmarkCreate_FactorySubmodules (cold) | 62788 | 6720 | 66 |
 
 The trace scope (design 0011, same machine, `benchstat` against the code before it, 6 runs): Static 615 → 884 ns (96 → 624 B, 6 → 7 allocations), NotFound 485 → 745 ns (48 → 576 B, 3 → 4), MethodNotAllowed 433 → 699 ns (64 → 592 B, 4 → 5).
 
