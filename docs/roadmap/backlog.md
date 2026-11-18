@@ -476,4 +476,4 @@ Fixed 2026-11-18: `TestTokenBucket_RetryAfterNeverZeroOnRefusal` uses a 500 ms r
 the `loadshed` L12 acceptance runs (`make check` only, without `-race`) are measured up to 3 times and
 fail only when every attempt does. A machine that stays busy for minutes (a browser using a full core)
 can still fail L12: rerun `make check` on a quiet machine.
-- Low, unrelated: the `InstanceLoader` log line prints the root module twice (before `ae5fe4e` too).
+- Low, unrelated: the `InstanceLoader` log line prints the root module twice (before `a4440f8` too).
