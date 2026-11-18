@@ -1,12 +1,11 @@
 package core
 
 import (
-	"reflect"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"golang.org/x/net/websocket"
 
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/aggregation"
@@ -14,53 +13,8 @@ import (
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/log"
+	"golang.org/x/net/websocket"
 )
-
-func newTestWSBare(t testing.TB) *WS {
-	t.Helper()
-
-	ws := NewWS(&WSOptions{logger: log.NewLog(nil)})
-	ws.newCtx = func() *ctx.WSContext {
-		c := ctx.NewWSContext()
-		return c
-	}
-	ws.releaseCtx = func(c *ctx.WSContext) {
-		ctx.WSReset(c)
-	}
-	ws.resolveAndCallHandler = func(_ string, f any, c *ctx.WSContext) []reflect.Value {
-		args := make([]reflect.Value, reflect.TypeOf(f).NumIn())
-		for i := range args {
-			args[i] = reflect.ValueOf(c.WSPayload())
-		}
-		return reflect.ValueOf(f).Call(args)
-	}
-	ws.emitPostInterceptor = func(c *ctx.WSContext, name string, duration time.Duration) {}
-	ws.emitComplete = func(c *ctx.WSContext, operation, target string) {}
-
-	return ws
-}
-
-func newTestWS(t testing.TB, eventPatterns ...string) *WS {
-	t.Helper()
-
-	ws := newTestWSBare(t)
-	for _, p := range eventPatterns {
-		ws.eventMatcher.AddInjectableHandler(p, func() {})
-	}
-
-	return ws
-}
-
-func recvWSPayload(t testing.TB, conn *websocket.Conn) WSPayload {
-	t.Helper()
-
-	var p WSPayload
-	if err := websocket.JSON.Receive(conn, &p); err != nil {
-		t.Fatalf("receive: %v", err)
-	}
-	return p
-}
 
 func TestHandleSubscribe_WhitelistRejectsUnknownTopic(t *testing.T) {
 	ws := newTestWS(t, "chat.to.*")
@@ -868,4 +822,143 @@ func TestReadLoop_RespondsToClientPing(t *testing.T) {
 
 	_ = clientConn.Close()
 	<-done
+}
+
+func TestWS_AllHandlesDeepTopic(t *testing.T) {
+	app := New()
+	app.EnableWS(&WSOptions{Path: "/ws"})
+	app.Create(NewModuleBuilder().Controllers(wsAllController{}).Build())
+
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", server.URL)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var connected WSPayload
+	if err := websocket.JSON.Receive(conn, &connected); err != nil {
+		t.Fatalf("receive connected: %v", err)
+	}
+
+	for _, topic := range []string{"chat.room1.typing", "chat.room1"} {
+		if err := websocket.JSON.Send(conn, WSPayload{Type: TypeSubscribe, ID: "s-" + topic, Topic: []string{topic}}); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		var reply WSPayload
+		if err := websocket.JSON.Receive(conn, &reply); err != nil {
+			t.Fatalf("receive: %v", err)
+		}
+		if reply.Type != TypeAck {
+			t.Error(test.DiffMessage(reply.Type, TypeAck, "B18: "+topic+" reaches SUBSCRIBE_chat_ALL"))
+		}
+	}
+
+	if err := websocket.JSON.Send(conn, WSPayload{Type: TypeSubscribe, ID: "s-chat", Topic: []string{"chat"}}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	var reply WSPayload
+	if err := websocket.JSON.Receive(conn, &reply); err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	if reply.Type != TypeError {
+		t.Error(test.DiffMessage(reply.Type, TypeError, "B18: chat alone does not reach SUBSCRIBE_chat_ALL (** is one or more segments)"))
+	}
+}
+
+func TestHandlePublish_FansOutToOverlappingWildcardSubscriber(t *testing.T) {
+	ws := newTestWS(t, "chat.*")
+
+	exactServer, exactClient, exactCleanup := newTestWSConnPair(t)
+	defer exactCleanup()
+	wildcardServer, wildcardClient, wildcardCleanup := newTestWSConnPair(t)
+	defer wildcardCleanup()
+	otherServer, otherClient, otherCleanup := newTestWSConnPair(t)
+	defer otherCleanup()
+
+	exactConn := ws.connmgr.Register("conn-exact", exactServer)
+	defer ws.connmgr.Unregister("conn-exact")
+	wildcardConn := ws.connmgr.Register("conn-wildcard", wildcardServer)
+	defer ws.connmgr.Unregister("conn-wildcard")
+	otherConn := ws.connmgr.Register("conn-other", otherServer)
+	defer ws.connmgr.Unregister("conn-other")
+
+	subscribeAndDrainAck(t, ws, exactConn, exactClient, "chat.456")
+	subscribeAndDrainAck(t, ws, wildcardConn, wildcardClient, "chat.*")
+	subscribeAndDrainAck(t, ws, otherConn, otherClient, "chat.123")
+
+	handlePublish(exactConn, ws, WSPayload{ID: "pub-1", Type: TypePublish, Topic: []string{"chat.456"}, Message: "hello"})
+
+	eventFrame := recvWSPayload(t, exactClient)
+	ackFrame := recvWSPayload(t, exactClient)
+	if eventFrame.Type != TypeEvent || eventFrame.Message != "hello" {
+		t.Error(test.DiffMessage(eventFrame, "event hello", "chat.456 subscriber should receive the published event"))
+	}
+	if ackFrame.Type != TypeAck {
+		t.Error(test.DiffMessage(ackFrame.Type, TypeAck, "expected trailing publish ack"))
+	}
+
+	wildcardEvent := recvWSPayload(t, wildcardClient)
+	if wildcardEvent.Type != TypeEvent || wildcardEvent.Message != "hello" || len(wildcardEvent.Topic) != 1 || wildcardEvent.Topic[0] != "chat.456" {
+		t.Error(test.DiffMessage(wildcardEvent, "event chat.456 hello", "chat.* subscriber should be fanned out the chat.456 publish"))
+	}
+
+	expectNoFrame(t, otherClient)
+}
+
+func TestHandlePublish_LiteralWildcardTopicDoesNotExpand(t *testing.T) {
+	ws := newTestWS(t, "chat.*")
+
+	wildcardServer, wildcardClient, wildcardCleanup := newTestWSConnPair(t)
+	defer wildcardCleanup()
+	otherServer, otherClient, otherCleanup := newTestWSConnPair(t)
+	defer otherCleanup()
+
+	wildcardConn := ws.connmgr.Register("conn-wildcard", wildcardServer)
+	defer ws.connmgr.Unregister("conn-wildcard")
+	otherConn := ws.connmgr.Register("conn-other", otherServer)
+	defer ws.connmgr.Unregister("conn-other")
+
+	subscribeAndDrainAck(t, ws, wildcardConn, wildcardClient, "chat.*")
+	subscribeAndDrainAck(t, ws, otherConn, otherClient, "chat.123")
+
+	handlePublish(wildcardConn, ws, WSPayload{ID: "pub-1", Type: TypePublish, Topic: []string{"chat.*"}, Message: "literal"})
+
+	eventFrame := recvWSPayload(t, wildcardClient)
+	ackFrame := recvWSPayload(t, wildcardClient)
+	if eventFrame.Type != TypeEvent || eventFrame.Message != "literal" {
+		t.Error(test.DiffMessage(eventFrame, "event literal", "chat.* subscriber should receive a publish to the literal chat.* topic"))
+	}
+	if ackFrame.Type != TypeAck {
+		t.Error(test.DiffMessage(ackFrame.Type, TypeAck, "expected trailing publish ack"))
+	}
+
+	expectNoFrame(t, otherClient)
+}
+
+func TestHandleSubscribe_ClientWildcardStaysWithinHandlerPattern(t *testing.T) {
+	cases := []struct {
+		handler, client, outside, inside string
+	}{
+		{"*", "**", "chat.a", "chat"},
+		{"chat.*", "chat.**", "chat.a.b", "chat.a"},
+	}
+	for _, c := range cases {
+		ws := newTestWS(t, c.handler)
+		server, client, cleanup := newTestWSConnPair(t)
+		conn := ws.connmgr.Register("conn-1", server)
+		subscribeAndDrainAck(t, ws, conn, client, c.client)
+
+		_ = (*ws.connmgr.Broker).Publish(c.outside, "outside")
+		_ = (*ws.connmgr.Broker).Publish(c.inside, "inside")
+
+		got := recvWSPayload(t, client)
+		if got.Message != "inside" {
+			t.Error(test.DiffMessage(got.Message, "inside", "client "+c.client+" under handler "+c.handler+" must not receive "+c.outside))
+		}
+		ws.connmgr.Unregister("conn-1")
+		cleanup()
+	}
 }

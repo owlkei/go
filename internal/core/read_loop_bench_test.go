@@ -1,6 +1,8 @@
 package core
 
-import "testing"
+import (
+	"testing"
+)
 
 func BenchmarkHandlePublish_DeliversAfterSubscribe(b *testing.B) {
 	ws := newTestWSBare(b)

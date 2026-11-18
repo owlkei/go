@@ -2,23 +2,16 @@ package core
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -28,526 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 	"golang.org/x/net/websocket"
 )
-
-const (
-	srvWait       = 10 * time.Second
-	srvStreamWait = 300 * time.Millisecond
-	srvShort      = 100 * time.Millisecond
-)
-
-type srvStateT struct {
-	mu         sync.Mutex
-	hooks      []string
-	rootExtra  func()
-	childExtra func()
-
-	entered   chan struct{}
-	release   chan struct{}
-	cancelled chan struct{}
-	writeErr  chan error
-
-	releaseOnce sync.Once
-	cancelOnce  sync.Once
-	handlerDone atomic.Bool
-	rootSawDone atomic.Bool
-}
-
-var srvCur *srvStateT
-
-func srvReset() {
-	srvCur = &srvStateT{
-		entered:   make(chan struct{}, 16),
-		release:   make(chan struct{}),
-		cancelled: make(chan struct{}),
-		writeErr:  make(chan error, 1),
-	}
-}
-
-func (s *srvStateT) open() {
-	s.releaseOnce.Do(func() { close(s.release) })
-}
-
-func (s *srvStateT) hookNames() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.hooks...)
-}
-
-func (s *srvStateT) hook(name string) func() {
-	return func() {
-		s.mu.Lock()
-		s.hooks = append(s.hooks, name)
-		var extra func()
-		if name == "root" {
-			s.rootSawDone.Store(s.handlerDone.Load())
-			extra = s.rootExtra
-		} else {
-			extra = s.childExtra
-		}
-		s.mu.Unlock()
-		if extra != nil {
-			extra()
-		}
-	}
-}
-
-var srvChildModule = func() *Module {
-	m := NewModuleBuilder().Build()
-	m.OnShutdown = srvCur.hook("child")
-	return m
-}
-
-var srvRootModule = func() *Module {
-	m := NewModuleBuilder().Imports(srvChildModule).Controllers(srvController{}).Build()
-	m.OnShutdown = srvCur.hook("root")
-	return m
-}
-
-type srvController struct{ common.HTTP }
-
-func (ctl srvController) NewController() Controller { return ctl }
-
-func (ctl srvController) READ_ok() string { return "ok" }
-
-func (ctl srvController) READ_proto(c *ctx.HTTPContext) string { return c.Proto }
-
-func (ctl srvController) READ_panic() string { panic("secret") }
-
-func (ctl srvController) READ_block(c *ctx.HTTPContext) string {
-	s := srvCur
-	s.entered <- struct{}{}
-	select {
-	case <-s.release:
-	case <-c.Request.Context().Done():
-		s.cancelOnce.Do(func() { close(s.cancelled) })
-		return "cancelled"
-	}
-	s.handlerDone.Store(true)
-	return "finished"
-}
-
-func (ctl srvController) READ_stream(c *ctx.HTTPContext) string {
-	_ = http.NewResponseController(c.ResponseWriter).SetWriteDeadline(time.Time{})
-	time.Sleep(srvStreamWait)
-	return "late"
-}
-
-func (ctl srvController) READ_nostream() string {
-	time.Sleep(srvStreamWait)
-	return "late"
-}
-
-func (ctl srvController) READ_flood(c *ctx.HTTPContext) string {
-	s := srvCur
-	chunk := make([]byte, 1<<20)
-	for range 4096 {
-		if _, err := c.ResponseWriter.Write(chunk); err != nil {
-			s.writeErr <- err
-			return ""
-		}
-	}
-	s.writeErr <- nil
-	return ""
-}
-
-func (ctl srvController) CREATE_upload(body ctx.Body) any {
-	return ctx.Map{"got": body["k"]}
-}
-
-type srvLogEntry struct {
-	level string
-	msg   string
-	args  []any
-}
-
-func (e srvLogEntry) field(key string) any {
-	for i := 0; i+1 < len(e.args); i += 2 {
-		if k, ok := e.args[i].(string); ok && k == key {
-			return e.args[i+1]
-		}
-	}
-	return nil
-}
-
-type srvLogger struct {
-	mu      sync.Mutex
-	entries []srvLogEntry
-	seenBy  map[string]chan struct{}
-}
-
-func (l *srvLogger) chanLocked(msg string) chan struct{} {
-	if l.seenBy == nil {
-		l.seenBy = make(map[string]chan struct{})
-	}
-	ch, ok := l.seenBy[msg]
-	if !ok {
-		ch = make(chan struct{})
-		l.seenBy[msg] = ch
-	}
-	return ch
-}
-
-func (l *srvLogger) record(level, msg string, args []any) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.entries = append(l.entries, srvLogEntry{level: level, msg: msg, args: append([]any(nil), args...)})
-	ch := l.chanLocked(msg)
-	select {
-	case <-ch:
-	default:
-		close(ch)
-	}
-}
-
-func (l *srvLogger) seen(msg string) <-chan struct{} {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.chanLocked(msg)
-}
-
-func (l *srvLogger) all() []srvLogEntry {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return append([]srvLogEntry(nil), l.entries...)
-}
-
-func (l *srvLogger) named(msg string) []srvLogEntry {
-	var out []srvLogEntry
-	for _, e := range l.all() {
-		if e.msg == msg {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-func (l *srvLogger) Debug(msg string, args ...any) { l.record("debug", msg, args) }
-func (l *srvLogger) Info(msg string, args ...any)  { l.record("info", msg, args) }
-func (l *srvLogger) Warn(msg string, args ...any)  { l.record("warn", msg, args) }
-func (l *srvLogger) Error(msg string, args ...any) { l.record("error", msg, args) }
-func (l *srvLogger) Fatal(msg string, args ...any) { l.record("fatal", msg, args) }
-
-type srvHarness struct {
-	t       *testing.T
-	app     *App
-	root    *Module
-	log     *srvLogger
-	sigs    chan os.Signal
-	regs    atomic.Int32
-	stops   atomic.Int32
-	ln      net.Listener
-	done    chan error
-	started bool
-	waited  bool
-}
-
-func newSrv(t *testing.T, tweak ...func(*App)) *srvHarness {
-	t.Helper()
-	srvReset()
-
-	h := &srvHarness{
-		t:    t,
-		log:  &srvLogger{},
-		sigs: make(chan os.Signal, 4),
-		done: make(chan error, 1),
-	}
-	h.app = New()
-	h.app.SetLogger(h.log)
-	h.app.notifySignals = func() (<-chan os.Signal, func()) {
-		h.regs.Add(1)
-		return h.sigs, func() { h.stops.Add(1) }
-	}
-	for _, f := range tweak {
-		f(h.app)
-	}
-	h.root = srvRootModule()
-	h.app.Create(h.root)
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.ln = ln
-	t.Cleanup(h.cleanup)
-	return h
-}
-
-func (h *srvHarness) cleanup() {
-	srvCur.open()
-	if h.started && !h.waited {
-		go h.app.Stop()
-		select {
-		case err := <-h.done:
-			_ = err
-		case <-time.After(srvWait):
-		}
-	}
-	_ = h.ln.Close()
-}
-
-func (h *srvHarness) addr() string { return h.ln.Addr().String() }
-
-func (h *srvHarness) startWith(f func() error) {
-	h.t.Helper()
-	h.started = true
-	go func() { h.done <- f() }()
-	select {
-	case <-h.log.seen("ServerListening"):
-	case err := <-h.done:
-		h.waited = true
-		h.t.Fatalf("the serving call returned before it was serving: %v", err)
-	case <-time.After(srvWait):
-		h.t.Fatal("the server did not start")
-	}
-}
-
-func (h *srvHarness) start(opts *ServerOptions) {
-	h.t.Helper()
-	h.startWith(func() error { return h.app.Serve(h.ln, opts) })
-}
-
-func (h *srvHarness) wait() error {
-	h.t.Helper()
-	select {
-	case err := <-h.done:
-		h.waited = true
-		return err
-	case <-time.After(srvWait):
-		h.t.Fatal("the serving call did not return")
-	}
-	return nil
-}
-
-func srvWaitCh(t *testing.T, ch <-chan struct{}, what string) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(srvWait):
-		t.Fatalf("timed out waiting for %s", what)
-	}
-}
-
-func serveOnce(t *testing.T, app *App) {
-	t.Helper()
-	sigs := make(chan os.Signal, 1)
-	sigs <- syscall.SIGTERM
-	app.notifySignals = func() (<-chan os.Signal, func()) { return sigs, func() {} }
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	if err := app.Serve(ln, nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func srvFreePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	_ = l.Close()
-	return port
-}
-
-// srvHeldPort returns a port that stays bound by the test until it ends. A call that must fail
-// before binding returns its own error on it; one that binds first gets "address already in use"
-// instead. Unlike checking afterwards that the port is free, another process can't take it meanwhile.
-func srvHeldPort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = l.Close() })
-	return l.Addr().(*net.TCPAddr).Port
-}
-
-func srvListenerOpen(ln net.Listener) bool {
-	return ln.Close() == nil
-}
-
-type srvResp struct {
-	status int
-	proto  string
-	body   string
-	err    error
-}
-
-func srvClient() *http.Client {
-	return &http.Client{Transport: &http.Transport{DisableKeepAlives: true}, Timeout: srvWait}
-}
-
-func srvFetch(c *http.Client, method, url, body string, chunked bool) srvResp {
-	var rd io.Reader
-	if body != "" {
-		rd = strings.NewReader(body)
-		if chunked {
-			rd = io.NopCloser(rd)
-		}
-	}
-	req, err := http.NewRequest(method, url, rd)
-	if err != nil {
-		return srvResp{err: err}
-	}
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	res, err := c.Do(req)
-	if err != nil {
-		return srvResp{err: err}
-	}
-	defer func() { _ = res.Body.Close() }()
-	b, err := io.ReadAll(res.Body)
-	return srvResp{status: res.StatusCode, proto: res.Proto, body: string(b), err: err}
-}
-
-func srvFetchAsync(c *http.Client, url string) <-chan srvResp {
-	ch := make(chan srvResp, 1)
-	go func() { ch <- srvFetch(c, http.MethodGet, url, "", false) }()
-	return ch
-}
-
-func srvAwait(t *testing.T, ch <-chan srvResp) srvResp {
-	t.Helper()
-	select {
-	case r := <-ch:
-		return r
-	case <-time.After(srvWait):
-		t.Fatal("timed out waiting for the response")
-	}
-	return srvResp{}
-}
-
-func srvDial(t *testing.T, addr string) net.Conn {
-	t.Helper()
-	c, err := net.DialTimeout("tcp", addr, srvWait)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = c.SetDeadline(time.Now().Add(srvWait))
-	t.Cleanup(func() { _ = c.Close() })
-	return c
-}
-
-func srvClosedByServer(c net.Conn) bool {
-	_ = c.SetReadDeadline(time.Now().Add(srvWait))
-	_, err := io.Copy(io.Discard, c)
-	if err == nil {
-		return true
-	}
-	var ne net.Error
-	return !errors.As(err, &ne) || !ne.Timeout()
-}
-
-func srvWaitRefused(t *testing.T, addr string) {
-	t.Helper()
-	deadline := time.Now().Add(srvWait)
-	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("tcp", addr, srvWait)
-		if err != nil {
-			return
-		}
-		_ = c.Close()
-		runtime.Gosched()
-	}
-	t.Fatal("the listener still accepts connections")
-}
-
-func srvCaptureStdout(t *testing.T, f func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := os.Stdout
-	os.Stdout = w
-	var buf bytes.Buffer
-	copied := make(chan struct{})
-	go func() {
-		_, _ = io.Copy(&buf, r)
-		close(copied)
-	}()
-	f()
-	_ = w.Close()
-	os.Stdout = old
-	<-copied
-	_ = r.Close()
-	return buf.String()
-}
-
-type srvCerts struct {
-	cert    tls.Certificate
-	pool    *x509.CertPool
-	certPEM []byte
-	keyPEM  []byte
-}
-
-func srvMakeCert(t *testing.T) srvCerts {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "ginject test"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leaf, err := x509.ParseCertificate(der)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(leaf)
-	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return srvCerts{
-		cert:    tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key},
-		pool:    pool,
-		certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		keyPEM:  pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
-	}
-}
-
-func srvTLSClient(pool *x509.CertPool, h2 bool) *http.Client {
-	tr := &http.Transport{
-		TLSClientConfig:   &tls.Config{RootCAs: pool},
-		DisableKeepAlives: true,
-	}
-	if h2 {
-		tr.ForceAttemptHTTP2 = true
-	} else {
-		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-	}
-	return &http.Client{Transport: tr, Timeout: srvWait}
-}
-
-func srvH2CClient() *http.Client {
-	var p http.Protocols
-	p.SetUnencryptedHTTP2(true)
-	return &http.Client{Transport: &http.Transport{Protocols: &p, DisableKeepAlives: true}, Timeout: srvWait}
-}
 
 func TestLoadServerOptions_NilEqualsZero(t *testing.T) {
 	fromNil := loadServerOptions(nil)
@@ -1547,13 +1023,6 @@ func TestShutdown_SignalRegistrationReleasedOnStop(t *testing.T) {
 	}
 }
 
-type srvFailingListener struct {
-	net.Listener
-	err error
-}
-
-func (l srvFailingListener) Accept() (net.Conn, error) { return nil, l.err }
-
 func TestShutdown_ListenerFailureRunsHooks(t *testing.T) {
 	h := newSrv(t)
 	h.started = true
@@ -1744,5 +1213,299 @@ func TestServeHTTP_WithoutServerUsesDefaultBodyCap(t *testing.T) {
 
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Error(test.DiffMessage(w.Code, http.StatusRequestEntityTooLarge, "A1: ServeHTTP without a serving call caps bodies at 10 MiB"))
+	}
+}
+
+func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
+	logger := &allCallsCapturingLogger{}
+	app := New()
+	app.SetLogger(logger)
+	app.Create(testListenModule())
+
+	serveOnce(t, app)
+
+	call := logger.findCall("InstanceLoader")
+	if call == nil {
+		t.Fatal(test.DiffMessage(nil, "non-nil", "expected an InstanceLoader log entry"))
+	}
+	want := []any{"module", "core.testListenModule initialized"}
+	if len(call.args) != 2 || call.args[0] != want[0] || call.args[1] != want[1] {
+		t.Error(test.DiffMessage(call.args, want, "module log args"))
+	}
+}
+
+func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
+	logger := &allCallsCapturingLogger{}
+	app := New()
+	app.SetLogger(logger)
+
+	m := NewModuleBuilder().Build()
+	m.Name = ""
+	app.Create(m)
+
+	serveOnce(t, app)
+
+	if call := logger.findCall("InstanceLoader"); call != nil {
+		t.Error(test.DiffMessage(call.msg, "<no InstanceLoader log>", "module log should be skipped when Name is unresolved"))
+	}
+}
+
+func TestListen_LogsNestedModuleNamesRecursively(t *testing.T) {
+	logger := &allCallsCapturingLogger{}
+	app := New()
+	app.SetLogger(logger)
+	app.Create(testListenParentModule())
+
+	serveOnce(t, app)
+
+	calls := logger.findAllCalls("InstanceLoader")
+	gotNames := make(map[string]bool, len(calls))
+	for _, c := range calls {
+		gotNames[c.args[1].(string)] = true
+	}
+
+	wantNames := []string{
+		"core.testListenParentModule initialized",
+		"core.testListenChildModule initialized",
+	}
+	for _, name := range wantNames {
+		if !gotNames[name] {
+			t.Error(test.DiffMessage(gotNames, name, "expected nested module name to be logged"))
+		}
+	}
+}
+
+func TestGetLocalIP(t *testing.T) {
+	ip := getLocalIP()
+	if ip != "" {
+		if net := reflect.TypeOf(ip).Kind(); net != reflect.String {
+			t.Error(test.DiffMessage(net, reflect.String, "getLocalIP should return string"))
+		}
+	}
+}
+
+func TestLogBoostrapNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Error(test.DiffMessage(r, nil, "logBoostrap should not panic"))
+		}
+	}()
+	logBoostrap(8080)
+}
+
+func TestHooks_OnShutdownReverseOrder(t *testing.T) {
+	rec := &createRecorder{}
+	app := New()
+	mustCreate(t, app, hkDiamond(rec))
+
+	app.Stop()
+
+	got := sprint(hkFilter(rec.list(), "shutdown:"))
+	if want := "[root C A B]"; got != want {
+		t.Error(test.DiffMessage(got, want, "K4: OnShutdown runs in the exact reverse of the initialization order"))
+	}
+	app.Stop()
+	if got := len(hkFilter(rec.list(), "shutdown:")); got != 4 {
+		t.Error(test.DiffMessage(got, 4, "K4: OnShutdown runs once per app"))
+	}
+}
+
+func TestHooks_NoShutdownWithoutCreate(t *testing.T) {
+	rec := &createRecorder{}
+	app := New()
+	hkDiamond(rec)
+
+	app.Stop()
+
+	if got := hkFilter(rec.list(), "shutdown:"); len(got) != 0 {
+		t.Error(test.DiffMessage(got, []string{}, "K4: an app that never ran Create runs no OnShutdown"))
+	}
+}
+
+func TestHooks_NoShutdownWhenCreateDidNotFinish(t *testing.T) {
+	rec := &createRecorder{}
+	app := New()
+	root := hkDiamond(rec)
+	root.OnReady = func() { panic("ready boom") }
+
+	_, panicked := createPanicValue(func() { app.Create(root) })
+	if !panicked {
+		t.Fatal(test.DiffMessage("no panic", "a panic", "K3: the panic stops Create"))
+	}
+	app.Stop()
+
+	if got := hkFilter(rec.list(), "shutdown:"); len(got) != 0 {
+		t.Error(test.DiffMessage(got, []string{}, "K4: an app whose Create did not finish runs no OnShutdown"))
+	}
+}
+
+func TestStop_SecondCallerWaitsWhileHooksRun_NotServing(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	m := NewModuleBuilder().Build()
+	m.OnShutdown = func() {
+		close(entered)
+		<-release
+		finished.Store(true)
+	}
+	app := New()
+	mustCreate(t, app, m)
+
+	rvStopWaitsForHooks(t, app, entered, release, &finished, "G6/H2")
+}
+
+func TestStop_SecondCallerWaitsWhileHooksRun_Serving(t *testing.T) {
+	h := newSrv(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	srvCur.mu.Lock()
+	srvCur.childExtra = func() {
+		close(entered)
+		<-release
+		finished.Store(true)
+	}
+	srvCur.mu.Unlock()
+	h.start(nil)
+
+	rvStopWaitsForHooks(t, h.app, entered, release, &finished, "G6/H2")
+	_ = h.wait()
+}
+
+func TestStop_FromInsideShutdownHookReturnsAtOnce(t *testing.T) {
+	returned := make(chan struct{})
+	app := New()
+	m := NewModuleBuilder().Build()
+	m.OnShutdown = func() {
+		app.Stop()
+		close(returned)
+	}
+	mustCreate(t, app, m)
+
+	go app.Stop()
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Error(test.DiffMessage("timeout", "Stop returns", "G6: Stop called from inside an OnShutdown hook must not deadlock"))
+	}
+}
+
+func TestStop_FromInsideShutdownHookReturnsAtOnce_Serving(t *testing.T) {
+	h := newSrv(t)
+	returned := make(chan struct{})
+	srvCur.mu.Lock()
+	srvCur.childExtra = func() {
+		h.app.Stop()
+		close(returned)
+	}
+	srvCur.mu.Unlock()
+	h.start(nil)
+
+	go h.app.Stop()
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Error(test.DiffMessage("timeout", "Stop returns", "G6: Stop called from inside an OnShutdown hook must not deadlock while serving"))
+	}
+	_ = h.wait()
+}
+
+func TestShutdown_FlushesAfterHooks(t *testing.T) {
+	w := redirectStdout(t)
+	app := New()
+	root := NewModuleBuilder().Build()
+	root.OnShutdown = func() { app.Logger().Info("from-shutdown-hook") }
+	mustCreate(t, app, root)
+	w.hold()
+	openWhenEntered(w)
+	app.Stop()
+	if !strings.Contains(w.String(), "from-shutdown-hook") {
+		t.Error(test.DiffMessage(w.String(), "the hook's line written when Stop returns", "M2: the sink is flushed after the OnShutdown hooks"))
+	}
+}
+
+func TestStop_WithoutServeFlushes(t *testing.T) {
+	w := redirectStdout(t)
+	app := New()
+	mustCreate(t, app, NewModuleBuilder().Build())
+	w.hold()
+	app.Logger().Info("embedded")
+	openWhenEntered(w)
+	app.Stop()
+	if !strings.Contains(w.String(), "embedded") {
+		t.Error(test.DiffMessage(w.String(), "the line written when Stop returns", "X4: Stop on an app that never served flushes"))
+	}
+}
+
+func TestShutdown_LinesAfterStopSynchronous(t *testing.T) {
+	w := redirectStdout(t)
+	app := New()
+	mustCreate(t, app, NewModuleBuilder().Build())
+	app.Stop()
+	for i := range 20 {
+		line := "after-stop-" + strconv.Itoa(i)
+		app.Logger().Info(line)
+		if !strings.Contains(w.String(), line) {
+			t.Fatal(test.DiffMessage(w.String(), line, "M2: lines logged after Stop returned are synchronous"))
+		}
+	}
+}
+
+func TestShutdown_AsyncCountedPerApp(t *testing.T) {
+	w := redirectStdout(t)
+	first, second := New(), New()
+	mustCreate(t, first, NewModuleBuilder().Build())
+	mustCreate(t, second, NewModuleBuilder().Build())
+	first.Stop()
+	w.hold()
+	withinCore(t, "M3: still asynchronous while one of two apps runs", func() {
+		first.Logger().Info("one-app-left")
+	})
+	w.openAll()
+	second.Stop()
+	first.Logger().Info("none-left")
+	if !strings.Contains(w.String(), "none-left") || !strings.Contains(w.String(), "one-app-left") {
+		t.Error(test.DiffMessage(w.String(), "both lines written", "M3: after both apps shut down the sink is synchronous and nothing is lost"))
+	}
+}
+
+func TestShutdown_AccessLogLinesFlushedAfterHooks(t *testing.T) {
+	rec := &lcRecordingLogger{}
+	app := New().SetLogger(rec).EnableAccessLog()
+	root := NewModuleBuilder().Controllers(tracePipelineController{}).Build()
+	root.OnShutdown = func() {
+		app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline?hook=1", nil))
+	}
+	app.Create(root)
+
+	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline", nil))
+	app.Stop()
+
+	var infos []lcLogEntry
+	for _, e := range rec.named("/tracepipeline") {
+		if e.level == "info" {
+			infos = append(infos, e)
+		}
+	}
+	if len(infos) != 2 {
+		t.Fatal(test.DiffMessage(len(infos), 2, "A10: the request before Stop and the one made by an OnShutdown hook are both logged once Stop returned"))
+	}
+	if infos[0].field("code") != 200 || infos[0].field("operation") != "GET" || infos[0].field("transport") != "HTTP" {
+		t.Error(test.DiffMessage(infos[0].args, "code 200, GET, HTTP", "A1: the line carries the request"))
+	}
+}
+
+func TestShutdown_AccessLogStoppedOnce(t *testing.T) {
+	rec := &lcRecordingLogger{}
+	app := New().SetLogger(rec).EnableAccessLog()
+	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
+	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline", nil))
+	app.Stop()
+	app.Stop()
+	if app.tracer.Enabled() {
+		t.Error(test.DiffMessage(true, false, "A10: after shutdown the access log no longer listens"))
 	}
 }

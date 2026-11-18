@@ -1,14 +1,12 @@
 package core
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,98 +16,11 @@ import (
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/trace"
+	"github.com/dangduoc08/ginject/internal/versioning"
+	"github.com/dangduoc08/ginject/middlewares/csrf"
+	"github.com/dangduoc08/ginject/middlewares/hostcheck"
+	"github.com/dangduoc08/ginject/middlewares/loadshed"
 )
-
-type lcLogEntry struct {
-	level string
-	msg   string
-	args  []any
-}
-
-func (e lcLogEntry) field(key string) any {
-	for i := 0; i+1 < len(e.args); i += 2 {
-		if k, ok := e.args[i].(string); ok && k == key {
-			return e.args[i+1]
-		}
-	}
-	return nil
-}
-
-type lcRecordingLogger struct {
-	mu      sync.Mutex
-	entries []lcLogEntry
-}
-
-func (l *lcRecordingLogger) record(level, msg string, args []any) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.entries = append(l.entries, lcLogEntry{level: level, msg: msg, args: append([]any(nil), args...)})
-}
-
-func (l *lcRecordingLogger) named(msg string) []lcLogEntry {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	var out []lcLogEntry
-	for _, e := range l.entries {
-		if e.msg == msg {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-func (l *lcRecordingLogger) Debug(msg string, args ...any) { l.record("debug", msg, args) }
-func (l *lcRecordingLogger) Info(msg string, args ...any)  { l.record("info", msg, args) }
-func (l *lcRecordingLogger) Warn(msg string, args ...any)  { l.record("warn", msg, args) }
-func (l *lcRecordingLogger) Error(msg string, args ...any) { l.record("error", msg, args) }
-func (l *lcRecordingLogger) Fatal(msg string, args ...any) { l.record("fatal", msg, args) }
-
-func lcText(v any) string {
-	switch s := v.(type) {
-	case string:
-		return s
-	case []byte:
-		return string(s)
-	}
-	return fmt.Sprint(v)
-}
-
-func lcRuntimeErrorPanic(*ctx.HTTPContext) any {
-	items := []int{}
-	i := len(os.Args) + 10
-	return items[i]
-}
-
-func lcRuntimeErrorMiddleware(http.ResponseWriter, *http.Request, ctx.Next) {
-	_ = lcRuntimeErrorPanic(nil)
-}
-
-func lcNilPanic(*ctx.HTTPContext) any {
-	panic(new(runtime.PanicNilError))
-}
-
-func lcNilPanicMiddleware(http.ResponseWriter, *http.Request, ctx.Next) {
-	panic(new(runtime.PanicNilError))
-}
-
-func lcErrorResponses(t *testing.T, value any) (fromMiddleware, fromHandler *httptest.ResponseRecorder) {
-	t.Helper()
-	app := lcNewApp(t, lcConfig{noGlobalFilters: true})
-	lcSetMiddleware("g1", lcPanicMiddleware(value))
-	fromMiddleware = lcServe(app, http.MethodGet, "/bare")
-
-	app = lcNewApp(t, lcConfig{noGlobalFilters: true})
-	lcSetHandler(lcPanicWith(value))
-	fromHandler = lcServe(app, http.MethodGet, "/bare")
-	return fromMiddleware, fromHandler
-}
-
-func lcExpectBothAnswer(t *testing.T, value any, code int, body, desc string) {
-	t.Helper()
-	fromMiddleware, fromHandler := lcErrorResponses(t, value)
-	lcExpectResponse(t, fromMiddleware, code, body, desc+" (HTTP layer)")
-	lcExpectResponse(t, fromHandler, code, body, desc+" (built-in filter)")
-}
 
 func TestHTTPError_Format(t *testing.T) {
 	fromMiddleware, fromHandler := lcErrorResponses(t, exception.BadRequestException("bad input"))
@@ -119,36 +30,6 @@ func TestHTTPError_Format(t *testing.T) {
 		if got := w.Header().Get("Content-Type"); got != "application/json" {
 			t.Error(test.DiffMessage(got, "application/json", "E1: Content-Type, "+name))
 		}
-	}
-}
-
-func lcDirtyHeaders(w http.ResponseWriter) {
-	h := w.Header()
-	h.Set("Content-Length", "5")
-	h.Set("Content-Encoding", "gzip")
-	h.Set("ETag", `"abc"`)
-	h.Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
-	h.Set("X-Custom", "kept")
-	h.Set("Access-Control-Allow-Origin", "*")
-}
-
-func lcExpectEntityHeadersRemoved(t *testing.T, w *httptest.ResponseRecorder, desc string) {
-	t.Helper()
-	for _, name := range []string{"Content-Length", "Content-Encoding", "ETag", "Last-Modified"} {
-		if got := w.Header().Get(name); got != "" {
-			t.Error(test.DiffMessage(got, "", "E1: "+name+" set earlier in the request is removed, "+desc))
-		}
-	}
-	for name, want := range map[string]string{"X-Custom": "kept", "Access-Control-Allow-Origin": "*"} {
-		if got := w.Header().Get(name); got != want {
-			t.Error(test.DiffMessage(got, want, "E1: "+name+" is kept, "+desc))
-		}
-	}
-	if w.Header().Get("X-Request-Id") == "" {
-		t.Error(test.DiffMessage("", "<request id>", "E1: X-Request-Id is kept, "+desc))
-	}
-	if got := w.Header().Get("Content-Type"); got != "application/json" {
-		t.Error(test.DiffMessage(got, "application/json", "E1: Content-Type is JSON, "+desc))
 	}
 }
 
@@ -429,40 +310,6 @@ func TestHTTPError_AfterRedirect(t *testing.T) {
 	lcExpectEntries(t, lcEntries("filter:"), nil, "E4: no filter runs")
 }
 
-type lcStrictWriter struct {
-	header http.Header
-	status int
-	infos  []int
-	body   bytes.Buffer
-}
-
-func (w *lcStrictWriter) Header() http.Header {
-	if w.header == nil {
-		w.header = http.Header{}
-	}
-	return w.header
-}
-
-func (w *lcStrictWriter) WriteHeader(code int) {
-	if code < 100 || code > 999 {
-		panic("invalid WriteHeader code " + strconv.Itoa(code))
-	}
-	if code >= 100 && code <= 199 {
-		w.infos = append(w.infos, code)
-		return
-	}
-	if w.status == 0 {
-		w.status = code
-	}
-}
-
-func (w *lcStrictWriter) Write(p []byte) (int, error) {
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
-	return w.body.Write(p)
-}
-
 func TestHTTPError_InformationalStatusDoesNotCount(t *testing.T) {
 	logger := &lcRecordingLogger{}
 	app := lcNewApp(t, lcConfig{noGlobalFilters: true, logger: logger})
@@ -607,27 +454,6 @@ func TestHTTPError_FilterPanicIsLogged(t *testing.T) {
 	if len(entries) != 1 || !strings.Contains(lcText(entries[0].field("panic")), "internal detail") {
 		t.Error(test.DiffMessage(len(entries), 1, "E7: a filter's non-exception panic is logged (E3) before it reaches the next filter"))
 	}
-}
-
-func lcTraceApp(t *testing.T, events *[]trace.Event, mu *sync.Mutex) *App {
-	t.Helper()
-	return lcNewApp(t, lcConfig{setup: func(app *App) {
-		app.tracer.Listen(func(e trace.Event) {
-			mu.Lock()
-			defer mu.Unlock()
-			*events = append(*events, e)
-		})
-	}})
-}
-
-func lcTraceStage(events []trace.Event, stage string) []trace.Event {
-	var out []trace.Event
-	for _, e := range events {
-		if e.Stage == stage {
-			out = append(out, e)
-		}
-	}
-	return out
 }
 
 func TestTrace_MiddlewarePanicEmitsEventWithCode(t *testing.T) {
@@ -775,13 +601,6 @@ func TestAsException_RecognizesExceptionsOnly(t *testing.T) {
 	}
 }
 
-func lcDeepPanic(depth int) any {
-	if depth == 0 {
-		panic("deep secret")
-	}
-	return lcDeepPanic(depth-1) != nil
-}
-
 func TestHTTPError_LoggedStackIsCappedAt4KiB(t *testing.T) {
 	logger := &lcRecordingLogger{}
 	app := lcNewApp(t, lcConfig{noGlobalFilters: true, logger: logger})
@@ -794,5 +613,566 @@ func TestHTTPError_LoggedStackIsCappedAt4KiB(t *testing.T) {
 	}
 	if stack := lcText(entries[0].field("stack")); len(stack) == 0 || len(stack) > 4096 {
 		t.Error(test.DiffMessage(len(stack), "1..4096", "E3: a deep stack is cut to at most 4 KiB"))
+	}
+}
+
+func TestErrorPage_ByStatus(t *testing.T) {
+	const builtIn = ""
+	rows := []struct {
+		note  string
+		files []string
+		want  map[int]string
+	}{
+		{"none", nil, map[int]string{404: builtIn, 422: builtIn, 500: builtIn, 503: builtIn}},
+		{"404.html", []string{"404"}, map[int]string{404: "404", 422: builtIn, 500: builtIn, 503: builtIn}},
+		{"404, 4xx, 5xx", []string{"404", "4xx", "5xx"}, map[int]string{404: "404", 422: "4xx", 500: "5xx", 503: "5xx"}},
+		{"503, 5xx", []string{"503", "5xx"}, map[int]string{404: builtIn, 422: builtIn, 500: "5xx", 503: "503"}},
+	}
+	for _, row := range rows {
+		app, _ := pgNew(t, pgFiles(epFiles(row.files...)), epPages{}, epGuarded{})
+		for code, template := range row.want {
+			w := createRequest(app, http.MethodGet, "/fail?code="+strconv.Itoa(code))
+			desc := "P17: " + row.note + ", a handler panic with " + strconv.Itoa(code)
+			peExpectHTML(t, desc, w, code)
+			if template == builtIn {
+				if strings.Contains(w.Body.String(), "-file:") || !strings.Contains(w.Body.String(), strconv.Itoa(code)) {
+					t.Error(test.DiffMessage(w.Body.String(), "the built-in page", desc))
+				}
+				continue
+			}
+			if want := epBody(code, template); w.Body.String() != want {
+				t.Error(test.DiffMessage(w.Body.String(), want, desc))
+			}
+		}
+
+		guard := createRequest(app, http.MethodGet, "/guarded")
+		peExpectHTML(t, "P17: "+row.note+", a guard refusal with 422", guard, http.StatusUnprocessableEntity)
+		if want := row.want[422]; want == builtIn {
+			if strings.Contains(guard.Body.String(), "-file:") {
+				t.Error(test.DiffMessage(guard.Body.String(), "the built-in page", "P17: "+row.note+", 422 from a guard"))
+			}
+		} else if guard.Body.String() != epBody(422, want) {
+			t.Error(test.DiffMessage(guard.Body.String(), epBody(422, want), "P17: "+row.note+", 422 from a guard"))
+		}
+
+		missing := createRequest(app, http.MethodGet, "/nowhere", "Accept", "text/html")
+		peExpectHTML(t, "P17: "+row.note+", an unknown path with Accept text/html", missing, http.StatusNotFound)
+		if want := row.want[404]; want == builtIn {
+			if strings.Contains(missing.Body.String(), "-file:") {
+				t.Error(test.DiffMessage(missing.Body.String(), "the built-in page", "P17: "+row.note+", 404"))
+			}
+		} else if missing.Body.String() != epBody(404, want) {
+			t.Error(test.DiffMessage(missing.Body.String(), epBody(404, want), "P17: "+row.note+", 404"))
+		}
+
+		json := createRequest(app, http.MethodGet, "/nowhere", "Accept", "application/json")
+		peExpectJSON(t, "R18: "+row.note+", JSON clients never get an error page", json, http.StatusNotFound)
+	}
+}
+
+func TestErrorPage_ErrorDotHTMLHasNoRole(t *testing.T) {
+	msExpectPanic(t, "P9", "invalid render: error.html has no RENDER_ route",
+		cpCreateWith(map[string]string{"x.html": "x", "error.html": "{{.Code}}"}, cpPageController{}))
+}
+
+func TestErrorPage_DataAndLayout(t *testing.T) {
+	files := epFiles()
+	files["layout.html"] = `<html>{{template "content" .}}</html>`
+	files["admin/layout.html"] = `<admin>{{template "content" .}}</admin>`
+	files["admin/page.html"] = `admin page`
+	files["4xx.html"] = `[{{.Code}}|{{.Status}}|{{.Message}}|{{.RequestID}}|{{printf "%T" .Code}}]`
+	app, _ := pgNew(t, pgFiles(files), epPages{}, epGuarded{}, epAdmin{})
+
+	w := createRequest(app, http.MethodGet, "/fail?code=404")
+	want := "<html>[404|Not Found|it failed|" + w.Header().Get("X-Request-Id") + "|int]</html>"
+	if w.Body.String() != want || w.Header().Get("X-Request-Id") == "" {
+		t.Error(test.DiffMessage(w.Body.String(), want, "P18: the error page inside the root layout, with its data"))
+	}
+	if w.Header().Get("Cache-Control") != "no-cache" || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Error(test.DiffMessage([]string{w.Header().Get("Cache-Control"), w.Header().Get("Content-Type")}, []string{"no-cache", "text/html; charset=utf-8"}, "P18, R20: headers"))
+	}
+
+	admin := createRequest(app, http.MethodGet, "/admin/page?fail=1")
+	if admin.Code != http.StatusNotFound || strings.Contains(admin.Body.String(), "<admin>") || !strings.HasPrefix(admin.Body.String(), "<html>[404|") {
+		t.Error(test.DiffMessage(admin.Body.String(), "the root layout only", "P18: a nested layout never wraps an error page"))
+	}
+
+	post := createRequest(app, http.MethodPost, "/fail", "Accept", "text/html")
+	if post.Code != http.StatusMethodNotAllowed || !strings.HasPrefix(post.Body.String(), "<html>[405|") || !strings.Contains(post.Header().Get("Allow"), "GET") {
+		t.Error(test.DiffMessage(post.Body.String(), "a 405 error page with Allow", "P17, R20: a 405 uses 4xx.html and keeps Allow"))
+	}
+}
+
+func TestErrorPage_FailureFallsBackToBuiltIn(t *testing.T) {
+	files := epFiles()
+	files["5xx.html"] = `5XXMARK{{index .Code 0}}`
+	files["503.html"] = `503MARK`
+	files["layout.html"] = `{{template "content" .}}`
+	app, logger := pgNew(t, pgFiles(files), epPages{}, epGuarded{})
+
+	w := createRequest(app, http.MethodGet, "/fail?code=500")
+	peExpectHTML(t, "P19: 5xx.html fails", w, http.StatusInternalServerError)
+	if strings.Contains(w.Body.String(), "5XXMARK") || !strings.Contains(w.Body.String(), "Internal Server Error") {
+		t.Error(test.DiffMessage(w.Body.String(), "the built-in page", "P19: no half page"))
+	}
+	entries := logger.named("RenderFailed")
+	if len(entries) != 1 || entries[0].field("template") != "5xx" {
+		t.Error(test.DiffMessage(entries, "one RenderFailed for 5xx", "P19: logged with the template name"))
+	}
+
+	w = createRequest(app, http.MethodGet, "/fail?code=503")
+	if w.Code != http.StatusServiceUnavailable || w.Body.String() != "503MARK" {
+		t.Error(test.DiffMessage(w.Body.String(), "503MARK", "P17: a working 503.html wins over the failing 5xx.html"))
+	}
+}
+
+func TestPageError_RouteKindDecides(t *testing.T) {
+	app, _ := peApp(t, peLayerFiles("lp"), nil, peLayeredPage{}, peLayeredAPI{})
+	triggers := []struct {
+		name    string
+		query   string
+		headers []string
+		code    int
+	}{
+		{"guard returns false", "", []string{"X-Guard", "false"}, http.StatusForbidden},
+		{"guard panics", "", []string{"X-Guard", "panic"}, http.StatusForbidden},
+		{"pipe panics", "?pipe=boom", nil, http.StatusBadRequest},
+		{"interceptor panics", "", []string{"X-Intercept", "panic"}, http.StatusConflict},
+		{"handler panics", "?h=boom", nil, http.StatusNotFound},
+		{"filter re-panics", "?h=boom", []string{"X-Filter", "refilter"}, http.StatusGone},
+	}
+	for _, tr := range triggers {
+		page := peDo(app, http.MethodGet, "/lp/run"+tr.query, append([]string{"Accept", peAcceptJSON}, tr.headers...)...)
+		peExpectHTML(t, "R16: page route, "+tr.name+", Accept is ignored", page, tr.code)
+		api := peDo(app, http.MethodGet, "/la/run"+tr.query, append([]string{"Accept", peAcceptHTML}, tr.headers...)...)
+		peExpectJSON(t, "R17: API route, "+tr.name+", Accept is ignored", api, tr.code)
+	}
+	if w := peDo(app, http.MethodGet, "/lp/run", "Accept", peAcceptJSON); w.Code != http.StatusOK || w.Body.String() != "OK" {
+		t.Error(test.DiffMessage(w.Body.String(), "OK", "R16: a request without a failure still renders"))
+	}
+}
+
+func TestError_AcceptDecidesBeforeGuards(t *testing.T) {
+	setup := func(app *App) {
+		app.BindGlobalMiddlewares(peMiddleware{}, csrf.CSRF{}, hostcheck.HostCheck{Hosts: []string{"example.com"}})
+	}
+	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{}, peAPI{})
+
+	for _, route := range []string{"/page/ok", "/api/ok"} {
+		peExpectHTML(t, "R18: a user middleware refusal on "+route+" with Accept text/html", peDo(app, http.MethodGet, route, "X-Mw", "panic", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
+		peExpectJSON(t, "R18: a user middleware refusal on "+route+" with Accept application/json", peDo(app, http.MethodGet, route, "X-Mw", "panic", "Accept", peAcceptJSON), http.StatusServiceUnavailable)
+		peExpectJSON(t, "R18: a user middleware refusal on "+route+" without Accept", peDo(app, http.MethodGet, route, "X-Mw", "panic"), http.StatusServiceUnavailable)
+	}
+
+	for _, route := range []string{"/page/boom", "/api/boom"} {
+		peExpectHTML(t, "R18, R29: cross-origin POST to "+route+" with Accept text/html", peDo(app, http.MethodPost, route, "Sec-Fetch-Site", "cross-site", "Accept", peAcceptHTML), http.StatusForbidden)
+		peExpectJSON(t, "R18, R29: cross-origin POST to "+route+" with Accept application/json", peDo(app, http.MethodPost, route, "Sec-Fetch-Site", "cross-site", "Accept", peAcceptJSON), http.StatusForbidden)
+	}
+
+	peExpectHTML(t, "R18: hostcheck 421 with Accept text/html", peDo(app, http.MethodGet, "/page/ok", "Host", "evil.test", "Accept", peAcceptHTML), http.StatusMisdirectedRequest)
+	peExpectJSON(t, "R18: hostcheck 421 with Accept application/json", peDo(app, http.MethodGet, "/page/ok", "Host", "evil.test", "Accept", peAcceptJSON), http.StatusMisdirectedRequest)
+
+	peExpectHTML(t, "R18: 404 with Accept text/html", peDo(app, http.MethodGet, "/nowhere", "Accept", peAcceptHTML), http.StatusNotFound)
+	peExpectJSON(t, "R18: 404 with Accept application/json", peDo(app, http.MethodGet, "/nowhere", "Accept", peAcceptJSON), http.StatusNotFound)
+
+	w := peDo(app, http.MethodPost, "/page/ok", "Sec-Fetch-Site", "same-origin", "Accept", peAcceptHTML)
+	peExpectHTML(t, "R18: 405 with Accept text/html", w, http.StatusMethodNotAllowed)
+	if !strings.Contains(w.Header().Get("Allow"), "GET") {
+		t.Error(test.DiffMessage(w.Header().Get("Allow"), "an Allow header holding GET", "R18, R20: the Allow header of a 405 is kept in HTML"))
+	}
+	w = peDo(app, http.MethodPost, "/page/ok", "Sec-Fetch-Site", "same-origin", "Accept", peAcceptJSON)
+	peExpectJSON(t, "R18: 405 with Accept application/json", w, http.StatusMethodNotAllowed)
+	if !strings.Contains(w.Header().Get("Allow"), "GET") {
+		t.Error(test.DiffMessage(w.Header().Get("Allow"), "an Allow header holding GET", "R18: the Allow header of a 405 is kept in JSON"))
+	}
+
+	if w := peDo(app, http.MethodPost, "/page/boom", "Sec-Fetch-Site", "same-origin", "Accept", peAcceptHTML); w.Code != http.StatusSeeOther {
+		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "R29: a same-origin POST passes (the SUBMIT_ redirects)"))
+	}
+}
+
+func TestError_AcceptDecidesBeforeGuardsGone(t *testing.T) {
+	setup := func(app *App) {
+		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
+	}
+	app, _ := peApp(t, peLayerFiles(), setup, peAPI{})
+	peExpectHTML(t, "R18: 410 with Accept text/html", peDo(app, http.MethodGet, "/api/ok", "Accept", peAcceptHTML), http.StatusGone)
+	peExpectJSON(t, "R18: 410 with Accept application/json", peDo(app, http.MethodGet, "/api/ok", "Accept", peAcceptJSON), http.StatusGone)
+	peExpectJSON(t, "R18: 410 without Accept", peDo(app, http.MethodGet, "/api/ok"), http.StatusGone)
+}
+
+func TestError_AcceptDecidesBeforeGuardsLoadShed(t *testing.T) {
+	setup := func(app *App) { app.BindGlobalMiddlewares(loadshed.LoadShed{MaxInFlight: 1, MaxQueue: -1}) }
+	peBlockStarted = make(chan struct{})
+	peBlockRelease = make(chan struct{})
+	app, _ := peApp(t, peLayerFiles(), setup, peBlocking{})
+	done := make(chan struct{})
+	go func() {
+		peDo(app, http.MethodGet, "/block/hold")
+		close(done)
+	}()
+	<-peBlockStarted
+
+	peExpectHTML(t, "R18: loadshed 503 with Accept text/html", peDo(app, http.MethodGet, "/block/hold", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
+	peExpectJSON(t, "R18: loadshed 503 with Accept application/json", peDo(app, http.MethodGet, "/block/hold", "Accept", peAcceptJSON), http.StatusServiceUnavailable)
+
+	close(peBlockRelease)
+	<-done
+}
+
+func TestError_AcceptTable(t *testing.T) {
+	app, _ := peApp(t, peLayerFiles("page"), nil, pePage{})
+	cases := []struct {
+		name    string
+		accept  []string
+		isHTML  bool
+		comment string
+	}{
+		{"text/html", []string{"text/html"}, true, "plain"},
+		{"upper case", []string{"TEXT/HTML"}, true, "case-insensitive"},
+		{"mixed case", []string{"Text/Html"}, true, "case-insensitive"},
+		{"browser list", []string{"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}, true, "a browser's value"},
+		{"q-value is not read", []string{"text/html;q=0.9,*/*"}, true, "q-values are not read"},
+		{"zero q-value is not read", []string{"application/json, text/html;q=0"}, true, "q-values are not read"},
+		{"two lines", []string{"application/json", "text/html"}, true, "a value of any Accept line"},
+		{"star", []string{"*/*"}, false, "*/* alone"},
+		{"missing", nil, false, "no Accept"},
+		{"empty", []string{""}, false, "empty Accept"},
+		{"xhtml alone", []string{"application/xhtml+xml"}, false, "xhtml alone"},
+		{"json", []string{"application/json"}, false, "json"},
+		{"text plain", []string{"text/plain"}, false, "text/plain"},
+	}
+	for _, tc := range cases {
+		var headers []string
+		for _, v := range tc.accept {
+			headers = append(headers, "Accept", v)
+		}
+		w := peDo(app, http.MethodGet, "/nowhere", headers...)
+		if tc.isHTML {
+			peExpectHTML(t, "R18: Accept "+tc.name+" ("+tc.comment+")", w, http.StatusNotFound)
+		} else {
+			peExpectJSON(t, "R18: Accept "+tc.name+" ("+tc.comment+")", w, http.StatusNotFound)
+		}
+	}
+}
+
+func TestError_VaryAccept(t *testing.T) {
+	app, _ := peApp(t, peLayerFiles("page"), nil, pePage{})
+	for name, accept := range map[string]string{"html": peAcceptHTML, "json": peAcceptJSON, "none": ""} {
+		var headers []string
+		if accept != "" {
+			headers = []string{"Accept", accept}
+		}
+		w := peDo(app, http.MethodGet, "/nowhere", headers...)
+		if got := strings.ToLower(strings.Join(w.Header().Values("Vary"), ",")); !strings.Contains(got, "accept") {
+			t.Error(test.DiffMessage(got, "a Vary header holding Accept", "R18: a response chosen by Accept carries Vary: Accept ("+name+")"))
+		}
+	}
+}
+
+func TestError_JSONWithoutEnableRender(t *testing.T) {
+	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}, csrf.CSRF{}) }
+	app, _ := peApp(t, nil, setup, peAPI{})
+
+	w := peDo(app, http.MethodGet, "/nowhere", "Accept", peAcceptHTML)
+	lcExpectResponse(t, w, http.StatusNotFound, wantNotFoundJSON, "R18: without EnableRender a 404 is JSON whatever Accept says")
+	if got := w.Header().Values("Vary"); len(got) != 0 {
+		t.Error(test.DiffMessage(got, []string(nil), "R18: without EnableRender the response is byte for byte as before, no Vary"))
+	}
+	peExpectJSON(t, "R18: a middleware refusal is JSON without EnableRender", peDo(app, http.MethodGet, "/api/ok", "X-Mw", "panic", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
+	peExpectJSON(t, "R18: csrf is JSON without EnableRender", peDo(app, http.MethodPost, "/api/boom", "Sec-Fetch-Site", "cross-site", "Accept", peAcceptHTML), http.StatusForbidden)
+	peExpectJSON(t, "R17: a handler exception is JSON without EnableRender", peDo(app, http.MethodGet, "/api/boom?k=notfound", "Accept", peAcceptHTML), http.StatusNotFound)
+}
+
+func TestPageError_CustomTemplate(t *testing.T) {
+	files := peFilesWith(map[string]string{
+		"layout.html": `<html>{{template "content" .}}</html>`,
+		"4xx.html":    `[{{.Code}}|{{.Status}}|{{.Message}}|{{.RequestID}}|{{printf "%T" .Code}}]`,
+	}, "lp")
+	app, _ := peApp(t, files, nil, peLayeredPage{})
+	w := peDo(app, http.MethodGet, "/lp/run", "X-Guard", "panic")
+	want := "<html>[403|Forbidden|guard refuses|" + w.Header().Get("X-Request-Id") + "|int]</html>"
+	if w.Body.String() != want {
+		t.Error(test.DiffMessage(w.Body.String(), want, "P17, P18: 4xx.html inside the root layout with Code, Status, Message and RequestID"))
+	}
+	if w.Header().Get("X-Request-Id") == "" {
+		t.Error(test.DiffMessage("", "a request id", "R20: the request id is on the page and in the header"))
+	}
+	peExpectHTML(t, "R20: custom template", w, http.StatusForbidden)
+	if got := w.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Error(test.DiffMessage(got, "text/html; charset=utf-8", "R20: Content-Type"))
+	}
+}
+
+func TestPageError_KeepsLayerHeaders(t *testing.T) {
+	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}) }
+	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{})
+
+	w := peDo(app, http.MethodGet, "/page/ok", "X-Mw", "retry", "Accept", peAcceptHTML)
+	peExpectHTML(t, "R20: error after a layer set Retry-After", w, http.StatusServiceUnavailable)
+	if got := w.Header().Get("Retry-After"); got != "7" {
+		t.Error(test.DiffMessage(got, "7", "R20: Retry-After set by a layer is kept"))
+	}
+
+	w = peDo(app, http.MethodPost, "/page/ok", "Accept", peAcceptHTML)
+	peExpectHTML(t, "R20: 405", w, http.StatusMethodNotAllowed)
+	if got := w.Header().Get("Allow"); !strings.Contains(got, "GET") {
+		t.Error(test.DiffMessage(got, "GET", "R20: Allow is kept"))
+	}
+}
+
+func TestPageError_DropsBodyHeaders(t *testing.T) {
+	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}) }
+	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{})
+	w := peDo(app, http.MethodGet, "/page/ok", "X-Mw", "dirty", "Accept", peAcceptHTML)
+
+	peExpectHTML(t, "R20: error after a layer set body headers", w, http.StatusBadRequest)
+	for _, name := range []string{"Content-Length", "Content-Encoding", "ETag", "Last-Modified"} {
+		if got := w.Header().Get(name); got != "" {
+			t.Error(test.DiffMessage(got, "", "R20: "+name+" set earlier is removed"))
+		}
+	}
+	if got := w.Header().Get("X-Custom"); got != "kept" {
+		t.Error(test.DiffMessage(got, "kept", "R20: other headers are kept"))
+	}
+}
+
+func TestPageError_BuiltIn(t *testing.T) {
+	files := peFilesWith(map[string]string{"layout.html": `<html>LAYOUTMARK{{template "content" .}}</html>`}, "page")
+	app, _ := peApp(t, files, nil, pePage{})
+	w := peDo(app, http.MethodGet, "/page/boom?k=hostile")
+
+	peExpectHTML(t, "R21: built-in page", w, http.StatusBadRequest)
+	body := w.Body.String()
+	lower := strings.ToLower(body)
+	if !strings.HasPrefix(lower, "<!doctype html>") || !strings.Contains(lower, "<html") || !strings.Contains(lower, "</html>") || !strings.Contains(lower, "<title") {
+		t.Error(test.DiffMessage(body, "a complete HTML document", "R21: a complete document"))
+	}
+	for _, banned := range []string{"<style", "<script", "<link", "style=", "src=", "http://", "https://", "LAYOUTMARK"} {
+		if strings.Contains(body, banned) {
+			t.Error(test.DiffMessage(body, "no "+banned, "R21: no layout, inline style or script, or external resource"))
+		}
+	}
+	for _, want := range []string{"400", "Bad Request"} {
+		if !strings.Contains(body, want) {
+			t.Error(test.DiffMessage(body, "a body holding "+want, "R21: the code and the status text"))
+		}
+	}
+	if strings.Contains(body, "<b>") || !strings.Contains(body, "&lt;b&gt;") {
+		t.Error(test.DiffMessage(body, "the message escaped", "R21: the message is escaped"))
+	}
+}
+
+func TestPageError_FallsBackToBuiltIn(t *testing.T) {
+	files := peFilesWith(map[string]string{"layout.html": `<html>LAYOUTMARK{{template "content" .}}</html>`, "404.html": `ERRORMARK{{index .Code 0}}`, "4xx.html": "NEXTFILE"}, "page")
+	app, logger := peApp(t, files, nil, pePage{})
+	w := peDo(app, http.MethodGet, "/page/boom?k=notfound")
+	peExpectHTML(t, "P19: 404.html fails", w, http.StatusNotFound)
+	body := w.Body.String()
+	if body == "" || strings.Contains(body, "ERRORMARK") || strings.Contains(body, "LAYOUTMARK") || strings.Contains(body, "NEXTFILE") || !strings.Contains(body, "no such thing") {
+		t.Error(test.DiffMessage(body, "the built-in page with the same code", "P19: no half page and the next file is not tried"))
+	}
+	entries := logger.named("RenderFailed")
+	if len(entries) != 1 {
+		t.Fatal(test.DiffMessage(len(entries), 1, "P19: RenderFailed is logged"))
+	}
+	if got := entries[0].field("template"); got != "404" {
+		t.Error(test.DiffMessage(got, "404", "P19: the template field names the error page"))
+	}
+
+	files = peFilesWith(map[string]string{"layout.html": `<html>{{index .Code 0}}{{template "content" .}}</html>`, "404.html": `ERRORMARK`}, "page")
+	app, logger = peApp(t, files, nil, pePage{})
+	w = peDo(app, http.MethodGet, "/page/boom?k=notfound")
+	peExpectHTML(t, "P19: the layout fails with error data", w, http.StatusNotFound)
+	if body := w.Body.String(); body == "" || strings.Contains(body, "ERRORMARK") || !strings.Contains(body, "no such thing") {
+		t.Error(test.DiffMessage(body, "the built-in page with the same code", "P19: no half page when the layout fails"))
+	}
+	if n := len(logger.named("RenderFailed")); n != 1 {
+		t.Error(test.DiffMessage(n, 1, "P19: RenderFailed is logged for the layout"))
+	}
+}
+
+func TestPageError_UserFilterFirst(t *testing.T) {
+	files := peFilesWith(map[string]string{"4xx.html": "BUILTIN {{.Code}}"}, "lp")
+	app, _ := peApp(t, files, nil, peLayeredPage{})
+
+	w := peDo(app, http.MethodGet, "/lp/run?h=boom", "X-Filter", "handle")
+	if w.Code != http.StatusTeapot || w.Body.String() != "handled by the user filter" {
+		t.Error(test.DiffMessage(w.Code, http.StatusTeapot, "R23: a user filter answers by itself, "+w.Body.String()))
+	}
+
+	w = peDo(app, http.MethodGet, "/lp/run?h=boom", "X-Filter", "refilter")
+	peExpectHTML(t, "R23: an exception the filter re-panics ends as an HTML error", w, http.StatusGone)
+	if w.Body.String() != "BUILTIN 410" {
+		t.Error(test.DiffMessage(w.Body.String(), "BUILTIN 410", "R23: the new exception is rendered"))
+	}
+
+	w = peDo(app, http.MethodGet, "/lp/run?h=boom")
+	if w.Code != http.StatusNotFound || w.Body.String() != "BUILTIN 404" {
+		t.Error(test.DiffMessage(w.Body.String(), "BUILTIN 404", "R23: a filter that passes the exception on ends as an HTML error"))
+	}
+}
+
+func TestClientText_Table(t *testing.T) {
+	files := peFilesWith(map[string]string{"4xx.html": peTextBody, "5xx.html": peTextBody}, "page")
+	app, logger := peApp(t, files, nil, pePage{}, peAPI{})
+
+	for _, tc := range peCases() {
+		for _, route := range []string{"/api/boom", "/page/boom"} {
+			isHTML := strings.HasPrefix(route, "/page")
+			before := map[string]int{}
+			for _, m := range []string{"ExceptionCause", "InternalServerError", "UnhandledPanic"} {
+				before[m] = peLogCount(logger, m)
+			}
+			w := peDo(app, http.MethodGet, route+"?k="+tc.kind)
+			desc := "R24: " + tc.kind + " on " + route
+
+			if isHTML {
+				peExpectHTML(t, desc, w, tc.code)
+				if want := fmt.Sprintf("%d|%s|%s", tc.code, tc.status, tc.message); w.Body.String() != want {
+					t.Error(test.DiffMessage(w.Body.String(), want, desc+": .Code, .Status and .Message"))
+				}
+			} else {
+				peExpectJSON(t, desc, w, tc.code)
+				want := exception.NewException(tc.message, tc.code, tc.status).AppendJSON(nil)
+				if w.Body.String() != string(want) {
+					t.Error(test.DiffMessage(w.Body.String(), string(want), desc+": code, error and message"))
+				}
+			}
+			if strings.Contains(w.Body.String(), peSecretWords) || strings.Contains(w.Body.String(), "10.0.0.5") || strings.Contains(w.Body.String(), "secret") {
+				t.Error(test.DiffMessage(w.Body.String(), "no cause text", desc+": a cause never reaches the client"))
+			}
+			for _, m := range []string{"ExceptionCause", "InternalServerError", "UnhandledPanic"} {
+				want := 0
+				if m == tc.logMsg {
+					want = 1
+				}
+				if got := peLogCount(logger, m) - before[m]; got != want {
+					t.Error(test.DiffMessage(got, want, desc+": log events named "+m))
+				}
+			}
+		}
+	}
+}
+
+func TestClientText_LoggedFields(t *testing.T) {
+	app, logger := peApp(t, nil, nil, peAPI{})
+
+	peDo(app, http.MethodGet, "/api/boom?k=cause")
+	entries := logger.named("ExceptionCause")
+	if len(entries) != 1 {
+		t.Fatal(test.DiffMessage(len(entries), 1, "R24: ExceptionCause is logged once"))
+	}
+	e := entries[0]
+	if e.level != "debug" {
+		t.Error(test.DiffMessage(e.level, "debug", "R24: ExceptionCause is a Debug event"))
+	}
+	for key, want := range map[string]any{"method": http.MethodGet, "path": "/api/boom", "code": 400} {
+		if got := e.field(key); got != want {
+			t.Error(test.DiffMessage(got, want, "R24: ExceptionCause field "+key))
+		}
+	}
+	if got := lcText(e.field("cause")); !strings.Contains(got, peSecretWords) {
+		t.Error(test.DiffMessage(got, "the cause's text", "R24: ExceptionCause carries the cause"))
+	}
+
+	peDo(app, http.MethodGet, "/api/boom?k=internalcause")
+	entries = logger.named("InternalServerError")
+	if len(entries) != 1 {
+		t.Fatal(test.DiffMessage(len(entries), 1, "R24: InternalServerError is logged once"))
+	}
+	e = entries[0]
+	if e.level != "error" {
+		t.Error(test.DiffMessage(e.level, "error", "R24: InternalServerError is an Error event"))
+	}
+	for key, want := range map[string]any{"method": http.MethodGet, "path": "/api/boom", "message": "db down"} {
+		if got := e.field(key); got != want {
+			t.Error(test.DiffMessage(got, want, "R24: InternalServerError field "+key))
+		}
+	}
+	if got := lcText(e.field("cause")); !strings.Contains(got, "10.0.0.5") {
+		t.Error(test.DiffMessage(got, "the cause's text", "R24: InternalServerError carries the cause"))
+	}
+}
+
+func TestClientText_RenderFailure(t *testing.T) {
+	files := peFilesWith(map[string]string{"4xx.html": peTextBody, "5xx.html": peTextBody}, "page")
+	app, logger := peApp(t, files, nil, pePage{})
+	w := peDo(app, http.MethodGet, "/page/boom?k=render")
+	peExpectHTML(t, "R24: a render failure", w, http.StatusInternalServerError)
+	if want := "500|Internal Server Error|Internal Server Error"; w.Body.String() != want {
+		t.Error(test.DiffMessage(w.Body.String(), want, "R24: a render failure sends the fixed text"))
+	}
+	if n := len(logger.named("RenderFailed")); n != 1 {
+		t.Error(test.DiffMessage(n, 1, "R24: RenderFailed is logged"))
+	}
+}
+
+func TestClientText_JSONShapeUnchanged(t *testing.T) {
+	app, _ := peApp(t, nil, nil, peAPI{})
+	for kind, want := range map[string]string{
+		"wrapped":  `{"code":409,"error":"Conflict","message":"taken"}`,
+		"notfound": `{"code":404,"error":"Not Found","message":"no such thing"}`,
+		"internal": peFixedJSON,
+		"cause":    `{"code":400,"error":"Bad Request","message":"bad input"}`,
+	} {
+		w := peDo(app, http.MethodGet, "/api/boom?k="+kind)
+		lcExpectResponse(t, w, map[string]int{"wrapped": 409, "notfound": 404, "internal": 500, "cause": 400}[kind], want, "R24: the JSON shape and key order are unchanged ("+kind+")")
+	}
+}
+
+func TestClientText_FrameworkMessages(t *testing.T) {
+	files := map[string]string{"4xx.html": peTextBody, "pin/json.html": "OK", "pin/form.html": "OK"}
+	app, logger := peApp(t, files, nil, peBodyAPI{}, pePageIn{})
+	app.maxRequestBodyBytes.Store(64)
+	big := strings.Repeat("a", 4096)
+	tooLarge := http.StatusText(http.StatusRequestEntityTooLarge)
+
+	w := pePost(app, "/in/json", "application/json", `{"k":"`+big+`"}`)
+	want := exception.NewException("Request body too large", 413, tooLarge).AppendJSON(nil)
+	lcExpectResponse(t, w, http.StatusRequestEntityTooLarge, string(want), "R24: a body over the limit")
+
+	w = pePost(app, "/in/form", "application/x-www-form-urlencoded", "k="+big)
+	lcExpectResponse(t, w, http.StatusRequestEntityTooLarge, string(want), "R24: a urlencoded form over the limit")
+
+	w = pePost(app, "/pin/json", "application/json", `{"k":"`+big+`"}`)
+	if w.Code != http.StatusRequestEntityTooLarge || w.Body.String() != fmt.Sprintf("413|%s|Request body too large", tooLarge) {
+		t.Error(test.DiffMessage(w.Body.String(), fmt.Sprintf("413|%s|Request body too large", tooLarge), "R24, R28: the same text in HTML"))
+	}
+
+	for _, entry := range logger.named("ExceptionCause") {
+		if got := lcText(entry.field("cause")); !strings.Contains(got, "request body too large") {
+			t.Error(test.DiffMessage(got, "http: request body too large", "R24: the limit error is kept as the logged cause"))
+		}
+	}
+	if n := len(logger.named("ExceptionCause")); n != 3 {
+		t.Error(test.DiffMessage(n, 3, "R24: each refusal logs its cause"))
+	}
+
+	app.maxRequestBodyBytes.Store(10 << 20)
+
+	w = pePost(app, "/in/form", "application/x-www-form-urlencoded", "k=%zz")
+	lcExpectResponse(t, w, http.StatusBadRequest, `{"code":400,"error":"Bad Request","message":"Invalid form body"}`, "R24: a malformed form keeps its message and loses the cause text in error")
+
+	w = pePost(app, "/in/json", "application/json", `{"k":`)
+	lcExpectResponse(t, w, http.StatusBadRequest, `{"code":400,"error":"Bad Request","message":"Invalid JSON body"}`, "R24: a malformed JSON body loses the cause text in error")
+
+	w = pePost(app, "/pin/form", "application/x-www-form-urlencoded", "k=%zz")
+	if w.Code != http.StatusBadRequest || w.Body.String() != "400|Bad Request|Invalid form body" {
+		t.Error(test.DiffMessage(w.Body.String(), "400|Bad Request|Invalid form body", "R24, R28: the same text in HTML"))
+	}
+}
+
+func TestPageError_HTMLErrorIsNotCached(t *testing.T) {
+	app, _ := pgNew(t, pgPageFiles(map[string]string{
+		"layout.html": `<script nonce="{{nonce}}"></script>{{template "content" .}}`,
+		"404.html":    `E{{.Code}}`,
+	}), pgPages{})
+	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	req.Header.Set("Accept", "text/html")
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "no-cache" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Cache-Control")}, []any{404, "no-cache"}, "an HTML error page, which may carry a nonce, is never stored by a shared cache"))
 	}
 }

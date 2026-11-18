@@ -10,13 +10,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func newHTTPContext() *ctx.HTTPContext {
-	c := ctx.NewHTTPContext()
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.ResponseWriter = httptest.NewRecorder()
-	return c
-}
-
 func TestGlobalHTTPExceptionFilterFullException(t *testing.T) {
 	filter := globalHTTPExceptionFilter{}
 	c := newHTTPContext()
@@ -85,14 +78,6 @@ func TestGlobalWSExceptionFilterEmptyMessageFallsBackToDefault(t *testing.T) {
 	if env["code"] != http.StatusInternalServerError {
 		t.Error(test.DiffMessage(env["code"], http.StatusInternalServerError, "WS status code fallback"))
 	}
-}
-
-func defaultFilterBody(ex exception.Exception) (int, string, string) {
-	filter := globalHTTPExceptionFilter{}
-	c := newHTTPContext()
-	w := c.ResponseWriter.(*httptest.ResponseRecorder)
-	filter.Catch(c, &ex)
-	return w.Code, w.Header().Get("Content-Type"), w.Body.String()
 }
 
 func TestGlobalHTTPExceptionFilter_BodyBytes(t *testing.T) {

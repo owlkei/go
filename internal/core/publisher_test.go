@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 	"golang.org/x/net/websocket"
 )
@@ -20,22 +18,6 @@ func TestPublisher_SharesBrokerWithWSConnmgr(t *testing.T) {
 	if *app.ws.connmgr.Broker != app.broker {
 		t.Error(test.DiffMessage(*app.ws.connmgr.Broker, app.broker, "WSConnmgr must use the same broker instance as the app's Publisher, or fan-out across transports won't reach WS subscribers"))
 	}
-}
-
-type publisherTestController struct {
-	common.HTTP
-	common.WS
-}
-
-func (c publisherTestController) NewController() Controller { return c }
-
-func (c publisherTestController) READ_ping(publisher common.Publisher) ctx.Map {
-	_ = publisher.Publish("chat.123")
-	return ctx.Map{"message": "ok"}
-}
-
-func (c publisherTestController) SUBSCRIBE_chat_ANY() ctx.Map {
-	return ctx.Map{"ok": true}
 }
 
 func TestPublisher_HTTPHandlerFansOutToWSSubscriber(t *testing.T) {
@@ -83,17 +65,6 @@ func TestPublisher_HTTPHandlerFansOutToWSSubscriber(t *testing.T) {
 	if evt.Type != TypeEvent || len(evt.Topic) != 1 || evt.Topic[0] != "chat.123" {
 		t.Error(test.DiffMessage(evt, "event chat.123", "the HTTP handler's Publish call should fan out to the WS subscriber"))
 	}
-}
-
-type publisherWSTestController struct {
-	common.WS
-}
-
-func (c publisherWSTestController) NewController() Controller { return c }
-
-func (c publisherWSTestController) SUBSCRIBE_relay_ANY(publisher common.Publisher) ctx.Map {
-	_ = publisher.Publish("relay.out")
-	return ctx.Map{"ok": true}
 }
 
 func TestPublisher_WSHandlerFansOutToOtherWSSubscriber(t *testing.T) {

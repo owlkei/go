@@ -11,462 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
-	ctxlookalike "github.com/dangduoc08/ginject/internal/test/lookalike/ctx"
 	"github.com/dangduoc08/ginject/internal/trace"
+	"golang.org/x/net/websocket"
 )
-
-var (
-	planPipeCalls     []planPipeCall
-	planOrder         []string
-	planTransformHits int
-	planNextCalls     int
-)
-
-type planPipeCall struct {
-	Kind string
-	Src  any
-	Meta common.ArgumentMetadata
-}
-
-type planPublisher struct{}
-
-func (*planPublisher) Publish(string, ...any) error { return nil }
-
-type planTraceLog struct {
-	mu     sync.Mutex
-	events []trace.Event
-	stop   func()
-}
-
-func planListen(ev *trace.Tracer) *planTraceLog {
-	l := &planTraceLog{}
-	l.stop = ev.Listen(func(e trace.Event) {
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		l.events = append(l.events, e)
-	})
-	return l
-}
-
-func (l *planTraceLog) all() []trace.Event {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return append([]trace.Event(nil), l.events...)
-}
-
-func (l *planTraceLog) byStage(stage string) []trace.Event {
-	var out []trace.Event
-	for _, e := range l.all() {
-		if e.Stage == stage {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-func planPanicOf(f func()) (rec any) {
-	defer func() { rec = recover() }()
-	f()
-	return nil
-}
-
-func planExceptionOf(rec any) (exception.Exception, bool) {
-	switch v := rec.(type) {
-	case exception.Exception:
-		return v, true
-	case *exception.Exception:
-		if v != nil {
-			return *v, true
-		}
-	}
-	return exception.Exception{}, false
-}
-
-func planUnresolved(funcType string, index int) string {
-	return "dependency injection: can't resolve dependencies of the '" + funcType +
-		"'. Please make sure that the argument dependency at index [" + strconv.Itoa(index) +
-		"] is available in the handler"
-}
-
-func planSameMap(a, b any) bool {
-	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
-}
-
-var planCtr = newContainer()
-
-func planInstallPublisher(t testing.TB) *planPublisher {
-	t.Helper()
-	p := &planPublisher{}
-	planCtr = newContainer()
-	planCtr.addInterface(publisherKey, common.Publisher(p))
-	t.Cleanup(func() { planCtr = newContainer() })
-	return p
-}
-
-func planRemovePublisher(t testing.TB) {
-	t.Helper()
-	planCtr = newContainer()
-	t.Cleanup(func() { planCtr = newContainer() })
-}
-
-func planResetState(t testing.TB) {
-	t.Helper()
-	planPipeCalls = nil
-	planOrder = nil
-	planTransformHits = 0
-	planNextCalls = 0
-	t.Cleanup(func() {
-		planPipeCalls = nil
-		planOrder = nil
-		planTransformHits = 0
-		planNextCalls = 0
-	})
-}
-
-func planProviders() map[string]Provider {
-	return map[string]Provider{
-		genFieldKey(reflect.TypeOf(fnTestProvider{})): fnTestProvider{Tag: "injected"},
-	}
-}
-
-func planMethod(t testing.TB, controller any, name string) (reflect.Value, reflect.Method) {
-	t.Helper()
-	m, ok := reflect.TypeOf(controller).MethodByName(name)
-	if !ok {
-		t.Fatalf("fixture: %T has no method %s", controller, name)
-	}
-	return reflect.ValueOf(controller), m
-}
-
-func planHTTP(t testing.TB, controller any, name string, providers map[string]Provider) *httpHandlerPlan {
-	t.Helper()
-	recv, m := planMethod(t, controller, name)
-	return newHTTPHandlerPlan(recv, m, providers, planCtr)
-}
-
-func planRequestContext() *ctx.HTTPContext {
-	r := httptest.NewRequest(http.MethodPost, "/items?q=1&q=2", strings.NewReader(`{"a":1}`))
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-Probe", "p")
-	c := ctx.NewHTTPContext()
-	ctx.HTTPInit(c, httptest.NewRecorder(), r)
-	ctx.HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"7"})
-	return c
-}
-
-func planInvoke(p *httpHandlerPlan, c *ctx.HTTPContext) []reflect.Value {
-	return p.invoke(c, &trace.Tracer{})
-}
-
-type recCtxPipe struct{ Kind string }
-
-func (d recCtxPipe) Transform(c *ctx.HTTPContext, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"context", c, m})
-	d.Kind = "context"
-	return d
-}
-
-type recBodyPipe struct{ Kind string }
-
-func (d recBodyPipe) Transform(b ctx.Body, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"body", b, m})
-	d.Kind = "body"
-	return d
-}
-
-type provBodyPipe struct {
-	P    fnTestProvider
-	Kind string
-	Name string
-}
-
-func (d provBodyPipe) Transform(b ctx.Body, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"body", b, m})
-	d.Kind = "body"
-	return d
-}
-
-type recFormPipe struct{ Kind string }
-
-func (d recFormPipe) Transform(f ctx.Form, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"form", f, m})
-	d.Kind = "form"
-	return d
-}
-
-type recQueryPipe struct{ Kind string }
-
-func (d recQueryPipe) Transform(q ctx.Query, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"query", q, m})
-	d.Kind = "query"
-	return d
-}
-
-type recHeaderPipe struct{ Kind string }
-
-func (d recHeaderPipe) Transform(h ctx.Header, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"header", h, m})
-	d.Kind = "header"
-	return d
-}
-
-type recParamPipe struct{ Kind string }
-
-func (d recParamPipe) Transform(p ctx.Param, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"param", p, m})
-	d.Kind = "param"
-	return d
-}
-
-type recFilePipe struct{ Kind string }
-
-func (d recFilePipe) Transform(f ctx.File, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"file", f, m})
-	d.Kind = "file"
-	return d
-}
-
-type recWSPayloadPipe struct{ Kind string }
-
-func (d recWSPayloadPipe) Transform(p ctx.WSPayload, m common.ArgumentMetadata) any {
-	planPipeCalls = append(planPipeCalls, planPipeCall{"wsPayload", p, m})
-	d.Kind = "wsPayload"
-	return d
-}
-
-type scalarPipe int
-
-func (scalarPipe) Transform(p ctx.Param, _ common.ArgumentMetadata) any {
-	planTransformHits++
-	return scalarPipe(len(p) + 41)
-}
-
-type mapPipe map[string]int
-
-func (mapPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	return map[string]int{"a": 1}
-}
-
-type nilPipe struct{}
-
-func (nilPipe) Transform(ctx.Query, common.ArgumentMetadata) any { return nil }
-
-type pointerResultPipe struct{}
-
-func (pointerResultPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	return &pointerResultPipe{}
-}
-
-type otherResultPipe struct{}
-
-func (otherResultPipe) Transform(ctx.Query, common.ArgumentMetadata) any { return "text" }
-
-type nilWSPipe struct{}
-
-func (nilWSPipe) Transform(ctx.WSPayload, common.ArgumentMetadata) any { return nil }
-
-type countingPipe struct{}
-
-func (countingPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	planTransformHits++
-	return countingPipe{}
-}
-
-type seenPipe struct {
-	Seen int
-	Log  []string
-}
-
-func (d seenPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	d.Seen++
-	d.Log = append(d.Log, "x")
-	return d
-}
-
-type orderPipeA struct{}
-
-func (d orderPipeA) Transform(ctx.Query, common.ArgumentMetadata) any {
-	planOrder = append(planOrder, "a")
-	return d
-}
-
-type orderPipeB struct{}
-
-func (d orderPipeB) Transform(ctx.Header, common.ArgumentMetadata) any {
-	planOrder = append(planOrder, "b")
-	return d
-}
-
-type orderPipeC struct{}
-
-func (d orderPipeC) Transform(ctx.Param, common.ArgumentMetadata) any {
-	planOrder = append(planOrder, "c")
-	return d
-}
-
-type panicPipe struct{}
-
-func (panicPipe) Transform(ctx.Header, common.ArgumentMetadata) any {
-	planOrder = append(planOrder, "boom")
-	panic("pipe exploded")
-}
-
-type slowPipe struct{}
-
-func (d slowPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	time.Sleep(20 * time.Millisecond)
-	return d
-}
-
-type slowPipeB struct{}
-
-func (d slowPipeB) Transform(ctx.Header, common.ArgumentMetadata) any {
-	time.Sleep(20 * time.Millisecond)
-	return d
-}
-
-type provQueryPipe struct{ P fnTestProvider }
-
-func (d provQueryPipe) Transform(ctx.Query, common.ArgumentMetadata) any { return d }
-
-type ifaceQueryPipe struct{ Pub common.Publisher }
-
-func (d ifaceQueryPipe) Transform(ctx.Query, common.ArgumentMetadata) any { return d }
-
-type unexportedFieldPipe struct{ hidden int }
-
-func (d unexportedFieldPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	return unexportedFieldPipe{hidden: d.hidden}
-}
-
-type unresolvedFieldPipe struct{ Missing unresolvableProviderType }
-
-func (d unresolvedFieldPipe) Transform(ctx.Query, common.ArgumentMetadata) any { return d }
-
-type mutPipe struct{ Seen int }
-
-func (d mutPipe) Transform(ctx.Query, common.ArgumentMetadata) any {
-	d.Seen++
-	return d
-}
-
-type planUnknownArg struct{}
-
-type planCtl struct {
-	calls int
-	tag   string
-	got   []any
-}
-
-func (h *planCtl) HCtx(c *ctx.HTTPContext) { h.calls++; h.got = []any{c} }
-func (h *planCtl) HReq(r *http.Request)    { h.calls++; h.got = []any{r} }
-func (h *planCtl) HWriter(w http.ResponseWriter) {
-	h.calls++
-	h.got = []any{w}
-}
-func (h *planCtl) HBody(b ctx.Body)     { h.calls++; h.got = []any{b} }
-func (h *planCtl) HForm(f ctx.Form)     { h.calls++; h.got = []any{f} }
-func (h *planCtl) HQuery(q ctx.Query)   { h.calls++; h.got = []any{q} }
-func (h *planCtl) HHeader(x ctx.Header) { h.calls++; h.got = []any{x} }
-func (h *planCtl) HParam(p ctx.Param)   { h.calls++; h.got = []any{p} }
-func (h *planCtl) HFile(f ctx.File)     { h.calls++; h.got = []any{f} }
-func (h *planCtl) HNext(n ctx.Next)     { h.calls++; n() }
-func (h *planCtl) HRedirect(r ctx.Redirect) {
-	h.calls++
-	r("/elsewhere")
-}
-func (h *planCtl) HPublisher(p common.Publisher) { h.calls++; h.got = []any{p} }
-
-func (h *planCtl) HNone()                     { h.calls++ }
-func (h *planCtl) HOne() string               { h.calls++; return "one" }
-func (h *planCtl) HTwo() (int, string)        { h.calls++; return 201, "two" }
-func (h *planCtl) HThree() (int, string, any) { h.calls++; return 202, "a", "b" }
-func (h *planCtl) HTag() string               { h.calls++; return h.tag }
-func (h *planCtl) HPanics()                   { h.calls++; panic("handler exploded") }
-
-func (h *planCtl) HCtxPipe(p recCtxPipe)       { h.calls++; h.got = []any{p} }
-func (h *planCtl) HBodyPipe(p recBodyPipe)     { h.calls++; h.got = []any{p} }
-func (h *planCtl) HFormPipe(p recFormPipe)     { h.calls++; h.got = []any{p} }
-func (h *planCtl) HQueryPipe(p recQueryPipe)   { h.calls++; h.got = []any{p} }
-func (h *planCtl) HHeaderPipe(p recHeaderPipe) { h.calls++; h.got = []any{p} }
-func (h *planCtl) HParamPipe(p recParamPipe)   { h.calls++; h.got = []any{p} }
-func (h *planCtl) HFilePipe(p recFilePipe)     { h.calls++; h.got = []any{p} }
-func (h *planCtl) HScalarPipe(p scalarPipe)    { h.calls++; h.got = []any{p} }
-func (h *planCtl) HMapPipe(p mapPipe)          { h.calls++; h.got = []any{p} }
-func (h *planCtl) HNilPipe(p nilPipe)          { h.calls++; h.got = []any{p} }
-func (h *planCtl) HPointerResult(p pointerResultPipe) {
-	h.calls++
-	h.got = []any{p}
-}
-func (h *planCtl) HOtherResult(p otherResultPipe) { h.calls++; h.got = []any{p} }
-func (h *planCtl) HCountingPipe(p countingPipe)   { h.calls++; h.got = []any{p} }
-func (h *planCtl) HSeenPipe(p seenPipe)           { h.calls++; h.got = []any{p.Seen, len(p.Log)} }
-func (h *planCtl) HProvQuery(p provQueryPipe)     { h.calls++; h.got = []any{p} }
-func (h *planCtl) HIfaceQuery(p ifaceQueryPipe)   { h.calls++; h.got = []any{p} }
-func (h *planCtl) HUnexported(p unexportedFieldPipe) {
-	h.calls++
-}
-func (h *planCtl) HUnresolved(p unresolvedFieldPipe) { h.calls++ }
-
-func (h *planCtl) HOrder(a orderPipeA, b orderPipeB, c orderPipeC) {
-	h.calls++
-	planOrder = append(planOrder, "handler")
-}
-
-func (h *planCtl) HPanicMid(a orderPipeA, b panicPipe, c orderPipeC) {
-	h.calls++
-	planOrder = append(planOrder, "handler")
-}
-
-func (h *planCtl) HBodyThenPipe(b ctx.Body, a orderPipeA) {
-	h.calls++
-	planOrder = append(planOrder, "handler")
-}
-
-func (h *planCtl) HSlow(p slowPipe)                 { h.calls++ }
-func (h *planCtl) HTwoSlow(p slowPipe, q slowPipeB) { h.calls++ }
-func (h *planCtl) HMixed(c *ctx.HTTPContext, p recQueryPipe, r *http.Request) {
-	h.calls++
-	h.got = []any{c, p, r}
-}
-
-func (h *planCtl) HAll(c *ctx.HTTPContext, r *http.Request, w http.ResponseWriter, body ctx.Body, form ctx.Form, query ctx.Query, header ctx.Header, param ctx.Param, file ctx.File, next ctx.Next, redirect ctx.Redirect, pub common.Publisher, cp recCtxPipe, bp provBodyPipe, fp recFormPipe, qp recQueryPipe, hp recHeaderPipe, pp recParamPipe, filep recFilePipe) (int, string) {
-	h.calls++
-	planNextCalls = 0
-	next()
-	nextSeen := planNextCalls
-	redirect("/x")
-	h.got = []any{c, r, w, body, form, query, header, param, file, nextSeen, ctx.HTTPCode(c), pub, cp, bp, fp, qp, hp, pp, filep}
-	return 202, "all"
-}
-
-type planValueCtl struct{ tag string }
-
-func (h planValueCtl) HTag() string { return h.tag }
-
-type planConcurrentCtl struct{}
-
-func (planConcurrentCtl) Run(p mutPipe, q ctx.Query) string {
-	return strconv.Itoa(p.Seen) + ":" + q.Get("q")
-}
-
-type planBadCtl struct{}
-
-func (planBadCtl) Unknown(c *ctx.HTTPContext, n int) string         { return "" }
-func (planBadCtl) UnknownStruct(u planUnknownArg)                   {}
-func (planBadCtl) Variadic(a ...int)                                {}
-func (planBadCtl) Interface(e error)                                {}
-func (planBadCtl) WSContext(c *ctx.WSContext)                       {}
-func (planBadCtl) WSPayloadPipe(p recWSPayloadPipe)                 {}
-func (planBadCtl) Lookalike(c *ctxlookalike.HTTPContext) string     { return "" }
-func (planBadCtl) NeedsPublisher(p common.Publisher)                {}
-func (planBadCtl) PointerPipe(p *recQueryPipe)                      {}
-func (planBadCtl) CountedPipe(p countingPipe)                       {}
-func (planBadCtl) Plain(c *ctx.HTTPContext, r *http.Request) string { return "" }
 
 func TestHTTPHandlerPlan_InjectsHTTPContext(t *testing.T) {
 	h := &planCtl{}
@@ -663,91 +213,6 @@ func TestHTTPHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
 	if bp.P.Tag != "injected" {
 		t.Error(test.DiffMessage(bp.P.Tag, "injected", "B3: the body pipe's provider field is injected"))
 	}
-}
-
-func planReferenceHTTP(t testing.TB, recv reflect.Value, name string, providers map[string]Provider, c *ctx.HTTPContext) []reflect.Value {
-	t.Helper()
-	handler := recv.MethodByName(name)
-	ft := handler.Type()
-	args := make([]reflect.Value, ft.NumIn())
-	for i := range args {
-		args[i] = planReferenceArg(t, ft.In(i), providers, c)
-	}
-	return handler.Call(args)
-}
-
-var (
-	refHTTPContextT = reflect.TypeOf((*ctx.HTTPContext)(nil))
-	refRequestT     = reflect.TypeOf((*http.Request)(nil))
-	refWriterT      = reflect.TypeOf((*http.ResponseWriter)(nil)).Elem()
-	refBodyT        = reflect.TypeOf(ctx.Body(nil))
-	refFormT        = reflect.TypeOf(ctx.Form(nil))
-	refQueryT       = reflect.TypeOf(ctx.Query(nil))
-	refHeaderT      = reflect.TypeOf(ctx.Header(nil))
-	refParamT       = reflect.TypeOf(ctx.Param(nil))
-	refFileT        = reflect.TypeOf(ctx.File(nil))
-	refNextT        = reflect.TypeOf(func() {})
-	refRedirectT    = reflect.TypeOf(func(string) {})
-	refPublisherT   = reflect.TypeOf((*common.Publisher)(nil)).Elem()
-)
-
-func planReferenceArg(t testing.TB, at reflect.Type, providers map[string]Provider, c *ctx.HTTPContext) reflect.Value {
-	t.Helper()
-	switch at {
-	case refHTTPContextT:
-		return reflect.ValueOf(c)
-	case refRequestT:
-		return reflect.ValueOf(c.Request)
-	case refWriterT:
-		return reflect.ValueOf(c.ResponseWriter)
-	case refBodyT:
-		return reflect.ValueOf(c.Body())
-	case refFormT:
-		return reflect.ValueOf(c.Form())
-	case refQueryT:
-		return reflect.ValueOf(c.Query())
-	case refHeaderT:
-		return reflect.ValueOf(c.Header())
-	case refParamT:
-		return reflect.ValueOf(c.Param())
-	case refFileT:
-		return reflect.ValueOf(c.File())
-	case refNextT:
-		return reflect.ValueOf(ctx.HTTPNext(c))
-	case refRedirectT:
-		return reflect.ValueOf(c.Redirect)
-	case refPublisherT:
-		p, _ := planCtr.interfaceFor(publisherKey)
-		return reflect.ValueOf(p)
-	}
-
-	inst, err := injectDependencies(reflect.New(at).Elem().Interface(), "pipe", providers, planCtr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	meta := func(kind string) common.ArgumentMetadata {
-		return common.ArgumentMetadata{ContextType: common.ContextTypeHTTP, ParamType: kind}
-	}
-	var out any
-	switch p := inst.Interface().(type) {
-	case common.ContextPipeable:
-		out = p.Transform(c, meta(common.ContextPipeableKey))
-	case common.BodyPipeable:
-		out = p.Transform(c.Body(), meta(common.BodyPipeableKey))
-	case common.FormPipeable:
-		out = p.Transform(c.Form(), meta(common.FormPipeableKey))
-	case common.QueryPipeable:
-		out = p.Transform(c.Query(), meta(common.QueryPipeableKey))
-	case common.HeaderPipeable:
-		out = p.Transform(c.Header(), meta(common.HeaderPipeableKey))
-	case common.ParamPipeable:
-		out = p.Transform(c.Param(), meta(common.ParamPipeableKey))
-	case common.FilePipeable:
-		out = p.Transform(c.File(), meta(common.FilePipeableKey))
-	default:
-		t.Fatalf("fixture: %v is not a pipe", at)
-	}
-	return reflect.ValueOf(out)
 }
 
 func TestNewHTTPHandlerPlan_UnknownTypePanics(t *testing.T) {
@@ -1020,35 +485,6 @@ func TestHTTPHandlerPlan_ExceptionFromAccessorPropagates(t *testing.T) {
 	}
 }
 
-func planPipeKindCase(t *testing.T, method, kind string, src func(*ctx.HTTPContext) any, wantKind string) {
-	t.Helper()
-	planResetState(t)
-	h := &planCtl{}
-	c := planRequestContext()
-	planInvoke(planHTTP(t, h, method, nil), c)
-	if len(planPipeCalls) != 1 {
-		t.Fatal(test.DiffMessage(len(planPipeCalls), 1, "B10: Transform runs once per request"))
-	}
-	call := planPipeCalls[0]
-	if call.Kind != wantKind {
-		t.Error(test.DiffMessage(call.Kind, wantKind, "B10: Transform of the "+kind+" kind"))
-	}
-	want := src(c)
-	if call.Src == nil || (reflect.ValueOf(want).Kind() == reflect.Map && !planSameMap(call.Src, want)) ||
-		(reflect.ValueOf(want).Kind() == reflect.Pointer && call.Src != want) {
-		t.Error(test.DiffMessage(call.Src, want, "B10: the "+kind+" pipe's source"))
-	}
-	if call.Meta.ParamType != kind {
-		t.Error(test.DiffMessage(call.Meta.ParamType, kind, "B10: ParamType is the kind's key"))
-	}
-	if call.Meta.ContextType != common.ContextTypeHTTP {
-		t.Error(test.DiffMessage(call.Meta.ContextType, common.ContextTypeHTTP, "B10: ContextType of an HTTP pipe"))
-	}
-	if len(h.got) != 1 || reflect.ValueOf(h.got[0]).FieldByName("Kind").String() != wantKind {
-		t.Error(test.DiffMessage(h.got, wantKind, "B10: the handler receives what Transform returned"))
-	}
-}
-
 func TestHTTPHandlerPlan_ContextPipe(t *testing.T) {
 	planPipeKindCase(t, "HCtxPipe", common.ContextPipeableKey, func(c *ctx.HTTPContext) any { return c }, "context")
 }
@@ -1126,21 +562,6 @@ func TestHTTPHandlerPlan_ConcurrentInvokeNoRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-}
-
-func planWantTransformFailure(t *testing.T, rec any, typeName, returned string) {
-	t.Helper()
-	ex, ok := planExceptionOf(rec)
-	if !ok {
-		t.Fatal(test.DiffMessage(rec, "an exception.Exception", "B11: a wrong Transform result panics with an exception"))
-	}
-	if ex.Code() != http.StatusInternalServerError {
-		t.Error(test.DiffMessage(ex.Code(), http.StatusInternalServerError, "B11: code"))
-	}
-	want := "pipe " + typeName + ": Transform returned " + returned + ", want " + typeName
-	if ex.Message() != want {
-		t.Error(test.DiffMessage(ex.Message(), want, "B11: message"))
-	}
 }
 
 func TestHTTPHandlerPlan_TransformReturnsNil(t *testing.T) {
@@ -1393,5 +814,295 @@ func TestHTTPHandlerPlan_ListenerAddedBetweenCalls(t *testing.T) {
 	plan.invoke(planRequestContext(), ev)
 	if got := log.byStage(trace.StageHandler); len(got) != 1 {
 		t.Errorf("B17: a listener removed between calls takes effect on the next call: %d handler events", len(got))
+	}
+}
+
+func TestApp_LookalikeParameterPanicsAtCreate(t *testing.T) {
+	app := New()
+
+	rec := planPanicOf(func() {
+		app.Create(NewModuleBuilder().Controllers(appLookalikeController{}).Build())
+	})
+
+	want := planUnresolved("func(*ctx.HTTPContext) string", 0)
+	if rec == nil || !strings.Contains(fmt.Sprint(rec), want) {
+		t.Error(test.DiffMessage(rec, want, "bug 1, B1, B2: a lookalike *ctx.HTTPContext stops Create()"))
+	}
+}
+
+func TestApp_PipeWrongResultIs500(t *testing.T) {
+	w := serveResult(t, "/wrongpipe")
+	if w.Code != http.StatusInternalServerError {
+		t.Error(test.DiffMessage(w.Code, http.StatusInternalServerError, "bug 5, B11: a wrong Transform result is a 500"))
+	}
+	if strings.Contains(w.Body.String(), "reflect:") {
+		t.Error(test.DiffMessage(w.Body.String(), "no reflection text", "bug 5, B11: the client never sees reflection's message"))
+	}
+	if strings.Contains(w.Body.String(), "unreachable") {
+		t.Error(test.DiffMessage(w.Body.String(), "no handler output", "B11: the handler is not called"))
+	}
+}
+
+func TestApp_ServeRouteHandlerEventHasName(t *testing.T) {
+	names := handlerEventNames(t, "/logo.png")
+	if len(names) != 1 || names[0] != "SERVE_logo_png_FILE" {
+		t.Error(test.DiffMessage(names, []string{"SERVE_logo_png_FILE"}, "bug 7, B16: the handler event of a SERVE route carries the method name"))
+	}
+}
+
+func TestApp_ReadRouteHandlerEventHasName(t *testing.T) {
+	names := handlerEventNames(t, "/named")
+	if len(names) != 1 || names[0] != "READ_named" {
+		t.Error(test.DiffMessage(names, []string{"READ_named"}, "B16: the handler event of a READ route carries the method name"))
+	}
+}
+
+func TestWSHandlerPlan_InjectsWSContext(t *testing.T) {
+	h := &planWSCtl{}
+	c := planWSContext()
+	planWS(t, h, "WCtx", nil).invoke(c, &trace.Tracer{})
+	if len(h.got) != 1 || h.got[0] != any(c) {
+		t.Error(test.DiffMessage(h.got, []any{c}, "B1, B8: *ctx.WSContext is the message's context"))
+	}
+}
+
+func TestWSHandlerPlan_InjectsConn(t *testing.T) {
+	h := &planWSCtl{}
+	c := planWSContext()
+	planWS(t, h, "WConn", nil).invoke(c, &trace.Tracer{})
+	if len(h.got) != 1 || h.got[0] != any(c.Conn) {
+		t.Error(test.DiffMessage(h.got, []any{c.Conn}, "B1, B8: *websocket.Conn is c.Conn"))
+	}
+}
+
+func TestWSHandlerPlan_InjectsWSPayload(t *testing.T) {
+	h := &planWSCtl{}
+	c := planWSContext()
+	planWS(t, h, "WPayload", nil).invoke(c, &trace.Tracer{})
+	if len(h.got) != 1 || !planSameMap(h.got[0], c.WSPayload()) {
+		t.Error(test.DiffMessage(h.got, c.WSPayload(), "B1, B8: ctx.WSPayload is c.WSPayload()"))
+	}
+	if got, _ := h.got[0].(ctx.WSPayload); got["k"] != "v" {
+		t.Error(test.DiffMessage(h.got[0], ctx.WSPayload{"k": "v"}, "B1: the handler sees the payload"))
+	}
+}
+
+func TestWSHandlerPlan_InjectsNext(t *testing.T) {
+	planResetState(t)
+	h := &planWSCtl{}
+	c := planWSContext()
+	ctx.WSSetNext(c, func() { planNextCalls++ })
+	planWS(t, h, "WNext", nil).invoke(c, &trace.Tracer{})
+	if planNextCalls != 1 {
+		t.Error(test.DiffMessage(planNextCalls, 1, "B1, B8: ctx.Next acts on c.Next"))
+	}
+}
+
+func TestWSHandlerPlan_InjectsPublisher(t *testing.T) {
+	pub := planInstallPublisher(t)
+	h := &planWSCtl{}
+	planWS(t, h, "WPublisher", nil).invoke(planWSContext(), &trace.Tracer{})
+	if len(h.got) != 1 || h.got[0] != any(pub) {
+		t.Error(test.DiffMessage(h.got, []any{pub}, "B1: common.Publisher is the value stored under publisherKey"))
+	}
+}
+
+func TestWSHandlerPlan_MatchesReferenceInvocation(t *testing.T) {
+	planResetState(t)
+	planInstallPublisher(t)
+	h := &planWSCtl{}
+	recv, method := planMethod(t, h, "WAll")
+	plan := newWSHandlerPlan(recv, method, nil, planCtr)
+	c := planWSContext()
+	ctx.WSSetNext(c, func() { planNextCalls++ })
+
+	planPipeCalls = nil
+	handler := recv.MethodByName(method.Name)
+	ft := handler.Type()
+	args := make([]reflect.Value, ft.NumIn())
+	pub, _ := planCtr.interfaceFor(publisherKey)
+	for i := range args {
+		switch at := ft.In(i); at {
+		case reflect.TypeOf((*ctx.WSContext)(nil)):
+			args[i] = reflect.ValueOf(c)
+		case reflect.TypeOf((*websocket.Conn)(nil)):
+			args[i] = reflect.ValueOf(c.Conn)
+		case reflect.TypeOf(ctx.WSPayload(nil)):
+			args[i] = reflect.ValueOf(c.WSPayload())
+		case reflect.TypeOf(func() {}):
+			args[i] = reflect.ValueOf(ctx.WSNext(c))
+		case reflect.TypeOf((*common.Publisher)(nil)).Elem():
+			args[i] = reflect.ValueOf(pub)
+		default:
+			inst, err := injectDependencies(reflect.New(at).Elem().Interface(), "pipe", nil, planCtr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := inst.Interface().(common.WSPayloadPipeable).Transform(c.WSPayload(), common.ArgumentMetadata{
+				ContextType: common.ContextTypeWS,
+				ParamType:   common.WSPayloadPipeableKey,
+			})
+			args[i] = reflect.ValueOf(out)
+		}
+	}
+	refResults := handler.Call(args)
+	refGot := h.got
+	refPipes := planPipeCalls
+
+	h.got = nil
+	h.calls = 0
+	planPipeCalls = nil
+	results := plan.invoke(c, &trace.Tracer{})
+
+	if len(refGot) != 6 {
+		t.Fatal(test.DiffMessage(len(refGot), 6, "fixture: the reference handler records 6 arguments"))
+	}
+	if !reflect.DeepEqual(h.got, refGot) {
+		t.Error(test.DiffMessage(h.got, refGot, "B8: the plan passes the arguments of the reference invocation"))
+	}
+	if !reflect.DeepEqual(planPipeCalls, refPipes) {
+		t.Error(test.DiffMessage(planPipeCalls, refPipes, "B8, B10: the pipe gets the source and metadata of the reference invocation"))
+	}
+	if h.calls != 1 {
+		t.Error(test.DiffMessage(h.calls, 1, "B7: one handler call"))
+	}
+	if len(results) != len(refResults) {
+		t.Fatal(test.DiffMessage(len(results), len(refResults), "B7: results"))
+	}
+	for i := range results {
+		if !reflect.DeepEqual(results[i].Interface(), refResults[i].Interface()) {
+			t.Error(test.DiffMessage(results[i].Interface(), refResults[i].Interface(), "B8: result"))
+		}
+	}
+}
+
+func TestNewWSHandlerPlan_HTTPTypePanics(t *testing.T) {
+	cases := []struct {
+		method string
+		want   string
+	}{
+		{"HTTPContext", "func(*ctx.HTTPContext)"},
+		{"Body", "func(ctx.Body)"},
+		{"QueryPipe", "func(core.recQueryPipe)"},
+		{"Request", "func(func(string))"},
+	}
+	for _, c := range cases {
+		rec := planPanicOf(func() {
+			recv, m := planMethod(t, planWSBadCtl{}, c.method)
+			newWSHandlerPlan(recv, m, nil, planCtr)
+		})
+		want := planUnresolved(c.want, 0)
+		if rec == nil || !strings.Contains(fmt.Sprint(rec), want) {
+			t.Error(test.DiffMessage(rec, want, "B2: an HTTP-only type in a WS handler panics at build ("+c.method+")"))
+		}
+	}
+}
+
+func TestNewWSHandlerPlan_UnknownTypePanics(t *testing.T) {
+	rec := planPanicOf(func() {
+		recv, m := planMethod(t, planWSBadCtl{}, "Unknown")
+		newWSHandlerPlan(recv, m, nil, planCtr)
+	})
+	want := planUnresolved("func(*ctx.WSContext, int)", 1)
+	if rec == nil || !strings.Contains(fmt.Sprint(rec), want) {
+		t.Error(test.DiffMessage(rec, want, "B2: an unknown type panics at build with the func type and the index"))
+	}
+}
+
+func TestWSHandlerPlan_PayloadPipe(t *testing.T) {
+	planResetState(t)
+	h := &planWSCtl{}
+	c := planWSContext()
+	planWS(t, h, "WPipe", nil).invoke(c, &trace.Tracer{})
+
+	if len(planPipeCalls) != 1 {
+		t.Fatal(test.DiffMessage(len(planPipeCalls), 1, "B10: Transform runs once per message"))
+	}
+	call := planPipeCalls[0]
+	if !planSameMap(call.Src, c.WSPayload()) {
+		t.Error(test.DiffMessage(call.Src, c.WSPayload(), "B10: the pipe's source is c.WSPayload()"))
+	}
+	if call.Meta.ParamType != common.WSPayloadPipeableKey {
+		t.Error(test.DiffMessage(call.Meta.ParamType, common.WSPayloadPipeableKey, "B10: ParamType"))
+	}
+	if call.Meta.ContextType != common.ContextTypeWS {
+		t.Error(test.DiffMessage(call.Meta.ContextType, common.ContextTypeWS, "B10 (0005 Q3): ContextType of a WS pipe"))
+	}
+	if got, _ := h.got[0].(recWSPayloadPipe); got.Kind != "wsPayload" {
+		t.Error(test.DiffMessage(h.got, "Kind wsPayload", "B10: the handler receives what Transform returned"))
+	}
+}
+
+func TestWSHandlerPlan_TransformReturnsNil(t *testing.T) {
+	h := &planWSCtl{}
+	plan := planWS(t, h, "WNilPipe", nil)
+	rec := planPanicOf(func() { plan.invoke(planWSContext(), &trace.Tracer{}) })
+	planWantTransformFailure(t, rec, "core.nilWSPipe", "nil")
+	if h.calls != 0 {
+		t.Error(test.DiffMessage(h.calls, 0, "B11: the handler is not called"))
+	}
+}
+
+func TestWSHandlerPlan_PipeEmitsStagePipe(t *testing.T) {
+	planResetState(t)
+	ev := &trace.Tracer{}
+	log := planListen(ev)
+	c := planWSContext()
+	planWS(t, &planWSCtl{}, "WPipe", nil).invoke(c, ev)
+
+	got := log.byStage(trace.StagePipe)
+	if len(got) != 1 {
+		t.Fatal(test.DiffMessage(len(got), 1, "B13: one pipe event for one pipe"))
+	}
+	e := got[0]
+	if e.ID != c.ID() || e.ID == "" {
+		t.Error(test.DiffMessage(e.ID, c.ID(), "B13: ID"))
+	}
+	if want := reflect.TypeOf(recWSPayloadPipe{}).String(); e.Name != want {
+		t.Error(test.DiffMessage(e.Name, want, "B13: Name is the parameter type"))
+	}
+	if e.Transport != trace.TransportWS {
+		t.Error(test.DiffMessage(e.Transport, trace.TransportWS, "B13: Transport"))
+	}
+}
+
+func TestWSHandlerPlan_PipePanicStillEmitsStagePipe(t *testing.T) {
+	ev := &trace.Tracer{}
+	log := planListen(ev)
+	plan := planWS(t, &planWSCtl{}, "WPanicPipe", nil)
+	rec := planPanicOf(func() { plan.invoke(planWSContext(), ev) })
+	if rec != "ws pipe exploded" {
+		t.Fatal(test.DiffMessage(rec, "ws pipe exploded", "B9: the pipe's panic propagates unchanged"))
+	}
+	got := log.byStage(trace.StagePipe)
+	if len(got) != 1 || got[0].Transport != trace.TransportWS || got[0].Name != reflect.TypeOf(panicWSPipe{}).String() {
+		t.Fatal(test.DiffMessage(got, "one WS pipe event for panicWSPipe", "B13: the panicking pipe also emits its event"))
+	}
+	if got[0].Duration < time.Millisecond {
+		t.Error(test.DiffMessage(got[0].Duration, ">= 1ms", "B13: Duration covers the Transform up to the panic"))
+	}
+}
+
+func TestWSHandlerPlan_EmitsNoStageHandler(t *testing.T) {
+	ev := &trace.Tracer{}
+	log := planListen(ev)
+	planWS(t, &planWSCtl{}, "WOne", nil).invoke(planWSContext(), ev)
+	if got := log.all(); len(got) != 0 {
+		t.Error(test.DiffMessage(got, "no events", "B15: a WS handler emits no handler event"))
+	}
+}
+
+func TestWSHandlerPlan_NoResult(t *testing.T) {
+	h := &planWSCtl{}
+	got := planWS(t, h, "WNone", nil).invoke(planWSContext(), &trace.Tracer{})
+	if len(got) != 0 || h.calls != 1 {
+		t.Error(test.DiffMessage([]any{len(got), h.calls}, []any{0, 1}, "B7: no results, one call"))
+	}
+}
+
+func TestWSHandlerPlan_ReturnsResult(t *testing.T) {
+	got := planWS(t, &planWSCtl{}, "WOne", nil).invoke(planWSContext(), &trace.Tracer{})
+	if len(got) != 1 || got[0].String() != "one" {
+		t.Error(test.DiffMessage(got, []any{"one"}, "B7: one result"))
 	}
 }

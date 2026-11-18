@@ -1,60 +1,10 @@
 package core
 
 import (
-	"net/http"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/trace"
-	"golang.org/x/net/websocket"
 )
-
-type benchQueryDTO struct {
-	Name string
-	Page int
-}
-
-func (d benchQueryDTO) Transform(ctx.Query, common.ArgumentMetadata) any { return d }
-
-type benchProviderDTO struct {
-	P    fnTestProvider
-	Name string
-}
-
-func (d benchProviderDTO) Transform(ctx.Body, common.ArgumentMetadata) any { return d }
-
-type benchWSDTO struct {
-	Topic string
-}
-
-func (d benchWSDTO) Transform(ctx.WSPayload, common.ArgumentMetadata) any { return d }
-
-type benchPlanCtl struct{}
-
-func (benchPlanCtl) NoArgs() string { return "ok" }
-func (benchPlanCtl) Param(ctx.Param) ctx.Map {
-	return nil
-}
-func (benchPlanCtl) QueryPipe(benchQueryDTO) ctx.Map               { return nil }
-func (benchPlanCtl) BodyPipeWithProvider(benchProviderDTO) ctx.Map { return nil }
-func (benchPlanCtl) FiveBuiltins(*ctx.HTTPContext, *http.Request, http.ResponseWriter, ctx.Query, ctx.Header) {
-}
-func (benchPlanCtl) Payload(ctx.WSPayload)  {}
-func (benchPlanCtl) PayloadPipe(benchWSDTO) {}
-
-func benchPlanContext() *ctx.HTTPContext {
-	c := benchHTTPContext("/?name=ann&page=2")
-	ctx.HTTPInit(c, c.ResponseWriter, c.Request)
-	ctx.HTTPSetParams(c, map[string][]int{"id": {0}}, []string{"7"})
-	return c
-}
-
-func benchHTTPPlan(b *testing.B, name string) *httpHandlerPlan {
-	b.Helper()
-	recv, m := planMethod(b, benchPlanCtl{}, name)
-	return newHTTPHandlerPlan(recv, m, planProviders(), newContainer())
-}
 
 func BenchmarkHTTPHandlerPlan_Invoke_NoArgs(b *testing.B) {
 	plan := benchHTTPPlan(b, "NoArgs")
@@ -115,19 +65,6 @@ func BenchmarkHTTPHandlerPlan_Invoke_QueryPipe_Traced(b *testing.B) {
 	for b.Loop() {
 		plan.invoke(c, ev)
 	}
-}
-
-func benchWSPlan(b *testing.B, name string) *wsHandlerPlan {
-	b.Helper()
-	recv, m := planMethod(b, benchPlanCtl{}, name)
-	return newWSHandlerPlan(recv, m, nil, newContainer())
-}
-
-func benchWSContext() *ctx.WSContext {
-	c := ctx.NewWSContext()
-	ctx.WSInit(c, &websocket.Conn{})
-	ctx.WSSetPayload(c, ctx.WSPayload{"topic": "chat"})
-	return c
 }
 
 func BenchmarkWSHandlerPlan_Invoke_Payload(b *testing.B) {

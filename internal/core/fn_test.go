@@ -3,21 +3,17 @@ package core
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"unsafe"
 
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
+	"github.com/dangduoc08/ginject/internal/trace"
 )
-
-type mockProvider struct{}
-
-func (m *mockProvider) NewProvider() Provider { return m }
-
-type mockController struct{}
-
-func (m *mockController) NewController() Controller { return m }
 
 func TestGenFieldKey(t *testing.T) {
 	t1 := reflect.TypeOf(mockProvider{})
@@ -130,10 +126,6 @@ func TestReturnHTTPSlice(t *testing.T) {
 	}
 }
 
-type fnTestProvider struct{ Tag string }
-
-func (p fnTestProvider) NewProvider() Provider { return p }
-
 func TestReturnHTTPFloat(t *testing.T) {
 	c := newHTTPContext()
 	w := c.ResponseWriter.(*httptest.ResponseRecorder)
@@ -152,15 +144,6 @@ func TestReturnHTTPUint(t *testing.T) {
 	}
 }
 
-type injectDepsTestProvider struct{}
-
-func (injectDepsTestProvider) NewProvider() Provider { return injectDepsTestProvider{} }
-
-type injectDepsComponent struct {
-	Provider injectDepsTestProvider
-	Plain    string
-}
-
 func TestInjectDependencies_ResolvesFromLocalProviders(t *testing.T) {
 	p := injectDepsTestProvider{}
 	injectedProviders := map[string]Provider{
@@ -177,41 +160,11 @@ func TestInjectDependencies_ResolvesFromLocalProviders(t *testing.T) {
 	}
 }
 
-type injectDepsUnresolvable struct {
-	Missing unresolvableProviderType
-}
-
-type unresolvableProviderType struct{}
-
-func (unresolvableProviderType) NewProvider() Provider { return unresolvableProviderType{} }
-
 func TestInjectDependencies_UnresolvedProviderReturnsError(t *testing.T) {
 	_, err := injectDependencies(injectDepsUnresolvable{}, "provider", map[string]Provider{}, newContainer())
 	if err == nil {
 		t.Error(test.DiffMessage(nil, "error", "injectDependencies should error when a Provider field can't be resolved"))
 	}
-}
-
-type returnUser struct {
-	Name string `json:"name"`
-}
-
-func anyValue(v any) reflect.Value {
-	return reflect.ValueOf(&v).Elem()
-}
-
-func writeReturn(t *testing.T, c *ctx.HTTPContext, v reflect.Value) {
-	t.Helper()
-	defer func() {
-		if rec := recover(); rec != nil {
-			t.Error(test.DiffMessage(rec, "no panic", "returnHTTP must not panic on a result a handler can return"))
-		}
-	}()
-	returnHTTP(c, v)
-}
-
-func recorderOf(c *ctx.HTTPContext) *httptest.ResponseRecorder {
-	return c.ResponseWriter.(*httptest.ResponseRecorder)
 }
 
 func TestReturnHTTP_InterfaceString(t *testing.T) {
@@ -414,5 +367,133 @@ func TestReturnHTTP_UintptrWritesNothing(t *testing.T) {
 	w := recorderOf(c)
 	if w.Body.Len() != 0 {
 		t.Error(test.DiffMessage(w.Body.String(), "", "B19: a uintptr writes nothing"))
+	}
+}
+
+func TestApp_HandlerReturningPointerWritesJSON(t *testing.T) {
+	w := serveResult(t, "/pointer")
+	if w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "bug 2, B19: status"))
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != `{"name":"ann"}` {
+		t.Error(test.DiffMessage(got, `{"name":"ann"}`, "bug 2, B19: a pointer result is JSON, never an address"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "bug 2, B19: content type"))
+	}
+}
+
+func TestApp_HandlerReturningStatusAndPointerWritesJSON(t *testing.T) {
+	w := serveResult(t, "/created")
+	if w.Code != http.StatusAccepted {
+		t.Error(test.DiffMessage(w.Code, http.StatusAccepted, "bug 2, B20: the first result sets the status"))
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != `{"name":"bob"}` {
+		t.Error(test.DiffMessage(got, `{"name":"bob"}`, "bug 2, B19: the second result is JSON"))
+	}
+}
+
+func TestApp_HandlerReturningArrayWritesJSON(t *testing.T) {
+	w := serveResult(t, "/array")
+	if got := strings.TrimSpace(w.Body.String()); got != "[1,2,3]" {
+		t.Error(test.DiffMessage(got, "[1,2,3]", "bug 4, B19: an array result is JSON"))
+	}
+}
+
+func TestApp_HandlerReturningAnyStringWritesText(t *testing.T) {
+	w := serveResult(t, "/anystring")
+	if w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "bug 3, B18: status"))
+	}
+	if got := w.Body.String(); got != "ok" {
+		t.Error(test.DiffMessage(got, "ok", "bug 3, B18: an any holding a string is text"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Error(test.DiffMessage(got, "text/plain; charset=utf-8", "bug 3, B18: content type"))
+	}
+}
+
+func TestApp_HandlerReturningAnyIntKeepsJSONContentType(t *testing.T) {
+	w := serveResult(t, "/anyint")
+	if got := w.Body.String(); got != "7" {
+		t.Error(test.DiffMessage(got, "7", "B18 (Q2): an any holding an int keeps its body"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "B18 (Q2): an any holding an int keeps its content type"))
+	}
+}
+
+func TestCompleteEvent_ClientIP_Direct(t *testing.T) {
+	events := &clientIPEvents{}
+	app := clientIPApp(t, events, false)
+	clientIPServe(app, "203.0.113.5:5555", "X-Forwarded-For", "198.51.100.1", "X-Real-IP", "198.51.100.2")
+	got := events.complete(t).ClientIP
+	if want := netip.MustParseAddr("203.0.113.5"); got != want {
+		t.Error(test.DiffMessage(got, want, "A1: with no proxy the complete event carries the peer, whatever the headers say"))
+	}
+}
+
+func TestCompleteEvent_ClientIP_BehindProxy(t *testing.T) {
+	events := &clientIPEvents{}
+	app := clientIPApp(t, events, true)
+	clientIPServe(app, "10.0.0.9:80", "X-Forwarded-For", "198.51.100.20")
+	got := events.complete(t).ClientIP
+	if want := netip.MustParseAddr("198.51.100.20"); got != want {
+		t.Error(test.DiffMessage(got, want, "A1: behind a trusted proxy the complete event carries the client"))
+	}
+}
+
+func TestCompleteEvent_ClientIP_UntrustedPeerBehindProxyMiddleware(t *testing.T) {
+	events := &clientIPEvents{}
+	app := clientIPApp(t, events, true)
+	clientIPServe(app, "203.0.113.5:5555", "X-Forwarded-For", "198.51.100.20")
+	got := events.complete(t).ClientIP
+	if want := netip.MustParseAddr("203.0.113.5"); got != want {
+		t.Error(test.DiffMessage(got, want, "A1, P3: an untrusted peer's headers never reach the event"))
+	}
+}
+
+func TestCompleteEvent_ClientIP_ZeroOnStageEvents(t *testing.T) {
+	events := &clientIPEvents{}
+	app := clientIPApp(t, events, false)
+	clientIPServe(app, "203.0.113.5:5555")
+	for _, e := range events.all() {
+		if e.Stage != trace.StageComplete && e.ClientIP.IsValid() {
+			t.Error(test.DiffMessage(e.ClientIP, netip.Addr{}, "A1: only complete events carry the client IP, not "+e.Stage))
+		}
+	}
+}
+
+func TestCompleteEvent_ClientIP_UnparsableRemoteAddr(t *testing.T) {
+	events := &clientIPEvents{}
+	app := clientIPApp(t, events, false)
+	clientIPServe(app, "not-an-address")
+	if got := events.complete(t).ClientIP; got.IsValid() {
+		t.Error(test.DiffMessage(got, netip.Addr{}, "A1: the zero Addr when RemoteAddr is not ip:port"))
+	}
+}
+
+func TestPanicLine_CarriesScopeFields(t *testing.T) {
+	installStackSeams(t)
+	app, logger := sampleApp(t)
+	w := serveWithHeader(app, http.MethodGet, "/bare?s=1", http.Header{"Traceparent": {scopeHeader}})
+	entries := logger.named("UnhandledPanic")
+	if len(entries) != 1 {
+		t.Fatal(test.DiffMessage(len(entries), 1, "S7: one UnhandledPanic line"))
+	}
+	e := entries[0]
+	want := []string{"trace_id", "request", "upstream", "method", "path", "panic", "stack"}
+	if got := keysOf(e.args); !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "S7: the scope's fields come first, then method, path, panic, stack, and no id"))
+	}
+	if e.field("trace_id") != scopeTraceID || e.field("request") != w.Header().Get("X-Request-Id") || e.field("upstream") != scopeParentID {
+		t.Error(test.DiffMessage(e.args[:6], []any{"trace_id", scopeTraceID, "request", w.Header().Get("X-Request-Id"), "upstream", scopeParentID}, "S7: the fields are the request's scope"))
+	}
+
+	plainApp, plainLogger := sampleApp(t)
+	panicAt(plainApp, 1)
+	got := plainLogger.named("UnhandledPanic")[0]
+	if keys := keysOf(got.args); !slices.Equal(keys, []string{"trace_id", "request", "method", "path", "panic", "stack"}) {
+		t.Error(test.DiffMessage(keys, "trace_id request method path panic stack", "S7: without an incoming parent there is no upstream field"))
 	}
 }

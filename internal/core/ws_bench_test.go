@@ -1,22 +1,12 @@
 package core
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/log"
 )
-
-func benchHandshakeContext() *ctx.HTTPContext {
-	c := ctx.NewHTTPContext()
-	c.Request = httptest.NewRequest(http.MethodGet, "/ws", nil)
-	c.ResponseWriter = httptest.NewRecorder()
-	return c
-}
 
 func BenchmarkHandshake_NoListener(b *testing.B) {
 	ws := NewWS(&WSOptions{

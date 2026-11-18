@@ -8,62 +8,9 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/versioning"
 )
-
-const (
-	puRobots   = "User-agent: *\nDisallow: /private\n"
-	puSecurity = "Contact: mailto:security@example.com\n"
-	puRawHTML  = `<h1>{{.NotParsed}}</h1><script>alert(1)</script>`
-	puSVG      = `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
-)
-
-type puAPI struct{ common.HTTP }
-
-func (c puAPI) NewController() Controller { return c }
-func (c puAPI) READ_ping() string         { return "pong" }
-
-type puRobotsRoute struct{ common.HTTP }
-
-func (c puRobotsRoute) NewController() Controller { return c }
-func (c puRobotsRoute) READ_robots_txt_FILE() string {
-	return "mine"
-}
-
-type puAbout struct{ common.HTTP }
-
-func (c puAbout) NewController() Controller { return c }
-func (c puAbout) RENDER_about()             {}
-
-func puFiles() fstest.MapFS {
-	return pgFiles(map[string]string{
-		"public/robots.txt":               puRobots,
-		"public/.well-known/security.txt": puSecurity,
-		"public/docs/index.html":          puRawHTML,
-		"public/img/logo.svg":             puSVG,
-		"public/.env":                     "SECRET=1",
-		"public/.git/config":              "SECRET=2",
-		"public/a/.hidden/x.txt":          "SECRET=3",
-		"secret.txt":                      "OUTSIDE",
-	})
-}
-
-func puApp(t *testing.T, files fstest.MapFS, setup func(*App), controllers ...Controller) *App {
-	t.Helper()
-	if len(controllers) == 0 {
-		controllers = []Controller{puAPI{}}
-	}
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
-	if setup != nil {
-		setup(app)
-	}
-	mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
-	return app
-}
 
 func TestPublic_ServesAtRoot(t *testing.T) {
 	app := puApp(t, puFiles(), nil)
@@ -244,8 +191,3 @@ func TestPublic_VersionNeutral(t *testing.T) {
 		}
 	}
 }
-
-type puVersioned struct{ common.HTTP }
-
-func (c puVersioned) NewController() Controller   { return c }
-func (c puVersioned) READ_ping_VERSION_1() string { return "pong" }

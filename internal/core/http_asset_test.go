@@ -1,70 +1,14 @@
 package core
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-const (
-	assetCSS = "body{color:#123}"
-	assetJS  = "console.log(1)"
-	assetSVG = `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
-)
-
-type assetPages struct{ common.HTTP }
-
-func (c assetPages) NewController() Controller { return c }
-
-func (c assetPages) RENDER_list_OF_bookings() {}
-
-func (c assetPages) RENDER_page() {}
-
-type assetPlain struct{ common.HTTP }
-
-func (c assetPlain) NewController() Controller { return c }
-func (c assetPlain) RENDER_x()                 {}
-
-func assetFiles() fstest.MapFS {
-	return pgFiles(map[string]string{
-		"layout.html":              `<html>{{template "content" .}}</html>`,
-		"page.html":                `{{asset "css/app.css"}}`,
-		"bookings/list.html":       `LIST-TEMPLATE`,
-		"partials/field.html":      `FIELD-PARTIAL`,
-		"assets/css/app.css":       assetCSS,
-		"assets/js/app.js":         assetJS,
-		"assets/img/logo.svg":      assetSVG,
-		"assets/.env":              `SECRET=1`,
-		"assets/.hidden/x.txt":     `HIDDEN`,
-		"assets/.well-known/t.txt": `WELL-KNOWN`,
-		"secret.txt":               `OUTSIDE`,
-	})
-}
-
-func assetHash(content string) string {
-	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:8])
-}
-
-func assetApp(t *testing.T, files fstest.MapFS, setup func(*App)) *App {
-	t.Helper()
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
-	if setup != nil {
-		setup(app)
-	}
-	mustCreate(t, app, NewModuleBuilder().Controllers(assetPages{}).Build())
-	return app
-}
 
 func TestAsset_Serves(t *testing.T) {
 	app := assetApp(t, assetFiles(), nil)
@@ -224,11 +168,6 @@ func TestAsset_Reload(t *testing.T) {
 	}
 }
 
-type assetUserServe struct{ common.HTTP }
-
-func (c assetUserServe) NewController() Controller   { return c }
-func (c assetUserServe) SERVE_ANY_OF_assets() string { return "." }
-
 func TestAsset_RouteConflict(t *testing.T) {
 	app := New()
 	app.EnableRender(&RenderOptions{FS: assetFiles(), Dir: "."})
@@ -262,19 +201,6 @@ func TestAsset_NoDirNoRoute(t *testing.T) {
 	if panicked {
 		t.Error(test.DiffMessage(text, "no panic", "R39: without an assets directory a user /assets/* route is free"))
 	}
-}
-
-type assetMarkMiddleware struct{}
-
-func (assetMarkMiddleware) Use(_ *http.Request, w http.ResponseWriter, next ctx.Next) {
-	w.Header().Set("X-Global-Middleware", "ran")
-	next()
-}
-
-type assetDenyGuard struct{}
-
-func (assetDenyGuard) CanActivate(c *ctx.HTTPContext) bool {
-	return c.Request.Header.Get("X-Allow") == "yes"
 }
 
 func TestAsset_GlobalLayersApply(t *testing.T) {

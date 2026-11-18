@@ -1,45 +1,16 @@
 package core
 
 import (
-	"net/http/httptest"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"golang.org/x/net/websocket"
-
 	"github.com/dangduoc08/ginject/internal/memorybroker"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/log"
+	"golang.org/x/net/websocket"
 )
-
-func newTestWSConnPair(t testing.TB) (server *websocket.Conn, client *websocket.Conn, cleanup func()) {
-	t.Helper()
-
-	serverConnCh := make(chan *websocket.Conn, 1)
-	handlerDone := make(chan struct{})
-
-	httpServer := httptest.NewServer(websocket.Handler(func(c *websocket.Conn) {
-		serverConnCh <- c
-		<-handlerDone
-	}))
-
-	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
-	clientConn, err := websocket.Dial(wsURL, "", httpServer.URL)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-
-	serverConn := <-serverConnCh
-
-	return serverConn, clientConn, func() {
-		close(handlerDone)
-		_ = clientConn.Close()
-		httpServer.Close()
-	}
-}
 
 func TestWSConnection_TrySend_DeliversToClient(t *testing.T) {
 	serverConn, clientConn, cleanup := newTestWSConnPair(t)
@@ -235,4 +206,35 @@ func TestWSConnmgr_UnsubscribeUnknownTopicIsNoop(t *testing.T) {
 	if err := connmgr.Unsubscribe("conn-1", "never-subscribed"); err != nil {
 		t.Error(test.DiffMessage(err, nil, "Unsubscribe on a topic never subscribed to should not error"))
 	}
+}
+
+func TestWSConnmgr_ConcurrentSubscribeUnsubscribePublish_NoRace(t *testing.T) {
+	connmgr := NewWSConnmgr(log.NewLog(nil), nil)
+	topics := []string{"chat.1", "chat.2", "chat.3", "chat.*"}
+	noop := func(*memorybroker.Message) {}
+
+	const goroutines = 32
+	const iterations = 50
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func(g int) {
+			defer wg.Done()
+			connID := "conn-" + topics[g%len(topics)] + "-" + string(rune('a'+g))
+			for i := 0; i < iterations; i++ {
+				topic := topics[i%len(topics)]
+				if err := connmgr.Subscribe(connID, topic, noop); err != nil {
+					t.Errorf("Subscribe: %v", err)
+				}
+				if err := (*connmgr.Broker).Publish(topic, "x"); err != nil {
+					t.Errorf("Publish: %v", err)
+				}
+				if err := connmgr.Unsubscribe(connID, topic); err != nil {
+					t.Errorf("Unsubscribe: %v", err)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
 }

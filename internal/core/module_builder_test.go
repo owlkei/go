@@ -3,8 +3,12 @@ package core
 import (
 	"go/parser"
 	"go/token"
+	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -105,15 +109,6 @@ func TestGetModuleTypeInvalidPanics(t *testing.T) {
 	b.getModuleType()
 }
 
-var testStaticModule = func() *Module {
-	return NewModuleBuilder().Build()
-}
-
-var (
-	testGroupedModuleA = func() *Module { return NewModuleBuilder().Build() }
-	testGroupedModuleB = func() *Module { return NewModuleBuilder().Build() }
-)
-
 func TestModuleBuilderBuildResolvesNameFromVarFuncLiteral(t *testing.T) {
 	m := testStaticModule()
 	if m.Name != "core.testStaticModule" {
@@ -132,12 +127,6 @@ func TestModuleBuilderBuildResolvesNameInGroupedVarDecl(t *testing.T) {
 	}
 }
 
-func testModuleFactory() *Module {
-	return NewModuleBuilder().Build()
-}
-
-var testFactoryBackedModule = testModuleFactory()
-
 func TestModuleBuilderBuildResolvesNameFromVarAssignedFactoryCall(t *testing.T) {
 	if testFactoryBackedModule.Name != "core.testFactoryBackedModule" {
 		t.Error(test.DiffMessage(testFactoryBackedModule.Name, "core.testFactoryBackedModule", "resolved module name"))
@@ -149,10 +138,6 @@ func TestModuleBuilderBuildFallsBackToFunctionNameWhenNoEnclosingVar(t *testing.
 	if m.Name != "core.testModuleFactory" {
 		t.Error(test.DiffMessage(m.Name, "core.testModuleFactory", "resolved module name"))
 	}
-}
-
-var testOuterModuleWithNestedFactoryImport = func() *Module {
-	return NewModuleBuilder().Imports(testModuleFactory()).Build()
 }
 
 func TestModuleBuilderBuildDoesNotMisattributeNestedFactoryCallToOuterVar(t *testing.T) {
@@ -247,5 +232,59 @@ func TestModuleBuilderChaining(t *testing.T) {
 	}
 	if len(b.controllers) != 1 {
 		t.Error(test.DiffMessage(len(b.controllers), 1, "chained controllers"))
+	}
+}
+
+func TestPathStyle_InvalidValuePanics(t *testing.T) {
+	want := "invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten"
+	for _, style := range []common.PathStyle{0, 9, -1} {
+		text, panicked := createPanicText(func() { NewModuleBuilder().PathStyle(style) })
+		if !panicked || !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "B17a: PathStyle value"))
+		}
+	}
+}
+
+func TestPathStyle_ReturnsTheBuilder(t *testing.T) {
+	b := NewModuleBuilder()
+	if b.PathStyle(common.PathStyleKebab) != b {
+		t.Error(test.DiffMessage("another builder", "the same builder", "B17a: PathStyle returns the builder"))
+	}
+}
+
+func TestPathStyle_LastCallWins(t *testing.T) {
+	app := New()
+	mustCreate(t, app, NewModuleBuilder().
+		PathStyle(common.PathStyleAsWritten).
+		PathStyle(common.PathStyleKebab).
+		Controllers(psRootController{}).
+		Build())
+	psExpect(t, app, "B17a", "/root-page", http.StatusOK)
+
+	app = New()
+	mustCreate(t, app, NewModuleBuilder().
+		PathStyle(common.PathStyleKebab).
+		PathStyle(common.PathStyleAsWritten).
+		Controllers(psRootController{}).
+		Build())
+	psExpect(t, app, "B17a", "/root_page", http.StatusOK)
+}
+
+func TestNewModuleBuilder_ChainReturnsSameBuilder(t *testing.T) {
+	rb := NewModuleBuilder()
+	got := rb.Imports().Providers(hookBuilderProvider{}).Controllers(hookBuilderController{})
+	if got != rb {
+		t.Error(test.DiffMessage(got, rb, "B9: Imports, Providers and Controllers return the same *ModuleBuilder"))
+	}
+	m := rb.Build()
+	if m == nil || len(m.providers) != 1 || len(m.controllers) != 1 {
+		t.Error(test.DiffMessage(m, "<module with one provider and one controller>", "B9: Build keeps what the chain set"))
+	}
+}
+
+func TestModuleBuilder_IsAnExportedStruct(t *testing.T) {
+	typ := reflect.TypeFor[ModuleBuilder]()
+	if typ.Kind() != reflect.Struct || typ.Name() != "ModuleBuilder" {
+		t.Error(test.DiffMessage(typ.String(), "core.ModuleBuilder struct", "D3: the builder type is exported as core.ModuleBuilder"))
 	}
 }

@@ -53,3 +53,49 @@ func BenchmarkServeHTTP_StaticParallel(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkCreate_FiveControllers(b *testing.B) {
+	m := NewModuleBuilder().
+		Controllers(
+			benchModuleController0{},
+			benchModuleController1{},
+			benchModuleController2{},
+			benchModuleController3{},
+			benchModuleController4{},
+		).
+		Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(m)
+	}
+}
+
+func BenchmarkCreate_ChainedProviders(b *testing.B) {
+	m := NewModuleBuilder().Providers(benchChainProviders()...).Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(m)
+	}
+}
+
+func BenchmarkCreate_StaticSubmodules(b *testing.B) {
+	const n = 100
+	root := NewModuleBuilder().Imports(makeBenchStaticSubmodules(n)...).Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(root)
+	}
+}
+
+func BenchmarkCreate_DynamicSubmodules(b *testing.B) {
+	const n = 100
+	imports := make([]any, n)
+	for i := range imports {
+		imports[i] = benchCollectModulesDynamicFactory
+	}
+	root := NewModuleBuilder().Imports(imports...).Build()
+	b.ReportAllocs()
+	for b.Loop() {
+		New().Create(root)
+	}
+}
