@@ -7,11 +7,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-type wsPayloadBindDTO struct {
-	Name string `bind:"name"`
-	Age  int    `bind:"age"`
-}
-
 func TestWSPayload_Bind(t *testing.T) {
 	p := WSPayload{"name": "joe", "age": float64(30)}
 	result, fls := p.Bind(wsPayloadBindDTO{})
@@ -48,5 +43,14 @@ func TestWSPayload_BindSharesBodyPlan(t *testing.T) {
 	}
 	if got := fromPayload.(dto); got.Age != 0 || got.Page != 2 {
 		t.Error(test.DiffMessage(got, dto{Name: "joe", Page: 2}, "B7, B1: WSPayload.Bind should apply the shared rules"))
+	}
+}
+
+func TestWSPayload_BindValueEqualsBind(t *testing.T) {
+	p := WSPayload{"name": "joe", "age": float64(30)}
+	want, _ := p.Bind(bindValueDTO{})
+	got := p.BindValue(bindValueDTO{})
+	if !reflect.DeepEqual(got, want) || got.(bindValueDTO).Name != "joe" {
+		t.Error(test.DiffMessage(got, want, "BindValue should return Bind's value"))
 	}
 }

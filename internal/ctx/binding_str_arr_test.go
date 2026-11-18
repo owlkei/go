@@ -7,49 +7,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-type TestStrArrDTO struct {
-	Bool1 bool `bind:"bool_1"`
-	Bool2 bool `bind:"bools_1.0"`
-	Bool3 bool `bind:"bools_1.1"`
-
-	String1 string `bind:"string_1"`
-	String2 string `bind:"strings_1.1"`
-
-	Integer1 int   `bind:"integer_1"`
-	Integer2 int8  `bind:"integers_1.1"`
-	Integer3 int16 `bind:"integers_1.2"`
-	Integer4 int32 `bind:"integers_1.3"`
-	Integer5 int64 `bind:"integers_1.4"`
-	Integer6 int   `bind:"integers_1.5"`
-	Integer7 int   `bind:"integers_1.100"`
-	Integer8 int   `bind:"integers_1.6"`
-
-	Uinteger1 uint   `bind:"uinteger_1"`
-	Uinteger2 uint8  `bind:"uintegers_1.1"`
-	Uinteger3 uint16 `bind:"uintegers_1.2"`
-	Uinteger4 uint32 `bind:"uintegers_1.3"`
-	Uinteger5 uint64 `bind:"uintegers_1.4"`
-	Uinteger6 uint   `bind:"uintegers_1.5"`
-	Uinteger7 uint   `bind:"uintegers_1.100"`
-	Uinteger8 uint   `bind:"uintegers_1.6"`
-	Uinteger9 uint   `bind:"uintegers_1.7"`
-
-	Float1 float32 `bind:"float_1"`
-	Float2 float64 `bind:"floats_1.1"`
-	Float3 float32 `bind:"floats_1.5"`
-	Float4 float64 `bind:"floats_1.100"`
-	Float5 float64 `bind:"floats_1.6"`
-	Float6 float64 `bind:"floats_1.7"`
-
-	Complex1 complex64  `bind:"complex_1"`
-	Complex2 complex128 `bind:"complexes_1.1"`
-	Complex3 complex128 `bind:"complexes_1.2"`
-	Complex4 complex128 `bind:"complexes_1.3"`
-	Complex5 complex128 `bind:"complexes_1.4"`
-
-	Array1 []string `bind:"array_1,limit=3"`
-}
-
 func TestBindStrArr(t *testing.T) {
 	testData := make(map[string][]string)
 
@@ -347,27 +304,6 @@ func TestBindStrArr(t *testing.T) {
 	if actual33 != expected33 {
 		t.Error(test.DiffMessage(actual33, expected33, "complex shouldn be binded"))
 	}
-}
-
-type strArrSliceDTO struct {
-	Bools     []bool       `bind:"bools"`
-	Ints      []int        `bind:"ints"`
-	Int8s     []int8       `bind:"int8s"`
-	Int16s    []int16      `bind:"int16s"`
-	Int32s    []int32      `bind:"int32s"`
-	Int64s    []int64      `bind:"int64s"`
-	Uints     []uint       `bind:"uints"`
-	Uint8s    []uint8      `bind:"uint8s"`
-	Uint16s   []uint16     `bind:"uint16s"`
-	Uint32s   []uint32     `bind:"uint32s"`
-	Uint64s   []uint64     `bind:"uint64s"`
-	Float32s  []float32    `bind:"float32s"`
-	Float64s  []float64    `bind:"float64s"`
-	Complex64 []complex64  `bind:"complex64s"`
-	Complex   []complex128 `bind:"complex128s"`
-	Strings   []string     `bind:"strings"`
-	Anys      []any        `bind:"anys"`
-	Missing   string       `bind:"missing_field"`
 }
 
 func TestBindStrArr_SliceFields(t *testing.T) {

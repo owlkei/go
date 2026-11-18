@@ -3,11 +3,11 @@ package ctx
 import (
 	"bytes"
 	"errors"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -98,10 +98,6 @@ func TestForm_SetAddDelHas(t *testing.T) {
 	}
 }
 
-type formBindDTO struct {
-	Name string `bind:"name"`
-}
-
 func TestForm_Bind(t *testing.T) {
 	f := Form{"name": {"joe"}}
 	result, fls := f.Bind(formBindDTO{})
@@ -116,28 +112,6 @@ func TestForm_Bind(t *testing.T) {
 	if len(fls) != 1 {
 		t.Error(test.DiffMessage(len(fls), 1, "Bind should report a FieldLevel per bound field"))
 	}
-}
-
-func multipartFieldBody(t *testing.T, name, value string) (*bytes.Buffer, string) {
-	t.Helper()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	if err := mw.WriteField(name, value); err != nil {
-		t.Fatal(err)
-	}
-	if err := mw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &buf, mw.FormDataContentType()
-}
-
-func newFormContext(contentType string, body io.Reader) *HTTPContext {
-	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("POST", "/", body)
-	if contentType != "" {
-		c.Request.Header.Set("Content-Type", contentType)
-	}
-	return c
 }
 
 func TestHTTPContext_FormContentTypeCaseInsensitive(t *testing.T) {
@@ -278,5 +252,39 @@ func TestForm_BindValueFromRequest(t *testing.T) {
 	got := c.Form().BindValue(formBindDTO{})
 	if got.(formBindDTO).Name != "joe" {
 		t.Error(test.DiffMessage(got, formBindDTO{Name: "joe"}, "BindValue should bind the parsed form"))
+	}
+}
+
+func TestForm_BindValueEqualsBind(t *testing.T) {
+	f := Form{"name": {"joe"}, "age": {"30"}}
+	want, _ := f.Bind(bindValueDTO{})
+	if got := f.BindValue(bindValueDTO{}); !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "BindValue should return Bind's value"))
+	}
+}
+
+func TestClientText_FormOverLimitMessage(t *testing.T) {
+	bodies := map[string]func() *HTTPContext{
+		"urlencoded": func() *HTTPContext {
+			return newFormContext(applicationXWWWFormUrlencoded, strings.NewReader("a="+strings.Repeat("x", 200)))
+		},
+		"multipart": func() *HTTPContext {
+			buf, ct := multipartFieldBody(t, "a", strings.Repeat("x", 200))
+			return newFormContext(ct, buf)
+		},
+	}
+	for name, build := range bodies {
+		c := build()
+		c.Request.Body = http.MaxBytesReader(httptest.NewRecorder(), c.Request.Body, 20)
+
+		exc, err := panicException(t, func() { c.Form() })
+
+		if exc.Code() != http.StatusRequestEntityTooLarge || exc.Message() != "Request body too large" {
+			t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusRequestEntityTooLarge, "Request body too large"}, "R24: a "+name+" form over the limit sends the framework's own words"))
+		}
+		var tooLarge *http.MaxBytesError
+		if !errors.As(err, &tooLarge) {
+			t.Error(test.DiffMessage(err, "<*http.MaxBytesError in the chain>", "R24: the limit error stays as the cause of a "+name+" form"))
+		}
 	}
 }

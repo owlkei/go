@@ -151,10 +151,6 @@ func TestBody_Has(t *testing.T) {
 	}
 }
 
-type bodyBindDTO struct {
-	Name string `bind:"name"`
-}
-
 func TestBody_Bind(t *testing.T) {
 	b := Body{"name": "joe"}
 	result, fls := b.Bind(bodyBindDTO{})
@@ -169,15 +165,6 @@ func TestBody_Bind(t *testing.T) {
 	if len(fls) != 1 {
 		t.Error(test.DiffMessage(len(fls), 1, "Bind should report a FieldLevel per bound field"))
 	}
-}
-
-func newBodyContext(contentType, payload string) *HTTPContext {
-	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("POST", "/", strings.NewReader(payload))
-	if contentType != "" {
-		c.Request.Header.Set("Content-Type", contentType)
-	}
-	return c
 }
 
 func TestHTTPContext_BodyNull(t *testing.T) {
@@ -239,16 +226,6 @@ func TestHTTPContext_BodyIsReadOnce(t *testing.T) {
 	if reads != after {
 		t.Error(test.DiffMessage(reads, after, "B8: the body should be read once and cached"))
 	}
-}
-
-type readCounter struct {
-	r io.Reader
-	n *int
-}
-
-func (rc readCounter) Read(p []byte) (int, error) {
-	*rc.n++
-	return rc.r.Read(p)
 }
 
 func TestHTTPContext_BodyMalformedIsBadRequest(t *testing.T) {
@@ -504,5 +481,43 @@ func TestBody_GetAndHasDoNotAllocate(t *testing.T) {
 		if allocs := testing.AllocsPerRun(100, fn); allocs != 0 {
 			t.Error(test.DiffMessage(allocs, 0.0, "P8: "+name+" should not allocate"))
 		}
+	}
+}
+
+func TestBody_BindValueOutOfRangeIsMismatch(t *testing.T) {
+	var got any
+	if !noPanic(t, "BindValue with an out-of-range number", func() { got = Body{"int8": float64(300), "int16": float64(5)}.BindValue(rangeDTO{}) }) {
+		return
+	}
+	dto := got.(rangeDTO)
+	if dto.Int8 != 0 || dto.Int16 != 5 {
+		t.Error(test.DiffMessage([2]any{dto.Int8, dto.Int16}, [2]any{0, 5}, "B7: BindValue should refuse the out-of-range field and bind the other"))
+	}
+}
+
+func TestBody_BindValueEqualsBind(t *testing.T) {
+	b := Body{"name": "joe", "age": float64(30)}
+	want, _ := b.Bind(bindValueDTO{})
+	got := b.BindValue(bindValueDTO{})
+	if !reflect.DeepEqual(got, want) || got.(bindValueDTO).Age != 30 {
+		t.Error(test.DiffMessage(got, want, "BindValue should return Bind's value"))
+	}
+}
+
+func TestClientText_BodyOverLimitMessage(t *testing.T) {
+	c := newBodyContext(applicationJSON, `{"a":"`+strings.Repeat("x", 100)+`"}`)
+	c.Request.Body = http.MaxBytesReader(httptest.NewRecorder(), c.Request.Body, 10)
+
+	exc, err := panicException(t, func() { c.Body() })
+
+	if exc.Code() != http.StatusRequestEntityTooLarge || exc.Message() != "Request body too large" {
+		t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusRequestEntityTooLarge, "Request body too large"}, "R24: a body over the limit sends the framework's own words"))
+	}
+	var tooLarge *http.MaxBytesError
+	if !errors.As(err, &tooLarge) {
+		t.Error(test.DiffMessage(err, "<*http.MaxBytesError in the chain>", "R24: the limit error stays as the cause"))
+	}
+	if exc.StatusText() != http.StatusText(http.StatusRequestEntityTooLarge) {
+		t.Error(test.DiffMessage(exc.StatusText(), http.StatusText(http.StatusRequestEntityTooLarge), "R24: the status text"))
 	}
 }

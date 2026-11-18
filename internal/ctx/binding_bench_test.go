@@ -5,43 +5,12 @@ import (
 	"testing"
 )
 
-type benchBindDTO struct {
-	Name    string       `bind:"name"`
-	Age     int          `bind:"age"`
-	Active  bool         `bind:"active"`
-	Tags    []string     `bind:"tags"`
-	Address benchAddrDTO `bind:"address"`
-}
-
-type benchAddrDTO struct {
-	Street string `bind:"street"`
-	City   string `bind:"city"`
-}
-
-func benchBindData() map[string]any {
-	return map[string]any{
-		"name":   "John Doe",
-		"age":    float64(30),
-		"active": true,
-		"tags":   []any{"a", "b", "c"},
-		"address": map[string]any{
-			"street": "Main St",
-			"city":   "Metropolis",
-		},
-	}
-}
-
 func BenchmarkBindStruct(b *testing.B) {
 	data := benchBindData()
 	b.ReportAllocs()
 	for b.Loop() {
 		BindStruct(data, &[]FieldLevel{}, benchBindDTO{}, "", "")
 	}
-}
-
-type benchPtrDTO struct {
-	Name *string `bind:"name"`
-	Age  *int    `bind:"age"`
 }
 
 func BenchmarkBindStruct_PointerFields(b *testing.B) {
@@ -88,5 +57,40 @@ func BenchmarkBinderOf_Warm(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = BinderOf(typ)
+	}
+}
+
+func BenchmarkBodyBind_SliceInt(b *testing.B) {
+	body := Body{"v": []any{float64(1), float64(2), float64(3), float64(4), float64(5)}}
+	b.ReportAllocs()
+	for b.Loop() {
+		body.Bind(benchSliceIntDTO{})
+	}
+}
+
+func BenchmarkBodyBind_SliceStruct(b *testing.B) {
+	body := Body{"v": []any{
+		map[string]any{"name": "joe"},
+		map[string]any{"name": "ana"},
+	}}
+	b.ReportAllocs()
+	for b.Loop() {
+		body.Bind(benchSliceStructDTO{})
+	}
+}
+
+func BenchmarkBodyBind_MapInt(b *testing.B) {
+	body := Body{"v": map[string]any{"a": float64(1), "b": float64(2), "c": float64(3)}}
+	b.ReportAllocs()
+	for b.Loop() {
+		body.Bind(benchMapIntDTO{})
+	}
+}
+
+func BenchmarkBodyBind_MapStruct(b *testing.B) {
+	body := Body{"v": map[string]any{"a": map[string]any{"name": "joe"}}}
+	b.ReportAllocs()
+	for b.Loop() {
+		body.Bind(benchMapStructDTO{})
 	}
 }

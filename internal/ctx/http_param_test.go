@@ -69,10 +69,6 @@ func TestParam_SetAddDelHas(t *testing.T) {
 	}
 }
 
-type paramBindDTO struct {
-	ID string `bind:"id"`
-}
-
 func TestParam_Bind(t *testing.T) {
 	p := Param{"id": {"42"}}
 	result, fls := p.Bind(paramBindDTO{})
@@ -166,5 +162,13 @@ func TestParam_BindValueFromRequest(t *testing.T) {
 	got := c.Param().BindValue(paramBindDTO{})
 	if dto, ok := got.(paramBindDTO); !ok || dto.ID != "42" {
 		t.Error(test.DiffMessage(got, paramBindDTO{ID: "42"}, "BindValue should bind the request's parameters"))
+	}
+}
+
+func TestParam_BindValueEqualsBind(t *testing.T) {
+	p := Param{"name": {"joe"}, "age": {"30"}}
+	want, _ := p.Bind(bindValueDTO{})
+	if got := p.BindValue(bindValueDTO{}); !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "BindValue should return Bind's value"))
 	}
 }

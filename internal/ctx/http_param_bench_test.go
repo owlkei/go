@@ -1,6 +1,8 @@
 package ctx
 
-import "testing"
+import (
+	"testing"
+)
 
 func BenchmarkHTTPContext_Param(b *testing.B) {
 	c := newTestHTTPContext()

@@ -6,78 +6,12 @@ import (
 	"math/rand/v2"
 	"net/http/httptest"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type fnCacheDTO struct {
-	Name string `bind:"name"`
-	Age  int    `bind:"age"`
-}
-
-type (
-	namedBool       bool
-	namedInt        int
-	namedInt8       int8
-	namedInt16      int16
-	namedInt32      int32
-	namedInt64      int64
-	namedUint       uint
-	namedUint8      uint8
-	namedUint16     uint16
-	namedUint32     uint32
-	namedUint64     uint64
-	namedFloat32    float32
-	namedFloat64    float64
-	namedComplex64  complex64
-	namedComplex128 complex128
-	namedString     string
-)
-
-type namedScalarDTO struct {
-	Bool       namedBool       `bind:"bool"`
-	Int        namedInt        `bind:"int"`
-	Int8       namedInt8       `bind:"int8"`
-	Int16      namedInt16      `bind:"int16"`
-	Int32      namedInt32      `bind:"int32"`
-	Int64      namedInt64      `bind:"int64"`
-	Uint       namedUint       `bind:"uint"`
-	Uint8      namedUint8      `bind:"uint8"`
-	Uint16     namedUint16     `bind:"uint16"`
-	Uint32     namedUint32     `bind:"uint32"`
-	Uint64     namedUint64     `bind:"uint64"`
-	Float32    namedFloat32    `bind:"float32"`
-	Float64    namedFloat64    `bind:"float64"`
-	Complex64  namedComplex64  `bind:"complex64"`
-	Complex128 namedComplex128 `bind:"complex128"`
-	String     namedString     `bind:"string"`
-}
-
-type namedSliceDTO struct {
-	Bools   []namedBool    `bind:"bools"`
-	Ints    []namedInt     `bind:"ints"`
-	Uint8s  []namedUint8   `bind:"uint8s"`
-	Floats  []namedFloat64 `bind:"floats"`
-	Strings []namedString  `bind:"strings"`
-}
-
-var namedScalarExpectedFromBody = namedScalarDTO{
-	Bool: true, Int: 7, Int8: 7, Int16: 7, Int32: 7, Int64: 7,
-	Uint: 7, Uint8: 7, Uint16: 7, Uint32: 7, Uint64: 7,
-	Float32: 1.5, Float64: 1.5, Complex64: 2, Complex128: 2, String: "s",
-}
-
-func namedScalarBody() map[string]any {
-	return map[string]any{
-		"bool": true, "int": float64(7), "int8": float64(7), "int16": float64(7), "int32": float64(7), "int64": float64(7),
-		"uint": float64(7), "uint8": float64(7), "uint16": float64(7), "uint32": float64(7), "uint64": float64(7),
-		"float32": 1.5, "float64": 1.5, "complex64": float64(2), "complex128": float64(2), "string": "s",
-	}
-}
 
 func TestBinder_NamedScalarTypesFromBody(t *testing.T) {
 	var got any
@@ -215,13 +149,6 @@ func TestBinderOf_CachedPerType(t *testing.T) {
 	}
 }
 
-type concurrentBinderDTO struct {
-	Name  string         `bind:"name"`
-	Count int            `bind:"count"`
-	Tags  []string       `bind:"tags"`
-	Attrs map[string]int `bind:"attrs"`
-}
-
 func TestBinderOf_ConcurrentAccess_NoDataRace(t *testing.T) {
 	const goroutines = 32
 	typ := reflect.TypeOf(concurrentBinderDTO{})
@@ -253,24 +180,6 @@ func TestBinderOf_ConcurrentAccess_NoDataRace(t *testing.T) {
 			return
 		}
 	}
-}
-
-type recursiveNodeDTO struct {
-	Name     string             `bind:"name"`
-	Children []recursiveNodeDTO `bind:"children"`
-}
-
-type recursiveListDTO struct {
-	Value int               `bind:"value"`
-	Next  *recursiveListDTO `bind:"next"`
-}
-
-func nestedNodeBody(depth int) map[string]any {
-	node := map[string]any{"name": "leaf"}
-	for i := depth - 1; i >= 0; i-- {
-		node = map[string]any{"name": "n" + strconv.Itoa(i), "children": []any{node}}
-	}
-	return node
 }
 
 func TestBinderOf_RecursiveType(t *testing.T) {
@@ -323,14 +232,6 @@ func TestBinder_RecursivePointerTypeBindsToDataDepth(t *testing.T) {
 	}
 	if levels != 50 || list.Value != 50 || cur.Value != 0 {
 		t.Error(test.DiffMessage([3]int{levels, list.Value, cur.Value}, [3]int{50, 50, 0}, "B25: a recursive pointer type should bind to any depth the body holds"))
-	}
-}
-
-func bindTargetPanics(t *testing.T, name string, fn func()) {
-	t.Helper()
-	err := panicError(t, fn)
-	if !errors.Is(err, ErrBindTarget) {
-		t.Error(test.DiffMessage(err, ErrBindTarget, "B23: "+name+" should panic with an error wrapping ErrBindTarget"))
 	}
 }
 
@@ -406,52 +307,6 @@ func TestBindFile_PanicsWithErrBindTarget(t *testing.T) {
 func TestFile_BindPanicsWithErrBindTarget(t *testing.T) {
 	bindTargetPanics(t, "File.Bind(&dto)", func() { File{}.Bind(&filePtrDTO{}) })
 	bindTargetPanics(t, "File.Bind(nil)", func() { File{}.Bind(nil) })
-}
-
-type matchDTO struct {
-	Name    string            `bind:"name"`
-	Age     int               `bind:"age"`
-	Score   float64           `bind:"score"`
-	Active  bool              `bind:"active"`
-	Tags    []string          `bind:"tags"`
-	Counts  []int             `bind:"counts"`
-	Second  int               `bind:"counts.1"`
-	Opt     *string           `bind:"opt"`
-	Missing string            `bind:"missing"`
-	Page    int               `bind:"page"`
-	Attrs   map[string]string `bind:"attrs"`
-	Home    Address           `bind:"home"`
-	Others  []Address         `bind:"others"`
-	Plain   string
-}
-
-func matchBodyData() map[string]any {
-	return map[string]any{
-		"name":   "joe",
-		"age":    float64(30),
-		"score":  2.5,
-		"active": true,
-		"tags":   []any{"a", "b"},
-		"counts": []any{float64(1), float64(2)},
-		"opt":    "o",
-		"page":   float64(2),
-		"attrs":  map[string]any{"k": "v"},
-		"home":   map[string]any{"street": "s", "city": "c", "zip_code": "z"},
-		"others": []any{map[string]any{"street": "s1"}, map[string]any{"city": "c2"}},
-	}
-}
-
-func matchStrArrData() map[string][]string {
-	return map[string][]string{
-		"name":   {"joe"},
-		"age":    {"30"},
-		"score":  {"2.5"},
-		"active": {"true"},
-		"tags":   {"a", "b"},
-		"counts": {"1", "2"},
-		"opt":    {"o"},
-		"page":   {"2"},
-	}
 }
 
 func TestBinder_StrArrMatchesBindStrArr(t *testing.T) {
@@ -536,12 +391,6 @@ func TestBinder_FileMatchesBindFile(t *testing.T) {
 	}
 }
 
-type warmColdDTO struct {
-	Name  string  `bind:"name"`
-	Inner Address `bind:"inner"`
-	List  []int   `bind:"list"`
-}
-
 func TestBinder_WarmEqualsCold(t *testing.T) {
 	d := map[string]any{
 		"name":  "joe",
@@ -556,23 +405,6 @@ func TestBinder_WarmEqualsCold(t *testing.T) {
 	if !reflect.DeepEqual(coldFls, warmFls) {
 		t.Error(test.DiffMessage(warmFls, coldFls, "binding a cached type should give the FieldLevels of the first build"))
 	}
-}
-
-type phoneEntryDTO struct {
-	Type string `bind:"type"`
-}
-
-type addrEntryDTO struct {
-	Street string `bind:"street"`
-}
-
-type fieldLevelDTO struct {
-	Name   string          `bind:"name"`
-	Addr   addrEntryDTO    `bind:"addr"`
-	Phones []phoneEntryDTO `bind:"phones"`
-	Tags   []int           `bind:"tags"`
-	Attrs  map[string]int  `bind:"attrs"`
-	Miss   string          `bind:"miss"`
 }
 
 func TestBindStruct_FieldLevelsKeepOrderAndNames(t *testing.T) {
@@ -607,151 +439,6 @@ func TestBindStruct_FieldLevelsKeepOrderAndNames(t *testing.T) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Error(test.DiffMessage(actual, expected, "FieldLevels should keep declaration order, nested entries before their parent, and the same names"))
 	}
-}
-
-func TestHeader_BindCanonicalizesTag(t *testing.T) {
-	type dto struct {
-		Token string `bind:"x-token"`
-		Mixed string `bind:"X-REQUEST-id"`
-	}
-	h := Header{"X-Token": {"t"}, "X-Request-Id": {"r"}}
-
-	got, fls := h.Bind(dto{})
-	if !reflect.DeepEqual(got, dto{Token: "t", Mixed: "r"}) {
-		t.Error(test.DiffMessage(got, dto{Token: "t", Mixed: "r"}, "B14: Header.Bind should look each tag up by its canonical header form"))
-	}
-	if fl := findFieldLevel(fls, "x-token"); fl == nil || !fl.IsValue() || fl.Value() != "t" {
-		t.Error(test.DiffMessage(fl, "<value t with tag x-token>", "B14: FieldLevel.Tag() should keep the tag as written"))
-	}
-
-	b, err := BinderOf(reflect.TypeOf(dto{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotB, flsB := b.Header(h)
-	if !reflect.DeepEqual(gotB, dto{Token: "t", Mixed: "r"}) {
-		t.Error(test.DiffMessage(gotB, dto{Token: "t", Mixed: "r"}, "B14: Binder.Header should look each tag up by its canonical header form"))
-	}
-	if fl := findFieldLevel(flsB, "x-token"); fl == nil {
-		t.Error(test.DiffMessage(fl, "<FieldLevel with tag x-token>", "B14: Binder.Header FieldLevel.Tag() should keep the tag as written"))
-	}
-}
-
-func TestHTTPContext_HeaderBindFromRequest(t *testing.T) {
-	type dto struct {
-		Token string `bind:"x-token"`
-	}
-	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("GET", "/", nil)
-	c.Request.Header.Set("x-token", "abc")
-	got, _ := c.Header().Bind(dto{})
-	if got.(dto).Token != "abc" {
-		t.Error(test.DiffMessage(got, dto{Token: "abc"}, "B14: a header set through Set should bind through a lower case tag"))
-	}
-}
-
-type randomKind struct {
-	name   string
-	typed  reflect.Type
-	named  reflect.Type
-	body   func(r *rand.Rand) any
-	strArr func(r *rand.Rand) string
-}
-
-func randomKinds() []randomKind {
-	numberBody := func(r *rand.Rand) any {
-		switch r.IntN(9) {
-		case 0:
-			return "text"
-		case 1:
-			return nil
-		case 2:
-			return true
-		case 3:
-			return float64(r.IntN(600) - 300)
-		case 4:
-			return r.NormFloat64() * 1e6
-		case 5:
-			return 1e300
-		case 6:
-			return -1e300
-		case 7:
-			return float64(r.IntN(100)) + 0.5
-		}
-		return float64(r.IntN(100))
-	}
-	numberStr := func(r *rand.Rand) string {
-		pool := []string{"0", "1", "-1", "7", "255", "256", "300", "-129", "1.5", "x", "", "1e3", "99999999999999999999", "true", "1+2i"}
-		return pool[r.IntN(len(pool))]
-	}
-	return []randomKind{
-		{"bool", reflect.TypeFor[bool](), reflect.TypeFor[namedBool](), func(r *rand.Rand) any {
-			switch r.IntN(4) {
-			case 0:
-				return "yes"
-			case 1:
-				return float64(1)
-			case 2:
-				return true
-			}
-			return false
-		}, func(r *rand.Rand) string {
-			pool := []string{"true", "false", "TRUE", "1", "0", "x", ""}
-			return pool[r.IntN(len(pool))]
-		}},
-		{"string", reflect.TypeFor[string](), reflect.TypeFor[namedString](), func(r *rand.Rand) any {
-			switch r.IntN(4) {
-			case 0:
-				return float64(1)
-			case 1:
-				return nil
-			}
-			return strconv.Itoa(r.IntN(50))
-		}, func(r *rand.Rand) string { return strconv.Itoa(r.IntN(50)) }},
-		{"int", reflect.TypeFor[int](), reflect.TypeFor[namedInt](), numberBody, numberStr},
-		{"int8", reflect.TypeFor[int8](), reflect.TypeFor[namedInt8](), numberBody, numberStr},
-		{"int16", reflect.TypeFor[int16](), reflect.TypeFor[namedInt16](), numberBody, numberStr},
-		{"int32", reflect.TypeFor[int32](), reflect.TypeFor[namedInt32](), numberBody, numberStr},
-		{"int64", reflect.TypeFor[int64](), reflect.TypeFor[namedInt64](), numberBody, numberStr},
-		{"uint", reflect.TypeFor[uint](), reflect.TypeFor[namedUint](), numberBody, numberStr},
-		{"uint8", reflect.TypeFor[uint8](), reflect.TypeFor[namedUint8](), numberBody, numberStr},
-		{"uint16", reflect.TypeFor[uint16](), reflect.TypeFor[namedUint16](), numberBody, numberStr},
-		{"uint32", reflect.TypeFor[uint32](), reflect.TypeFor[namedUint32](), numberBody, numberStr},
-		{"uint64", reflect.TypeFor[uint64](), reflect.TypeFor[namedUint64](), numberBody, numberStr},
-		{"float32", reflect.TypeFor[float32](), reflect.TypeFor[namedFloat32](), numberBody, numberStr},
-		{"float64", reflect.TypeFor[float64](), reflect.TypeFor[namedFloat64](), numberBody, numberStr},
-		{"complex64", reflect.TypeFor[complex64](), reflect.TypeFor[namedComplex64](), numberBody, numberStr},
-		{"complex128", reflect.TypeFor[complex128](), reflect.TypeFor[namedComplex128](), numberBody, numberStr},
-	}
-}
-
-func bindOneField(t *testing.T, typ reflect.Type, strArr bool, input any) (reflect.Value, bool) {
-	t.Helper()
-	structType := oneFieldStruct(typ)
-	b, err := BinderOf(structType)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result any
-	ok := noPanic(t, "binding "+typ.String(), func() {
-		if strArr {
-			result, _ = b.StrArr(map[string][]string{"v": input.([]string)})
-			return
-		}
-		result, _ = b.Struct(map[string]any{"v": input})
-	})
-	if !ok {
-		return reflect.Value{}, false
-	}
-	return reflect.ValueOf(result).Field(0), true
-}
-
-func convertedElements(v reflect.Value, to reflect.Type) []any {
-	out := make([]any, 0, v.Len())
-	for i := 0; i < v.Len(); i++ {
-		out = append(out, v.Index(i).Convert(to).Interface())
-	}
-	return out
 }
 
 func TestBinder_TypedSliceEqualsNamedSlice_Random(t *testing.T) {

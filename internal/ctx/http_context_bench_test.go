@@ -8,28 +8,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/aggregation"
 )
 
-type benchJSONStruct struct {
-	ID    int      `json:"id"`
-	Name  string   `json:"name"`
-	Email string   `json:"email"`
-	Tags  []string `json:"tags"`
-}
-
-func benchSlice50() []benchJSONStruct {
-	items := make([]benchJSONStruct, 50)
-	for i := range items {
-		items[i] = benchJSONStruct{ID: i, Name: "John Doe", Email: "john.doe@example.com", Tags: []string{"a", "b"}}
-	}
-	return items
-}
-
-func benchResponseContext(target string) *HTTPContext {
-	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("GET", target, nil)
-	c.ResponseWriter = newDiscardResponseWriter()
-	return c
-}
-
 func BenchmarkHTTPContext_Init(b *testing.B) {
 	c := newTestHTTPContext()
 	w := newDiscardResponseWriter()

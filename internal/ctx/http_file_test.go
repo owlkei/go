@@ -3,7 +3,6 @@ package ctx
 import (
 	"bytes"
 	"errors"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -13,23 +12,6 @@ import (
 
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-func buildMultipartFileBody(t *testing.T, field, filename, content string) (*bytes.Buffer, string) {
-	t.Helper()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	fw, err := mw.CreateFormFile(field, filename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fw.Write([]byte(content)); err != nil {
-		t.Fatal(err)
-	}
-	if err := mw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &buf, mw.FormDataContentType()
-}
 
 func TestHTTPContext_File(t *testing.T) {
 	buf, contentType := buildMultipartFileBody(t, "avatar", "photo.png", "fake-image-bytes")
@@ -58,14 +40,6 @@ func TestHTTPContext_FileNoMultipartForm(t *testing.T) {
 	if len(c.File()) != 0 {
 		t.Error(test.DiffMessage(c.File(), File{}, "File should have length 0 when there is no multipart form"))
 	}
-}
-
-type filePtrDTO struct {
-	Avatar *DataFile `bind:"avatar"`
-}
-
-type fileSliceDTO struct {
-	Photos []*DataFile `bind:"photos"`
 }
 
 func TestFile_BindPtr(t *testing.T) {
@@ -123,14 +97,6 @@ func TestFile_BindSlice(t *testing.T) {
 	}
 }
 
-type fileValidatorDTO struct {
-	Avatar *DataFile `bind:"avatar"`
-}
-
-func (fileValidatorDTO) IsValid(f *DataFile) bool {
-	return f.Filename == "allowed.png"
-}
-
 func TestFile_BindPanicsWhenValidatorRejects(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -149,17 +115,6 @@ func TestFile_BindPanicsWhenValidatorRejects(t *testing.T) {
 	c.File().Bind(fileValidatorDTO{})
 }
 
-type fileHandlerDTO struct {
-	Avatar *DataFile `bind:"avatar"`
-}
-
-var storedContent string
-
-func (fileHandlerDTO) Store(f *DataFile, src multipart.File) {
-	b, _ := io.ReadAll(src)
-	storedContent = string(b)
-}
-
 func TestFile_BindInvokesHandler(t *testing.T) {
 	buf, contentType := buildMultipartFileBody(t, "avatar", "photo.png", "hello-bytes")
 	c := newTestHTTPContext()
@@ -173,16 +128,6 @@ func TestFile_BindInvokesHandler(t *testing.T) {
 	if storedContent != "hello-bytes" {
 		t.Error(test.DiffMessage(storedContent, "hello-bytes", "Bind should invoke the handler's Store with the file content"))
 	}
-}
-
-func newUploadContext(t *testing.T, field, filename, content string) (*HTTPContext, *int) {
-	t.Helper()
-	buf, contentType := buildMultipartFileBody(t, field, filename, content)
-	reads := 0
-	c := newTestHTTPContext()
-	c.Request = httptest.NewRequest("POST", "/", io.NopCloser(readCounter{r: buf, n: &reads}))
-	c.Request.Header.Set("Content-Type", contentType)
-	return c, &reads
 }
 
 func TestHTTPContext_FileNeverNil(t *testing.T) {
@@ -290,17 +235,6 @@ func TestHTTPContext_FileTooLargeIs413(t *testing.T) {
 	}
 }
 
-type panickingStoreDTO struct {
-	Avatar *DataFile `bind:"avatar"`
-}
-
-var panickingStoreSource multipart.File
-
-func (panickingStoreDTO) Store(f *DataFile, src multipart.File) {
-	panickingStoreSource = src
-	panic("store failed")
-}
-
 func TestFile_BindClosesSourceWhenStorePanics(t *testing.T) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -350,5 +284,44 @@ func TestHTTPContext_FileBindFromRequestWithoutForm(t *testing.T) {
 	dto := result.(filePtrDTO)
 	if dto.Avatar == nil || dto.Avatar.Filename != "photo.png" {
 		t.Error(test.DiffMessage(dto.Avatar, "photo.png", "B13: a handler that injects only the files should get them bound"))
+	}
+}
+
+func TestClientText_FileOverLimitMessage(t *testing.T) {
+	c, _ := newUploadContext(t, "avatar", "photo.png", strings.Repeat("x", 500))
+	c.Request.Body = http.MaxBytesReader(httptest.NewRecorder(), c.Request.Body, 50)
+
+	exc, _ := panicException(t, func() { c.File() })
+
+	if exc.Code() != http.StatusRequestEntityTooLarge || exc.Message() != "Request body too large" {
+		t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusRequestEntityTooLarge, "Request body too large"}, "R24: an upload over the limit sends the framework's own words"))
+	}
+}
+
+func TestClientText_BrokenUploadMessage(t *testing.T) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("avatar", "photo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write([]byte("hello-bytes"))
+	_ = mw.Close()
+
+	form, err := multipart.NewReader(&buf, mw.Boundary()).ReadForm(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := form.RemoveAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	exc, cause := panicException(t, func() { File(form.File).Bind(fileHandlerDTO{}) })
+
+	if exc.Code() != http.StatusBadRequest || exc.Message() != "Invalid file upload" {
+		t.Error(test.DiffMessage([2]any{exc.Code(), exc.Message()}, [2]any{http.StatusBadRequest, "Invalid file upload"}, "R24: a file that cannot be opened sends the framework's own words"))
+	}
+	if errors.Unwrap(exc) == nil || cause == nil {
+		t.Error(test.DiffMessage(errors.Unwrap(exc), "<the open error>", "R24: the error stays as the cause"))
 	}
 }

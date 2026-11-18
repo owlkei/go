@@ -9,27 +9,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func isLowerHex(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
-
-type minimalContext struct{}
-
-func (minimalContext) ID() string               { return "" }
-func (minimalContext) Context() context.Context { return context.Background() }
-
-var (
-	_ Context = minimalContext{}
-	_ Context = (*HTTPContext)(nil)
-	_ Context = (*WSContext)(nil)
-)
-
 func TestContext_InterfaceMethods(t *testing.T) {
 	typ := reflect.TypeFor[Context]()
 	var names []string

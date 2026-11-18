@@ -2,6 +2,7 @@ package ctx
 
 import (
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
@@ -59,11 +60,6 @@ func TestQuery_SetAddDelHas(t *testing.T) {
 	}
 }
 
-type queryBindDTO struct {
-	Name string `bind:"name"`
-	Age  int    `bind:"age"`
-}
-
 func TestQuery_Bind(t *testing.T) {
 	q := Query{"name": {"joe"}, "age": {"30"}}
 	result, fls := q.Bind(queryBindDTO{})
@@ -78,15 +74,6 @@ func TestQuery_Bind(t *testing.T) {
 	if len(fls) != 2 {
 		t.Error(test.DiffMessage(len(fls), 2, "Bind should report a FieldLevel per bound field"))
 	}
-}
-
-type queryRangeDTO struct {
-	Int     int       `bind:"int"`
-	Int64   int64     `bind:"int64"`
-	Uint64  uint64    `bind:"uint64"`
-	Float64 float64   `bind:"float64"`
-	Ints    []int     `bind:"ints"`
-	Floats  []float64 `bind:"floats"`
 }
 
 func TestQuery_Bind_OutOfRangeNumberIsZero(t *testing.T) {
@@ -119,5 +106,13 @@ func TestQuery_Bind_MalformedNumberIsZero(t *testing.T) {
 	dto := result.(queryRangeDTO)
 	if dto.Int != 0 || dto.Float64 != 0 {
 		t.Error(test.DiffMessage(dto, queryRangeDTO{}, "a malformed number must leave the field zero"))
+	}
+}
+
+func TestQuery_BindValueEqualsBind(t *testing.T) {
+	q := Query{"name": {"joe"}, "age": {"30"}}
+	want, _ := q.Bind(bindValueDTO{})
+	if got := q.BindValue(bindValueDTO{}); !reflect.DeepEqual(got, want) {
+		t.Error(test.DiffMessage(got, want, "BindValue should return Bind's value"))
 	}
 }
