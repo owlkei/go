@@ -2,6 +2,8 @@ package ginject_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -366,7 +368,7 @@ func TestSurface_InvalidModulePanics(t *testing.T) {
 		t.Fatal(test.DiffMessage("no panic", "a panic", "B9: an import that is not a module panics"))
 	}
 	got := fmt.Sprint(recovered)
-	want := "invalid module: can't pass 'string' type as module"
+	want := "invalid module: can't import 'string' with Imports"
 	if !strings.Contains(got, want) {
 		t.Error(test.DiffMessage(got, want, "B9: panic text"))
 	}
@@ -654,4 +656,47 @@ func TestSurface_BindInterceptorThroughAliasWrapsOneRoute(t *testing.T) {
 	if got := serve(app, http.MethodGet, "/bare", nil, nil).Body.String(); got != "y" {
 		t.Error(test.DiffMessage(got, "y", "B8: the interceptor leaves the other route"))
 	}
+}
+
+func TestSurface_Retry(t *testing.T) {
+	if reflect.TypeFor[ginject.RetryOptions]() != reflect.TypeFor[core.RetryOptions]() {
+		t.Error(test.DiffMessage(reflect.TypeFor[ginject.RetryOptions](), reflect.TypeFor[core.RetryOptions](), "R: ginject.RetryOptions is an alias of core.RetryOptions"))
+	}
+
+	var calls int
+	opts := &ginject.RetryOptions{InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, MaxAttempts: 3}
+	err := ginject.Retry(context.Background(), opts, func(context.Context) error {
+		calls++
+		if calls < 2 {
+			return errors.New("transient")
+		}
+		return nil
+	})
+	if err != nil || calls != 2 {
+		t.Error(test.DiffMessage([]any{err, calls}, []any{nil, 2}, "R1: ginject.Retry retries until fn succeeds"))
+	}
+}
+
+func TestSurface_AsyncImports_ServesWhileFactoryBlocks(t *testing.T) {
+	release := make(chan struct{})
+	factory := func(context.Context) (ginject.Module, error) {
+		<-release
+		return ginject.ModuleBuilder().Build(), nil
+	}
+	root := ginject.ModuleBuilder().AsyncImports(factory).Build()
+
+	app := ginject.New()
+	app.SetStartupTimeout(5 * time.Second)
+	created := make(chan struct{})
+	go func() {
+		defer close(created)
+		app.Create(root)
+	}()
+	select {
+	case <-created:
+	case <-time.After(10 * time.Second):
+		t.Fatal("A1: Create waited for an AsyncImports factory")
+	}
+	close(release)
+	app.Stop()
 }

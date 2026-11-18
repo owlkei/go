@@ -2,6 +2,7 @@ package core
 
 import (
 	"io"
+	"reflect"
 	"time"
 
 	"github.com/dangduoc08/ginject/exception"
@@ -75,8 +76,16 @@ func handleSubscribe(conn *WSConnection, ws *WS, payload WSPayload) {
 			replyException(conn, payload.ID, exception.TopicNotFoundException("no handler registered for topic: "+topic))
 			return
 		}
+		var live *wsLive
+		if item.Gate != nil {
+			if live = openWSGate(item.Gate); live == nil {
+				replyNotReady(conn, payload.ID, topic)
+				return
+			}
+			item = live.item
+		}
 
-		c, ok := runWSMiddlewares(conn, ws, pattern, item, payload)
+		c, ok := runWSMiddlewares(conn, ws, pattern, item, payload, live)
 		ws.emitComplete(c, string(payload.Type), topic)
 		ws.releaseCtx(c)
 		if !ok {
@@ -128,13 +137,21 @@ func handlePublish(conn *WSConnection, ws *WS, payload WSPayload) {
 			replyException(conn, payload.ID, exception.TopicNotFoundException("no handler registered for topic: "+topic))
 			return
 		}
+		var live *wsLive
+		if item.Gate != nil {
+			if live = openWSGate(item.Gate); live == nil {
+				replyNotReady(conn, payload.ID, topic)
+				return
+			}
+			item = live.item
+		}
 
 		if !ws.connmgr.isSubscribed(conn.ID, topic) {
 			replyException(conn, payload.ID, exception.NotSubscribedException("must subscribe before publishing to: "+topic))
 			return
 		}
 
-		if !dispatchWSEvent(conn, ws, pattern, topic, item, payload) {
+		if !dispatchWSEvent(conn, ws, pattern, topic, item, payload, live) {
 			return
 		}
 
@@ -146,12 +163,21 @@ func handlePublish(conn *WSConnection, ws *WS, payload WSPayload) {
 	reply(conn, TypeAck, payload.ID, "")
 }
 
-func runCatchChain(conn *WSConnection, ws *WS, c *ctx.WSContext, pattern string, payloadID string, rec any) {
+func replyNotReady(conn *WSConnection, id, topic string) {
+	replyException(conn, id, exception.ServiceUnavailableException("not ready: "+topic))
+}
+
+func runCatchChain(conn *WSConnection, ws *WS, c *ctx.WSContext, pattern string, payloadID string, rec any, live *wsLive) {
 	ctx.WSSetSend(c, func(data any) {
 		reply(conn, TypeError, payloadID, data)
 	})
 
-	if catchFns, ok := ws.catchFnsByEvent[pattern]; ok {
+	if live != nil {
+		if len(live.catchFns) > 0 {
+			common.RunWSCatchChain(c, live.catchFns, rec)
+			return
+		}
+	} else if catchFns, ok := ws.catchFnsByEvent[pattern]; ok {
 		common.RunWSCatchChain(c, catchFns, rec)
 		return
 	}
@@ -167,12 +193,12 @@ func replyException(conn *WSConnection, id string, ex exception.Exception) {
 	})
 }
 
-func runWSMiddlewares(conn *WSConnection, ws *WS, pattern string, item wsevent.WSEventItem, payload WSPayload) (c *ctx.WSContext, ok bool) {
+func runWSMiddlewares(conn *WSConnection, ws *WS, pattern string, item wsevent.WSEventItem, payload WSPayload, live *wsLive) (c *ctx.WSContext, ok bool) {
 	c = ws.newCtx()
 
 	defer func() {
 		if rec := recover(); rec != nil {
-			runCatchChain(conn, ws, c, pattern, payload.ID, rec)
+			runCatchChain(conn, ws, c, pattern, payload.ID, rec, live)
 			ok = false
 		}
 	}()
@@ -194,8 +220,8 @@ func runWSMiddlewares(conn *WSConnection, ws *WS, pattern string, item wsevent.W
 	return c, isNext
 }
 
-func dispatchWSEvent(conn *WSConnection, ws *WS, pattern, topic string, item wsevent.WSEventItem, payload WSPayload) (ok bool) {
-	c, mwOK := runWSMiddlewares(conn, ws, pattern, item, payload)
+func dispatchWSEvent(conn *WSConnection, ws *WS, pattern, topic string, item wsevent.WSEventItem, payload WSPayload, live *wsLive) (ok bool) {
+	c, mwOK := runWSMiddlewares(conn, ws, pattern, item, payload, live)
 	defer ws.releaseCtx(c)
 	defer func() {
 		ws.emitComplete(c, string(payload.Type), topic)
@@ -207,12 +233,17 @@ func dispatchWSEvent(conn *WSConnection, ws *WS, pattern, topic string, item wse
 
 	defer func() {
 		if rec := recover(); rec != nil {
-			runCatchChain(conn, ws, c, pattern, payload.ID, rec)
+			runCatchChain(conn, ws, c, pattern, payload.ID, rec, live)
 			ok = false
 		}
 	}()
 
-	data := ws.resolveAndCallHandler(pattern, item.Handler, c)
+	var data []reflect.Value
+	if live != nil {
+		data = live.plan.invoke(c, ws.tracer)
+	} else {
+		data = ws.resolveAndCallHandler(pattern, item.Handler, c)
+	}
 
 	if aggregations := ctx.WSAggregations(c); len(aggregations) > 0 {
 		var aggregatedData any

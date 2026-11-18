@@ -119,7 +119,7 @@ func (app *App) Stop() {
 	case serveCreated:
 		app.serveState = serveStopped
 		app.serveMu.Unlock()
-		app.runShutdownHooks()
+		app.runShutdownHooks(time.Now().Add(defaultShutdownTimeout))
 		return
 	case serveServing:
 		app.serveState = serveStopping
@@ -128,7 +128,8 @@ func (app *App) Stop() {
 	hooksGoroutine := app.hooksGoroutine
 	app.serveMu.Unlock()
 
-	if hooksGoroutine != 0 && hooksGoroutine == goroutineID() {
+	self := goroutineID()
+	if hooksGoroutine != 0 && hooksGoroutine == self || app.container.isEntryGoroutine(self) {
 		return
 	}
 	<-app.shutdownDone
@@ -243,26 +244,30 @@ func (app *App) serve(l net.Listener, opts ServerOptions) error {
 		serveErr = server.Serve(l)
 	}()
 
+	var deadline time.Time
 	select {
 	case sig := <-signals:
 		stopSignals()
+		deadline = app.beginShutdown(opts.ShutdownTimeout)
 		app.markStopping()
 		app.logger.Info("ShutdownSignal", "signal", sig.String())
 		err = drain(server, opts.ShutdownTimeout)
 		<-served
 	case <-stopRequest:
 		stopSignals()
+		deadline = app.beginShutdown(opts.ShutdownTimeout)
 		app.logger.Info("Shutdown")
 		err = drain(server, opts.ShutdownTimeout)
 		<-served
 	case <-served:
 		stopSignals()
+		deadline = app.beginShutdown(opts.ShutdownTimeout)
 		app.markStopping()
 		_ = drain(server, opts.ShutdownTimeout)
 		err = fmt.Errorf("ginject: serve: %w", serveErr)
 	}
 
-	app.runShutdownHooks()
+	app.runShutdownHooks(deadline)
 
 	return err
 }
@@ -330,9 +335,18 @@ func protocolNames(p *http.Protocols) string {
 	return "HTTP/1.1"
 }
 
+func (app *App) beginShutdown(timeout time.Duration) time.Time {
+	deadline := time.Now().Add(timeout)
+	app.beginAsyncShutdown()
+	return deadline
+}
+
 func (app *App) logStartup(addr net.Addr, isTLS bool, protocols string) {
-	for _, m := range app.container.modules {
-		if m.Name != "" {
+	app.container.mu.RLock()
+	modules := slices.Clone(app.container.modules)
+	app.container.mu.RUnlock()
+	for _, m := range modules {
+		if m.Name != "" && app.container.status(m) == moduleReady {
 			app.logger.Info("InstanceLoader", "module", m.Name+" initialized")
 		}
 	}
@@ -418,15 +432,19 @@ func drain(server *http.Server, timeout time.Duration) error {
 	return fmt.Errorf("ginject: shutdown timed out after %v", timeout)
 }
 
-func (app *App) runShutdownHooks() {
+func (app *App) runShutdownHooks(deadline time.Time) {
 	app.shutdownOnce.Do(func() {
 		app.serveMu.Lock()
 		app.hooksGoroutine = goroutineID()
 		isCreated := app.isCreated
 		app.serveMu.Unlock()
 
+		app.beginAsyncShutdown()
+		app.waitEntries(deadline)
 		if isCreated {
-			modules := app.container.modules
+			app.container.mu.RLock()
+			modules := slices.Clone(app.container.readyOrder)
+			app.container.mu.RUnlock()
 			for i := len(modules) - 1; i >= 0; i-- {
 				if modules[i].OnShutdown != nil {
 					app.callShutdownHook(modules[i])

@@ -40,10 +40,22 @@ type container struct {
 
 	controllerKeysByModule map[*Module][]string
 	controllerByKey        map[string]Controller
+	ownerByController      map[string]*Module
 	prefixesByController   map[string][]string
 	styleByController      map[string]common.PathStyle
 
-	layersByKey      map[layerKey][]*layerEntry
+	layersByKey map[layerKey][]*layerEntry
+
+	controllerBindings
+	out *controllerBindings
+
+	render              *render.Engine
+	isVersioningEnabled bool
+
+	moduleLifecycle
+}
+
+type controllerBindings struct {
 	funcByRouteShape map[string]string
 	funcByEvent      map[string]string
 
@@ -58,9 +70,15 @@ type container struct {
 	wsMainHandlers       []common.WSLayer
 	httpPlanByPattern    map[string]*httpHandlerPlan
 	wsPlanByEvent        map[string]*wsHandlerPlan
+}
 
-	render              *render.Engine
-	isVersioningEnabled bool
+func newControllerBindings() controllerBindings {
+	return controllerBindings{
+		funcByRouteShape:  make(map[string]string),
+		funcByEvent:       make(map[string]string),
+		httpPlanByPattern: make(map[string]*httpHandlerPlan),
+		wsPlanByEvent:     make(map[string]*wsHandlerPlan),
+	}
 }
 
 type layerKey struct {
@@ -74,7 +92,7 @@ type layerEntry struct {
 }
 
 func newContainer() *container {
-	return &container{
+	c := &container{
 		moduleByFunc:           make(map[uintptr]*Module),
 		scannedModules:         make(map[*Module]struct{}),
 		initializedModules:     make(map[*Module]struct{}),
@@ -88,14 +106,15 @@ func newContainer() *container {
 		interfaceByKey:         make(map[string]any),
 		controllerKeysByModule: make(map[*Module][]string),
 		controllerByKey:        make(map[string]Controller),
+		ownerByController:      make(map[string]*Module),
 		prefixesByController:   make(map[string][]string),
 		styleByController:      make(map[string]common.PathStyle),
 		layersByKey:            make(map[layerKey][]*layerEntry),
-		funcByRouteShape:       make(map[string]string),
-		funcByEvent:            make(map[string]string),
-		httpPlanByPattern:      make(map[string]*httpHandlerPlan),
-		wsPlanByEvent:          make(map[string]*wsHandlerPlan),
+		controllerBindings:     newControllerBindings(),
+		moduleLifecycle:        newModuleLifecycle(),
 	}
+	c.out = &c.controllerBindings
+	return c
 }
 
 func (c *container) addGlobal(p Provider) string {
@@ -125,9 +144,15 @@ func (c *container) global(key string) (Provider, bool) {
 func (c *container) wire(root *Module) {
 	c.addGlobals(root)
 	c.scanGlobals(root)
-	c.discover(root)
+	c.wireFactories(root)
+	c.collectEntries(root)
+	c.rediscover(root)
+	c.computeStates(root)
 
 	for _, m := range c.modules {
+		if !c.isReadyAtCreate(m) {
+			continue
+		}
 		c.initModule(m)
 		for _, p := range m.providers {
 			c.provide(genProviderKey(p))
@@ -135,8 +160,26 @@ func (c *container) wire(root *Module) {
 	}
 
 	for _, key := range c.controllerKeysByModule[root] {
+		if gate := c.gateOfController(key); gate != nil {
+			c.bindProbe(key, gate)
+			continue
+		}
 		c.injectController(c.controllerByKey[key])
 	}
+}
+
+func (c *container) rediscover(root *Module) {
+	c.importsByModule = make(map[*Module][]*Module)
+	c.visibleByModule = make(map[*Module]map[string]struct{})
+	c.declaredByKey = make(map[string]Provider)
+	c.ownerByKey = make(map[string]*Module)
+	c.controllerKeysByModule = make(map[*Module][]string)
+	c.controllerByKey = make(map[string]Controller)
+	c.ownerByController = make(map[string]*Module)
+	c.prefixesByController = make(map[string][]string)
+	c.styleByController = make(map[string]common.PathStyle)
+	c.modules = nil
+	c.discover(root)
 }
 
 func (c *container) addGlobals(m *Module) {
@@ -156,9 +199,11 @@ func (c *container) scanGlobals(m *Module) {
 	if m.IsGlobal {
 		c.addGlobals(m)
 	}
-	for _, imported := range m.imports {
-		if staticModule, ok := imported.(*Module); ok {
-			c.scanGlobals(staticModule)
+	for _, list := range [2][]any{m.imports, m.asyncImports} {
+		for _, imported := range list {
+			if staticModule, ok := imported.(*Module); ok {
+				c.scanGlobals(staticModule)
+			}
 		}
 	}
 }
@@ -179,14 +224,7 @@ func (c *container) discover(m *Module) {
 	}
 	c.importsByModule[m] = nil
 
-	imports := make([]*Module, 0, len(m.imports))
-	for _, imported := range m.imports {
-		if staticModule, ok := imported.(*Module); ok {
-			imports = append(imports, staticModule)
-		} else {
-			imports = append(imports, c.callModuleFactory(imported))
-		}
-	}
+	imports := c.resolvedImports(m)
 	c.importsByModule[m] = imports
 
 	visible := make(map[string]struct{}, len(m.providers))
@@ -214,6 +252,7 @@ func (c *container) discover(m *Module) {
 		key := genFieldKey(reflect.TypeOf(controller))
 		if _, ok := c.controllerByKey[key]; !ok {
 			c.controllerByKey[key] = controller
+			c.ownerByController[key] = m
 		}
 		ownKeys = append(ownKeys, key)
 	}
@@ -231,6 +270,20 @@ func (c *container) discover(m *Module) {
 	c.modules = append(c.modules, m)
 }
 
+func (c *container) resolvedImports(m *Module) []*Module {
+	imports := make([]*Module, 0, len(m.imports)+len(m.asyncImports))
+	for _, list := range [2][]any{m.imports, m.asyncImports} {
+		for _, imported := range list {
+			if staticModule, ok := imported.(*Module); ok {
+				imports = append(imports, staticModule)
+			} else if called, ok := c.moduleByFunc[factoryPointer(imported)]; ok && called != nil {
+				imports = append(imports, called)
+			}
+		}
+	}
+	return imports
+}
+
 func appendControllerKeys(keys []string, seen map[string]struct{}, add []string) []string {
 	for _, key := range add {
 		if _, ok := seen[key]; !ok {
@@ -239,41 +292,6 @@ func appendControllerKeys(keys []string, seen map[string]struct{}, add []string)
 		}
 	}
 	return keys
-}
-
-func (c *container) callModuleFactory(moduleFunc any) *Module {
-	ptr := reflect.ValueOf(moduleFunc).Pointer()
-	if m, ok := c.moduleByFunc[ptr]; ok {
-		return m
-	}
-
-	moduleFuncType := reflect.TypeOf(moduleFunc)
-	args := make([]reflect.Value, 0, moduleFuncType.NumIn())
-	for i := 0; i < moduleFuncType.NumIn(); i++ {
-		argKey := genFieldKey(moduleFuncType.In(i))
-		if owner, ok := c.globalOwnerByKey[argKey]; ok {
-			c.initModule(owner)
-		}
-		if p, ok := c.global(argKey); ok {
-			args = append(args, reflect.ValueOf(p))
-		} else if v, ok := c.interfaceFor(argKey); ok {
-			args = append(args, reflect.ValueOf(v))
-		} else {
-			panic(errors.New(
-				color.FmtRed(
-					"dependency injection: can't resolve argument of '%v'. Please make sure that the argument '%v' at index [%v] is available in the injected providers",
-					strings.Replace(moduleFuncType.String(), ") *core.Module", ")", 1),
-					argKey,
-					i,
-				),
-			))
-		}
-	}
-
-	m := reflect.ValueOf(moduleFunc).Call(args)[0].Interface().(*Module)
-	c.moduleByFunc[ptr] = m
-	c.scanGlobals(m)
-	return m
 }
 
 func (c *container) provide(key string) Provider {
@@ -302,7 +320,9 @@ func (c *container) provide(key string) Provider {
 	}
 
 	p := newProvider.Interface().(Provider).NewProvider()
+	c.mu.Lock()
 	c.providerByKey[key] = p
+	c.mu.Unlock()
 	return p
 }
 
@@ -348,7 +368,7 @@ func (c *container) injectController(controller Controller) {
 
 func (c *container) addRoute(pattern, fnName string) {
 	shape, _ := routing.ParseToParamKey(pattern)
-	if existing, ok := c.funcByRouteShape[shape]; ok {
+	if existing, ok := c.out.funcByRouteShape[shape]; ok {
 		panic(errors.New(
 			color.FmtRed(
 				"route conflict: %v method is conflicted with %v method",
@@ -357,11 +377,11 @@ func (c *container) addRoute(pattern, fnName string) {
 			),
 		))
 	}
-	c.funcByRouteShape[shape] = fnName
+	c.out.funcByRouteShape[shape] = fnName
 }
 
 func (c *container) addEvent(eventName, fnName string) {
-	if existing, ok := c.funcByEvent[eventName]; ok {
+	if existing, ok := c.out.funcByEvent[eventName]; ok {
 		panic(errors.New(
 			color.FmtRed(
 				"event conflict: %v event is conflicted with %v event",
@@ -370,13 +390,41 @@ func (c *container) addEvent(eventName, fnName string) {
 			),
 		))
 	}
-	c.funcByEvent[eventName] = fnName
+	c.out.funcByEvent[eventName] = fnName
 }
 
 func (c *container) bindHTTPController(controller Controller) {
+	http, templateByPattern, ok := c.bindHTTPRoutes(controller)
+	if !ok {
+		return
+	}
+
+	controllerType := reflect.TypeOf(controller)
+	controllerValue := reflect.ValueOf(controller)
+	controllerPath := controllerType.PkgPath()
+	c.bindHTTPExceptionFilters(controller, controllerType, controllerPath, &http)
+	c.bindHTTPMiddlewares(controller, controllerType, controllerPath, &http)
+	c.bindHTTPGuards(controller, controllerType, controllerPath, &http)
+	c.bindHTTPInterceptors(controller, controllerType, controllerPath, &http)
+
+	planByName := make(map[string]*httpHandlerPlan, len(common.HTTPRouterMap(&http)))
+	for pattern, handler := range common.HTTPRouterMap(&http) {
+		name := common.HTTPPatternToFuncNameMap(&http)[pattern]
+		plan, ok := planByName[name]
+		if !ok {
+			method, _ := controllerType.MethodByName(name)
+			plan = newHTTPHandlerPlan(controllerValue, method, c.providerByKey, c)
+			planByName[name] = plan
+		}
+		c.out.httpPlanByPattern[pattern] = plan
+		c.out.httpMainHandlers = append(c.out.httpMainHandlers, httpMainHandlerOf(controllerPath, pattern, name, handler, templateByPattern[pattern]))
+	}
+}
+
+func (c *container) bindHTTPRoutes(controller Controller) (common.HTTP, map[string]string, bool) {
 	controllerType := reflect.TypeOf(controller)
 	if _, isHTTP := controllerType.FieldByName(fieldNameByRole["http"]); !isHTTP {
-		return
+		return common.HTTP{}, nil, false
 	}
 
 	controllerValue := reflect.ValueOf(controller)
@@ -385,7 +433,6 @@ func (c *container) bindHTTPController(controller Controller) {
 	if c.isVersioningEnabled {
 		pageVersion = versioning.NeutralVersion
 	}
-	controllerPath := controllerType.PkgPath()
 	controllerKey := genFieldKey(controllerType)
 	modulePrefixes := c.prefixesByController[controllerKey]
 	style, ok := c.styleByController[controllerKey]
@@ -403,58 +450,46 @@ func (c *container) bindHTTPController(controller Controller) {
 		if !ok {
 			continue
 		}
-		if common.PageOperation(methodName) != "" {
+		isPage := common.PageOperation(methodName) != ""
+		if isPage && !c.isLateBinding {
 			c.checkPageRoute(controllerType, methodName, pattern)
 		}
 		c.addRoute(pattern, methodName)
-		if common.PageOperation(methodName) != "" {
+		if isPage && !c.isLateBinding {
 			templateByPattern[pattern] = c.bindTemplate(controllerType.Name()+"."+methodName, pattern)
 		}
 	}
 	common.CheckExactPaths(&http)
 
-	c.bindHTTPExceptionFilters(controller, controllerType, controllerPath, &http)
-	c.bindHTTPMiddlewares(controller, controllerType, controllerPath, &http)
-	c.bindHTTPGuards(controller, controllerType, controllerPath, &http)
-	c.bindHTTPInterceptors(controller, controllerType, controllerPath, &http)
+	return http, templateByPattern, true
+}
 
-	planByName := make(map[string]*httpHandlerPlan, len(common.HTTPRouterMap(&http)))
-	for pattern, handler := range common.HTTPRouterMap(&http) {
-		name := common.HTTPPatternToFuncNameMap(&http)[pattern]
-		plan, ok := planByName[name]
-		if !ok {
-			method, _ := controllerType.MethodByName(name)
-			plan = newHTTPHandlerPlan(controllerValue, method, c.providerByKey, c)
-			planByName[name] = plan
-		}
-		c.httpPlanByPattern[pattern] = plan
-
-		method, route, version := routing.PatternToMethodRouteVersion(pattern)
-		c.httpMainHandlers = append(c.httpMainHandlers, common.HTTPLayer{
-			ControllerPath:  controllerPath,
-			Method:          method,
-			Route:           str.Enclose(route, '/'),
-			Version:         version,
-			Handler:         handler,
-			Name:            name,
-			MainHandlerName: name,
-			Pattern:         pattern,
-			Template:        templateByPattern[pattern],
-			IsPage:          common.PageOperation(name) != "",
-		})
+func httpMainHandlerOf(controllerPath, pattern, name string, handler any, template string) common.HTTPLayer {
+	method, route, version := routing.PatternToMethodRouteVersion(pattern)
+	return common.HTTPLayer{
+		ControllerPath:  controllerPath,
+		Method:          method,
+		Route:           str.Enclose(route, '/'),
+		Version:         version,
+		Handler:         handler,
+		Name:            name,
+		MainHandlerName: name,
+		Pattern:         pattern,
+		Template:        template,
+		IsPage:          common.PageOperation(name) != "",
 	}
 }
 
 func (c *container) checkPageRoute(controllerType reflect.Type, methodName, pattern string) {
 	handlerName := controllerType.Name() + "." + methodName
-	if c.render == nil {
-		panic(errors.New(color.FmtRed("invalid render: %v is a page route, call EnableRender before Create", handlerName)))
-	}
 	if common.PageOperation(methodName) == common.PageSubmit {
 		renderName := common.RenderNameOf(methodName)
 		if _, ok := controllerType.MethodByName(renderName); !ok {
 			panic(errors.New(color.FmtRed("invalid handler: %v needs %v.%v: a SUBMIT_ posts to the page that shows its form", handlerName, controllerType.Name(), renderName)))
 		}
+	}
+	if c.render == nil {
+		panic(errors.New(color.FmtRed("invalid render: %v is a page route, call EnableRender before Create", handlerName)))
 	}
 	if _, route, _ := routing.PatternToMethodRouteVersion(pattern); strings.ContainsRune(route, '*') {
 		panic(errors.New(color.FmtRed("invalid route: %v is a page route and its path %v holds a wildcard", handlerName, route)))
@@ -479,7 +514,7 @@ func (c *container) bindHTTPExceptionFilters(controller Controller, controllerTy
 	items := common.InjectProvidersIntoHTTPExceptionFilters(&exceptionFilter, http, buildFieldInjectionCallback("exceptionFilter", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.httpExceptionFilters = append(c.httpExceptionFilters, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
+		c.out.httpExceptionFilters = append(c.out.httpExceptionFilters, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
 	}
 }
 
@@ -492,7 +527,7 @@ func (c *container) bindHTTPMiddlewares(controller Controller, controllerType re
 	items := common.InjectProvidersIntoHTTPMiddlewares(&middleware, http, buildFieldInjectionCallback("middleware function", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.httpMiddlewares = append(c.httpMiddlewares, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
+		c.out.httpMiddlewares = append(c.out.httpMiddlewares, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
 	}
 }
 
@@ -505,7 +540,7 @@ func (c *container) bindHTTPGuards(controller Controller, controllerType reflect
 	items := common.InjectProvidersIntoHTTPGuards(&guard, http, buildFieldInjectionCallback("guarder", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.httpGuards = append(c.httpGuards, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
+		c.out.httpGuards = append(c.out.httpGuards, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
 	}
 }
 
@@ -518,7 +553,7 @@ func (c *container) bindHTTPInterceptors(controller Controller, controllerType r
 	items := common.InjectProvidersIntoHTTPInterceptors(&interceptor, http, buildFieldInjectionCallback("interceptor", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.httpInterceptors = append(c.httpInterceptors, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
+		c.out.httpInterceptors = append(c.out.httpInterceptors, httpLayerOf(controllerPath, item.HTTP.Method, item.HTTP.Route, item.HTTP.Version, item.HTTP.Pattern, item.HTTP.Common))
 	}
 }
 
@@ -536,9 +571,31 @@ func httpLayerOf(controllerPath, method, route, version, pattern string, item co
 }
 
 func (c *container) bindWSController(controller Controller) {
+	ws, methodByEvent, ok := c.bindWSEvents(controller)
+	if !ok {
+		return
+	}
+
+	controllerType := reflect.TypeOf(controller)
+	c.bindWSGuards(controller, controllerType, &ws)
+	c.bindWSInterceptors(controller, controllerType, &ws)
+	c.bindWSExceptionFilters(controller, controllerType, &ws)
+
+	controllerValue := reflect.ValueOf(controller)
+	for eventName, handler := range common.WSEventMap(&ws) {
+		c.out.wsPlanByEvent[eventName] = newWSHandlerPlan(controllerValue, methodByEvent[eventName], c.providerByKey, c)
+
+		c.out.wsMainHandlers = append(c.out.wsMainHandlers, common.WSLayer{
+			EventName: eventName,
+			Handler:   handler,
+		})
+	}
+}
+
+func (c *container) bindWSEvents(controller Controller) (common.WS, map[string]reflect.Method, bool) {
 	controllerType := reflect.TypeOf(controller)
 	if _, ok := controllerType.FieldByName(fieldNameByRole["ws"]); !ok {
-		return
+		return common.WS{}, nil, false
 	}
 
 	controllerValue := reflect.ValueOf(controller)
@@ -556,18 +613,7 @@ func (c *container) bindWSController(controller Controller) {
 		}
 	}
 
-	c.bindWSGuards(controller, controllerType, &ws)
-	c.bindWSInterceptors(controller, controllerType, &ws)
-	c.bindWSExceptionFilters(controller, controllerType, &ws)
-
-	for eventName, handler := range common.WSEventMap(&ws) {
-		c.wsPlanByEvent[eventName] = newWSHandlerPlan(controllerValue, methodByEvent[eventName], c.providerByKey, c)
-
-		c.wsMainHandlers = append(c.wsMainHandlers, common.WSLayer{
-			EventName: eventName,
-			Handler:   handler,
-		})
-	}
+	return ws, methodByEvent, true
 }
 
 func (c *container) bindWSGuards(controller Controller, controllerType reflect.Type, ws *common.WS) {
@@ -579,7 +625,7 @@ func (c *container) bindWSGuards(controller Controller, controllerType reflect.T
 	items := common.InjectProvidersIntoWSGuards(&guard, ws, buildFieldInjectionCallback("guarder", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.wsGuards = append(c.wsGuards, common.WSLayer{
+		c.out.wsGuards = append(c.out.wsGuards, common.WSLayer{
 			EventName: item.WS.EventName,
 			Handler:   item.WS.Common.Handler,
 			Name:      item.WS.Common.Name,
@@ -596,7 +642,7 @@ func (c *container) bindWSInterceptors(controller Controller, controllerType ref
 	items := common.InjectProvidersIntoWSInterceptors(&interceptor, ws, buildFieldInjectionCallback("interceptor", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.wsInterceptors = append(c.wsInterceptors, common.WSLayer{
+		c.out.wsInterceptors = append(c.out.wsInterceptors, common.WSLayer{
 			EventName: item.WS.EventName,
 			Handler:   item.WS.Common.Handler,
 			Name:      item.WS.Common.Name,
@@ -613,7 +659,7 @@ func (c *container) bindWSExceptionFilters(controller Controller, controllerType
 	items := common.InjectProvidersIntoWSExceptionFilters(&exceptionFilter, ws, buildFieldInjectionCallback("exceptionFilter", c.providerByKey, c), c.construct)
 
 	for _, item := range items {
-		c.wsExceptionFilters = append(c.wsExceptionFilters, common.WSLayer{
+		c.out.wsExceptionFilters = append(c.out.wsExceptionFilters, common.WSLayer{
 			EventName: item.WS.EventName,
 			Handler:   item.WS.Common.Handler,
 			Name:      item.WS.Common.Name,

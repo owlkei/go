@@ -129,7 +129,7 @@ func (m *moduleBuilder) Build() *Module
 ```
 
 - Calls chain and accumulate: `Providers(P1{}).Providers(P2{})` lists both
-- An import that is neither a `*Module` nor a module func panics `invalid module: can't pass '<type>' type as module` at `Build()`
+- An import that is neither a `*Module` nor a module func panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
 - `Prefix("v1")` on the built module prefixes its routes and its imports' routes; an importer's prefix goes in front (`/api/v1/ping`)
 
 ---

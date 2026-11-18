@@ -12,6 +12,7 @@ type Module struct {
 	pathStyle common.PathStyle
 
 	imports         []any
+	asyncImports    []any
 	staticModules   []*Module
 	moduleFactories []any
 	providers       []Provider

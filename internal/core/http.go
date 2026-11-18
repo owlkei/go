@@ -78,14 +78,18 @@ type HTTP struct {
 	stacks *stackSampler
 	render *render.Engine
 
-	routes            []*httpRoute
-	routeByPattern    map[string]*httpRoute
-	assetByName       map[string]assetEntry
-	globalMiddlewares []httpMiddleware
-	allowIndexes      []int
+	routes             []*httpRoute
+	routeByPattern     map[string]*httpRoute
+	assetByName        map[string]assetEntry
+	globalMiddlewares  []httpMiddleware
+	globalGuards       []httpGuard
+	globalInterceptors []httpInterceptor
+	globalFilters      []httpFilter
+	allowIndexes       []int
 }
 
 type httpRoute struct {
+	gate         *moduleGate
 	middlewares  []httpMiddleware
 	guards       []httpGuard
 	interceptors []httpInterceptor
@@ -98,6 +102,7 @@ type httpRoute struct {
 	isPage       bool
 	isAsset      bool
 	serveIndex   int
+	gateIndex    int
 }
 
 type httpGuard struct {
@@ -201,8 +206,10 @@ func (http *HTTP) addMiddleware(layer common.HTTPLayer) {
 }
 
 func (http *HTTP) addGlobalGuard(name string, canActivate common.HTTPCanActivate) {
+	guard := httpGuard{canActivate: canActivate, name: name}
+	http.globalGuards = append(http.globalGuards, guard)
 	for _, route := range http.routes {
-		route.guards = append(route.guards, httpGuard{canActivate: canActivate, name: name})
+		route.guards = append(route.guards, guard)
 	}
 }
 
@@ -213,8 +220,10 @@ func (http *HTTP) addGuard(layer common.HTTPLayer) {
 }
 
 func (http *HTTP) addGlobalInterceptor(name string, intercept common.HTTPIntercept) {
+	interceptor := httpInterceptor{intercept: intercept, name: name}
+	http.globalInterceptors = append(http.globalInterceptors, interceptor)
 	for _, route := range http.routes {
-		route.interceptors = append(route.interceptors, httpInterceptor{intercept: intercept, name: name})
+		route.interceptors = append(route.interceptors, interceptor)
 	}
 }
 
@@ -225,8 +234,10 @@ func (http *HTTP) addInterceptor(layer common.HTTPLayer) {
 }
 
 func (http *HTTP) addGlobalFilter(name string, catch common.HTTPCatch) {
+	filter := httpFilter{catch: catch, name: name}
+	http.globalFilters = append(http.globalFilters, filter)
 	for _, route := range http.routes {
-		route.filters = append(route.filters, httpFilter{catch: catch, name: name})
+		route.filters = append(route.filters, filter)
 	}
 }
 
@@ -267,11 +278,21 @@ func (http *HTTP) handleRequest(ex *httpExchange) {
 	}
 
 	route, isGone := http.match(c, method, version)
-	if !http.runMiddlewares(ex, route) {
+	if route == nil {
+		if http.runMiddlewares(ex, nil) {
+			http.answerNoRoute(ex, method, version, isGone)
+		}
 		return
 	}
-	if route == nil {
-		http.answerNoRoute(ex, method, version, isGone)
+	if route.gate != nil {
+		live := route.gate.live.Load()
+		if live == nil {
+			http.answerGated(ex, route)
+			return
+		}
+		route = live.http[route.gateIndex]
+	}
+	if !http.runMiddlewares(ex, route) {
 		return
 	}
 	http.serveRoute(ex, route)

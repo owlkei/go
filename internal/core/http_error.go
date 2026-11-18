@@ -11,7 +11,31 @@ import (
 	"github.com/dangduoc08/ginject/internal/render"
 )
 
-const varyHeader = "Vary"
+const (
+	varyHeader       = "Vary"
+	retryAfterHeader = "Retry-After"
+)
+
+var (
+	serviceUnavailableException = exception.ServiceUnavailableException(stdHTTP.StatusText(stdHTTP.StatusServiceUnavailable))
+	serviceUnavailableBody      = serviceUnavailableException.AppendJSON(nil)
+)
+
+func (http *HTTP) answerGated(ex *httpExchange, route *httpRoute) {
+	if !http.runMiddlewares(ex, route) {
+		return
+	}
+	if route.gate.state.status() == modulePending {
+		ex.writer.Header()[retryAfterHeader] = route.gate.retryAfter()
+	}
+	if route.isPage {
+		c := &ex.HTTPContext
+		ctx.HTTPSetPage(c)
+		http.writeError(c, &ex.writer, &serviceUnavailableException, true)
+		return
+	}
+	writeJSONError(&ex.writer, stdHTTP.StatusServiceUnavailable, serviceUnavailableBody)
+}
 
 func (http *HTTP) writeEarlyError(ex *httpExchange, e *exception.Exception, body []byte) int {
 	c := &ex.HTTPContext

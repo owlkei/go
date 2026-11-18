@@ -259,7 +259,7 @@ var AppModule = core.NewModuleBuilder().
 ```
 
 #### Rules
-- An import that is neither a `*Module` nor a module func panics `invalid module: can't pass '<type>' type as module` when `Build` runs.
+- An import that is neither a `*Module` nor a module func panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
 - `Name` is `<package>.<variable>` of the variable the module is assigned to (a `var X = func() *core.Module {…}` or a `var X = factory()` included), else `<package>.<function>` of the function that calls `Build`. A module built as an argument of `Imports` gets its own factory's name, never the outer variable's.
 - Chained calls accumulate: `Providers(p1).Providers(p2)` lists both.
 - `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` at the call. Called twice, the last call wins.

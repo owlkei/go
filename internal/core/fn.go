@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,37 @@ import (
 	"github.com/dangduoc08/ginject/internal/tracecontext"
 	"github.com/dangduoc08/ginject/log"
 )
+
+func sameImport(a, b any) bool {
+	moduleA, isModuleA := a.(*Module)
+	moduleB, isModuleB := b.(*Module)
+	if isModuleA || isModuleB {
+		return isModuleA && isModuleB && moduleA == moduleB
+	}
+	return factoryPointer(a) == factoryPointer(b)
+}
+
+func factoryPointer(fn any) uintptr {
+	return reflect.ValueOf(fn).Pointer()
+}
+
+func factoryLabel(fn any) string {
+	name := ""
+	if f := runtime.FuncForPC(factoryPointer(fn)); f != nil {
+		name = f.Name()
+	}
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	return name
+}
+
+func importLabel(entry any) string {
+	if m, ok := entry.(*Module); ok {
+		return m.Name
+	}
+	return factoryLabel(entry)
+}
 
 func isInjectedProvider(providerFieldType reflect.Type) bool {
 	instance := reflect.New(providerFieldType)

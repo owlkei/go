@@ -962,3 +962,63 @@ func TestHandleSubscribe_ClientWildcardStaysWithinHandlerPattern(t *testing.T) {
 		cleanup()
 	}
 }
+
+func TestWSGate_SubscribeNotReady(t *testing.T) {
+	app, _, conn := lfWSApp(t)
+
+	reply := lfWSSend(t, conn, TypeSubscribe, "s1", "lfgated")
+
+	if reply.Type != TypeError {
+		t.Fatal(test.DiffMessage(reply.Type, TypeError, "G12: subscribe to a topic of a pending module"))
+	}
+	if code, message := lfWSErrorCode(reply); code != 503 || message != "not ready: lfgated" {
+		t.Error(test.DiffMessage([]any{code, message}, []any{503, "not ready: lfgated"}, "G12: the reply is ServiceUnavailableException"))
+	}
+	if lfWSGateCalls.Load() != 0 {
+		t.Error(test.DiffMessage(lfWSGateCalls.Load(), int64(0), "G12: the handler does not run"))
+	}
+	connmgr := app.ws.connmgr
+	connmgr.mu.RLock()
+	for id := range connmgr.subscriptions {
+		for _, sub := range connmgr.subscriptions[id] {
+			if sub.Topic() == "lfgated" {
+				t.Error(test.DiffMessage(true, false, "G12: no subscription is made"))
+			}
+		}
+	}
+	connmgr.mu.RUnlock()
+}
+
+func TestWSGate_PublishNotReady(t *testing.T) {
+	_, _, conn := lfWSApp(t)
+
+	reply := lfWSSend(t, conn, TypePublish, "p1", "lfgated")
+
+	if reply.Type != TypeError {
+		t.Fatal(test.DiffMessage(reply.Type, TypeError, "G12: publish to a topic of a pending module"))
+	}
+	if code, message := lfWSErrorCode(reply); code != 503 || message != "not ready: lfgated" {
+		t.Error(test.DiffMessage([]any{code, message}, []any{503, "not ready: lfgated"}, "G12: the reply is ServiceUnavailableException, not NotSubscribed"))
+	}
+	if lfWSGateCalls.Load() != 0 {
+		t.Error(test.DiffMessage(lfWSGateCalls.Load(), int64(0), "G12: nothing runs, nothing is published"))
+	}
+}
+
+func TestWSGate_OtherEventsWork(t *testing.T) {
+	_, _, conn := lfWSApp(t)
+
+	reply := lfWSSend(t, conn, TypeSubscribe, "s1", "lfopen")
+
+	if reply.Type != TypeAck {
+		t.Error(test.DiffMessage(reply.Type, TypeAck, "G12: an event of a ready module is not gated"))
+	}
+}
+
+func TestWSGate_HandshakeIsNotGated(t *testing.T) {
+	_, _, conn := lfWSApp(t)
+
+	if conn == nil {
+		t.Error(test.DiffMessage(nil, "a connection", "G12: the handshake works while a module is pending"))
+	}
+}

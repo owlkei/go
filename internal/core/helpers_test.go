@@ -7613,3 +7613,602 @@ type wsHandshakeTraceMiddlewareB struct{}
 func (wsHandshakeTraceMiddlewareB) Use(_ *http.Request, _ http.ResponseWriter, next ctx.Next) {
 	next()
 }
+
+type lfSQL struct{ Ready bool }
+
+func (p lfSQL) NewProvider() Provider { p.Ready = true; return p }
+
+type lfRedis struct{ Ready bool }
+
+func (p lfRedis) NewProvider() Provider { p.Ready = true; return p }
+
+type lfRepo struct{ ID string }
+
+func (p lfRepo) NewProvider() Provider { p.ID = "built"; return p }
+
+type lfCache struct{ ID string }
+
+func (p lfCache) NewProvider() Provider { p.ID = "built"; return p }
+
+type lfUserSvc struct{ DB lfSQL }
+
+func (p lfUserSvc) NewProvider() Provider { return p }
+
+type lfBoomProvider struct{}
+
+func (p lfBoomProvider) NewProvider() Provider { panic("lf-provider-boom") }
+
+type lfBoomSvc struct{ DB lfSQL }
+
+func (p lfBoomSvc) NewProvider() Provider { panic("lf-svc-boom") }
+
+type lfMissingProv struct{}
+
+func (p lfMissingProv) NewProvider() Provider { return p }
+
+type lfMissing struct{}
+type lfMissingA struct{}
+type lfMissingB struct{}
+
+type lfPlainCtl struct{ common.HTTP }
+
+func (c lfPlainCtl) NewController() Controller { c.Prefix("lfplain"); return c }
+
+func (c lfPlainCtl) READ_hello() string { return "plain" }
+
+type lfSQLCtl struct {
+	common.HTTP
+	DB lfSQL
+}
+
+func (c lfSQLCtl) NewController() Controller { c.Prefix("lfsql"); return c }
+
+func (c lfSQLCtl) READ_hello() string {
+	if c.DB.Ready {
+		return "ok"
+	}
+	return "zero"
+}
+
+type lfUserCtl struct {
+	common.HTTP
+	Svc lfUserSvc
+}
+
+func (c lfUserCtl) NewController() Controller { c.Prefix("lfuser"); return c }
+
+func (c lfUserCtl) READ_hello() string { return "user" }
+
+type lfBookingCtl struct {
+	common.HTTP
+	Users lfUserSvc
+}
+
+func (c lfBookingCtl) NewController() Controller { c.Prefix("lfbooking"); return c }
+
+func (c lfBookingCtl) READ_hello() string { return "booking" }
+
+type lfRedisCtl struct {
+	common.HTTP
+	R lfRedis
+}
+
+func (c lfRedisCtl) NewController() Controller { c.Prefix("lfredis"); return c }
+
+func (c lfRedisCtl) READ_hello() string { return "redis" }
+
+type lfSQLGuard struct{ DB lfSQL }
+
+func (g lfSQLGuard) CanActivate(*ctx.HTTPContext) bool { return true }
+
+type lfGuardCtl struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c lfGuardCtl) NewController() Controller {
+	c.Prefix("lfguard")
+	c.BindGuard(lfSQLGuard{})
+	return c
+}
+
+func (c lfGuardCtl) READ_hello() string { return "guard" }
+
+type lfSQLPipe struct{ DB lfSQL }
+
+func (p lfSQLPipe) Transform(ctx.Query, common.ArgumentMetadata) any { return p }
+
+type lfPipeCtl struct{ common.HTTP }
+
+func (c lfPipeCtl) NewController() Controller { c.Prefix("lfpipe"); return c }
+
+func (c lfPipeCtl) READ_hello(p lfSQLPipe) string { return "pipe" }
+
+type lfPanicCtl struct {
+	common.HTTP
+	DB lfSQL
+}
+
+func (c lfPanicCtl) NewController() Controller { panic("lf-newcontroller-boom") }
+
+func (c lfPanicCtl) READ_hello() string { return "never" }
+
+type lfDupOpenCtl struct{ common.HTTP }
+
+func (c lfDupOpenCtl) NewController() Controller { c.Prefix("lfdup"); return c }
+
+func (c lfDupOpenCtl) READ_hello() string { return "open" }
+
+type lfDupGatedCtl struct {
+	common.HTTP
+	DB lfSQL
+}
+
+func (c lfDupGatedCtl) NewController() Controller { c.Prefix("lfdup"); return c }
+
+func (c lfDupGatedCtl) READ_hello() string { return "gated" }
+
+var lfChangingCalls atomic.Int64
+
+type lfChangingCtl struct{ common.HTTP }
+
+func (c lfChangingCtl) NewController() Controller {
+	if lfChangingCalls.Add(1) == 1 {
+		c.Prefix("lfchg1")
+	} else {
+		c.Prefix("lfchg2")
+	}
+	return c
+}
+
+func (c lfChangingCtl) READ_hello() string { return "chg" }
+
+type lfPageCtl struct {
+	common.HTTP
+	DB lfSQL
+}
+
+func (c lfPageCtl) NewController() Controller { return c }
+
+func (c lfPageCtl) RENDER_gated(h *ctx.HTTPContext) {}
+
+var lfLayerHits atomic.Int64
+
+type lfCountGuard struct{}
+
+func (lfCountGuard) CanActivate(*ctx.HTTPContext) bool { lfLayerHits.Add(1); return true }
+
+type lfCountFilter struct{}
+
+func (lfCountFilter) Catch(*ctx.HTTPContext, *exception.Exception) { lfLayerHits.Add(1) }
+
+type lfLayeredCtl struct {
+	common.HTTP
+	common.Guard
+	common.ExceptionFilter
+	DB lfSQL
+}
+
+func (c lfLayeredCtl) NewController() Controller {
+	c.Prefix("lflayered")
+	c.BindGuard(lfCountGuard{})
+	c.BindExceptionFilter(lfCountFilter{})
+	return c
+}
+
+func (c lfLayeredCtl) READ_hello() string { lfLayerHits.Add(100); return "layered" }
+
+type lfCountMW struct{ Hits *atomic.Int64 }
+
+func (m lfCountMW) Use(_ *http.Request, _ http.ResponseWriter, next ctx.Next) {
+	m.Hits.Add(1)
+	next()
+}
+
+type lfRefuseMW struct{}
+
+func (lfRefuseMW) Use(_ *http.Request, w http.ResponseWriter, _ ctx.Next) {
+	w.WriteHeader(http.StatusUnauthorized)
+}
+
+type lfWSGate struct {
+	common.WS
+	DB lfSQL
+}
+
+func (c lfWSGate) NewController() Controller { return c }
+
+func (c lfWSGate) SUBSCRIBE_lfgated() string { lfWSGateCalls.Add(1); return "gated" }
+
+var lfWSGateCalls atomic.Int64
+
+type lfWSOpen struct{ common.WS }
+
+func (c lfWSOpen) NewController() Controller { return c }
+
+func (c lfWSOpen) SUBSCRIBE_lfopen() string { return "open" }
+
+type lfEvents struct {
+	mu   sync.Mutex
+	list []string
+}
+
+func (e *lfEvents) add(s string) {
+	e.mu.Lock()
+	e.list = append(e.list, s)
+	e.mu.Unlock()
+}
+
+func (e *lfEvents) all() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.list)
+}
+
+func lfNamed(name string, b *ModuleBuilder) *Module {
+	m := b.Build()
+	m.Name = name
+	return m
+}
+
+func lfWait(t *testing.T, ch <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for " + what)
+	}
+}
+
+func lfCreate(t *testing.T, app *App, root *Module) {
+	t.Helper()
+	done := make(chan any, 1)
+	go func() {
+		defer func() { done <- recover() }()
+		app.Create(root)
+	}()
+	select {
+	case r := <-done:
+		if r != nil {
+			t.Fatal(test.DiffMessage(fmt.Sprint(r), "no panic", "Create succeeds"))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Create did not return")
+	}
+}
+
+func lfCreatePanic(t *testing.T, app *App, root *Module) string {
+	t.Helper()
+	text, panicked := createPanicText(func() { app.Create(root) })
+	if !panicked {
+		t.Fatal(test.DiffMessage("no panic", "a panic", "Create panics"))
+	}
+	return text
+}
+
+func lfRelease(t *testing.T, app *App, releases ...chan struct{}) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, r := range releases {
+			select {
+			case <-r:
+			default:
+				close(r)
+			}
+		}
+		app.Stop()
+	})
+}
+
+func lfStatus(app *App, m *Module) moduleStatus { return app.container.status(m) }
+
+func lfCode(app *App, path string) int { return createGet(app, path).Code }
+
+func lfLogger(app *App) *lcRecordingLogger {
+	l := &lcRecordingLogger{}
+	app.SetLogger(l)
+	return l
+}
+
+type lfListenLogger struct {
+	*lcRecordingLogger
+	listening chan struct{}
+	once      sync.Once
+}
+
+func newLFListenLogger() *lfListenLogger {
+	return &lfListenLogger{lcRecordingLogger: &lcRecordingLogger{}, listening: make(chan struct{})}
+}
+
+func (l *lfListenLogger) Info(msg string, args ...any) {
+	l.record("info", msg, args)
+	if msg == "ServerListening" {
+		l.once.Do(func() { close(l.listening) })
+	}
+}
+
+func lfServe(t *testing.T, app *App, timeout time.Duration, logger *lfListenLogger) chan error {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	done := make(chan error, 1)
+	go func() { done <- app.Serve(ln, &ServerOptions{ShutdownTimeout: timeout}) }()
+	lfWait(t, logger.listening, "ServerListening")
+	return done
+}
+
+func lfCause(e lcLogEntry) string { return fmt.Sprint(e.field("cause")) }
+
+func lfFailedFor(l *lcRecordingLogger, module string) []lcLogEntry {
+	var out []lcLogEntry
+	for _, e := range l.named("ModuleFailed") {
+		if fmt.Sprint(e.field("module")) == module {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+type lfAlphaSvc struct{}
+
+func (p lfAlphaSvc) NewProvider() Provider { return p }
+
+type lfBetaSvc struct{}
+
+func (p lfBetaSvc) NewProvider() Provider { return p }
+
+type lfNeedsBetaCtl struct {
+	common.HTTP
+	B lfBetaSvc
+}
+
+func (c lfNeedsBetaCtl) NewController() Controller { c.Prefix("lfneedsbeta"); return c }
+
+func (c lfNeedsBetaCtl) READ_hello() string { return "beta" }
+
+type lfNeedsAlphaCtl struct {
+	common.HTTP
+	A lfAlphaSvc
+}
+
+func (c lfNeedsAlphaCtl) NewController() Controller { c.Prefix("lfneedsalpha"); return c }
+
+func (c lfNeedsAlphaCtl) READ_hello() string { return "alpha" }
+
+type lfSubmitOnlyCtl struct {
+	common.HTTP
+	DB lfSQL
+}
+
+func (c lfSubmitOnlyCtl) NewController() Controller { return c }
+
+func (c lfSubmitOnlyCtl) SUBMIT_x() {}
+
+const lfWant503JSON = `{"code":503,"error":"Service Unavailable","message":"Service Unavailable"}`
+
+func lfGateApp(t *testing.T, files map[string]string, setup func(*App)) (*App, *Module, *lcRecordingLogger) {
+	t.Helper()
+	logger := &lcRecordingLogger{}
+	app := New()
+	app.SetLogger(logger)
+	if files != nil {
+		app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
+	}
+	if setup != nil {
+		setup(app)
+	}
+	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
+	release := lfHold(sql)
+	b := NewModuleBuilder().AsyncImports(sql).Controllers(lfSQLCtl{}, lfLayeredCtl{})
+	if files != nil {
+		b.Controllers(lfPageCtl{})
+	}
+	gated := lfNamed("gated", b)
+	root := lfNamed("root", NewModuleBuilder().Imports(gated).Controllers(lfPlainCtl{}))
+	mustCreate(t, app, root)
+	lfRelease(t, app, release)
+	return app, sql, logger
+}
+
+func lfWSApp(t *testing.T) (*App, *Module, *websocket.Conn) {
+	t.Helper()
+	lfWSGateCalls.Store(0)
+	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
+	release := lfHold(sql)
+	gated := lfNamed("gated", NewModuleBuilder().AsyncImports(sql).Controllers(lfWSGate{}))
+	root := lfNamed("root", NewModuleBuilder().Imports(gated).Controllers(lfWSOpen{}))
+
+	app := New()
+	lfLogger(app)
+	app.EnableWS(&WSOptions{Path: "/ws"})
+	mustCreate(t, app, root)
+	lfRelease(t, app, release)
+
+	server := httptest.NewServer(app)
+	t.Cleanup(server.Close)
+	conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if p := recvWSPayload(t, conn); p.Type != TypeConnected {
+		t.Fatalf("expected connected, got %v", p.Type)
+	}
+	return app, sql, conn
+}
+
+func lfWSSend(t *testing.T, conn *websocket.Conn, typ WSPayloadType, id, topic string) WSPayload {
+	t.Helper()
+	if err := websocket.JSON.Send(conn, WSPayload{Type: typ, ID: id, Topic: []string{topic}, Message: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	return recvWSPayload(t, conn)
+}
+
+func lfWSErrorCode(p WSPayload) (code int, message string) {
+	m, _ := p.Message.(map[string]any)
+	c, _ := m["code"].(float64)
+	s, _ := m["message"].(string)
+	return int(c), s
+}
+
+func lfHold(ms ...*Module) chan struct{} {
+	release := make(chan struct{})
+	for _, m := range ms {
+		m.OnInit = func() { <-release }
+	}
+	return release
+}
+
+type lfWatchLog struct {
+	*lcRecordingLogger
+	mu   sync.Mutex
+	subs []chan struct{}
+}
+
+func newLFWatchLog() *lfWatchLog { return &lfWatchLog{lcRecordingLogger: &lcRecordingLogger{}} }
+
+func (l *lfWatchLog) notify() {
+	l.mu.Lock()
+	for _, s := range l.subs {
+		select {
+		case s <- struct{}{}:
+		default:
+		}
+	}
+	l.mu.Unlock()
+}
+
+func (l *lfWatchLog) Debug(msg string, args ...any) { l.record("debug", msg, args); l.notify() }
+func (l *lfWatchLog) Info(msg string, args ...any)  { l.record("info", msg, args); l.notify() }
+func (l *lfWatchLog) Warn(msg string, args ...any)  { l.record("warn", msg, args); l.notify() }
+func (l *lfWatchLog) Error(msg string, args ...any) { l.record("error", msg, args); l.notify() }
+func (l *lfWatchLog) Fatal(msg string, args ...any) { l.record("fatal", msg, args); l.notify() }
+
+func (l *lfWatchLog) waitCount(t *testing.T, msg string, n int) {
+	t.Helper()
+	sub := make(chan struct{}, 1)
+	l.mu.Lock()
+	l.subs = append(l.subs, sub)
+	l.mu.Unlock()
+	for len(l.named(msg)) < n {
+		select {
+		case <-sub:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("timed out waiting for %d %s lines, have %d", n, msg, len(l.named(msg)))
+		}
+	}
+}
+
+func lfStop(t *testing.T, app *App) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { app.Stop(); close(done) }()
+	lfWait(t, done, "Stop to return")
+}
+
+type lfOtherSvc struct{ DB lfSQL }
+
+func (p lfOtherSvc) NewProvider() Provider { return p }
+
+type lfCacheCtl struct {
+	common.HTTP
+	C lfCache
+}
+
+func (c lfCacheCtl) NewController() Controller { c.Prefix("lfcache"); return c }
+
+func (c lfCacheCtl) READ_hello() string { return "cache" }
+
+type lfNeedsBoom struct{ B lfBoomProvider }
+
+func (p lfNeedsBoom) NewProvider() Provider { return p }
+
+type lfRecProvider struct{ Ev *lfEvents }
+
+func (p lfRecProvider) NewProvider() Provider { p.Ev.add("provider"); return p }
+
+type lfRecCtl struct {
+	common.HTTP
+	Ev *lfEvents
+}
+
+func (c lfRecCtl) NewController() Controller { c.Ev.add("controller"); c.Prefix("lfrec"); return c }
+
+func (c lfRecCtl) READ_hello() string { return "rec" }
+
+type lfOrderGuard struct {
+	Tag string
+	Log *lfEvents
+}
+
+func (g lfOrderGuard) CanActivate(*ctx.HTTPContext) bool { g.Log.add(g.Tag); return true }
+
+type lfOrderMW struct {
+	Tag string
+	Log *lfEvents
+}
+
+func (m lfOrderMW) Use(_ *http.Request, _ http.ResponseWriter, next ctx.Next) {
+	m.Log.add(m.Tag)
+	next()
+}
+
+type lfOrderCtl struct {
+	common.HTTP
+	common.Guard
+	DB  lfSQL
+	Log *lfEvents
+}
+
+func (c lfOrderCtl) NewController() Controller {
+	c.Prefix("lforder")
+	c.BindGuard(lfOrderGuard{Tag: "ctl-guard", Log: c.Log})
+	return c
+}
+
+func (c lfOrderCtl) READ_hello() string { c.Log.add("handler"); return "order" }
+
+type lfMissingCtl struct {
+	common.HTTP
+	P lfMissingProv
+}
+
+func (c lfMissingCtl) NewController() Controller { return c }
+
+func (c lfMissingCtl) READ_hello() string { return "missing" }
+
+type lfAsyncWS struct {
+	release func()
+	settled <-chan struct{}
+}
+
+func lfWSAsyncApp(t *testing.T) (*App, *lfAsyncWS, *websocket.Conn) {
+	t.Helper()
+	lfWSGateCalls.Store(0)
+	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
+	hold := lfHold(sql)
+	gated := lfNamed("gated", NewModuleBuilder().AsyncImports(sql).Controllers(lfWSGate{}))
+	root := lfNamed("root", NewModuleBuilder().Imports(gated).Controllers(lfWSOpen{}))
+
+	app := New()
+	lfLogger(app)
+	app.EnableWS(&WSOptions{Path: "/ws"})
+	mustCreate(t, app, root)
+	lfRelease(t, app, hold)
+
+	server := httptest.NewServer(app)
+	t.Cleanup(server.Close)
+	conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if p := recvWSPayload(t, conn); p.Type != TypeConnected {
+		t.Fatalf("expected connected, got %v", p.Type)
+	}
+	return app, &lfAsyncWS{release: func() { close(hold) }, settled: app.container.settled(gated)}, conn
+}

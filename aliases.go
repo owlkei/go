@@ -1,6 +1,8 @@
 package ginject
 
 import (
+	"context"
+
 	"github.com/dangduoc08/ginject/internal/aggregation"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/core"
@@ -16,6 +18,7 @@ type (
 	ServerOptions = core.ServerOptions
 	WSOptions     = core.WSOptions
 	RenderOptions = core.RenderOptions
+	RetryOptions  = core.RetryOptions
 
 	HTTP             = common.HTTP
 	WS               = common.WS
@@ -56,6 +59,10 @@ func ModuleBuilder() *core.ModuleBuilder {
 
 func New() App {
 	return core.New()
+}
+
+func Retry(ctx context.Context, opts *core.RetryOptions, fn func(ctx context.Context) error) error {
+	return core.Retry(ctx, opts, fn)
 }
 
 const (

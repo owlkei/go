@@ -1,7 +1,7 @@
 package core
 
 import (
-	"fmt"
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -27,10 +27,11 @@ type parsedModuleFile struct {
 }
 
 type ModuleBuilder struct {
-	imports     []any
-	providers   []Provider
-	controllers []Controller
-	pathStyle   common.PathStyle
+	imports      []any
+	asyncImports []any
+	providers    []Provider
+	controllers  []Controller
+	pathStyle    common.PathStyle
 }
 
 func NewModuleBuilder() *ModuleBuilder {
@@ -42,30 +43,91 @@ func (m *ModuleBuilder) Imports(modules ...any) *ModuleBuilder {
 	return m
 }
 
+func (m *ModuleBuilder) AsyncImports(modules ...any) *ModuleBuilder {
+	m.asyncImports = append(m.asyncImports, modules...)
+	return m
+}
+
 func (m *ModuleBuilder) getModuleType() ([]*Module, []any) {
+	m.checkImports()
+
 	staticModules := make([]*Module, 0, len(m.imports))
 	var moduleFactories []any
-	var errors []string
-
 	for _, arg := range m.imports {
-		switch module := arg.(type) {
-		case *Module:
+		if module, ok := arg.(*Module); ok {
 			staticModules = append(staticModules, module)
-		default:
-			moduleType := reflect.TypeOf(module)
-			if isModuleFactory(moduleType.String()) {
-				moduleFactories = append(moduleFactories, module)
-			} else {
-				errors = append(errors, fmt.Sprintf("can't pass '%v' type as module", moduleType))
-			}
+		} else {
+			moduleFactories = append(moduleFactories, arg)
 		}
 	}
 
+	return staticModules, moduleFactories
+}
+
+func (m *ModuleBuilder) checkImports() {
+	var errors []string
+	errors = appendImportErrors(errors, m.imports, "Imports")
+	errors = appendImportErrors(errors, m.asyncImports, "AsyncImports")
 	if len(errors) > 0 {
 		panic(color.FmtRed("invalid module: %s", strings.Join(errors, "\n       ")))
 	}
 
-	return staticModules, moduleFactories
+	for _, async := range m.asyncImports {
+		for _, imported := range m.imports {
+			if sameImport(async, imported) {
+				panic(color.FmtRed("invalid module: '%s' is in both Imports and AsyncImports", importLabel(async)))
+			}
+		}
+	}
+}
+
+func appendImportErrors(errors []string, entries []any, list string) []string {
+	for _, entry := range entries {
+		if module, ok := entry.(*Module); ok && module != nil {
+			continue
+		}
+		typeName := "<nil>"
+		if entry != nil {
+			typeName = reflect.TypeOf(entry).String()
+			if isModuleFactoryType(reflect.TypeOf(entry)) {
+				continue
+			}
+		}
+		errors = append(errors, "can't import '"+typeName+"' with "+list+importShapesHint)
+	}
+	return errors
+}
+
+const importShapesHint = ": an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)"
+
+var (
+	moduleType  = reflect.TypeFor[*Module]()
+	errorType   = reflect.TypeFor[error]()
+	contextType = reflect.TypeFor[context.Context]()
+)
+
+func isModuleFactoryType(t reflect.Type) bool {
+	if t.Kind() != reflect.Func || t.IsVariadic() {
+		return false
+	}
+	switch t.NumOut() {
+	case 1:
+		if t.Out(0) != moduleType {
+			return false
+		}
+	case 2:
+		if t.Out(0) != moduleType || t.Out(1) != errorType {
+			return false
+		}
+	default:
+		return false
+	}
+	for i := 0; i < t.NumIn(); i++ {
+		if t.In(i) == contextType && (i != 0 || t.NumOut() != 2) {
+			return false
+		}
+	}
+	return true
 }
 
 func isModuleFactory(moduleType string) bool {
@@ -95,6 +157,7 @@ func (m *ModuleBuilder) Build() *Module {
 
 	module := &Module{
 		imports:         slices.Clone(m.imports),
+		asyncImports:    slices.Clone(m.asyncImports),
 		staticModules:   staticModules,
 		moduleFactories: moduleFactories,
 		providers:       m.providers,

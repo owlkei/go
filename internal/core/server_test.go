@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1507,5 +1508,31 @@ func TestShutdown_AccessLogStoppedOnce(t *testing.T) {
 	app.Stop()
 	if app.tracer.Enabled() {
 		t.Error(test.DiffMessage(true, false, "A10: after shutdown the access log no longer listens"))
+	}
+}
+
+func TestServer_InstanceLoaderOnlyReady(t *testing.T) {
+	okm := lfNamed("okm", NewModuleBuilder())
+	pendm := lfNamed("pendm", NewModuleBuilder().Providers(lfSQL{}))
+	release := lfHold(pendm)
+	root := lfNamed("rootm", NewModuleBuilder().Imports(okm).AsyncImports(pendm))
+	app := New()
+	logger := lfLogger(app)
+	lfCreate(t, app, root)
+	lfRelease(t, app, release)
+
+	app.logStartup(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1}, false, "HTTP/1.1")
+
+	var loaded []string
+	for _, e := range logger.named("InstanceLoader") {
+		loaded = append(loaded, lcText(e.field("module")))
+	}
+	for _, want := range []string{"okm initialized", "rootm initialized"} {
+		if !slices.Contains(loaded, want) {
+			t.Error(test.DiffMessage(loaded, want, "V: InstanceLoader lists ready modules"))
+		}
+	}
+	if slices.Contains(loaded, "pendm initialized") {
+		t.Error(test.DiffMessage(loaded, "no pendm", "V: InstanceLoader skips a module that is not ready"))
 	}
 }

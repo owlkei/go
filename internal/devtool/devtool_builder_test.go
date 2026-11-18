@@ -1,7 +1,10 @@
 package devtool
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/test"
@@ -102,5 +105,53 @@ func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 	v := snapshot.Controller.Http[0].Versioning
 	if v.Value != "1" || v.Key != "X-Version" || v.Type != int32(versioning.TypeHeader) {
 		t.Error(test.DiffMessage([]any{v.Value, v.Key, v.Type}, []any{"1", "X-Version", int32(versioning.TypeHeader)}, "D1: with versioning the entry is what it is today"))
+	}
+}
+
+func TestDevtoolBuilder_ModulesLive(t *testing.T) {
+	state := "pending"
+	waiting := []string{"sql"}
+	attempts := 0
+	snapshot := DevtoolBuilder().
+		AddExceptionFilters(nil, nil).
+		AddMiddlewares(nil, nil).
+		AddGuarders(nil, nil).
+		AddInterceptors(nil, nil).
+		AddVersioning(nil).
+		AddHTTPMainHandlers(nil).
+		AddModules(func() []*ModuleStatus {
+			return []*ModuleStatus{
+				{Name: "root", State: "ready"},
+				{Name: "user", State: state, IsAsync: true, WaitingFor: waiting, Attempts: attempts, LastError: "lf-last"},
+			}
+		}).
+		Build()
+
+	before, err := snapshot.GetConfiguration(context.Background(), &GetConfigurationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Modules) != 2 || before.Modules[1].State != "pending" || before.Modules[1].WaitingFor[0] != "sql" {
+		t.Fatal(test.DiffMessage(before.Modules, "root ready, user pending waiting for sql", "V: modules in discovery order"))
+	}
+
+	state, waiting, attempts = "ready", nil, 3
+	after, _ := snapshot.GetConfiguration(context.Background(), &GetConfigurationRequest{})
+	user := after.Modules[1]
+	if user.State != "ready" || len(user.WaitingFor) != 0 || user.Attempts != 3 || user.LastError != "lf-last" || !user.IsAsync {
+		t.Error(test.DiffMessage(user, "ready, no waiting_for, 3 attempts", "V: the function is read at each call"))
+	}
+
+	encoded, err := json.Marshal(after)
+	if err != nil || !strings.Contains(string(encoded), `"modules":[`) || !strings.Contains(string(encoded), `"state":"ready"`) ||
+		!strings.Contains(string(encoded), `"is_async":true`) || !strings.Contains(string(encoded), `"last_error":"lf-last"`) {
+		t.Error(test.DiffMessage(string(encoded), `"modules":[…"state":"ready"…]`, "V: JSON names"))
+	}
+}
+
+func TestDevtoolBuilder_NoModulesOmitsField(t *testing.T) {
+	encoded, err := json.Marshal(buildSnapshot().GetConfigurationResponse)
+	if err != nil || strings.Contains(string(encoded), `"modules"`) {
+		t.Error(test.DiffMessage(string(encoded), "no modules field", "V: modules is omitted without AddModules"))
 	}
 }

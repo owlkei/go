@@ -1,9 +1,11 @@
 package core
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"reflect"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,6 +57,12 @@ type App struct {
 	globalInterceptors     []any
 	globalExceptionFilters []any
 
+	wsGlobalGuards       []ctx.WSHandler
+	wsGlobalInterceptors []wsGlobalInterceptor
+	wsGlobalCatches      []common.WSCatch
+
+	startupTimeout time.Duration
+
 	broker memorybroker.Broker
 
 	logger     log.Logger
@@ -95,6 +103,7 @@ func New() *App {
 		serverDefaults: newServerDefaults(),
 		notifySignals:  notifyShutdownSignals,
 		shutdownDone:   make(chan struct{}),
+		startupTimeout: defaultStartupTimeout,
 	}
 	app.maxRequestBodyBytes.Store(defaultMaxRequestBodyBytes)
 
@@ -181,11 +190,20 @@ func (app *App) Create(m *Module) {
 	}
 	app.isCreateCalled = true
 
+	start := time.Now()
+	createCtx, cancel := context.WithDeadline(context.Background(), start.Add(app.startupTimeout))
+	defer cancel()
+
 	app.stacks = newStackSampler(app.logger)
 	app.container.addInterface(loggerKey, app.logger)
 	app.container.isVersioningEnabled = app.http.isVersioningEnabled
+	app.container.logger = app.logger
+	app.container.createStart = start
+	app.container.startupTimeout = app.startupTimeout
+	app.container.createCtx = createCtx
 	app.initRender()
 	app.container.wire(m)
+	app.checkAppWideLayers()
 	app.checkRenderBindings()
 	app.initWS()
 	app.initRoutes()
@@ -194,10 +212,13 @@ func (app *App) Create(m *Module) {
 	app.initGuards()
 	app.initInterceptors()
 	app.initMainHandlers()
+	app.setWSGates()
 	app.http.finishRoutes()
 	app.initDevtool()
 	app.initAccessLog()
-	app.callOnReady()
+	readyAtCreate := slices.Clone(app.container.readyOrder)
+	app.startEntries()
+	app.callOnReady(readyAtCreate)
 
 	app.serveMu.Lock()
 	app.isCreated = true
@@ -249,6 +270,11 @@ func (app *App) initRoutes() {
 	app.http.stacks = app.stacks
 	for _, h := range app.container.httpMainHandlers {
 		app.http.addRoute(h, app.container.httpPlanByPattern[h.Pattern])
+		if ref, ok := app.container.gateByPattern[h.Pattern]; ok {
+			route := app.http.routeOf(h)
+			route.gate = ref.gate
+			route.gateIndex = ref.index
+		}
 	}
 	app.addPublicRoutes()
 	app.addAssetRoute()
@@ -295,6 +321,7 @@ func (app *App) initExceptionFilters() {
 
 			if isWSFilter && app.ws != nil {
 				tracedWSCatch := traceWSCatch(&app.tracer, name, wsCatch)
+				app.wsGlobalCatches = append(app.wsGlobalCatches, tracedWSCatch)
 				for _, h := range app.container.wsMainHandlers {
 					app.ws.catchFnsByEvent[h.EventName] = append(app.ws.catchFnsByEvent[h.EventName], tracedWSCatch)
 				}
@@ -350,6 +377,7 @@ func (app *App) initGuards() {
 
 			if isWSGuard && app.ws != nil {
 				mw := traceWSHandler(&app.tracer, trace.StageGuard, name, common.BuildWSGuardMiddleware(wsCanActivate))
+				app.wsGlobalGuards = append(app.wsGlobalGuards, mw)
 				for _, h := range app.container.wsMainHandlers {
 					app.ws.eventMatcher.AddMiddlewares(h.EventName, mw)
 				}
@@ -414,6 +442,7 @@ func (app *App) initInterceptors() {
 			}
 
 			if isWSInterceptor && app.ws != nil {
+				app.wsGlobalInterceptors = append(app.wsGlobalInterceptors, wsGlobalInterceptor{name: name, intercept: wsIntercept})
 				for _, h := range app.container.wsMainHandlers {
 					mw := traceWSHandler(&app.tracer, trace.StagePreInterceptor, name, common.BuildWSInterceptMiddleware(name, wsIntercept))
 					app.ws.eventMatcher.AddMiddlewares(h.EventName, mw)
@@ -540,6 +569,16 @@ func (app *App) SetLogger(logger log.LogAdapter) *App {
 	return app
 }
 
+func (app *App) SetStartupTimeout(d time.Duration) *App {
+	app.mustBeBeforeCreate("SetStartupTimeout")
+	if d <= 0 {
+		panic(color.FmtRed("invalid app: SetStartupTimeout needs a positive duration"))
+	}
+	app.startupTimeout = d
+
+	return app
+}
+
 func (app *App) Logger() log.Logger {
 	return app.logger
 }
@@ -551,7 +590,10 @@ func (app *App) mustBeBeforeCreate(method string) {
 }
 
 func (app *App) Get(p Provider) any {
-	return app.container.providerByKey[genProviderKey(p)]
+	key := genProviderKey(p)
+	app.container.mu.RLock()
+	defer app.container.mu.RUnlock()
+	return app.container.providerByKey[key]
 }
 
 func (app *App) initDevtool() {
@@ -569,12 +611,13 @@ func (app *App) initDevtool() {
 		AddVersioning(app.http.versioning).
 		AddHTTPMainHandlers(app.container.httpMainHandlers).
 		AddRender(app.renderSnapshot()).
+		AddModules(app.container.moduleRows).
 		Build()
 }
 
-func (app *App) callOnReady() {
+func (app *App) callOnReady(modules []*Module) {
 	app.readyOnce.Do(func() {
-		for _, m := range app.container.modules {
+		for _, m := range modules {
 			if m.OnReady != nil {
 				m.OnReady()
 			}

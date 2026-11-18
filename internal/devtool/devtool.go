@@ -38,8 +38,19 @@ func (scope LayerScope) String() string {
 type GetConfigurationRequest struct{}
 
 type GetConfigurationResponse struct {
-	Controller *Controller `json:"controller,omitempty"`
-	Render     *Render     `json:"render,omitempty"`
+	Controller *Controller     `json:"controller,omitempty"`
+	Render     *Render         `json:"render,omitempty"`
+	Modules    []*ModuleStatus `json:"modules,omitempty"`
+}
+
+type ModuleStatus struct {
+	Name         string   `json:"name,omitempty"`
+	State        string   `json:"state,omitempty"`
+	IsAsync      bool     `json:"is_async,omitempty"`
+	WaitingFor   []string `json:"waiting_for,omitempty"`
+	Attempts     int      `json:"attempts,omitempty"`
+	LastError    string   `json:"last_error,omitempty"`
+	ReadyAfterMs int64    `json:"ready_after_ms,omitempty"`
 }
 
 type Controller struct {
@@ -118,11 +129,16 @@ type Schema struct {
 
 type Devtool struct {
 	GetConfigurationResponse
+	modules func() []*ModuleStatus
 }
 
 func (devtool *Devtool) GetConfiguration(context.Context, *GetConfigurationRequest) (*GetConfigurationResponse, error) {
-	return &GetConfigurationResponse{
+	response := &GetConfigurationResponse{
 		Controller: devtool.Controller,
 		Render:     devtool.Render,
-	}, nil
+	}
+	if devtool.modules != nil {
+		response.Modules = devtool.modules()
+	}
+	return response, nil
 }

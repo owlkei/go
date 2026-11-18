@@ -12,6 +12,7 @@ import (
 type WSEventItem struct {
 	Handler     any
 	Middlewares []ctx.WSHandler
+	Gate        any
 }
 
 type WSEvent struct {
@@ -54,6 +55,13 @@ func (m *WSEvent) AddMiddlewares(pattern string, middlewares ...ctx.WSHandler) {
 	item := m.wsEventItemByPattern[pattern]
 	item.Middlewares = append(item.Middlewares, middlewares...)
 	m.wsEventItemByPattern[pattern] = item
+}
+
+func (m *WSEvent) SetGate(pattern string, gate any) {
+	if item, ok := m.wsEventItemByPattern[pattern]; ok {
+		item.Gate = gate
+		m.wsEventItemByPattern[pattern] = item
+	}
 }
 
 func (m *WSEvent) AddInjectableHandler(pattern string, handler any) {

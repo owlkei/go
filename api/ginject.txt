@@ -6,6 +6,7 @@ pkg ginject, const VersioningMediaType versioning.Type = 4
 pkg ginject, const VersioningQuery versioning.Type = 1
 pkg ginject, func ModuleBuilder() *core.ModuleBuilder
 pkg ginject, func New() ginject.App
+pkg ginject, func Retry(context.Context, *core.RetryOptions, func(context.Context) error) error
 pkg ginject, func TraceTransport(http.RoundTripper) http.RoundTripper
 pkg ginject, type Aggregation = *aggregation.Aggregation
 pkg ginject, type App = *core.App
@@ -34,6 +35,7 @@ pkg ginject, type Publisher = common.Publisher
 pkg ginject, type Query = ctx.Query
 pkg ginject, type Redirect = ctx.Redirect
 pkg ginject, type RenderOptions = core.RenderOptions
+pkg ginject, type RetryOptions = core.RetryOptions
 pkg ginject, type ServerOptions = core.ServerOptions
 pkg ginject, type VersioningOptions = versioning.Options
 pkg ginject, type VersioningType = versioning.Type
@@ -262,6 +264,7 @@ reach core.App, method (*core.App) Logger() log.Logger
 reach core.App, method (*core.App) Serve(net.Listener, *core.ServerOptions) error
 reach core.App, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
 reach core.App, method (*core.App) SetLogger(log.LogAdapter) *core.App
+reach core.App, method (*core.App) SetStartupTimeout(time.Duration) *core.App
 reach core.App, method (*core.App) Stop()
 reach core.Controller, method (core.Controller) NewController() core.Controller
 reach core.Module, field IsGlobal bool
@@ -270,6 +273,7 @@ reach core.Module, field OnInit func()
 reach core.Module, field OnReady func()
 reach core.Module, field OnShutdown func()
 reach core.Module, method (*core.Module) Prefix(string) *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) AsyncImports(...any) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Build() *core.Module
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Controller) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
@@ -279,6 +283,9 @@ reach core.Provider, method (core.Provider) NewProvider() core.Provider
 reach core.RenderOptions, field Dir string
 reach core.RenderOptions, field FS fs.FS
 reach core.RenderOptions, field IsReload bool
+reach core.RetryOptions, field InitialDelay time.Duration
+reach core.RetryOptions, field MaxAttempts int
+reach core.RetryOptions, field MaxDelay time.Duration
 reach core.ServerOptions, field IsH2C bool
 reach core.ServerOptions, field MaxRequestBodyBytes int64
 reach core.ServerOptions, field ShutdownTimeout time.Duration

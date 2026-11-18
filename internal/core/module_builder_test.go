@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"go/parser"
 	"go/token"
 	"net/http"
@@ -286,5 +288,118 @@ func TestModuleBuilder_IsAnExportedStruct(t *testing.T) {
 	typ := reflect.TypeFor[ModuleBuilder]()
 	if typ.Kind() != reflect.Struct || typ.Name() != "ModuleBuilder" {
 		t.Error(test.DiffMessage(typ.String(), "core.ModuleBuilder struct", "D3: the builder type is exported as core.ModuleBuilder"))
+	}
+}
+
+const lfImportHint = ": an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)"
+
+func lfImportLine(typ, list string) string {
+	return "can't import '" + typ + "' with " + list + lfImportHint
+}
+
+func lfBuildPanic(t *testing.T, b *ModuleBuilder) string {
+	t.Helper()
+	text, panicked := createPanicText(func() { b.Build() })
+	if !panicked {
+		t.Fatal(test.DiffMessage("no panic", "a panic", "Build panics"))
+	}
+	return text
+}
+
+func TestModuleBuilder_Imports_AcceptsThreeFactoryShapes(t *testing.T) {
+	plain := func(lfRepo) *Module { return NewModuleBuilder().Build() }
+	withErr := func(lfRepo) (*Module, error) { return NewModuleBuilder().Build(), nil }
+	withCtx := func(context.Context, lfRepo) (*Module, error) { return NewModuleBuilder().Build(), nil }
+	noArgs := func() *Module { return NewModuleBuilder().Build() }
+	ctxOnly := func(context.Context) (*Module, error) { return NewModuleBuilder().Build(), nil }
+
+	text, panicked := createPanicText(func() {
+		NewModuleBuilder().Imports(NewModuleBuilder().Build(), plain, withErr, withCtx, noArgs, ctxOnly).Build()
+	})
+	if panicked {
+		t.Error(test.DiffMessage(text, "no panic", "F1: a Module and the three factory shapes are accepted"))
+	}
+	text, panicked = createPanicText(func() {
+		NewModuleBuilder().AsyncImports(NewModuleBuilder().Build(), plain, withErr, withCtx).Build()
+	})
+	if panicked {
+		t.Error(test.DiffMessage(text, "no panic", "F1: AsyncImports accepts the same entries"))
+	}
+}
+
+func TestModuleBuilder_Imports_RefusesNil(t *testing.T) {
+	text := lfBuildPanic(t, NewModuleBuilder().Imports(nil))
+	if !strings.Contains(text, "invalid module: "+lfImportLine("<nil>", "Imports")) {
+		t.Error(test.DiffMessage(text, "invalid module: "+lfImportLine("<nil>", "Imports"), "F2: a nil entry"))
+	}
+}
+
+func TestModuleBuilder_Imports_RefusesWrongResult(t *testing.T) {
+	text := lfBuildPanic(t, NewModuleBuilder().Imports(func() string { return "" }))
+	if want := lfImportLine("func() string", "Imports"); !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F2: a factory that does not return a module"))
+	}
+	text = lfBuildPanic(t, NewModuleBuilder().Imports(func(context.Context) *Module { return nil }))
+	if want := lfImportLine("func(context.Context) *core.Module", "Imports"); !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F2: a ctx factory without the error result"))
+	}
+	text = lfBuildPanic(t, NewModuleBuilder().Imports(func() (*Module, error, int) { return nil, nil, 0 })) //nolint:staticcheck // ST1008: the invalid shape is the point of the test
+	if want := lfImportLine("func() (*core.Module, error, int)", "Imports"); !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F2: three results"))
+	}
+}
+
+func TestModuleBuilder_Imports_RefusesCtxWithoutError(t *testing.T) {
+	text := lfBuildPanic(t, NewModuleBuilder().AsyncImports(func(context.Context, lfRepo) *Module { return nil }))
+	if want := lfImportLine("func(context.Context, core.lfRepo) *core.Module", "AsyncImports"); !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F1: context.Context is allowed only with the two-result form"))
+	}
+}
+
+func TestModuleBuilder_Imports_RefusesCtxNotFirst(t *testing.T) {
+	text := lfBuildPanic(t, NewModuleBuilder().Imports(func(lfRepo, context.Context) (*Module, error) { return nil, nil }))
+	if want := lfImportLine("func(core.lfRepo, context.Context) (*core.Module, error)", "Imports"); !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F1: context.Context is allowed only as the first parameter"))
+	}
+}
+
+func TestModuleBuilder_Imports_RefusesVariadic(t *testing.T) {
+	text := lfBuildPanic(t, NewModuleBuilder().Imports(func(...lfRepo) *Module { return nil }))
+	if want := lfImportLine("func(...core.lfRepo) *core.Module", "Imports"); !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F1: a variadic factory"))
+	}
+}
+
+func TestModuleBuilder_Imports_ListsEveryBadEntry(t *testing.T) {
+	text := lfBuildPanic(t, NewModuleBuilder().
+		Imports(nil, func() string { return "" }).
+		AsyncImports(func(...lfRepo) *Module { return nil }))
+
+	for _, want := range []string{
+		lfImportLine("<nil>", "Imports"),
+		lfImportLine("func() string", "Imports"),
+		lfImportLine("func(...core.lfRepo) *core.Module", "AsyncImports"),
+	} {
+		if !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "F2: every bad entry is listed once"))
+		}
+	}
+	if n := strings.Count(text, "\n       "); n != 2 {
+		t.Error(test.DiffMessage(n, 2, "F2: one entry per line, joined by a newline and seven spaces"))
+	}
+	if strings.Contains(text, "can't pass") {
+		t.Error(test.DiffMessage(text, "no \"can't pass\"", "F2: the old message is gone"))
+	}
+}
+
+func TestModuleBuilder_AsyncImports_RecordsEntries(t *testing.T) {
+	child := NewModuleBuilder().Build()
+	b := NewModuleBuilder().AsyncImports(child, func() (*Module, error) { return nil, errors.New("x") })
+	if b == nil {
+		t.Fatal(test.DiffMessage(nil, "*ModuleBuilder", "G13: AsyncImports returns the builder"))
+	}
+	module := b.Build()
+	if module == nil {
+		t.Fatal(test.DiffMessage(nil, "*Module", "G13: Build works with AsyncImports"))
 	}
 }

@@ -2355,3 +2355,123 @@ func TestTransport_FromHandlerContext(t *testing.T) {
 		t.Error(test.DiffMessage(parentID, requestID, "T3: the upstream's parent is the request's span"))
 	}
 }
+
+func TestApp_SetStartupTimeout_RefusesZeroAndNegative(t *testing.T) {
+	want := "invalid app: SetStartupTimeout needs a positive duration"
+	for _, d := range []time.Duration{0, -time.Second} {
+		text, panicked := createPanicText(func() { New().SetStartupTimeout(d) })
+		if !panicked || !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "F3: SetStartupTimeout("+d.String()+")"))
+		}
+	}
+}
+
+func TestApp_SetStartupTimeout_RefusesAfterCreate(t *testing.T) {
+	app := New()
+	mustCreate(t, app, NewModuleBuilder().Build())
+
+	want := "invalid app: SetStartupTimeout must be called before Create"
+	text, panicked := createPanicText(func() { app.SetStartupTimeout(time.Second) })
+	if !panicked || !strings.Contains(text, want) {
+		t.Error(test.DiffMessage(text, want, "F3: SetStartupTimeout after Create"))
+	}
+}
+
+func TestApp_SetStartupTimeout_ReturnsApp(t *testing.T) {
+	app := New()
+	if got := app.SetStartupTimeout(time.Second); got != app {
+		t.Error(test.DiffMessage(got, app, "F3: SetStartupTimeout returns the app"))
+	}
+}
+
+func TestApp_Devtool_ModulesLive(t *testing.T) {
+	release := make(chan struct{})
+	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
+	sql.OnInit = func() { <-release }
+	user := lfNamed("user", NewModuleBuilder().AsyncImports(sql).Providers(lfUserSvc{}).Controllers(lfUserCtl{}))
+	root := lfNamed("root", NewModuleBuilder().Imports(user))
+
+	app := New()
+	lfLogger(app)
+	app.EnableDevtool()
+	lfRelease(t, app, release)
+	lfCreate(t, app, root)
+
+	byName := func() map[string]string {
+		resp, err := app.devtool.GetConfiguration(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, m := range resp.Modules {
+			out[m.Name] = m.State
+		}
+		return out
+	}
+
+	before := byName()
+	for name, want := range map[string]string{"root": "ready", "sql": "pending", "user": "pending"} {
+		if before[name] != want {
+			t.Error(test.DiffMessage(before[name], want, "V: devtool module "+name+" before the release"))
+		}
+	}
+
+	close(release)
+	lfWait(t, app.container.settled(user), "user")
+
+	after := byName()
+	for name, want := range map[string]string{"root": "ready", "sql": "ready", "user": "ready"} {
+		if after[name] != want {
+			t.Error(test.DiffMessage(after[name], want, "V: devtool module "+name+" after the release, read live"))
+		}
+	}
+
+	resp, _ := app.devtool.GetConfiguration(context.Background(), nil)
+	for _, m := range resp.Modules {
+		if (m.Name == "sql" || m.Name == "user") && !m.IsAsync {
+			t.Error(test.DiffMessage(m.IsAsync, true, "V: "+m.Name+" is async"))
+		}
+		if m.Name == "root" && m.IsAsync {
+			t.Error(test.DiffMessage(m.IsAsync, false, "V: root is not async"))
+		}
+	}
+}
+
+func TestApp_Devtool_ModulesWaitingForAndLastError(t *testing.T) {
+	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
+	user := lfNamed("user", NewModuleBuilder().AsyncImports(sql).Providers(lfUserSvc{}).Controllers(lfUserCtl{}))
+	root := lfNamed("root", NewModuleBuilder().Imports(user))
+	hold := lfHold(sql)
+
+	app := New()
+	lfLogger(app)
+	app.EnableDevtool()
+	lfCreate(t, app, root)
+	lfRelease(t, app, hold)
+
+	snapshot := func(name string) (waiting []string, state, lastError string) {
+		resp, _ := app.devtool.GetConfiguration(context.Background(), nil)
+		for _, m := range resp.Modules {
+			if m.Name == name {
+				return m.WaitingFor, m.State, m.LastError
+			}
+		}
+		t.Fatal("no module " + name)
+		return
+	}
+
+	waiting, state, _ := snapshot("user")
+	if state != "pending" || !strings.Contains(strings.Join(waiting, ","), "sql") {
+		t.Error(test.DiffMessage(waiting, "waiting for sql", "V: waiting_for lists the label of the pending entry"))
+	}
+
+	app.container.settle(sql, fmt.Errorf("lf-dsn-down"))
+	_, state, lastError := snapshot("sql")
+	if state != "failed" || !strings.Contains(lastError, "lf-dsn-down") {
+		t.Error(test.DiffMessage(lastError, "lf-dsn-down", "V: last_error holds the cause once failed"))
+	}
+	waiting, state, _ = snapshot("user")
+	if state != "failed" || len(waiting) != 0 {
+		t.Error(test.DiffMessage(waiting, "no waiting_for", "V: a failed module no longer waits"))
+	}
+}

@@ -43,6 +43,7 @@ type WS struct {
 	injectedProviders     map[string]Provider
 	logger                log.Logger
 	stacks                *stackSampler
+	tracer                *trace.Tracer
 	eventMatcher          *wsevent.WSEvent
 	newCtx                func() *ctx.WSContext
 	releaseCtx            func(c *ctx.WSContext)
@@ -66,6 +67,7 @@ func NewWS(cfg *WSOptions) *WS {
 		injectedProviders:     cfg.injectedProviders,
 		logger:                cfg.logger,
 		stacks:                cfg.stacks,
+		tracer:                cfg.tracer,
 		newCtx:                cfg.newCtx,
 		releaseCtx:            cfg.releaseCtx,
 	}

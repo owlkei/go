@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dangduoc08/ginject/exception"
@@ -1174,5 +1175,141 @@ func TestPageError_HTMLErrorIsNotCached(t *testing.T) {
 	app.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "no-cache" {
 		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Cache-Control")}, []any{404, "no-cache"}, "an HTML error page, which may carry a nonce, is never stored by a shared cache"))
+	}
+}
+
+func TestGate_Pending503JSON(t *testing.T) {
+	app, _, _ := lfGateApp(t, nil, nil)
+
+	w := createGet(app, "/lfsql/hello")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Error(test.DiffMessage(w.Code, http.StatusServiceUnavailable, "G8: a route of a pending module"))
+	}
+	if w.Body.String() != lfWant503JSON {
+		t.Error(test.DiffMessage(w.Body.String(), lfWant503JSON, "G8: the body of ServiceUnavailableException"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "G9: JSON"))
+	}
+	seconds, err := strconv.Atoi(w.Header().Get("Retry-After"))
+	if err != nil || seconds <= 0 {
+		t.Error(test.DiffMessage(w.Header().Get("Retry-After"), "a positive integer", "G10: Retry-After while pending"))
+	}
+}
+
+func TestGate_Failed503NoRetryAfter(t *testing.T) {
+	app, sql, _ := lfGateApp(t, nil, nil)
+	app.container.settle(sql, errors.New("lf-down"))
+
+	w := createGet(app, "/lfsql/hello")
+
+	if w.Code != http.StatusServiceUnavailable || w.Body.String() != lfWant503JSON {
+		t.Error(test.DiffMessage(w.Code, http.StatusServiceUnavailable, "G8: a route of a failed module answers 503"))
+	}
+	if values := w.Header().Values("Retry-After"); len(values) != 0 {
+		t.Error(test.DiffMessage(values, []string(nil), "G10: no Retry-After once failed"))
+	}
+}
+
+func TestGate_Page503HTML(t *testing.T) {
+	page := func(name string) map[string]string {
+		files := map[string]string{"gated.html": "x"}
+		for _, f := range []string{"503", "5xx"} {
+			if name == f || name == "both" {
+				files[f+".html"] = f + ":{{.Code}}:{{.Message}}"
+			}
+		}
+		return files
+	}
+	rows := []struct {
+		note, files, want string
+	}{
+		{"503.html wins", "both", "503:503:Service Unavailable"},
+		{"5xx.html", "5xx", "5xx:503:Service Unavailable"},
+		{"built-in", "none", ""},
+	}
+	for _, row := range rows {
+		app, _, _ := lfGateApp(t, page(row.files), nil)
+		for _, accept := range []string{"text/html", "application/json"} {
+			w := createRequest(app, http.MethodGet, "/gated", "Accept", accept)
+			peExpectHTML(t, "G9: "+row.note+", Accept "+accept, w, http.StatusServiceUnavailable)
+			if row.want != "" && w.Body.String() != row.want {
+				t.Error(test.DiffMessage(w.Body.String(), row.want, "G9: "+row.note+", Accept "+accept))
+			}
+			if row.want == "" && !strings.Contains(w.Body.String(), "503") {
+				t.Error(test.DiffMessage(w.Body.String(), "the built-in 503 page", "G9: "+row.note))
+			}
+			if w.Header().Get("Retry-After") == "" {
+				t.Error(test.DiffMessage("", "Retry-After", "G10: a pending page route sends Retry-After"))
+			}
+		}
+	}
+}
+
+func TestGate_NoCauseInBody(t *testing.T) {
+	app, sql, _ := lfGateApp(t, map[string]string{"gated.html": "x"}, nil)
+	app.container.settle(sql, errors.New("lf-secret-dsn host=db.internal"))
+
+	for _, target := range []string{"/lfsql/hello", "/gated"} {
+		body := createGet(app, target).Body.String()
+		for _, leak := range []string{"lf-secret-dsn", "db.internal", "sql", "gated", "lfSQL"} {
+			if strings.Contains(body, leak) {
+				t.Error(test.DiffMessage(body, "no "+leak, "G8, R24: the cause, the module and the dependency stay out of "+target))
+			}
+		}
+	}
+}
+
+func TestGate_GlobalMiddlewareRunsAndCanRefuse(t *testing.T) {
+	var hits atomic.Int64
+	app, _, _ := lfGateApp(t, nil, func(a *App) { a.BindGlobalMiddlewares(lfCountMW{Hits: &hits}) })
+
+	w := createGet(app, "/lfsql/hello")
+
+	if w.Code != http.StatusServiceUnavailable || hits.Load() != 1 {
+		t.Error(test.DiffMessage([]int64{int64(w.Code), hits.Load()}, []int64{503, 1}, "G8: a global middleware runs before the 503"))
+	}
+
+	refusing, _, _ := lfGateApp(t, nil, func(a *App) { a.BindGlobalMiddlewares(lfRefuseMW{}) })
+	if got := createGet(refusing, "/lfsql/hello").Code; got != http.StatusUnauthorized {
+		t.Error(test.DiffMessage(got, http.StatusUnauthorized, "G8: a middleware that refuses wins over the 503"))
+	}
+}
+
+func TestGate_NoGuardOrFilterRuns(t *testing.T) {
+	lfLayerHits.Store(0)
+	app, _, _ := lfGateApp(t, nil, nil)
+
+	w := createGet(app, "/lflayered/hello")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Error(test.DiffMessage(w.Code, http.StatusServiceUnavailable, "G8: status"))
+	}
+	if got := lfLayerHits.Load(); got != 0 {
+		t.Error(test.DiffMessage(got, int64(0), "G8: no guard, filter or handler of the module runs"))
+	}
+}
+
+func TestGate_OtherModulesServe(t *testing.T) {
+	app, _, _ := lfGateApp(t, nil, nil)
+
+	if got := createGet(app, "/lfplain/hello").Code; got != http.StatusOK {
+		t.Error(test.DiffMessage(got, http.StatusOK, "G8: a route of a ready module is not gated"))
+	}
+}
+
+func TestGate_405ListsGatedMethod(t *testing.T) {
+	app, _, _ := lfGateApp(t, nil, nil)
+
+	post := createRequest(app, http.MethodPost, "/lfsql/hello")
+	if post.Code != http.StatusMethodNotAllowed {
+		t.Error(test.DiffMessage(post.Code, http.StatusMethodNotAllowed, "G11: another method on a gated path"))
+	}
+	if allow := post.Header().Get("Allow"); !strings.Contains(allow, "GET") {
+		t.Error(test.DiffMessage(allow, "GET…", "G11: Allow lists the gated route's method"))
+	}
+	if got := createGet(app, "/lfsql/nothing").Code; got != http.StatusNotFound {
+		t.Error(test.DiffMessage(got, http.StatusNotFound, "G11: an unknown path under a gated prefix is 404"))
 	}
 }

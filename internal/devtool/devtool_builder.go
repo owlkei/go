@@ -30,7 +30,8 @@ type devtoolBuilder struct {
 
 	httpMainHandlers []common.HTTPLayer
 
-	render *Render
+	render  *Render
+	modules func() []*ModuleStatus
 }
 
 func DevtoolBuilder() *devtoolBuilder {
@@ -95,6 +96,12 @@ func (devtoolBuilder *devtoolBuilder) AddHTTPMainHandlers(httpMainHandlers []com
 
 func (devtoolBuilder *devtoolBuilder) AddRender(render *Render) *devtoolBuilder {
 	devtoolBuilder.render = render
+
+	return devtoolBuilder
+}
+
+func (devtoolBuilder *devtoolBuilder) AddModules(modules func() []*ModuleStatus) *devtoolBuilder {
+	devtoolBuilder.modules = modules
 
 	return devtoolBuilder
 }
@@ -195,6 +202,7 @@ func (devtoolBuilder *devtoolBuilder) Build() *Devtool {
 			},
 			Render: devtoolBuilder.render,
 		},
+		modules: devtoolBuilder.modules,
 	}
 
 	globalExceptionFilters,
