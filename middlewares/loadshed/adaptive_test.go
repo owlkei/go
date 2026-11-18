@@ -558,8 +558,10 @@ func TestAdaptive_QueueWaitNotSampled(t *testing.T) {
 		g.finishOldest(5 * time.Millisecond)
 	}
 	g.sequential(5*time.Millisecond, 4*rigStart-(rigStart+1))
-	if got := durationOf(g.s.Snapshot(), "average"); got > 5*time.Millisecond {
-		t.Error(test.DiffMessage(got, "<= 5ms", "L8: the time spent in loadshed's queue is not part of the sample"))
+	// 5 ms per sample; the 25 ms in the queue would lift the average far above it. The margin
+	// absorbs the scheduler's few microseconds on a shared CI runner (5.002 ms seen once).
+	if got := durationOf(g.s.Snapshot(), "average"); got > 5*time.Millisecond+100*time.Microsecond {
+		t.Error(test.DiffMessage(got, "<= 5.1ms", "L8: the time spent in loadshed's queue is not part of the sample"))
 	}
 }
 
