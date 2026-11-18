@@ -355,3 +355,108 @@ count of tests and benchmarks per package is the same before and after (`go test
   `public/{id}.txt` panics with a route message that doesn't name the file. Refuse such names with an
   `invalid render: public/<name> …` panic, or register them as literal segments. A file with a space
   in its name can't be reached (cause not found yet).
+
+## Startup and dependency lifecycle (discussed 2026-11-18, first part of the storage roadmap)
+
+Verified on `402b10f`..HEAD (`internal/core/container.go` `callModuleFunc`, `scanGlobals`): a module
+factory (`func(deps...) ginject.Module`, passed to `Imports`) gets its parameters only from global
+providers (plus `log.Logger` and `ginject.Publisher`). A global from a static module is found whatever its
+position or depth; a provider of a non-global sibling module panics `can't resolve argument`; a global
+provided by a module that another factory returns is found only if that factory ran first (order of
+`Imports`). Factories and `OnInit` run sequentially with no deadline: a dependency that never answers
+(a database down at start) hangs `Create()` forever, with nothing in the log.
+
+Agreed with the owner (design with the storage roadmap):
+
+1. **Names:** **Module** (`ModuleBuilder()…Build()`) and **Module factory** (`func(deps...) ginject.Module`).
+   **Global** is a property of either (`IsGlobal`) and **async** is how it is imported (`AsyncImports`,
+   item 5): neither is a kind. `Register…` is only a function name a module author picks. Rename the
+   internal `isDynamicModule` / `dynamicModules` / `callModuleFunc`; one wording in README, CLAUDE.md and
+   `.ginject/`.
+2. **Factory scope:** a factory resolves providers from its siblings in the same `Imports`, not only
+   globals.
+3. **No order dependency:** factories run in dependency order, whatever their position in `Imports`; a
+   cycle panics with the chain.
+4. **Module and Module factory fail fast:** an error or panic stops `Create()` with a clear message; the
+   process exits non-zero.
+5. **`AsyncImports(...)`** (a builder method next to `Imports`; the importing app decides, not the module
+   author): every entry, a Module or a factory, is built in the background and the app starts at once.
+   For a Module, the background part is building its providers and running their `OnInit` (a provider
+   that connects there); for a factory, calling it first. Unlike NestJS `forRootAsync`, which still
+   blocks the bootstrap (say so in the docs).
+   - factory signatures, in both lists: `func(deps...) Module`, `func(deps...) (Module, error)`,
+     `func(ctx context.Context, deps...) (Module, error)`; any other shape panics at `Create()` listing the
+     valid ones. In `Imports`, `ctx` carries one startup deadline (default 30 s, an app option) and an
+     error, a panic or the deadline fails fast; in `AsyncImports`, `ctx` is canceled at shutdown and an
+     error or a panic turns the module `failed`;
+   - success, even 10 s later: the module is wired then (providers built, dependents constructed lazily,
+     their routes switched on by one atomic swap);
+   - failure: the app keeps running; the module may retry (a retry / backoff helper offered by the
+     framework; retries belong to the module, like the storage modules, not to each app);
+   - the same entry in both `Imports` and `AsyncImports` panics, naming the module;
+   - a factory resolves from its siblings in both lists (an async sibling once it is ready);
+   - states `pending`, `ready`, `failed`, one-way (`ready` never goes back), held atomically per module
+     and shown in the log and the devtool snapshot.
+   - **lifecycle** (agreed 2026-11-18; module hooks are `OnInit` before the providers, `OnReady`,
+     `OnShutdown` in reverse order). In `Create()`: the graph is scanned (a static async Module's
+     providers are known, a factory's only once it returns); the `Imports` modules are built as today
+     and fail fast; modules that depend on an async one get their routes registered behind a closed
+     atomic gate (`503`) but no providers, controllers or `OnInit` yet; one goroutine per
+     `AsyncImports` entry starts inside `Create()`; `OnReady` runs for the ready modules and the app
+     listens. In the background: a factory waits for the siblings it needs and is called with `ctx`;
+     then the module's `OnInit` and `NewProvider()` run (a panic counts as an error). On success the
+     module is `ready`, its dependents are built in dependency order (`OnInit`, providers, controllers,
+     then the gate opens), `OnReady` runs for them, and the log says `ModuleReady module=<name>
+     after=<d>`. On failure the module and its dependents are `failed`, an `Error` log carries the
+     cause, routes keep answering `503`; the framework calls a factory once (retries live inside it).
+     At shutdown `ctx` is canceled, the framework waits for the goroutines within the shutdown timeout,
+     and `OnShutdown` runs in reverse order only for `ready` modules (a factory that fails cleans up what
+     it opened before returning);
+   - **unknown providers of a factory:** a module whose dependency nobody provides yet stays `pending`
+     while any async factory is still running; once all of them are done and it is still missing, the
+     module is `failed` with an `Error` log `can't resolve <T>` (no panic: the app is running). A module
+     whose dependencies come from static async Modules waits only for those;
+   - **controllers in an async factory's module are refused:** the module is `failed` with a log telling
+     to put the controllers in a static module that imports it (the router stays immutable). Controllers
+     in a static async Module are fine (known at `Create()`, behind the gate);
+   - WebSocket events of a module that is not ready answer a "not ready" error to `subscribe` and
+     `publish`;
+   - **docs:** this lifecycle gets a detailed section in the README (a timeline of `Create()`, the
+     background and shutdown; the states; what runs when; the two refusals above; the difference from
+     NestJS), with runnable examples, plus `.ginject/` and CLAUDE.md.
+6. **Readiness propagates through the module graph** (imports and injected providers): a module is ready
+   only when every async module it depends on is ready, and a failure propagates (`sql` failed → `user`
+   → `booking` not ready; a `booking` that only needs `redis` works). Per module first; per controller
+   later, if needed.
+7. **Routes of a module that is not ready stay registered and answer `503`** (an HTML route renders
+   `503.html`); one atomic load, only on the affected routes; no cost on the others.
+8. **After a module is ready, run-time failures are the business code's job:** a database that dies 5
+   minutes later doesn't unwire anything (`*sql.DB` is a pool that reconnects on its own); the handler
+   handles the error like any negative case.
+
+Nice to have, later (with the health check and the circuit breaker):
+
+- **Health check:** `app.EnableHealth(nil | &ginject.HealthOptions{…})`; `/health/live` always `200`
+  (never checks a dependency); `/health/ready` `200` when the static modules are up, `503` while draining
+  after SIGTERM; a minimal body (`status`, `degraded`), per-module detail opt-in, never error text (R24);
+  answered before the middlewares and guards except `proxy` (goes into the security roadmap as a
+  bypass). Open: default paths (`/health/live` vs `/healthz`), the bypass.
+- **Run-time detection:** providers may implement `Health(ctx context.Context) error` (cached, singleflight,
+  timeout) or a circuit breaker counts failures; a run-time state `degraded` propagates like readiness and
+  the affected routes answer `503` at once instead of waiting for timeouts, back to `ready` when the check
+  passes. The built-in storage modules may map connection errors to `503`.
+
+## Validation of DTOs (decided 2026-11-18)
+
+Today a pipe binds its fields by the `bind` tag (`Bind`, `BindValue`) and validates by hand in `Transform`.
+Wanted: declarative validation next to the binding, on the same struct, so a DTO says both where a field
+comes from and what it must be.
+
+- Rules in a tag beside `bind` (for example `validate:"required,email,max=120"`), checked after binding,
+  before the handler; a fixed set of rules first (required, length, range, pattern, one of, email, URL),
+  custom rules registered by name.
+- One error shape for every field that fails (field name as bound, rule, no input echoed), answered `400`
+  or `422` for REST and handed back to a `SUBMIT_` page so the form re-renders with its field errors.
+- Rules parsed once per type at `Create()` (a malformed tag panics there), no reflection per request
+  beyond what binding already does; no new dependency without a decision.
+- Same rules for WebSocket message bodies.
