@@ -2,36 +2,15 @@ package cache
 
 import (
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"runtime"
 	"testing"
 
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/memorycache"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type consumerA struct {
-	Cache CacheService
-}
-
-func (c consumerA) NewProvider() core.Provider { return c }
-
-type consumerB struct {
-	Cache CacheService
-}
-
-func (c consumerB) NewProvider() core.Provider { return c }
-
-func serviceOf(t *testing.T, app *core.App) CacheService {
-	t.Helper()
-	svc, ok := app.Get(CacheService{}).(CacheService)
-	if !ok {
-		t.Fatal(test.DiffMessage(app.Get(CacheService{}), "a CacheService", "the module provides CacheService"))
-	}
-	return svc
-}
 
 func TestRegister_NilOptions(t *testing.T) {
 	m := Register(nil)
