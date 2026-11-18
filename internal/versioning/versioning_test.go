@@ -1,34 +1,11 @@
 package versioning
 
 import (
-	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-func makeCtxWithQuery(key, val string) *ctx.HTTPContext {
-	c := ctx.NewHTTPContext()
-	u := &url.URL{RawQuery: url.Values{key: {val}}.Encode()}
-	c.Request = &http.Request{URL: u}
-	return c
-}
-
-func makeCtxWithHeader(key, val string) *ctx.HTTPContext {
-	c := ctx.NewHTTPContext()
-	h := http.Header{key: {val}}
-	c.Request = &http.Request{Header: h}
-	return c
-}
-
-func makeCtxEmpty() *ctx.HTTPContext {
-	c := ctx.NewHTTPContext()
-	u := &url.URL{RawQuery: ""}
-	c.Request = &http.Request{URL: u, Header: http.Header{}}
-	return c
-}
 
 func TestVersion_Query(t *testing.T) {
 	v := &Options{Type: TypeQuery, Key: "version", DefaultVersion: "v1"}
@@ -126,11 +103,6 @@ func TestVersion_CustomNilExtractor(t *testing.T) {
 	if got != "v1" {
 		t.Error(test.DiffMessage(got, "v1", "V4: nil extractor uses default"))
 	}
-}
-
-func acceptVersion(accept, key string) string {
-	v := &Options{Type: TypeMediaType, Key: key, DefaultVersion: "dflt"}
-	return Version(v, makeCtxWithHeader("Accept", accept))
 }
 
 func TestVersion_MediaType(t *testing.T) {
