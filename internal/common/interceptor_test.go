@@ -4,24 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type mockInterceptable struct{}
-
-func (mockInterceptable) Intercept(_ *ctx.HTTPContext, _ *aggregation.Aggregation) any { return nil }
-
-type mockWSInterceptable struct{}
-
-func (mockWSInterceptable) Intercept(_ *ctx.WSContext, _ *aggregation.Aggregation) any { return nil }
-
-type noInterceptMethod struct{}
-
-type wrongParamInterceptable struct{}
-
-func (wrongParamInterceptable) Intercept(_ int, _ *aggregation.Aggregation) any { return nil }
 
 func TestBindInterceptor_Chaining(t *testing.T) {
 	i := &Interceptor{}

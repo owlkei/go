@@ -5,35 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type mockGuarder struct{}
-
-func (mockGuarder) CanActivate(_ *ctx.HTTPContext) bool { return true }
-
-type mockWSGuarder struct{}
-
-func (mockWSGuarder) CanActivate(_ *ctx.WSContext) bool { return true }
-
-type denyGuarder struct{}
-
-func (denyGuarder) CanActivate(_ *ctx.HTTPContext) bool { return false }
-
-type denyWSGuarder struct{}
-
-func (denyWSGuarder) CanActivate(_ *ctx.WSContext) bool { return false }
-
-type noCanActivateGuarder struct{}
-
-type wrongReturnGuarder struct{}
-
-func (wrongReturnGuarder) CanActivate(_ *ctx.HTTPContext) string { return "" }
-
-type wrongParamGuarder struct{}
-
-func (wrongParamGuarder) CanActivate(_ int) bool { return true }
 
 func TestBindGuard_Chaining(t *testing.T) {
 	g := &Guard{}

@@ -4,61 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type mockExFilter struct{}
-
-func (mockExFilter) Catch(_ *ctx.HTTPContext, _ *exception.Exception) {}
-
-type mockWSExFilter struct{}
-
-func (mockWSExFilter) Catch(_ *ctx.WSContext, _ *exception.Exception) {}
-
-type noCatchExFilter struct{}
-
-type wrongParamExFilter struct{}
-
-func (wrongParamExFilter) Catch(_ int, _ *exception.Exception) {}
-
-var noopCB = func(_ int, _ reflect.Type, _ reflect.Value, _ reflect.Value) {}
-
-var testConstruct = func(obj any, constructor string) any {
-	if method := reflect.ValueOf(obj).MethodByName(constructor); method.IsValid() {
-		return method.Call(nil)[0].Interface()
-	}
-	return obj
-}
-
-func buildHTTP(fnToRoute map[string]string) *HTTP {
-	r := &HTTP{
-		patternToFuncNameMap: make(map[string]string, len(fnToRoute)),
-		funcNameToPatternMap: make(map[string]string, len(fnToRoute)),
-	}
-	for fn, route := range fnToRoute {
-		p := routing.MethodRouteVersionToPattern("GET", route, "")
-		HTTPPatternToFuncNameMap(r)[p] = fn
-		HTTPFuncNameToPatternMap(r)[fn] = p
-	}
-	return r
-}
-
-func buildWS(patternToFn map[string]string) *WS {
-	ws := &WS{
-		funcNameByEvent: make(map[string]string, len(patternToFn)),
-	}
-	for p, fn := range patternToFn {
-		ws.funcNameByEvent[p] = fn
-	}
-	return ws
-}
 
 func TestBindExceptionFilter_Chaining(t *testing.T) {
 	e := &ExceptionFilter{}
@@ -114,10 +65,6 @@ func TestNormalizeRecovered_UnknownTypeUsesGenericMessage(t *testing.T) {
 		t.Error(test.DiffMessage(got.Message(), want, "an unrecognized panic value should fall back to the generic 500 text"))
 	}
 }
-
-type customError struct{ text string }
-
-func (e *customError) Error() string { return e.text }
 
 func TestNormalizeRecovered_PointerIsReturnedAsIs(t *testing.T) {
 	original := exception.NotFoundException("nope")

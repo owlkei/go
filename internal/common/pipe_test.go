@@ -3,51 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
-)
-
-type mockContextPipeable struct{}
-
-func (mockContextPipeable) Transform(_ *ctx.HTTPContext, m ArgumentMetadata) any { return m }
-
-type mockBodyPipeable struct{}
-
-func (mockBodyPipeable) Transform(_ ctx.Body, m ArgumentMetadata) any { return m }
-
-type mockFormPipeable struct{}
-
-func (mockFormPipeable) Transform(_ ctx.Form, m ArgumentMetadata) any { return m }
-
-type mockQueryPipeable struct{}
-
-func (mockQueryPipeable) Transform(_ ctx.Query, m ArgumentMetadata) any { return m }
-
-type mockHeaderPipeable struct{}
-
-func (mockHeaderPipeable) Transform(_ ctx.Header, m ArgumentMetadata) any { return m }
-
-type mockParamPipeable struct{}
-
-func (mockParamPipeable) Transform(_ ctx.Param, m ArgumentMetadata) any { return m }
-
-type mockFilePipeable struct{}
-
-func (mockFilePipeable) Transform(_ ctx.File, m ArgumentMetadata) any { return m }
-
-type mockWSPayloadPipeable struct{}
-
-func (mockWSPayloadPipeable) Transform(_ ctx.WSPayload, m ArgumentMetadata) any { return m }
-
-var (
-	_ ContextPipeable   = mockContextPipeable{}
-	_ BodyPipeable      = mockBodyPipeable{}
-	_ FormPipeable      = mockFormPipeable{}
-	_ QueryPipeable     = mockQueryPipeable{}
-	_ HeaderPipeable    = mockHeaderPipeable{}
-	_ ParamPipeable     = mockParamPipeable{}
-	_ FilePipeable      = mockFilePipeable{}
-	_ WSPayloadPipeable = mockWSPayloadPipeable{}
 )
 
 func TestPipeableConstants(t *testing.T) {

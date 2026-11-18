@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -9,10 +10,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-func newInterceptorTestWSContext() *ctx.WSContext {
-	return ctx.NewWSContext()
-}
 
 func TestInjectProvidersIntoWSInterceptors_Empty(t *testing.T) {
 	ic := &Interceptor{}
@@ -119,8 +116,6 @@ func TestBuildWSInterceptMiddleware_CallsNextAndRunsIntercept(t *testing.T) {
 		t.Error(test.DiffMessage(aggregation.InterceptorData(gotAgg), "intercepted", "the intercept fn's return value must be stored as InterceptorData"))
 	}
 }
-
-func noopInterceptWS(*ctx.WSContext, *aggregation.Aggregation) any { return nil }
 
 func TestBuildWSInterceptMiddleware_AddsNamedAggregation(t *testing.T) {
 	c := newInterceptorTestWSContext()
@@ -280,4 +275,37 @@ func TestBuildWSInterceptMiddleware_ResetStartsEmpty(t *testing.T) {
 	if len(ctx.WSAggregations(c)) != 1 {
 		t.Error(test.DiffMessage(len(ctx.WSAggregations(c)), 1, "B16: a reused context starts a new list"))
 	}
+}
+
+func TestAsWSInterceptor_MatchesReflectionLookup(t *testing.T) {
+	c := &ctx.WSContext{}
+	for _, x := range interceptorSubjects() {
+		wantFn, wantOK := reflectWSInterceptor(x)
+		gotFn, gotOK := AsWSInterceptor(x)
+		desc := fmt.Sprintf("B11: %T", x)
+		if gotOK != wantOK {
+			t.Error(test.DiffMessage(gotOK, wantOK, desc+" ok"))
+			continue
+		}
+		if !gotOK {
+			continue
+		}
+		if gotFn == nil {
+			t.Error(test.DiffMessage(nil, "a func", desc+" fn"))
+			continue
+		}
+		got, want := gotFn(c, aggregation.NewAggregation()), wantFn(c, aggregation.NewAggregation())
+		if got != want {
+			t.Error(test.DiffMessage(got, want, desc+" result"))
+		}
+	}
+}
+
+func TestAsWSInterceptor_Nil(t *testing.T) {
+	expectNoPanic(t, "B11: AsWSInterceptor(nil) must not panic", func() {
+		fn, ok := AsWSInterceptor(nil)
+		if fn != nil || ok {
+			t.Error(test.DiffMessage(ok, false, "B11: nil is not an interceptor"))
+		}
+	})
 }

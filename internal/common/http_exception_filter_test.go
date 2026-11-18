@@ -1,9 +1,11 @@
 package common
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -121,4 +123,48 @@ func TestAsHTTPExceptionFilter_WrongShape(t *testing.T) {
 	if ok {
 		t.Error(test.DiffMessage(true, false, "a Catch with a non-context first param must not match"))
 	}
+}
+
+func TestAsHTTPExceptionFilter_MatchesReflectionLookup(t *testing.T) {
+	c := &ctx.HTTPContext{}
+	ex := exception.NotFoundException("x")
+	for _, x := range filterSubjects() {
+		_, wantOK := reflectHTTPFilter(x)
+		gotFn, gotOK := AsHTTPExceptionFilter(x)
+		desc := fmt.Sprintf("B11: %T", x)
+		if gotOK != wantOK {
+			t.Error(test.DiffMessage(gotOK, wantOK, desc+" ok"))
+			continue
+		}
+		if gotOK && gotFn == nil {
+			t.Error(test.DiffMessage(nil, "a func", desc+" fn"))
+			continue
+		}
+		if gotOK {
+			gotFn(c, &ex)
+		}
+	}
+}
+
+func TestAsHTTPExceptionFilter_CallsMethodOnTheInstance(t *testing.T) {
+	f := &recordingFilter{}
+	fn, ok := AsHTTPExceptionFilter(f)
+	if !ok {
+		t.Fatal(test.DiffMessage(ok, true, "B11: pointer receiver filter matches"))
+	}
+	ex := exception.NotFoundException("x")
+	fn(&ctx.HTTPContext{}, &ex)
+
+	if len(f.got) != 1 || f.got[0] != &ex {
+		t.Error(test.DiffMessage(f.got, []*exception.Exception{&ex}, "B11: fn calls Catch on x with the same arguments"))
+	}
+}
+
+func TestAsHTTPExceptionFilter_Nil(t *testing.T) {
+	expectNoPanic(t, "B11: AsHTTPExceptionFilter(nil) must not panic", func() {
+		fn, ok := AsHTTPExceptionFilter(nil)
+		if fn != nil || ok {
+			t.Error(test.DiffMessage(ok, false, "B11: nil is not an exception filter"))
+		}
+	})
 }

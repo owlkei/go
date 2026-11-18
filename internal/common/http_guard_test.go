@@ -1,8 +1,11 @@
 package common
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -137,5 +140,58 @@ func TestAsHTTPGuard_WrongShape(t *testing.T) {
 	_, ok := AsHTTPGuard(wrongReturnGuarder{})
 	if ok {
 		t.Error(test.DiffMessage(true, false, "a CanActivate returning non-bool must not match"))
+	}
+}
+
+func TestAsHTTPGuard_MatchesReflectionLookup(t *testing.T) {
+	c := &ctx.HTTPContext{}
+	for _, x := range guardSubjects() {
+		wantFn, wantOK := reflectHTTPGuard(x)
+		gotFn, gotOK := AsHTTPGuard(x)
+		desc := fmt.Sprintf("B11: %T", x)
+		if gotOK != wantOK {
+			t.Error(test.DiffMessage(gotOK, wantOK, desc+" ok"))
+			continue
+		}
+		if !gotOK {
+			continue
+		}
+		if gotFn == nil {
+			t.Error(test.DiffMessage(nil, "a func", desc+" fn"))
+			continue
+		}
+		if gotFn(c) != wantFn(c) {
+			t.Error(test.DiffMessage(gotFn(c), wantFn(c), desc+" result"))
+		}
+	}
+}
+
+func TestAsHTTPGuard_Nil(t *testing.T) {
+	expectNoPanic(t, "B11: AsHTTPGuard(nil) must not panic", func() {
+		fn, ok := AsHTTPGuard(nil)
+		if fn != nil || ok {
+			t.Error(test.DiffMessage(ok, false, "B11: nil is not a guard"))
+		}
+	})
+}
+
+func TestAs_UnexportedMethodsAreNotLayers(t *testing.T) {
+	ex := exception.NotFoundException("x")
+	if !(unexportedGuard{}).canActivate(nil) {
+		t.Fatal(test.DiffMessage(false, true, "fixture: the unexported guard method exists"))
+	}
+	if (unexportedInterceptor{}).intercept(nil, nil) != nil {
+		t.Fatal(test.DiffMessage(true, false, "fixture: the unexported interceptor method exists"))
+	}
+	unexportedFilter{}.catch(nil, &ex)
+
+	if _, ok := AsHTTPGuard(unexportedGuard{}); ok {
+		t.Error(test.DiffMessage(ok, false, "B11: canActivate is not CanActivate"))
+	}
+	if _, ok := AsHTTPInterceptor(unexportedInterceptor{}); ok {
+		t.Error(test.DiffMessage(ok, false, "B11: intercept is not Intercept"))
+	}
+	if _, ok := AsHTTPExceptionFilter(unexportedFilter{}); ok {
+		t.Error(test.DiffMessage(ok, false, "B11: catch is not Catch"))
 	}
 }

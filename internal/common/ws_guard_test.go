@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dangduoc08/ginject/exception"
@@ -135,12 +136,6 @@ func TestBuildWSGuardMiddleware_DeniedPanics(t *testing.T) {
 	mw(c)
 }
 
-func recoverGuardRejectionWS(mw func(*ctx.WSContext), c *ctx.WSContext) (rec any) {
-	defer func() { rec = recover() }()
-	mw(c)
-	return nil
-}
-
 func TestBuildWSGuardMiddleware_AllowCallsNextOnce(t *testing.T) {
 	calls := 0
 	c := &ctx.WSContext{}
@@ -219,4 +214,36 @@ func TestBuildWSGuardMiddleware_RejectionsAreIndependentValues(t *testing.T) {
 	if copyOf := NormalizeRecovered(first); copyOf == NormalizeRecovered(second) {
 		t.Error(test.DiffMessage(copyOf, "distinct copies", "B12: each recovered value is its own copy"))
 	}
+}
+
+func TestAsWSGuard_MatchesReflectionLookup(t *testing.T) {
+	c := &ctx.WSContext{}
+	for _, x := range guardSubjects() {
+		wantFn, wantOK := reflectWSGuard(x)
+		gotFn, gotOK := AsWSGuard(x)
+		desc := fmt.Sprintf("B11: %T", x)
+		if gotOK != wantOK {
+			t.Error(test.DiffMessage(gotOK, wantOK, desc+" ok"))
+			continue
+		}
+		if !gotOK {
+			continue
+		}
+		if gotFn == nil {
+			t.Error(test.DiffMessage(nil, "a func", desc+" fn"))
+			continue
+		}
+		if gotFn(c) != wantFn(c) {
+			t.Error(test.DiffMessage(gotFn(c), wantFn(c), desc+" result"))
+		}
+	}
+}
+
+func TestAsWSGuard_Nil(t *testing.T) {
+	expectNoPanic(t, "B11: AsWSGuard(nil) must not panic", func() {
+		fn, ok := AsWSGuard(nil)
+		if fn != nil || ok {
+			t.Error(test.DiffMessage(ok, false, "B11: nil is not a guard"))
+		}
+	})
 }

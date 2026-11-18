@@ -1,6 +1,8 @@
 package common
 
-import "testing"
+import (
+	"testing"
+)
 
 func BenchmarkGetPrefixes_NoHandlers(b *testing.B) {
 	r := &HTTP{}

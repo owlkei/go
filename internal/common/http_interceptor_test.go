@@ -1,9 +1,11 @@
 package common
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dangduoc08/ginject/internal/aggregation"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -120,4 +122,37 @@ func TestAsHTTPInterceptor_WrongShape(t *testing.T) {
 	if ok {
 		t.Error(test.DiffMessage(true, false, "an Intercept with a non-context first param must not match"))
 	}
+}
+
+func TestAsHTTPInterceptor_MatchesReflectionLookup(t *testing.T) {
+	c := &ctx.HTTPContext{}
+	for _, x := range interceptorSubjects() {
+		wantFn, wantOK := reflectHTTPInterceptor(x)
+		gotFn, gotOK := AsHTTPInterceptor(x)
+		desc := fmt.Sprintf("B11: %T", x)
+		if gotOK != wantOK {
+			t.Error(test.DiffMessage(gotOK, wantOK, desc+" ok"))
+			continue
+		}
+		if !gotOK {
+			continue
+		}
+		if gotFn == nil {
+			t.Error(test.DiffMessage(nil, "a func", desc+" fn"))
+			continue
+		}
+		got, want := gotFn(c, aggregation.NewAggregation()), wantFn(c, aggregation.NewAggregation())
+		if got != want {
+			t.Error(test.DiffMessage(got, want, desc+" result"))
+		}
+	}
+}
+
+func TestAsHTTPInterceptor_Nil(t *testing.T) {
+	expectNoPanic(t, "B11: AsHTTPInterceptor(nil) must not panic", func() {
+		fn, ok := AsHTTPInterceptor(nil)
+		if fn != nil || ok {
+			t.Error(test.DiffMessage(ok, false, "B11: nil is not an interceptor"))
+		}
+	})
 }

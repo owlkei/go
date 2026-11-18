@@ -3,6 +3,7 @@ package common
 import (
 	"testing"
 
+	"github.com/dangduoc08/ginject/internal/routing"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -121,85 +122,6 @@ func TestAddHandlerToRouterMap_StoresPattern(t *testing.T) {
 	}
 }
 
-func TestParseFnNameToURL(t *testing.T) {
-	testCases := make(map[string][]string)
-
-	testCases["READ_members_BY_user_name_AND_member_id_OF_club_users_BY_id"] = []string{
-		"GET",
-		"/club-users/{id}/members/{user_name}/{member_id}/",
-		"",
-	}
-
-	testCases["UPDATE_products_BY_productId_AND_productRanks_OF_categories_BY_categoryId_AND_categoryRank_OF_shops_BY_shopId_AND_shopRanks_VERSION_V_12"] = []string{
-		"PUT",
-		"/shops/{shopId}/{shopRanks}/categories/{categoryId}/{categoryRank}/products/{productId}/{productRanks}/",
-		"V_12",
-	}
-
-	testCases["CREATE_owned_lists_OF_users_BY_id_VERSION_"] = []string{
-		"POST",
-		"/users/{id}/owned-lists/",
-		"",
-	}
-
-	testCases["UPDATE_ANY_OF_members_OF_ANY_OF_users_BY_id_VERSION_NEUTRAL"] = []string{
-		"PUT",
-		"/users/{id}/*/members/*/",
-		"NEUTRAL",
-	}
-
-	testCases["READ_ANY_html_FILE_OF_members_OF_ANY_jpeg_FILE_VERSION_112____3"] = []string{
-		"GET",
-		"/*.jpeg/members/*.html/",
-		"112_3",
-	}
-
-	testCases["DELETE_image_png_FILE_OF_members_OF_users_BY_id_VERSION_NEUTRAL__"] = []string{
-		"DELETE",
-		"/users/{id}/members/image.png/",
-		"NEUTRAL",
-	}
-
-	testCases["MODIFY_dm_events_OF_with_BY_participant_id_OF_dm_conversations_VERSION_V2"] = []string{
-		"PATCH",
-		"/dm-conversations/with/{participant_id}/dm-events/",
-		"V2",
-	}
-
-	testCases["READ_me_ANY_bers_OF_us_ANY_ers_BY_id_VERSION_v1_v1"] = []string{
-		"GET",
-		"/us*ers/{id}/me*bers/",
-		"v1_v1",
-	}
-
-	for fn, results := range testCases {
-		method, route, version := ParseFuncNameToURL(fn, PathStyleKebab)
-		if method != results[0] {
-			t.Error(test.DiffMessage(results[0], method, "method should be equal"))
-		}
-
-		if route != results[1] {
-			t.Error(test.DiffMessage(results[1], route, "route should be equal"))
-		}
-
-		if version != results[2] {
-			t.Error(test.DiffMessage(results[2], version, "version should be equal"))
-		}
-	}
-}
-
-func routeConflictPanic(fn func()) (message string) {
-	defer func() {
-		if r := recover(); r != nil {
-			if err, ok := r.(error); ok {
-				message = err.Error()
-			}
-		}
-	}()
-	fn()
-	return ""
-}
-
 func TestAddHandlerToRouterMap_SameShapeDifferentParamNamesDoesNotPanic(t *testing.T) {
 	r := &HTTP{}
 	AddHandlerToRouterMap(r, nil, PathStyleKebab, "READ_BY_ID", nil)
@@ -230,10 +152,112 @@ func TestHooks_RouterMapAccessors(t *testing.T) {
 	}
 }
 
-func TestHooks_EventMapAccessors(t *testing.T) {
-	ws := &WS{}
-	AddHandlerToEventMap(ws, "SUBSCRIBE_chat_ANY", nil)
-	if _, ok := WSEventMap(ws)["chat.*"]; !ok {
-		t.Error(test.DiffMessage(WSEventMap(ws), "<map with chat.*>", "B18: WSEventMap reads what AddHandlerToEventMap wrote"))
+func TestAddHandlerToRouterMap_StyleChangesRegisteredPattern(t *testing.T) {
+	kebab := &HTTP{}
+	AddHandlerToRouterMap(kebab, nil, PathStyleKebab, "READ_payment_intents", nil)
+	written := &HTTP{}
+	AddHandlerToRouterMap(written, nil, PathStyleAsWritten, "READ_payment_intents", nil)
+
+	wantKebab := routing.MethodRouteVersionToPattern("GET", "/payment-intents/", "")
+	wantWritten := routing.MethodRouteVersionToPattern("GET", "/payment_intents/", "")
+	if got := patternOf(kebab, "READ_payment_intents"); got != wantKebab {
+		t.Error(test.DiffMessage(got, wantKebab, "B1: kebab pattern"))
+	}
+	if got := patternOf(written, "READ_payment_intents"); got != wantWritten {
+		t.Error(test.DiffMessage(got, wantWritten, "B1: as written pattern"))
+	}
+}
+
+func TestAddHandlerToRouterMap_PrefixesNotRewritten(t *testing.T) {
+	r := &HTTP{}
+	r.Prefix("my_api")
+	AddHandlerToRouterMap(r, []string{"/pay_ments/"}, PathStyleKebab, "READ_payment_intents", nil)
+	want := routing.MethodRouteVersionToPattern("GET", "/pay_ments/my_api/payment-intents/", "")
+	if got := patternOf(r, "READ_payment_intents"); got != want {
+		t.Error(test.DiffMessage(got, want, "B11: prefixes keep their text, the name part is kebab"))
+	}
+}
+
+func TestPath_ReplacesNamePath(t *testing.T) {
+	c := pathController{}
+	c.Path("/oauth2/token", c.CREATE_token)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "CREATE_token", c.CREATE_token)
+
+	want := routing.MethodRouteVersionToPattern("POST", "/oauth2/token/", "")
+	if got := patternOf(&c.HTTP, "CREATE_token"); got != want {
+		t.Error(test.DiffMessage(got, want, "B22: the exact path replaces the name's path"))
+	}
+}
+
+func TestPath_AppliesPrefixesBeforeModulePrefixes(t *testing.T) {
+	c := pathController{}
+	c.Prefix("v1")
+	c.Path("/oauth2/token", c.CREATE_token)
+	AddHandlerToRouterMap(&c.HTTP, []string{"/api/"}, PathStyleKebab, "CREATE_token", c.CREATE_token)
+
+	want := routing.MethodRouteVersionToPattern("POST", "/api/v1/oauth2/token/", "")
+	if got := patternOf(&c.HTTP, "CREATE_token"); got != want {
+		t.Error(test.DiffMessage(got, want, "B22: controller and module prefixes still apply"))
+	}
+}
+
+func TestPath_KeepsVersionFromName(t *testing.T) {
+	c := pathController{}
+	c.Path("/people", c.READ_users_VERSION_2)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "READ_users_VERSION_2", c.READ_users_VERSION_2)
+
+	want := routing.MethodRouteVersionToPattern("GET", "/people/", "2")
+	if got := patternOf(&c.HTTP, "READ_users_VERSION_2"); got != want {
+		t.Error(test.DiffMessage(got, want, "B22: the version comes from VERSION"))
+	}
+}
+
+func TestPath_NotRewrittenByStyle(t *testing.T) {
+	c := pathController{}
+	c.Path("/a_b/{id}", c.READ_payment_intents)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "READ_payment_intents", c.READ_payment_intents)
+
+	want := routing.MethodRouteVersionToPattern("GET", "/a_b/{id}/", "")
+	if got := patternOf(&c.HTTP, "READ_payment_intents"); got != want {
+		t.Error(test.DiffMessage(got, want, "B22: an exact path is never kebab-cased"))
+	}
+}
+
+func TestPath_RootPath(t *testing.T) {
+	c := pathController{}
+	c.Path("/", c.READ_token)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "READ_token", c.READ_token)
+
+	want := routing.MethodRouteVersionToPattern("GET", "/", "")
+	if got := patternOf(&c.HTTP, "READ_token"); got != want {
+		t.Error(test.DiffMessage(got, want, "B22: Path(\"/\") is the controller root"))
+	}
+}
+
+func TestPath_TwoOperationsOnePath(t *testing.T) {
+	c := pathController{}
+	c.Path("/token", c.READ_token, c.CREATE_token)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "READ_token", c.READ_token)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "CREATE_token", c.CREATE_token)
+
+	if got, want := patternOf(&c.HTTP, "READ_token"), routing.MethodRouteVersionToPattern("GET", "/token/", ""); got != want {
+		t.Error(test.DiffMessage(got, want, "B25: GET"))
+	}
+	if got, want := patternOf(&c.HTTP, "CREATE_token"), routing.MethodRouteVersionToPattern("POST", "/token/", ""); got != want {
+		t.Error(test.DiffMessage(got, want, "B25: POST"))
+	}
+	if len(HTTPRouterMap(&c.HTTP)) != 2 {
+		t.Error(test.DiffMessage(len(HTTPRouterMap(&c.HTTP)), 2, "B25: two routes"))
+	}
+}
+
+func TestPath_OtherHandlersKeepTheirNamePath(t *testing.T) {
+	c := pathController{}
+	c.Path("/oauth2/token", c.CREATE_token)
+	AddHandlerToRouterMap(&c.HTTP, nil, PathStyleKebab, "READ_payment_intents", c.READ_payment_intents)
+
+	want := routing.MethodRouteVersionToPattern("GET", "/payment-intents/", "")
+	if got := patternOf(&c.HTTP, "READ_payment_intents"); got != want {
+		t.Error(test.DiffMessage(got, want, "B22: a handler without an exact path is unchanged"))
 	}
 }

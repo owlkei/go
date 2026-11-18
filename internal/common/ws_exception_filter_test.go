@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"runtime"
@@ -285,4 +286,48 @@ func TestRunWSCatchChain_LongChainOfPanickingFiltersReturns(t *testing.T) {
 	if calls != len(catchFns) {
 		t.Error(test.DiffMessage(calls, len(catchFns), "B20: every filter is called once"))
 	}
+}
+
+func TestAsWSExceptionFilter_MatchesReflectionLookup(t *testing.T) {
+	c := &ctx.WSContext{}
+	ex := exception.NotFoundException("x")
+	for _, x := range filterSubjects() {
+		_, wantOK := reflectWSFilter(x)
+		gotFn, gotOK := AsWSExceptionFilter(x)
+		desc := fmt.Sprintf("B11: %T", x)
+		if gotOK != wantOK {
+			t.Error(test.DiffMessage(gotOK, wantOK, desc+" ok"))
+			continue
+		}
+		if gotOK && gotFn == nil {
+			t.Error(test.DiffMessage(nil, "a func", desc+" fn"))
+			continue
+		}
+		if gotOK {
+			gotFn(c, &ex)
+		}
+	}
+}
+
+func TestAsWSExceptionFilter_CallsMethodOnTheInstance(t *testing.T) {
+	f := &recordingWSFilter{}
+	fn, ok := AsWSExceptionFilter(f)
+	if !ok {
+		t.Fatal(test.DiffMessage(ok, true, "B11: pointer receiver filter matches"))
+	}
+	ex := exception.NotFoundException("x")
+	fn(&ctx.WSContext{}, &ex)
+
+	if len(f.got) != 1 || f.got[0] != &ex {
+		t.Error(test.DiffMessage(f.got, []*exception.Exception{&ex}, "B11: fn calls Catch on x with the same arguments"))
+	}
+}
+
+func TestAsWSExceptionFilter_Nil(t *testing.T) {
+	expectNoPanic(t, "B11: AsWSExceptionFilter(nil) must not panic", func() {
+		fn, ok := AsWSExceptionFilter(nil)
+		if fn != nil || ok {
+			t.Error(test.DiffMessage(ok, false, "B11: nil is not an exception filter"))
+		}
+	})
 }
