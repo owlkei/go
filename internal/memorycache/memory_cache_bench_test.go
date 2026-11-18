@@ -116,13 +116,6 @@ func BenchmarkTTL_Hit(b *testing.B) {
 	})
 }
 
-func BenchmarkHashKey(b *testing.B) {
-	key := "some-realistic-cache-key-value"
-	for b.Loop() {
-		hashKey(key)
-	}
-}
-
 func BenchmarkGetSetParallel(b *testing.B) {
 	mc := NewMemoryCache(nil)
 
