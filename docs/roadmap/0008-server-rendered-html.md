@@ -26,14 +26,16 @@ HTML components.
 | 7 | Sample: `sample/pages` (a small booking-style site: list, detail, form, error pages) with Owlky's HTML snippets and assets | light | - | 2-5 | the sample builds and serves its pages; a test drives the form flow | done |
 | 8 | Docs: README section, a `render` reference, `.ginject/`, `CLAUDE.md` | light | - | 2-7 | every new name documented with a runnable example | done |
 | 9 | Measure: a page route against a JSON route in `bench/` (time and allocations per request, idle memory) | light | - | 2-5 | numbers in `docs/review/http-0008.md` | done |
-| 10 | DSL: Design: the kebab-case rule and its edge cases (`FILE`, `ANY`, `VERSION`, digits, camelCase), `PathStyle` (values, inheritance through imports like `Prefix`, an explicit setting wins, a module imported by two parents with different styles), the exact path of one route (`c.Path(handler, path)` or the decided spelling), `ALL` for `**`, the upper-case non-token question, the two parser bugs, the migration of every name in the repo | light | docs/design/0019-route-dsl.md | - | the design lists every rule with current → expected output (checked with `ParseFuncNameToURL`) and every exported addition | todo |
-| 11 | DSL: Kebab-case paths: `_` between the words of one resource becomes `-`; camelCase, parameters, versions and `Prefix` strings unchanged | tdd | docs/design/0019-route-dsl.md | 10 | `READ_user_profile` → `/user-profile`, `READ_users_BY_user_id` → `/users/{user_id}`, `READ_my_logo_png_FILE` → `/my-logo.png`; the parser's rule table tests pass | todo |
-| 12 | DSL: `PathStyle` on the module builder: `PathStyleKebab` (default) and `PathStyleAsWritten`, inherited by imported modules, an explicit setting wins | tdd | docs/design/0019-route-dsl.md | 11 | a root module with `PathStyleAsWritten` serves `/payment_intents` for its own and imported modules; a module that sets `PathStyleKebab` keeps `/payment-intents` | todo |
-| 13 | DSL: Exact path for one route (the design's spelling), checked for conflicts like any route | tdd | docs/design/0019-route-dsl.md | 11 | a route declared with an exact path serves only that path; a conflict stops `Create()` | todo |
-| 14 | DSL: WebSocket `ALL`: `SUBSCRIBE_chat_ALL` → `chat.**`, `SUBSCRIBE_ALL` → `**` | tdd | docs/design/0019-route-dsl.md | 10 | a gateway with `SUBSCRIBE_chat_ALL` handles `chat.room1.typing`; `SUBSCRIBE_chat_ANY` still one segment | todo |
-| 15 | DSL: Parser bugs: `ANY` after a parameter (`READ_files_BY_name_ANY`), `__` inside a parameter name; the upper-case decision of the design | tdd | docs/design/0019-route-dsl.md | 10 | the design's expected outputs; existing parser tests green or updated by the design | todo |
-| 16 | DSL: Migrate every route name in `sample/`, `bench/`, tests and docs whose URL changes; the startup route log and the devtool snapshot show final paths | light | - | 11-15 | `make check` green; samples serve the same URLs they document | todo |
-| 17 | DSL: Docs: README › Routes from method names, `internal/common` › Route DSL, `.ginject/routing-system.md`, `CLAUDE.md`; examples for `Prefix` on deep nesting and for non-resource segments (`READ_new_OF_bookings`, `READ_me_OF_users`) | light | - | 11-16 | every rule documented with an example that compiles | todo |
+| 10 | Design, one architect pass: design 0019 (route DSL: kebab-case and its edge cases, `PathStyle` inherited like `Prefix` with an explicit setting winning, exact path for one route, `ALL`, the upper-case rule, the two parser bugs) and design 0018 amendment 2 (pages by route: `RENDER_`/`SUBMIT_`, template resolution after prefixes and `PathStyle`, no `ANY` or `VERSION` on pages, removal of `ginject.Page` and `ginject.View`, error pages by status, reserved names, `public/`, page CSS/JS with `{{pageAssets}}`), with the migration list of every name, file and doc | light | docs/design/0019-route-dsl.md, docs/design/0018-server-rendered-html.md | - | every rule with current → expected output and its test name; every exported addition and removal | done |
+| 11 | DSL: kebab-case paths (`_` between the words of one resource → `-`; camelCase, parameters, versions and `Prefix` strings unchanged) and the upper-case rule | tdd | docs/design/0019-route-dsl.md | 10 | `READ_user_profile` → `/user-profile`; `READ_orgs_FB` panics; parser rule tests pass | todo |
+| 12 | DSL: `ModuleBuilder().PathStyle(…)` (`PathStyleKebab` default, `PathStyleAsWritten`), inherited by imports like `Prefix`, an explicit setting wins | tdd | docs/design/0019-route-dsl.md | 11 | a root `PathStyleAsWritten` gives `/payment_intents` to its own and imported modules; a module that sets kebab keeps `/payment-intents` | todo |
+| 13 | DSL: exact path for one route (the design's spelling); WebSocket `ALL`; the parser bugs (`ANY` after a parameter, `__` in a parameter name) | tdd | docs/design/0019-route-dsl.md | 11 | the design's expected outputs; `SUBSCRIBE_chat_ALL` handles `chat.room1.typing` | todo |
+| 14 | Pages by route: `RENDER_` (GET page; template `<path>.html` or `<path>/index.html` after prefixes and `PathStyle`; data result; no `ANY`/`VERSION`; missing or double template panics), removal of `ginject.Page` and `ginject.View` | tdd | docs/design/0018-server-rendered-html.md | 12 | `RENDER_bookings` renders `bookings/index.html`; a module `Prefix("admin")` page renders `admin/…`; the API file loses `Page`, `View` | todo |
+| 15 | `SUBMIT_`: POST on the URL of its `RENDER_`, same template, 422 re-render or 303; a `SUBMIT_` without its `RENDER_` panics | tdd | docs/design/0018-server-rendered-html.md | 14 | the form flow of the sample passes with `SUBMIT_new_OF_bookings` | todo |
+| 16 | Error pages by status (`<code>.html` → `<N>xx.html` → built-in, replacing `error.html`) and the reserved names check after prefixes | tdd | docs/design/0018-server-rendered-html.md | 14 | 404 uses `404.html`, 503 falls back to `5xx.html`; `RENDER_404` panics | todo |
+| 17 | `public/` served at the root URL (`no-cache` + `ETag`, conflicts with routes panic) and page CSS/JS next to templates with `{{pageAssets}}` (orphans and a missing `{{pageAssets}}` panic) | tdd | docs/design/0018-server-rendered-html.md | 14 | `/robots.txt` from `public/`; `/bookings/new` links `new.css` and `new.form.js` after the layout's files | todo |
+| 18 | Migrate every route name, template and test in the repo (`sample/`, `bench/`, docs) to the new DSL and pages; the startup route log and the devtool snapshot show final paths and page routes | light | - | 11-17 | `make check` green; samples serve what they document | todo |
+| 19 | Docs: README (routes, pages), `internal/common` › Route DSL, `internal/render`, `.ginject/`, `CLAUDE.md`, Sổ tay; every example compiles | light | - | 18 | every new rule documented with an example | todo |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -74,7 +76,7 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
 
 - 2026-11-18, the maintainer: security is the roadmap right after this phase (backlog › "Security roadmap"). While this phase runs, every security-relevant point found is written there at once, not fixed on the spot unless it blocks the work.
 
-### Pages by route (discussed 2026-11-18, not implemented yet)
+### Pages by route (decided 2026-11-18, steps 14-17)
 The maintainer wants pages like Next.js: the route picks the template.
 - `RENDER_<route>` is a GET page; its template is the route's final path inside `Dir`: `<path>.html`
   or `<path>/index.html` (both → panic at `Create()`; none → panic naming both paths). `RENDER` → `index.html`.
@@ -111,7 +113,11 @@ The maintainer wants pages like Next.js: the route picks the template.
   (`no-cache` with `IsReload`); no nonce needed. At `Create()`: a CSS or JS file next to templates that
   belongs to no template panics, and a page with such files whose layout never calls `{{pageAssets}}`
   panics. The file lists are computed once per page set; nothing extra at render time.
-- Open: how a form POST re-renders its page (and so whether `ginject.View` stays).
+- **Form POST (option 1, approved):** `SUBMIT_<route>` is a POST on the URL of `RENDER_<route>` and uses its
+  template: data with errors re-renders it (422), success redirects (303). A `SUBMIT_` without its
+  `RENDER_` panics at `Create()`. Edit and delete forms post to the page that shows them; no `_method`
+  override. `ginject.View` goes away: page handlers always return data. `CREATE_`, `UPDATE_`, `DELETE_`
+  stay API routes.
 
 ## Log
 - 2026-11-18: design 0018 approved by delegation (its open questions are decided as it states). Run started at `402b10f` (roadmap 0007 pushed, CI green); by the maintainer's instruction nothing of this roadmap is committed.
@@ -123,3 +129,5 @@ The maintainer wants pages like Next.js: the route picks the template.
 - 2026-11-18: review (one pass): no critical or high finding. Fixed: HTML error pages now send `Cache-Control: no-cache` (they may carry a nonce; 404/405/410 are heuristically cacheable), a reload failure on an error-only path logs `RenderReloadFailed` and counts as a failure, `{{asset}}` fails in reload mode when `assets/` did not exist at `Create()` (no route would serve it); the step 9 report gained the API-route comparison against `402b10f` and the binary size.
 - 2026-11-18: amendment 1 of design 0018, approved by the maintainer: `RenderOptions.Dir` (default `web`), `IsReload` on an `embed.FS` reads `Dir` from disk, a `Warn` `RenderReloadOn` at start. `sample/pages/main.go` lost `fs.Sub` and `os.DirFS`. API: 10 lines instead of 9.
 - 2026-11-18: the maintainer merged the draft roadmap 0009 (route DSL) into this roadmap as steps 10-17; the DSL is discussed further for pages before its design. Nothing is committed yet.
+- 2026-11-18: steps 1-9 and amendment 1 committed (`f8168af`, `9fe673b`) to clean the tree; the second iteration (steps 10-19: route DSL and pages by route) starts.
+- 2026-11-18: step 10: design 0019 (B1-B26) and design 0018 amendment 2 (P1-P34) written and approved by delegation. The architect's own decisions are listed in each design's Open questions (exact path as `instance.Path(path, handler)`, malformed names panic, a `.html` file without a route panics, `FILE` refused on pages, page routes version-neutral). Nine security findings added to the backlog.

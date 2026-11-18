@@ -257,6 +257,45 @@ Findings so far (2026-11-18 review of the SSR work):
 - **Sessions** (with the authentication roadmap): `HttpOnly`, `Secure`, `SameSite=Lax`, a new session
   ID at login, lifetimes; brute force on login with `throttler`.
 
+Findings of the design pass for the route DSL and pages by route (2026-11-18, design 0019 and design 0018
+amendment 2; written here, not fixed):
+- **A guard on the page does not cover its form post:** layers are bound per handler, so
+  `BindGuard(auth, instance.RENDER_account)` leaves `SUBMIT_account` (the POST on the same URL) open
+  (amendment 2, P16). Proposal: a layer bound to a `RENDER_` also covers its `SUBMIT_`, or `Create()`
+  refuses a guard that covers one and not the other.
+- **`SUBMIT_` without `csrf`:** a `SUBMIT_` is by definition a state-changing browser POST. Extends "SSR
+  without protection": `Create()` could require `csrf` as soon as one `SUBMIT_` exists.
+- **`//go:embed all:web`:** `public/.well-known/…` is only embedded with the `all:` prefix (verified:
+  `//go:embed web` skips names starting with `.` or `_`), and `all:` also embeds every dotfile under
+  `web/` (`.env`, `.DS_Store`, editor swap files) into the binary. They are never served (hidden segment
+  rules of `assets/`, `public/` and the templates), but they ship. Docs must say it; consider a `Warn` at
+  `Create()` listing hidden files found in `Dir`, or serving `.well-known` from a non-hidden name.
+- **`public/` is served as is:** every file in it is public at the root URL, without escaping, nonce or
+  allowlist (a forgotten `backup.sql`, a `.map`, a raw `.html` with inline script that the CSP then
+  blocks or, without `helmet`, runs). Rules to document with the `public/` docs item above; consider a
+  `Create()` log of the public URLs. A file in `public/` also wins over a parameter or wildcard route at
+  the same URL (static first).
+- **Static routes and auth guards:** global guards run for `/assets/*`, `/assets/_pages/…` and the
+  `public/` routes (R40, P24), so a global login guard also blocks `robots.txt`, `favicon.ico` and the
+  CSS of the login page, while without one the CSS and JS of guarded pages (`/assets/_pages/admin/…`)
+  are fetched by anyone and their URLs reveal the template tree and parameter names. The authentication
+  roadmap decides the exemptions (design 0018 open question 7 covered `/assets/*` only).
+- **Kebab-case moves URLs:** every multi-word resource changes from `_` to `-` (design 0019). Anything
+  outside the app keyed on the old paths must follow: reverse proxy and WAF allowlists, `throttler`
+  `KeyFunc`s built from the path, monitoring. An old URL answers 404, not a redirect.
+- **`Path` and prefixes are developer text, not validated beyond the router's checks:** `Path` refuses
+  `?` and `#` only. Encoded characters, mixed case and trailing dots are registered as written; review
+  with the REST pass (path normalization before matching).
+- **Error pages render under load:** an HTML 5xx (also `loadshed`'s 503 for a browser) executes
+  `503.html` / `5xx.html` inside the root layout, so a refusal costs a template execution (design 0018 ›
+  Performance already notes it). An error page's layout must also work with the four error keys only: a
+  layout that reads the current user fails and falls back to the built-in page (P19), which is safe but
+  silent apart from `RenderFailed`. Consider a pre-rendered page for middleware refusals.
+- **Upper-case and malformed route names now stop `Create()`** (design 0019 B9, B13 to B16): before,
+  `READ_files_BY_name_ANY` registered `/*/files/{name}` (a wildcard in front of the resource) and
+  `READ_users_BY` registered `/users/{}`. Check deployed apps for routes that were wider than their
+  names read when the REST review runs.
+
 Also in scope:
 - **Middleware order and automatic ordering** (moved from "Less configuration in `main`"): the framework
   orders the built-in middlewares by the production checklist (`loadshed` → `proxy` → `hostcheck` →
