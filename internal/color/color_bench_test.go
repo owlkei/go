@@ -1,6 +1,8 @@
 package color
 
-import "testing"
+import (
+	"testing"
+)
 
 func BenchmarkFmtGreen(b *testing.B) {
 	b.ReportAllocs()

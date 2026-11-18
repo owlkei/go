@@ -1,6 +1,8 @@
 package color
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestColored_CarriesTextAndColor(t *testing.T) {
 	c := Colored{Text: "10ms (2%)", Color: Red}
