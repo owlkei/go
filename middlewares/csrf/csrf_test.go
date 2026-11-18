@@ -12,35 +12,6 @@ import (
 	"github.com/dangduoc08/ginject/middlewares/proxy"
 )
 
-const refusedBody = `{"code":403,"error":"Forbidden","message":"Cross-origin request refused"}`
-
-var unsafeMethods = []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
-
-func csrfRequest(method string, fetchSite, origin string) *http.Request {
-	r := request(method, "/ok")
-	if fetchSite != "" {
-		r.Header.Set("Sec-Fetch-Site", fetchSite)
-	}
-	if origin != "" {
-		r.Header.Set("Origin", origin)
-	}
-	return r
-}
-
-func expectPass(t *testing.T, w *httptest.ResponseRecorder, desc string) {
-	t.Helper()
-	if w.Code >= http.StatusBadRequest || w.Body.String() == refusedBody {
-		t.Error(test.DiffMessage(w.Code, "<2xx>", desc+": the request passes"))
-	}
-}
-
-func expectRefused(t *testing.T, w *httptest.ResponseRecorder, desc string) {
-	t.Helper()
-	if w.Code != http.StatusForbidden || w.Body.String() != refusedBody {
-		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{403, refusedBody}, desc+": the request is refused"))
-	}
-}
-
 func TestCSRF_Table(t *testing.T) {
 	app := newApp(t, CSRF{})
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {

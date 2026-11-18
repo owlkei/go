@@ -5,16 +5,6 @@ import (
 	"testing"
 )
 
-func benchCSRF(b *testing.B, r *http.Request) {
-	b.Helper()
-	mw := CSRF{TrustedOrigins: []string{"https://app.example.com"}}.NewMiddleware()
-	w := &discardWriter{header: http.Header{}}
-	b.ReportAllocs()
-	for b.Loop() {
-		mw.Use(r, w, noop)
-	}
-}
-
 func BenchmarkCSRF_SafeMethod(b *testing.B) {
 	benchCSRF(b, csrfRequest(http.MethodGet, "", ""))
 }
