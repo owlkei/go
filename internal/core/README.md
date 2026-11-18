@@ -17,6 +17,9 @@ Internal package: applications use `ginject.New()`, `ginject.ModuleBuilder()` an
   - [Modules and lifecycle](#modules-and-lifecycle)
     - [ModuleBuilder](#modulebuilder)
     - [PathStyle](#pathstyle)
+    - [Module factories](#module-factories)
+    - [AsyncImports and module states](#asyncimports-and-module-states)
+    - [Retry](#retry)
     - [`Module` fields](#module-fields)
     - [Prefix and ID](#prefix-and-id)
     - [Provider and Controller](#provider-and-controller)
@@ -170,7 +173,7 @@ app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 
 ### Get
 
-`Get(p Provider) any` returns the instance this app created for `p`'s type, or `nil` for a type the app does not have and before `Create`. It is safe to call from several goroutines after `Create`.
+`Get(p Provider) any` returns the instance this app created for `p`'s type, or `nil` for a type the app does not have, before `Create`, and while the provider's module is not ready yet (see [AsyncImports and module states](#asyncimports-and-module-states)). It is safe to call from several goroutines after `Create`.
 
 ```go
 service := app.Get(GreetingService{}).(GreetingService)
@@ -215,10 +218,11 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
 | `SetLogger(log.LogAdapter)` | The app's logger (see [SetLogger and Logger](#setlogger-and-logger)) |
+| `SetStartupTimeout(time.Duration)` | The budget of `Create` for the module factories of `Imports`, default 30 s (see [Module factories](#module-factories)) |
 
 ## Modules and lifecycle
 
-A module groups controllers and providers and imports other modules: `*Module` values or module funcs (`func(...) *core.Module`). Module funcs are called once per app, whatever the number of modules that import them, while the tree is discovered. Their arguments resolve from the global providers (the root module's, and those of every `IsGlobal` module of the tree, at any import depth and in any import order), then `log.Logger` and `common.Publisher`; an argument with no provider panics `dependency injection: can't resolve argument of '<func>' …`. An `IsGlobal` module returned by a module func is visible to the module funcs called after it. The provider of an argument is built after the `OnInit` of the module that declares it, so that module's `OnInit` runs before the module func is called (and not again later).
+A module groups controllers and providers and imports other modules. An entry of `Imports` or `AsyncImports` is a `*Module` or a module factory (see [Module factories](#module-factories)). `IsGlobal` is a property of a module, not a kind; `config.Register` and `cache.Register` return a `*Module` and are not factories. The user-facing guide, with the timeline of `Create`, the background and shutdown, is the main README › Module lifecycle.
 
 ### ModuleBuilder
 
@@ -227,22 +231,23 @@ type ModuleBuilder struct
 
 func NewModuleBuilder() *ModuleBuilder
 func (m *ModuleBuilder) Imports(modules ...any) *ModuleBuilder
+func (m *ModuleBuilder) AsyncImports(modules ...any) *ModuleBuilder
 func (m *ModuleBuilder) Providers(providers ...Provider) *ModuleBuilder
 func (m *ModuleBuilder) Controllers(controllers ...Controller) *ModuleBuilder
 func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder
 func (m *ModuleBuilder) Build() *Module
 ```
 
-`NewModuleBuilder()` starts a module (the root package's `ginject.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
+`NewModuleBuilder()` starts a module (the root package's `ginject.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `AsyncImports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
 
 #### Parameters
-- `Imports`: `...any`, each a `*Module` or a module func whose type starts with `func(` and returns `*core.Module`.
+- `Imports`, `AsyncImports`: `...any`, each a `*Module` or a module factory of one of the three shapes in [Module factories](#module-factories).
 - `Providers`: `...Provider`, provider values (see [Provider and Controller](#provider-and-controller)).
 - `Controllers`: `...Controller`, controller values.
 - `PathStyle`: `common.PathStyleKebab` or `common.PathStyleAsWritten` (`ginject.PathStyleKebab`, `ginject.PathStyleAsWritten`).
 
 #### Returns
-- `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `Providers`, `Controllers`, `PathStyle`: the same builder.
+- `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `AsyncImports`, `Providers`, `Controllers`, `PathStyle`: the same builder.
 - `Build`: `*Module`, a new module with its own `ID()` and a resolved `Name`.
 
 #### Usage
@@ -259,7 +264,8 @@ var AppModule = core.NewModuleBuilder().
 ```
 
 #### Rules
-- An import that is neither a `*Module` nor a module func panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
+- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`). The check is by `reflect.Type`: a nil entry, a variadic func, `context.Context` anywhere but first, a `ctx` func without the error result and three results are refused.
+- The same entry (the same `*Module`, or the same function) in both lists of one builder panics `invalid module: '<label>' is in both Imports and AsyncImports` at `Build()`; listed with `Imports` by one module and with `AsyncImports` by another, it panics `invalid module: '<label>' is imported with Imports by '<x>' and with AsyncImports by '<y>'` at `Create()`.
 - `Name` is `<package>.<variable>` of the variable the module is assigned to (a `var X = func() *core.Module {…}` or a `var X = factory()` included), else `<package>.<function>` of the function that calls `Build`. A module built as an argument of `Imports` gets its own factory's name, never the outer variable's.
 - Chained calls accumulate: `Providers(p1).Providers(p2)` lists both.
 - `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` at the call. Called twice, the last call wins.
@@ -268,7 +274,7 @@ var AppModule = core.NewModuleBuilder().
 
 The style of a controller is the explicit style of the first module that set one, in this order: the module that lists the controller, then each module that imports it (directly or through other modules) in the order `Create()` discovers them (depth first, `Imports` order: the order in which module prefixes are stacked). No module set one: `PathStyleKebab`.
 
-- A root with `PathStyle(PathStyleAsWritten)` and modules without a style: `READ_payment_intents` is `/payment_intents/` in the root's own controllers and in every imported module, static or a module func.
+- A root with `PathStyle(PathStyleAsWritten)` and modules without a style: `READ_payment_intents` is `/payment_intents/` in the root's own controllers and in every imported module, static or a module factory.
 - An imported module with `PathStyle(PathStyleKebab)` under an as-written root keeps `/payment-intents/`, and so do the modules it imports that set none (the nearest explicit setting wins).
 - Two parents `A` (as written) and `B` (kebab) both import `M` (no style): `Imports(A, B)` gives `M` as written, `Imports(B, A)` kebab. `M`'s controller is still bound once.
 - The style applies to resource words only: never to prefixes, `Path`, parameters, versions or WebSocket events.
@@ -280,6 +286,79 @@ var BillingModule = core.NewModuleBuilder().
 	Controllers(BillingController{}).
 	Build()
 ```
+
+### Module factories
+
+```go
+func(deps...) *core.Module
+func(deps...) (*core.Module, error)
+func(ctx context.Context, deps...) (*core.Module, error)
+```
+
+A factory is called once per app (same function value, same module; two closures of one function literal are one factory). The label in messages is the returned module's `Name`, else the function name cut to its last import path element (`sql.Register`).
+
+**Scope and order.** A factory listed by module `P` resolves each non-`ctx` parameter from a provider visible in another entry of `P`'s `Imports` / `AsyncImports` (declared by it or visible through its imports), then a global provider (the root module's and every `IsGlobal` module's, at any depth), then `log.Logger` / `common.Publisher`. `P`'s own providers are not in scope. `Create` scans the static tree, then repeats: call, in discovery order (depth first, list order), the first factory not yet called whose parameters all resolve, and scan the module it returns. The provider of an argument is built after the `OnInit` of the module that declares it, so that module's `OnInit` runs before the factory (and not again later).
+
+**Startup timeout.** `SetStartupTimeout(d)` (default 30 s) is one budget for the whole `Create`, counted from its start. Every factory of the sync set runs on a helper goroutine; its parameters are resolved on `Create`'s goroutine first. A `ctx` factory gets a context whose deadline is that instant, canceled when `Create` returns or panics. `OnInit` and `NewProvider` are not covered.
+
+#### Rules
+- `SetStartupTimeout(0)` or a negative duration panics `invalid app: SetStartupTimeout needs a positive duration`; after `Create`, `invalid app: SetStartupTimeout must be called before Create`.
+- A factory error panics `invalid module: module factory '<label>' failed: <err>`.
+- A factory panic is recovered, logged `Error` `ModuleFactoryPanic` (`module`, `panic`, `stack`), and panics `invalid module: module factory '<label>' panicked: <value>`.
+- The deadline first panics `invalid module: module factory '<label>' did not return within the startup timeout (<d>)`; the helper goroutine is abandoned.
+- A nil module with a nil error panics `invalid module: module factory '<label>' returned a nil module`.
+- One factory left with an unresolved parameter panics `dependency injection: can't resolve argument of '<func type>'. Please make sure that the argument '<key>' at index [<i>] is available in the injected providers`.
+- Two or more left panic `dependency injection: module factories can't be ordered: '<label>' needs '<T>' → '<label>' needs '<T>' → …. Nobody provides these types, or the factories need each other`, in discovery order. A cycle and a missing provider can't be told apart before the factories return.
+- A factory in `Imports` whose missing type is owned by a module that is not ready at `Create` panics `invalid module: module factory '<label>' is in Imports and needs '<T>' of '<module>', which is not ready at Create: import it with AsyncImports`.
+
+### AsyncImports and module states
+
+The **sync set** is the root plus every module reachable through `Imports` only. Each `AsyncImports` entry found in it is built in the background with its **unit**: its module plus every module reachable from it (both lists) that is not in the sync set nor in an earlier entry's unit. A unit has one state; inside a unit, `AsyncImports` behaves as `Imports`.
+
+**States.** Every module is `pending`, `ready` or `failed`, and changes once. Module `M` **needs** entry `E` when a provider owned by `E`'s unit, or by a module that needs `E`, is the type of a field of one of `M`'s providers or controllers, of a layer bound in its controllers, or of a pipe in their handlers. Importing alone is not a need. `M` is `ready` when every entry it needs is, `failed` as soon as one is. With an async factory in the app, a provider type nobody provides yet leaves its module `pending`; it becomes `failed` with cause `can't resolve <T>` once no async factory can still run. Without one, `Create` panics as before.
+
+**Create.** Modules that are not ready get no `OnInit`, providers, controllers or `OnReady` there. For each of their controllers, `Create` builds a throwaway instance (ready providers injected, the others zero), calls `NewController` and reads its routes, events, prefixes and layers, so every route check runs at `Create`. The routes and events are registered behind the module's closed gate; the router, the event matcher and the `HTTP` / `WS` maps are never written after `Create`. Then one goroutine per entry starts, before `OnReady` of the ready modules.
+
+**Background.** An entry's goroutine waits for the entries its factory needs, calls the factory with a `ctx` canceled at shutdown and without a deadline, scans what it returns and calls the unit's factories, then, per module of the unit in discovery order: `OnInit`, `NewProvider`, controllers; the gate opens in one atomic store; state `ready`; `OnReady`. Each pending module whose needs are now all `ready` is built the same way on the same goroutine. Wiring is serialized by a mutex (factories run outside it): a slow `OnInit` or `NewProvider` delays other units. An open route is the route a sync module would have: same layers, same order.
+
+**Gate.** A request to a closed route runs the global middlewares, then answers `503` with the body of `exception.ServiceUnavailableException("Service Unavailable")`: JSON, or HTML through `503.html`, `5xx.html` and the built-in page on a page route, whatever `Accept` says. No module middleware, guard, interceptor, filter or handler runs. `Retry-After` while `pending` is the seconds to the entry's next `Retry` attempt (1 to 60, prebuilt strings), `5` when none is scheduled; none when `failed`. 404, 405 and `Allow` count gated routes. A WS `subscribe` or `publish` on a gated event replies one `error` with `ServiceUnavailableException("not ready: " + topic)` (`code` 503); the handshake is not gated.
+
+**Shutdown.** The async `ctx` is canceled before the drain. After it the app waits for the entry goroutines until `ShutdownTimeout` (30 s when never served) has passed since shutdown began, logs `Warn` `ModuleShutdownTimeout` (`module`) for each one still running and abandons it. From the cancel on no state changes and no gate opens; a factory result that arrives later is dropped. `OnShutdown` runs only for `ready` modules, in the reverse of the order they became ready (`Create` order first).
+
+**Visibility.** `ModulePending` (Info, `module`, `waiting_for`) at `Create`, `ModuleReady` (Info, `module`, `after`), `ModuleFailed` (Error, `module`, `after`, `cause`, `stack` for a panic; a dependent's cause is `needs '<label>'`). `InstanceLoader` lines at listen list only modules ready then. The devtool snapshot's `modules` lists a `ModuleStatus` per module, read live (see [devtool](../devtool/README.md#modules)).
+
+#### Rules
+- `Create` never waits for an entry and never panics because of one.
+- A failure of an entry (a factory error, a panic in its factory, `OnInit`, `NewProvider` or `NewController`, a nil module, a type that never resolves) fails it and every module that needs it; their gates never open; the app keeps running. A failure while building a dependent fails only it and its own dependents.
+- A module that an async factory returns with controllers fails its entry: `module '<label>' declares controllers (<Type>, …) but comes from an async factory: put them in a static module that imports it`. A static `*Module` in `AsyncImports` may have controllers (probed and gated).
+- In an app with `AsyncImports`, controllers of ready modules that bind a layer are probed too, so their `NewController` also runs twice: `NewController` must not use injected providers or have side effects.
+- A panic in a probed `NewController` panics `invalid module: NewController of '<Type>' failed before its module '<module>' is ready: <value>. NewController must not use injected providers`. Real routes that differ from the probe fail the module: `routes of '<Type>' changed between Create and construction`.
+- An app-wide layer (`BindGlobal…`, the `EnableWS` middlewares) that injects a provider of a module not ready at `Create` panics `dependency injection: app-wide <kind> '<Type>' injects '<T>' of '<module>', which is not ready at Create: app-wide layers can't depend on AsyncImports`.
+- Two entries whose known providers need each other panic `invalid module: async modules need each other: '<a>' → '<b>' → '<a>'`.
+- A panic in a background `OnReady` is logged `OnReadyPanic` (`module`, `panic`, `stack`); the module stays `ready`. A route may be served before its module's `OnReady` returns.
+- A module that fails after its factory returned gets no `OnShutdown`: a failing factory cleans up before returning.
+- `Stop()` called from a background `OnReady` or factory does not deadlock.
+
+### Retry
+
+```go
+type RetryOptions struct {
+	InitialDelay time.Duration
+	MaxDelay     time.Duration
+	MaxAttempts  int
+}
+
+func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error
+```
+
+`Retry` (the root package's `ginject.Retry`) calls `fn(ctx)` until it returns `nil`. The wait before attempt `n+1` is `min(MaxDelay, InitialDelay × 2^(n-1))`, then a uniform random time in `[d/2, d]`. Defaults: `InitialDelay` 500 ms, `MaxDelay` 30 s (zero or less means the default), `MaxAttempts` 0 (until `ctx` is done). It starts no goroutine (one `time.Timer`, stopped on return).
+
+#### Rules
+- A nil error returns `nil` at once; attempts count from 1.
+- `ctx` done before or during a wait, or after a failed attempt, returns `ginject: retry stopped after <n> attempts: …` wrapping `errors.Join(ctx.Err(), lastErr)`; `fn` is not called when `ctx` is already done (`n` = 0).
+- `MaxAttempts > 0` reached returns `ginject: retry gave up after <n> attempts: <lastErr>` without waiting.
+- `nil` options are the defaults; a nil `fn` panics `invalid retry: Retry needs a function`; a panic in `fn` is not recovered.
+- With the `ctx` of an `AsyncImports` factory, each failed attempt adds to the entry's `attempts`, stores `last_error`, sets the next attempt time for `Retry-After` and logs `Warn` `ModuleRetry` (`module`, `attempt`, `error`, `next`). With any other `ctx` it only retries.
 
 ### `Module` fields
 
@@ -308,7 +387,7 @@ Default: `nil`
 
 Required: `false`
 
-Runs when the module is initialized, before its providers are constructed (see [Hooks](#hooks)).
+Runs when the module is initialized, before its providers are constructed: in `Create`, or in the background for a module that is not ready then (see [Hooks](#hooks)).
 
 #### OnReady
 Type: `func()`
@@ -317,7 +396,7 @@ Default: `nil`
 
 Required: `false`
 
-Runs once at the end of `Create` (see [Hooks](#hooks)).
+Runs once at the end of `Create`, or right after the module becomes ready in the background (see [Hooks](#hooks)).
 
 #### OnShutdown
 Type: `func()`
@@ -379,12 +458,13 @@ Modules are initialized depth first: a module after every module it imports, imp
 - `OnReady` runs once per app at the end of `Create`, after routes, layers and the devtool snapshot exist, in the same order. `app.Get` works inside it.
 - A panic in `OnInit` or `OnReady` stops `Create` and reaches the caller unchanged.
 - `OnShutdown` runs once per app, in the exact reverse order (root, C, A, B), when the app shuts down or `Stop()` is called. An app whose `Create` did not finish runs no `OnShutdown`.
+- A module that is not ready at `Create` runs `OnInit` and `OnReady` in the background, and `OnShutdown` only if it became ready, in the reverse of the ready order (see [AsyncImports and module states](#asyncimports-and-module-states)).
 
 ### Two apps in one process
 
 Each `core.New()` is independent: its routes, providers, layers (guards, interceptors, exception filters, middlewares), logger and publisher are its own. Two apps may declare the same route or WebSocket event, construct their own instance of every provider and layer, and can be created on two goroutines at once.
 
-You can give the same module value (a root, or a package-level `var X = some.Register(…)`) to any number of apps. A module func may be called by two apps at once: it must not write shared state without its own protection. A resource created outside the framework, such as a cache backend built in a package-level `Register` call, is shared because you created it once. Don't change a module (`Prefix`, `IsGlobal`, a hook) after giving it to `Create`.
+You can give the same module value (a root, or a package-level `var X = some.Register(…)`) to any number of apps. A module factory may be called by two apps at once: it must not write shared state without its own protection. A resource created outside the framework, such as a cache backend built in a package-level `Register` call, is shared because you created it once. Don't change a module (`Prefix`, `IsGlobal`, a hook) after giving it to `Create`.
 
 Inside one app, a guard, interceptor, exception filter or middleware is constructed once per type and configuration: equal configurations share one instance, different ones get their own.
 
@@ -494,7 +574,7 @@ The serving calls return an error, and never fall back to plain HTTP, when:
 
 In these cases nothing is logged, no hook runs, a listener passed to `Serve` is left open, and the port stays free. After a bind error the app can be served again.
 
-Once the address is bound, the app logs through its logger: one `InstanceLoader` line per named module, one `RouteExplorer` line per route (sorted), one `WebSocketEvent` line per event, then `ServerListening` with `address` (the bound address: `Listen(0, nil)` logs the port the system chose), `tls` and `protocols`. The colored access-URL banner is printed only when stdout is a terminal. Errors of the server itself (a failed TLS handshake, for example) are logged as `Logger.Warn("HTTPServer", "message", <line>)`.
+Once the address is bound, the app logs through its logger: one `InstanceLoader` line per named module that is ready then, one `RouteExplorer` line per route (sorted), one `WebSocketEvent` line per event, then `ServerListening` with `address` (the bound address: `Listen(0, nil)` logs the port the system chose), `tls` and `protocols`. The colored access-URL banner is printed only when stdout is a terminal. Errors of the server itself (a failed TLS handshake, for example) are logged as `Logger.Warn("HTTPServer", "message", <line>)`.
 
 ### Protocols
 
@@ -511,9 +591,9 @@ A handler sees `r.Proto == "HTTP/2.0"` for an HTTP/2 client. WebSocket needs HTT
 A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `ShutdownSignal` (with `signal`) or `Shutdown`:
 
 1. The app stops intercepting `SIGINT` and `SIGTERM`: a second signal ends the process the default way, even during the drain or a hook.
-2. The listener closes (new connections are refused) and idle keep-alive connections close at once.
+2. The listener closes (new connections are refused) and idle keep-alive connections close at once. The context of the `AsyncImports` factories is canceled.
 3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
-4. The modules' `OnShutdown` hooks run, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
+4. The app waits for the `AsyncImports` goroutines until `ShutdownTimeout` has passed since shutdown began; one still running is logged `ModuleShutdownTimeout` and abandoned. Then the modules' `OnShutdown` hooks run, only for `ready` modules, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
 5. The access log stops, a pending count of suppressed panic stacks is logged, and the log's stdout pipeline is flushed for at most 2 seconds: the lines of the last requests and of the hooks are written when the serving call returns. Lines logged after that are synchronous.
 6. The serving call returns `nil`, `ginject: shutdown timed out after <timeout>` when step 3 timed out, or `ginject: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
 

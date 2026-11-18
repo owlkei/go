@@ -17,6 +17,7 @@
   - [`.env` File Format](#env-file-format)
   - [Precedence](#precedence)
   - [Errors](#errors)
+  - [Imports, AsyncImports and module factories](#imports-asyncimports-and-module-factories)
   - [`ConfigService`](#configservice)
   - [`ConfigService` Methods](#configservice-methods)
     - [Get](#get)
@@ -415,6 +416,34 @@ Every failure happens in `Register`, at startup, as a panic `invalid config: <de
 | `IsIgnoreEnvFile is set with EnvFilePaths` | The two options contradict each other. |
 | `Loads[<index>]: nested deeper than 32 levels` | A loaded map is nested too deeply, or contains itself. |
 | `ConfigService was not created by Register` | `Set` was called on a zero `ConfigService{}`. |
+
+## Imports, AsyncImports and module factories
+
+`Register` is not a module factory: you call it, it reads every source at once, and it returns a
+module. Ginject never calls it.
+
+- **Import it with `Imports`.** The work is done before `Create()` starts, so there is nothing to
+  wait for, and a bad `.env` file stops the boot as it should. In `AsyncImports`, the module would
+  only gate every module that injects `ConfigService` until a background goroutine has built it.
+- **Factories can inject `ConfigService`.** A module factory sees the `ConfigService` of a config
+  module listed next to it in the same `Imports` (in any order), or of a global one (`IsGlobal`)
+  anywhere in the tree. This works for factories in `AsyncImports` too.
+
+```go
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+	url, _ := configService.Get("DATABASE_URL").(string)
+	return newDatabaseModule(ctx, url)
+}
+
+var AppModule = ginject.ModuleBuilder().
+	Imports(
+		NewDatabaseModule,
+		config.Register(&config.ConfigModuleOptions{}),
+	).
+	Build()
+```
+
+See the main README › Module lifecycle for factory signatures, `AsyncImports` and `ginject.Retry`.
 
 ## `ConfigService`
 

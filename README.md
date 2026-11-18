@@ -33,6 +33,22 @@ Ginject wires them together.
     - [Interceptor](#interceptor)
     - [Exception filter](#exception-filter)
     - [Pipes](#pipes)
+  - [Module lifecycle](#module-lifecycle)
+    - [Modules and module factories](#modules-and-module-factories)
+    - [Factory signatures](#factory-signatures)
+    - [Where a factory finds its arguments](#where-a-factory-finds-its-arguments)
+    - [Startup timeout](#startup-timeout)
+    - [Imports and AsyncImports](#imports-and-asyncimports)
+    - [Timeline](#timeline)
+    - [Module states](#module-states)
+    - [What clients get](#what-clients-get)
+    - [When hooks run](#when-hooks-run)
+    - [Refusals](#refusals)
+    - [Retry](#retry)
+    - [Transient and permanent errors](#transient-and-permanent-errors)
+    - [Don't retry in a goroutine of your own](#dont-retry-in-a-goroutine-of-your-own)
+    - [After a module is ready](#after-a-module-is-ready)
+    - [Compared with NestJS forRootAsync](#compared-with-nestjs-forrootasync)
   - [Pages](#pages)
   - [WebSocket](#websocket)
   - [Versioning](#versioning)
@@ -57,6 +73,8 @@ Ginject wires them together.
   partials, error pages by status, forms, a CSP nonce per response, hashed assets, page CSS and
   JS, and public files, from one `embed.FS`
 - A fixed request pipeline: middleware, guard, interceptor, handler, exception filter
+- Module factories that may fail with a startup deadline, and `AsyncImports`: modules that connect in
+  the background while the app serves, their routes answering `503` until they are ready
 - WebSocket with topics, publish and subscribe, and the same guards, interceptors and filters as HTTP
 - API versioning from the query, a header, the `Accept` media type or your own function
 - Typed handler parameters and pipes that bind and validate input
@@ -155,6 +173,7 @@ Run it with `go run .`, then call it:
 | Method | Effect |
 |---|---|
 | `SetLogger(log.LogAdapter)` | Sets the app's logger. Read it back with `app.Logger()`. |
+| `SetStartupTimeout(time.Duration)` | How long `Create()` may take for the module factories of `Imports` (default 30 s). See [Startup timeout](#startup-timeout). |
 | `BindGlobalMiddlewares(...)` | Middlewares for every HTTP request. |
 | `BindGlobalGuards(...)` | Guards for every HTTP route and WebSocket event. |
 | `BindGlobalInterceptors(...)` | Interceptors for every HTTP route and WebSocket event. |
@@ -270,11 +289,18 @@ func main() {
   [Routes from method names](#routes-from-method-names).
 - **Global modules:** set `IsGlobal = true` on a module to make its providers visible to every
   module, without an import. The root module's providers are always global.
-- **Module factories:** `Imports` also takes a function that returns a `ginject.Module`. Ginject
-  calls it once per app and injects its arguments from the global providers, so a module can
-  depend on configuration. This is how `config.Register(…)` and `cache.Register(…)` work.
+- **Module factories:** `Imports` also takes a function that returns a `ginject.Module`, and
+  optionally an error. Ginject calls it once per app and injects its arguments, so a module can
+  depend on configuration or connect to a database first. `config.Register(…)` and
+  `cache.Register(…)` are not factories: you call them, and they return a module.
+- **Async imports:** `AsyncImports` takes the same entries as `Imports`, but builds them in the
+  background: the app serves at once, and the routes that need them answer `503` until they are
+  ready.
 - **Hooks:** a module's `OnInit` runs before its providers are constructed, `OnReady` at the end
   of `Create`, and `OnShutdown` when the server shuts down, in reverse order.
+
+The details, with the timeline of `Create()` and of the background, are in
+[Module lifecycle](#module-lifecycle).
 
 ```go
 package main
@@ -334,9 +360,9 @@ func main() {
 }
 ```
 
-`NewDatabaseModule` receives the `ConfigService` of the global config module. An argument that no
-global provider supplies stops `Create()` with
-`dependency injection: can't resolve argument of '<func>' …`.
+`NewDatabaseModule` receives the `ConfigService` of the global config module. A factory also sees
+the providers of the other modules in the same `Imports` list. An argument that no provider
+supplies stops `Create()` with `dependency injection: can't resolve argument of '<func>' …`.
 
 ### Provider
 
@@ -1162,6 +1188,504 @@ With `{}` it answers `400`.
   type answers `500`.
 
 See [core › Pipes](internal/core/README.md#pipes) and [ctx › Binding](internal/ctx/README.md#binding).
+
+---
+
+## Module lifecycle
+
+This section explains how Ginject builds modules, in which order, and what happens when a module
+needs a slow or unreliable dependency such as a database. Read it before you write a module that
+connects to something.
+
+### Modules and module factories
+
+`Imports` and `AsyncImports` take two kinds of entries:
+
+- **Module:** a value built with `ginject.ModuleBuilder()…Build()`. Its providers and controllers
+  are known before `Create()`.
+- **Module factory:** a function that returns a module. Ginject calls it during `Create()` (or in
+  the background, with `AsyncImports`) and injects its parameters. Use a factory when the module
+  needs configuration, or must connect to something before it can provide anything.
+
+There is no third kind. **Global** is a property of a module: set `IsGlobal = true` on the module,
+whether you built it yourself or a factory returned it. **`Register`** is only a function name:
+`config.Register(opts)` and `cache.Register(opts)` are functions you call, and they return a
+module. Ginject never calls them.
+
+### Factory signatures
+
+A factory has one of these three shapes:
+
+```go
+func(deps...) ginject.Module
+func(deps...) (ginject.Module, error)
+func(ctx context.Context, deps...) (ginject.Module, error)
+```
+
+- **`deps`:** any number of parameters. Each one is a provider type, `log.Logger` or
+  `ginject.Publisher`.
+- **`ctx`:** only as the first parameter, and only with the `(ginject.Module, error)` result. Its
+  deadline is the startup timeout in `Imports`. In `AsyncImports` it has no deadline and is
+  canceled at shutdown.
+- **Anything else stops `Build()`.** A nil entry, a variadic function, `ctx` in second place or a
+  `ctx` factory without an error result panic with every bad entry listed:
+  `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: …`.
+- **Called once per app.** The same function listed by two modules is one factory, called once.
+  Two closures of one function literal count as one factory too.
+- **A failed factory stops `Create()`** when it is in `Imports`. The message names the factory:
+  `module factory '<name>' failed: <err>`, `… panicked: <value>` (the stack is logged as
+  `ModuleFactoryPanic`), `… returned a nil module`, or
+  `… did not return within the startup timeout (30s)`.
+
+### Where a factory finds its arguments
+
+A factory listed by module `P` resolves each argument from, in this order:
+
+1. The providers of the other entries of `P`'s `Imports` and `AsyncImports`: its siblings, and what
+   they import.
+2. The global providers: the root module's, and those of every `IsGlobal` module.
+3. `log.Logger` and `ginject.Publisher`.
+
+`P`'s own providers are not in scope: `P` is built after its imports.
+
+**Order doesn't matter.** Ginject calls the factories in dependency order, whatever their position
+in the list. A factory can come before the sibling it needs, and a factory can need what another
+factory returns. When nothing can be called anymore, `Create()` stops:
+
+- One factory left: `dependency injection: can't resolve argument of '<func>'. Please make sure that the argument '<type>' at index [<i>] is available in the injected providers`.
+- Two or more: `dependency injection: module factories can't be ordered: '<a>' needs '<T>' → '<b>' needs '<U>'. Nobody provides these types, or the factories need each other`.
+
+In this example, `NewDatabaseModule` needs the `ConfigService` of its sibling, which is listed after
+it and is not global:
+
+```go
+package main
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	"github.com/dangduoc08/ginject"
+	"github.com/dangduoc08/ginject/modules/config"
+)
+
+type Database struct {
+	DB *sql.DB
+}
+
+func (instance Database) NewProvider() ginject.Provider {
+	return instance
+}
+
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+	url, _ := configService.Get("DATABASE_URL").(string)
+	// Import a driver, such as github.com/jackc/pgx/v5/stdlib, to register "pgx".
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	module := ginject.ModuleBuilder().
+		Providers(Database{DB: db}).
+		Build()
+	module.OnShutdown = func() {
+		_ = db.Close()
+	}
+	return module, nil
+}
+
+type StatusController struct {
+	ginject.HTTP
+	Database Database
+}
+
+func (instance StatusController) NewController() ginject.Controller {
+	return instance
+}
+
+func (instance StatusController) READ_status(c ginject.HTTPContext) string {
+	if err := instance.Database.DB.PingContext(c.Context()); err != nil {
+		return "down"
+	}
+	return "up"
+}
+
+func main() {
+	app := ginject.New()
+	app.SetStartupTimeout(10 * time.Second)
+	app.Create(
+		ginject.ModuleBuilder().
+			Imports(
+				NewDatabaseModule,
+				config.Register(&config.ConfigModuleOptions{IsIgnoreEnvFile: true}),
+			).
+			Controllers(StatusController{}).
+			Build(),
+	)
+	if err := app.Listen(3000, nil); err != nil {
+		app.Logger().Fatal("AppError", "error", err)
+	}
+}
+```
+
+The factory is in `Imports`, so the app does not start without the database. Without a driver,
+`Create()` stops with
+`invalid module: module factory 'main.NewDatabaseModule' failed: sql: unknown driver "pgx" (forgotten import?)`.
+
+### Startup timeout
+
+`app.SetStartupTimeout(d)` sets how long `Create()` may take for the factories of `Imports`. The
+default is 30 seconds.
+
+- **One budget.** The timeout counts from the start of `Create()`, for all factories together.
+- **The deadline is in `ctx`.** A `ctx` factory gets a context with that deadline. The context is
+  canceled when `Create()` returns: don't keep it for later work.
+- **A factory that ignores `ctx` is abandoned.** Ginject calls every factory of `Imports` on a
+  helper goroutine and stops waiting at the deadline, whatever the factory's shape. `Create()` then
+  panics with `module factory '<name>' did not return within the startup timeout (10s)`.
+- **Factories only.** `OnInit` and `NewProvider` are not covered: they take no `ctx`. Do slow work,
+  such as connecting, in a factory.
+- **Before `Create`.** A duration of zero or less panics
+  `invalid app: SetStartupTimeout needs a positive duration`, and a call after `Create` panics
+  `invalid app: SetStartupTimeout must be called before Create`.
+
+The timeout never applies to `AsyncImports`.
+
+### Imports and AsyncImports
+
+The app that imports a module decides how it starts, not the module's author. The same Module or
+factory works in both lists:
+
+- **`Imports` fails fast.** `Create()` waits for the entry. If it fails, the app does not start.
+- **`AsyncImports` never stops the app.** `Create()` returns at once and the entry is built in the
+  background. Until it is ready, only the routes that need it answer `503`.
+
+An entry of `AsyncImports` brings its own imports with it: the modules that only it imports, and
+their factories, are built in the background too.
+
+This app serves `/health` at once. `/users-count` answers `503` until the database answers, then
+switches on by itself:
+
+```go
+package main
+
+import (
+	"context"
+	"database/sql"
+
+	"github.com/dangduoc08/ginject"
+	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/modules/config"
+)
+
+type Database struct {
+	DB *sql.DB
+}
+
+func (instance Database) NewProvider() ginject.Provider {
+	return instance
+}
+
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+	url, _ := configService.Get("DATABASE_URL").(string)
+	// Import a driver, such as github.com/jackc/pgx/v5/stdlib, to register "pgx".
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		return nil, err
+	}
+
+	err = ginject.Retry(ctx, nil, func(ctx context.Context) error {
+		return db.PingContext(ctx)
+	})
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	module := ginject.ModuleBuilder().
+		Providers(Database{DB: db}).
+		Build()
+	module.OnShutdown = func() {
+		_ = db.Close()
+	}
+	return module, nil
+}
+
+type UserController struct {
+	ginject.HTTP
+	Database Database
+}
+
+func (instance UserController) NewController() ginject.Controller {
+	return instance
+}
+
+func (instance UserController) READ_users_count(c ginject.HTTPContext) ginject.Map {
+	var count int
+	err := instance.Database.DB.QueryRowContext(c.Context(), "SELECT count(*) FROM users").Scan(&count)
+	if err != nil {
+		panic(exception.ServiceUnavailableException("Service Unavailable", exception.ExceptionOptions{Cause: err}))
+	}
+	return ginject.Map{"count": count}
+}
+
+type HealthController struct {
+	ginject.HTTP
+}
+
+func (instance HealthController) NewController() ginject.Controller {
+	return instance
+}
+
+func (instance HealthController) READ_health() string {
+	return "ok"
+}
+
+var UserModule = ginject.ModuleBuilder().
+	AsyncImports(NewDatabaseModule).
+	Controllers(UserController{}).
+	Build()
+
+var AppModule = ginject.ModuleBuilder().
+	Imports(
+		config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
+		UserModule,
+	).
+	Controllers(HealthController{}).
+	Build()
+
+func main() {
+	app := ginject.New()
+	app.Create(AppModule)
+	if err := app.Listen(3000, nil); err != nil {
+		app.Logger().Fatal("AppError", "error", err)
+	}
+}
+```
+
+- `config.Register` stays in `Imports`: it reads the environment when you call it, so there is
+  nothing to wait for, and a bad `.env` file should stop the boot.
+- The factory finds `ConfigService` because the config module is global.
+- `UserController` sits in `UserModule`, a static module that imports the factory. The factory's
+  module has providers only (see [Refusals](#refusals)).
+- `HealthController` injects nothing from the database, so it is never gated.
+
+A complete app that you can run is in [`sample/async`](sample/async/README.md).
+
+### Timeline
+
+```
+Create()
+  ├─ check every module, factory and route name, also those of modules that are not ready
+  ├─ call the factories of Imports, in dependency order, within the startup timeout
+  ├─ build the modules that are ready: OnInit, providers, controllers
+  ├─ register every route and WebSocket event; those of modules that are not ready sit behind a closed gate
+  ├─ start one goroutine per AsyncImports entry
+  └─ OnReady of the ready modules
+Create() returns; Listen serves at once
+
+background, one goroutine per entry
+  ├─ wait for the entries its factory needs
+  ├─ call the factory, if any (ctx canceled at shutdown, no deadline)
+  ├─ OnInit, then providers, then controllers of each module of the entry
+  ├─ open the gate: the module is ready (log ModuleReady)
+  ├─ OnReady of those modules
+  └─ build every module that was waiting only for this entry, with the same steps
+the goroutine ends
+
+shutdown (SIGINT, SIGTERM, app.Stop())
+  ├─ cancel the background ctx: Retry stops, no module changes state, no gate opens
+  ├─ drain the running requests (ShutdownTimeout)
+  ├─ wait for the background goroutines until ShutdownTimeout has passed since shutdown began;
+  │    a goroutine still running is logged as ModuleShutdownTimeout and abandoned
+  └─ OnShutdown of the ready modules, in the reverse of the order they became ready
+```
+
+- Ginject wires one module at a time. Factories run in parallel, but a slow `OnInit` or
+  `NewProvider` delays the other background modules: connect in the factory.
+- A factory that returns after the cancel has its module dropped. Close what it opened when `ctx`
+  is done.
+- Once every entry has settled, no goroutine is left.
+
+### Module states
+
+Every module has one of three states:
+
+| State | Meaning |
+|---|---|
+| `pending` | The module waits for an `AsyncImports` entry, or is one. |
+| `ready` | The module is built and its routes are open. |
+| `failed` | The module, or an entry it needs, failed. It stays closed until you fix the cause and restart. |
+
+- **One way.** A state changes once: `pending` → `ready` or `pending` → `failed`. A `ready` module
+  never goes back.
+- **What depends on an entry.** A module needs an entry when one of its providers, controllers,
+  bound layers or pipes injects a provider from that entry, or from a module that needs it.
+  Importing alone is not a need: a root module that imports everything keeps serving its own routes.
+- **Failure spreads to what needs it, and only to that.** When the database entry fails, the user
+  module that injects it fails, and so does a booking module that injects the user service. A
+  booking module that injects only the cache keeps working.
+- **Unknown providers wait.** With an async factory in the app, a provider type that no known
+  module provides doesn't stop `Create()`: its module is `pending`. It becomes `ready` when a
+  factory returns a module that provides the type, and `failed` with `can't resolve <type>` when the
+  last factory has returned without it. Without an async factory, `Create()` stops as usual.
+- **Before ready.** `app.Get(provider)` returns `nil` for a provider that is not built yet.
+
+The log shows the states:
+
+| Line | Level | Fields | When |
+|---|---|---|---|
+| `ModulePending` | Info | `module`, `waiting_for` | At `Create()`, once per module that is not ready |
+| `ModuleRetry` | Warn | `module`, `attempt`, `error`, `next` | Each failed `Retry` attempt |
+| `ModuleReady` | Info | `module`, `after` | A module becomes ready in the background |
+| `ModuleFailed` | Error | `module`, `after`, `cause`, `stack` for a panic | A module fails |
+| `ModuleShutdownTimeout` | Warn | `module` | A background goroutine outlives the shutdown |
+
+The `InstanceLoader` line at listen is printed only for modules that are ready then. With
+`EnableDevtool()`, the snapshot's `modules` list shows each module's `state`, `waiting_for`,
+`attempts`, `last_error` and `ready_after_ms`, read live. `last_error` may hold a driver's error
+text, such as a host name: the devtool is for development only.
+
+### What clients get
+
+| Request | `pending` | `failed` |
+|---|---|---|
+| HTTP route | `503` with `{"code":503,"error":"Service Unavailable","message":"Service Unavailable"}` and `Retry-After` | The same `503`, without `Retry-After` |
+| Page route (`RENDER_`, `SUBMIT_`) | `503` as HTML: `503.html`, then `5xx.html`, then the built-in page, whatever `Accept` says | The same, without `Retry-After` |
+| WebSocket `subscribe` or `publish` | `{"type":"error","id":"<id>","message":{"code":503,"error":"Service Unavailable","message":"not ready: <topic>"}}`, nothing subscribed or published | The same |
+
+- **`Retry-After`** is the whole seconds until the next `Retry` attempt of the entry, from 1 to 60.
+  It is `5` when no attempt is scheduled, such as before the first attempt or for a factory that
+  doesn't use `Retry`.
+- **Global middlewares run first.** `helmet`, `cors`, `loadshed` and the access log apply to the
+  `503`, and a middleware that refuses wins. Module middlewares, guards, interceptors, exception
+  filters and the handler don't run.
+- **No cause reaches the client.** The answer never names the module, the dependency or the error.
+- **Routes exist.** `404`, `405` and `Allow` treat a closed route like an open one. The WebSocket
+  handshake is never gated.
+- **Ready means served.** An open route runs exactly as if its module had been imported with
+  `Imports`: same layers, same order.
+
+### When hooks run
+
+| Hook | Module ready at `Create()` | Module built in the background |
+|---|---|---|
+| `OnInit` | During `Create()`, before the module's providers. A panic stops `Create()`. | In the background, once the entries it needs are ready, before its providers. A panic fails the module. |
+| `OnReady` | At the end of `Create()`, in init order. A panic stops `Create()`. | Right after its gate opens: a request may arrive before `OnReady` returns. A panic is logged as `OnReadyPanic`, and the module stays ready. |
+| `OnShutdown` | At shutdown, in the reverse of the init order. | At shutdown, only if the module became ready, in the reverse of the order modules became ready. A `pending` or `failed` module gets none. |
+
+A factory that fails must clean up before it returns: its module never gets `OnShutdown`.
+
+### Refusals
+
+These mistakes stop the boot, or fail the module, with a message that names it:
+
+- **Controllers in an async factory's module.** A module that an async factory returns may hold
+  providers only. Its entry fails with
+  `module '<name>' declares controllers (<Type>, …) but comes from an async factory: put them in a static module that imports it`.
+  Put the controllers in a static module that lists the factory in `AsyncImports`, as `UserModule`
+  does above. A static Module in `AsyncImports` may have controllers: they are known at `Create()`.
+- **One entry in both lists.** `Build()` panics with `invalid module: '<name>' is in both Imports and AsyncImports`,
+  and `Create()` with `invalid module: '<name>' is imported with Imports by '<a>' and with AsyncImports by '<b>'`
+  when two modules disagree.
+- **`NewController` must not use injected providers.** In an app with `AsyncImports`, Ginject may
+  call `NewController` twice: once at `Create()` on a throwaway instance, to register and check the
+  routes, and once to build the controller. This is always the case for the controllers of a module
+  that is not ready at `Create()`, and can happen for other controllers that bind layers. In the
+  first call, the providers that are not ready are zero values. A panic there stops `Create()` with
+  `invalid module: NewController of '<Type>' failed before its module '<name>' is ready: <value>. NewController must not use injected providers`.
+  Keep `NewController` to `Prefix`, `Path` and the `Bind…` calls, with no side effects. If the
+  second call gives other routes, the module fails.
+- **A factory in `Imports` that needs an async module.** `Create()` panics with
+  `module factory '<name>' is in Imports and needs '<T>' of '<module>', which is not ready at Create: import it with AsyncImports`.
+- **App-wide layers that inject an async provider.** A `BindGlobal…` layer or an `EnableWS`
+  middleware can't wait: `Create()` panics with `app-wide layers can't depend on AsyncImports`.
+- **Async modules that need each other.** `Create()` panics with
+  `invalid module: async modules need each other: '<a>' → '<b>' → '<a>'`.
+
+### Retry
+
+`ginject.Retry(ctx, opts, fn)` calls `fn` until it returns `nil`, waiting longer after each failure.
+Use it inside a factory:
+
+```go
+err := ginject.Retry(ctx, &ginject.RetryOptions{InitialDelay: time.Second}, func(ctx context.Context) error {
+	return db.PingContext(ctx)
+})
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `InitialDelay` | `time.Duration` | 500 ms | The first wait. Zero or less means the default. |
+| `MaxDelay` | `time.Duration` | 30 s | The longest wait. Zero or less means the default. |
+| `MaxAttempts` | `int` | until `ctx` is done | The number of calls before it gives up. Zero or less means no limit. |
+
+- **Backoff with jitter.** The wait before attempt `n+1` is `InitialDelay × 2^(n-1)`, capped at
+  `MaxDelay`, then a random time between half of it and all of it. The jitter keeps many instances
+  from reconnecting at the same moment.
+- **It stops with `ctx`.** When `ctx` is done, `Retry` returns
+  `ginject: retry stopped after <n> attempts: …`. `errors.Is` finds both `ctx.Err()` and the last
+  error. `fn` is not called when `ctx` is already done.
+- **It gives up after `MaxAttempts`.** It returns `ginject: retry gave up after <n> attempts: <last error>`.
+- **`nil` options** mean the defaults. A nil `fn` panics `invalid retry: Retry needs a function`.
+  A panic in `fn` is not recovered.
+- **It reports to the module.** With the `ctx` that Ginject gave an `AsyncImports` factory, each
+  failed attempt logs `ModuleRetry`, counts in the devtool's `attempts` and `last_error`, and sets
+  the `Retry-After` that clients get. With any other `ctx`, `Retry` only retries.
+
+In an `Imports` factory, `Retry` stops at the startup timeout, because that is the deadline of its
+`ctx`.
+
+### Transient and permanent errors
+
+Sort the errors of your factory in two groups:
+
+- **Transient errors** (the database is starting, the network is down for a moment): retry
+  without a limit. Pass `nil` options, or leave `MaxAttempts` at zero. The module recovers by
+  itself when the dependency comes back, and the app needs no restart.
+- **Permanent errors** (a bad URL, a missing setting, a refused password): return the error at
+  once, without `Retry`. The module becomes `failed`, which needs a fix and a restart. Retrying
+  would only fill the log.
+
+The examples above follow this rule: `sql.Open` checks the configuration and returns its error at
+once, and only `PingContext` is retried.
+
+### Don't retry in a goroutine of your own
+
+Ginject calls a factory once. Two shortcuts look tempting, and both lose what the framework gives
+you:
+
+- **Returning an error and retrying later yourself.** The error makes the module `failed`, and
+  `failed` is final: a later success can't reopen its routes.
+- **Returning a module at once and connecting in a goroutine.** The module is `ready` before the
+  connection exists, so its routes open and requests reach a client that isn't connected. There is
+  no `503` with `Retry-After`, no state in the log or the devtool, no cancel at shutdown, and
+  `OnShutdown` can run while the goroutine still connects.
+
+Retry inside the factory with `ginject.Retry` and the factory's `ctx`.
+
+### After a module is ready
+
+A `ready` module stays ready. When its database goes down later, Ginject doesn't unwire the module
+or close its routes: run-time failures are the business code's job. Let the driver's pool
+reconnect, and answer the failed request with an exception, as `READ_users_count` does with
+`exception.ServiceUnavailableException`.
+
+### Compared with NestJS forRootAsync
+
+NestJS's `forRootAsync` awaits its `useFactory` during the bootstrap: the app doesn't listen until
+every async module has resolved, and a factory that rejects stops the bootstrap. A Ginject factory
+in `Imports` behaves the same way, with a deadline.
+
+`AsyncImports` is different. The app listens at once, only the routes that need the module answer
+`503` until it is ready, and a failure leaves the rest of the app running. In NestJS, "async"
+describes how the module's author configures the module. In Ginject, it describes how the app
+imports it.
 
 ---
 
@@ -2479,15 +3003,17 @@ An application imports `github.com/dangduoc08/ginject`, plus the packages it use
 | Function | Description |
 |---|---|
 | `New() App` | Creates an application. |
-| `ModuleBuilder() *ModuleBuilder` | Starts a module: chain `Imports(...)`, `Providers(...)`, `Controllers(...)` and `PathStyle(style)`, then `Build()`. |
+| `ModuleBuilder() *ModuleBuilder` | Starts a module: chain `Imports(...)`, `AsyncImports(...)`, `Providers(...)`, `Controllers(...)` and `PathStyle(style)`, then `Build()`. `Imports` and `AsyncImports` take Modules and module factories. See [Module lifecycle](#module-lifecycle). |
+| `Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error` | Calls `fn` until it returns `nil`, with backoff and jitter, until `ctx` is done or `MaxAttempts` is reached. With a factory's `ctx`, the attempts show in the log, the devtool and `Retry-After`. See [Retry](#retry). |
 | `TraceTransport(base http.RoundTripper) http.RoundTripper` | Wraps a transport so outgoing requests continue the request's trace. `nil` wraps `http.DefaultTransport`. See [Outbound HTTP calls](#outbound-http-calls). |
 
 ### Application and modules
 
 | Type | Description |
 |---|---|
-| `App` | The application returned by `New`. Configure it with `SetLogger`, `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`, `EnableVersioning`, `EnableWS`, `EnableRender`, `EnableAccessLog` and `EnableDevtool`; wire it with `Create(Module)`; serve it with `Listen(port, opts)`, `ListenTLS(port, certFile, keyFile, opts)` or `Serve(listener, opts)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
+| `App` | The application returned by `New`. Configure it with `SetLogger`, `SetStartupTimeout`, `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`, `EnableVersioning`, `EnableWS`, `EnableRender`, `EnableAccessLog` and `EnableDevtool`; wire it with `Create(Module)`; serve it with `Listen(port, opts)`, `ListenTLS(port, certFile, keyFile, opts)` or `Serve(listener, opts)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
 | `Module` | A built module. Set its fields after `Build()`: `Name`, `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown`. `Prefix(path)` adds a path prefix. |
+| `RetryOptions` | The second argument of `Retry`; `nil` gives the defaults. `InitialDelay` (default 500 ms), `MaxDelay` (default 30 s) and `MaxAttempts` (default 0: until `ctx` is done). |
 | `Provider` | The interface of a provider: `NewProvider() Provider`. |
 | `Controller` | The interface of a controller: `NewController() Controller`. |
 | `ServerOptions` | The second argument of `Listen`, `ListenTLS` and `Serve`; `nil` gives the defaults. `ShutdownTimeout` (default 30 s), `MaxRequestBodyBytes` (default 10 MiB, negative turns the cap off), `TLSConfig`, and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |

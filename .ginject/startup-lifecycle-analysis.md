@@ -4,7 +4,8 @@
 conditions an app can still create for itself. The user-facing contract (hooks, server, shutdown) is
 `internal/core/README.md` › Modules and lifecycle and › Server; this page explains the implementation.
 
-**Last Updated**: 2026-11-16 (roadmap 0003, designs 0008 and 0009)
+**Last Updated**: 2026-11-18 (roadmap 0009, design 0020: module factories, `AsyncImports`, states, `Retry`).
+User guide with a timeline: `README.md` › Module lifecycle.
 
 ---
 
@@ -17,6 +18,8 @@ provider before work it started in a goroutine has finished, when:
 3. A client connects during that async phase
 
 The framework guarantees only that every synchronous hook has returned before the server starts.
+The tracked alternative is a module factory in `AsyncImports` that connects (with `ginject.Retry`):
+the module stays `pending`, the routes that need it answer `503`, and they open only once it returned.
 
 ---
 
@@ -52,13 +55,17 @@ Create(m)
   │    ├─ scanGlobals(root)                 walks the static *Module imports first: every IsGlobal
   │    │                                    module's providers become global, at any depth
   │    ├─ discover(root)                    depth first, each module once:
-  │    │     module funcs are called here (arguments from global providers, then Logger, Publisher);
+  │    │     module factories of the sync set are called here, in dependency order (arguments from
+  │    │     siblings, then globals, then Logger, Publisher), each on a helper goroutine within the
+  │    │     startup timeout (SetStartupTimeout, default 30 s, one budget; its ctx carries the deadline);
   │    │     the provider of an argument is built after its owner module's OnInit (which then
-  │    │     does not run again); each func's result is scanned for globals before the next call;
+  │    │     does not run again); each result is scanned before the next call;
   │    │     visible providers and controllers per module, prefixes per controller
-  │    ├─ for each module in init order: OnInit() (unless already run), then provide() each provider
+  │    ├─ states and needs                  modules that need an AsyncImports entry are pending
+  │    ├─ for each ready module in init order: OnInit() (unless already run), then provide() each provider
   │    │     (a provider is constructed after the providers its fields name, once per app)
-  │    └─ injectController() for every controller of the tree (fields injected, then NewController)
+  │    └─ injectController() for every controller of a ready module (fields injected, then NewController);
+  │          controllers of pending modules are probed (throwaway instance, NewController) and gated
   ├─ initWS()                               only when EnableWS was called
   ├─ initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(),
   │  initInterceptors(), initMainHandlers()  layers constructed once per type and configuration,
@@ -66,7 +73,8 @@ Create(m)
   ├─ app.http.finishRoutes()                one immutable route struct per route, fixed 404/405 bodies
   ├─ initDevtool()                          after routes and layers exist
   ├─ initAccessLog()                        the tracer's only listener, when EnableAccessLog was called
-  └─ callOnReady()                          OnReady of every module, in init order; then isCreated = true
+  ├─ start one goroutine per AsyncImports entry (module_async.go)
+  └─ callOnReady()                          OnReady of every ready module, in init order; then isCreated = true
 ```
 
 **Why this order** (do not reorder without re-checking each step):
@@ -90,13 +98,26 @@ per app. Root importing A and C, both importing B: B, A, C, root.
 - Configuration methods (`BindGlobal…`, `Enable…`, `SetLogger`) panic after `Create`:
   `invalid app: <Method> must be called before Create`.
 
+### Phase 2b: Background (`AsyncImports`, `internal/core/module_async.go`)
+
+```
+per entry goroutine
+  ├─ wait for the entries its factory needs
+  ├─ factory(ctx)            ctx canceled at shutdown, no deadline; ginject.Retry reports attempts
+  ├─ under wireMu: OnInit, providers, controllers of each module of the unit
+  ├─ gate.live.Store(...)    one atomic store opens every route and event of the module
+  ├─ state ready, log ModuleReady, then OnReady (a panic is logged OnReadyPanic)
+  └─ the same for every pending dependent whose needs are now all ready
+failure (error, panic, nil module, type never resolved) → failed, spreads to what needs it
+```
+
 ### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`; `internal/core/server.go`)
 
 ```
 app.Listen(port, opts)
   ├─ checks (before Create, already serving, stopped, option conflicts) → return an error
   ├─ bind :<port>          a bind error returns here: nothing logged, no hook runs
-  ├─ log InstanceLoader (one line per named module), RouteExplorer (one per route),
+  ├─ log InstanceLoader (one line per named module that is ready), RouteExplorer (one per route),
   │  WebSocketEvent (one per event), ServerListening (address, tls, protocols)
   └─ serve until SIGINT / SIGTERM / app.Stop() or a server error
 ```
@@ -108,10 +129,13 @@ The server accepts connections as soon as `ServerListening` is logged.
 ```
 SIGINT / SIGTERM / app.Stop()
   ├─ stop intercepting signals (a second signal ends the process the default way)
+  ├─ cancel the AsyncImports ctx (no state changes, no gate opens from now on)
   ├─ close the listener and idle keep-alive connections
   ├─ drain running requests for ShutdownTimeout (default 30 s), then close their connections
+  ├─ wait for the entry goroutines until ShutdownTimeout since shutdown began; log
+  │     ModuleShutdownTimeout and abandon the ones still running
   ├─ runShutdownHooks()   once per app (app.shutdownOnce):
-  │     OnShutdown of every module in the exact reverse of the init order (root first);
+  │     OnShutdown of every ready module in the reverse of the order they became ready (root first);
   │     a panicking hook is logged as OnShutdownPanic (module, panic) and the others still run;
   │     then the access log is stopped, a pending PanicStacksSuppressed count is logged,
   │     and the stdout log pipeline is flushed (at most 2 s) and made synchronous again
@@ -147,7 +171,8 @@ func (instance ChatController) SUBSCRIBE_chat(payload ginject.WSPayload) string 
 Timeline: `OnInit` returns while `Connect` is pending → `OnReady` → `Listen` → a client connects →
 the handler calls the cache before the connection exists.
 
-**Framework Guarantee**: none for goroutines a hook starts.
+**Framework Guarantee**: none for goroutines a hook starts. Connect in a module factory instead
+(`Imports` to wait at `Create()`, `AsyncImports` to serve at once with the routes that need it gated).
 
 ### Condition 2: Import Order ✓ DEFINED
 
@@ -169,16 +194,18 @@ The broker is created in `core.New()`; subscriptions only happen when a WebSocke
 | Phase | Guarantee |
 |-------|-----------|
 | `OnInit()` | Returned before the module's providers are constructed |
-| `OnReady()` | Every module's has returned before `Create` returns, so before any serving call |
-| Providers | Each constructed once per app, before `Create` returns |
-| Controllers and routes | Registered before `Create` returns |
-| `OnShutdown()` | Runs once per app, after the drain, in reverse init order |
+| `OnReady()` | Every ready module's has returned before `Create` returns; a background module's runs right after its gate opens |
+| Providers | Each constructed once per app, before `Create` returns, or before its module's gate opens |
+| Controllers and routes | Registered before `Create` returns (gated ones behind a closed gate) |
+| Gated routes | Answer `503` until every entry their module needs is `ready`; never after it fails |
+| `OnShutdown()` | Runs once per app, after the drain, only for ready modules, in reverse ready order |
 
 ### What IS NOT Guaranteed
 
 | Item | Why |
 |------|-----|
-| Async operations complete | The framework doesn't track goroutines |
+| Async operations complete | The framework doesn't track goroutines you start (it tracks `AsyncImports` factories) |
+| A ready module stays healthy | States are one way: run-time failures are the business code's job |
 | External services ready | They are outside the framework |
 | WebSocket connections drained at shutdown | Not implemented (roadmap 0005) |
 
@@ -199,7 +226,9 @@ No ACK / NACK, no retry, no persistence: the broker is in memory (`memorybroker`
 
 ## Recommendations
 
-1. **Connect synchronously in `OnInit`** when a provider needs a ready connection: `Create` waits for it.
-2. **Start background work in `OnReady`** (`go startWorkerPool()`): every module is initialized then.
-3. **Fail fast**: panic in `OnReady` when a dependency isn't ready; `Create` stops with that panic.
-4. **Release resources in `OnShutdown`**: it runs after the last request returned.
+1. **Connect in a module factory**, not in `OnInit` or `NewProvider`: it can take `ctx` and return an
+   error. In `Imports`, `Create` waits for it within the startup timeout.
+2. **Use `AsyncImports` for a dependency that may be down at start**, with `ginject.Retry(ctx, …)` for
+   transient errors (no attempt limit); return permanent errors (bad config) at once.
+3. **Start background work in `OnReady`** (`go startWorkerPool()`): the module is built then.
+4. **Release resources in `OnShutdown`**: it runs after the last request returned, for ready modules.

@@ -73,6 +73,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `EnableVersioning(opts *versioning.Options) *App` | Enable API versioning; `nil` = zero options, the options are copied |
 | `SetLogger(logger log.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
 | `Logger() log.Logger` | The app's logger; never `nil` (the built-in logger by default) |
+| `SetStartupTimeout(d time.Duration) *App` | The budget of `Create()` for the module factories of `Imports` (default 30 s, counted from the start of `Create()`, the deadline of a factory's `ctx`); `d <= 0` panics `invalid app: SetStartupTimeout needs a positive duration` |
 
 **There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `ServerOptions.MaxRequestBodyBytes` of the serving call (0 = 10 MiB, negative = no cap), stored in the unexported `atomic.Int64` `maxRequestBodyBytes` (10 MiB from `New()`) — see "HTTP Server Defaults" below.
 
@@ -125,13 +126,26 @@ func ModuleBuilder() *core.ModuleBuilder
 
 | Method | Signature | Notes |
 |--------|-----------|-------|
-| `Imports` | `Imports(modules ...any) *ModuleBuilder` | Takes `...any`, not `...*Module` — also accepts module factory values |
+| `Imports` | `Imports(modules ...any) *ModuleBuilder` | Takes `...any`, not `...*Module`: a `*Module` or a module factory (`func(deps...) *Module`, `func(deps...) (*Module, error)`, `func(ctx, deps...) (*Module, error)`); fails fast at `Create()` |
+| `AsyncImports` | `AsyncImports(modules ...any) *ModuleBuilder` | Same entries, built in the background; the modules that inject their providers are `pending` and their routes answer `503` until ready (README › Module lifecycle). One entry in both lists panics |
 | `Providers` | `Providers(providers ...Provider) *ModuleBuilder` | |
 | `Controllers` | `Controllers(controllers ...Controller) *ModuleBuilder` | |
 | `PathStyle` | `PathStyle(style common.PathStyle) *ModuleBuilder` | `ginject.PathStyleKebab` (default, `READ_user_profile` → `/user-profile`) or `ginject.PathStyleAsWritten` (`/user_profile`); inherited by imports like `Prefix`, an explicit setting wins; another value panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` |
 | `Build` | `Build() *Module` | |
 
 **There is no `Export(...string)` method and no `IsGlobal(bool)` builder method — both are fabrications from an earlier bad doc pass.** `IsGlobal` is a public **field** set directly on the built `*Module` (`module.IsGlobal = true`), not chained on the builder.
+
+### Retry
+
+```go
+type RetryOptions struct { InitialDelay, MaxDelay time.Duration; MaxAttempts int }  // root alias ginject.RetryOptions
+func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error  // ginject.Retry
+```
+
+Backoff with jitter (`InitialDelay` 500 ms doubling up to `MaxDelay` 30 s, each wait random in `[d/2, d]`)
+until `fn` returns `nil`, `ctx` is done (`ginject: retry stopped after <n> attempts: …`) or `MaxAttempts`
+is reached (`ginject: retry gave up after <n> attempts: …`); a nil `fn` panics `invalid retry: Retry needs a function`.
+With an `AsyncImports` factory's `ctx` it reports attempts (`ModuleRetry`, devtool, `Retry-After`).
 
 ### Provider / Controller
 

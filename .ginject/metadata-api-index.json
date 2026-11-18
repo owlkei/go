@@ -14,7 +14,8 @@
     "root_functions": [
       "New() App",
       "ModuleBuilder() *core.ModuleBuilder",
-      "TraceTransport(base http.RoundTripper) http.RoundTripper"
+      "TraceTransport(base http.RoundTripper) http.RoundTripper",
+      "Retry(ctx context.Context, opts *core.RetryOptions, fn func(context.Context) error) error"
     ],
     "root_aliases": {
       "App": "*core.App",
@@ -24,6 +25,7 @@
       "ServerOptions": "core.ServerOptions",
       "WSOptions": "core.WSOptions",
       "RenderOptions": "core.RenderOptions",
+      "RetryOptions": "core.RetryOptions",
       "HTTP": "common.HTTP",
       "WS": "common.WS",
       "Guard": "common.Guard",
@@ -107,12 +109,17 @@
             {
               "name": "Get",
               "signature": "Get(p Provider) any",
-              "purpose": "The instance this app created for p's type, nil before Create or for an unknown type"
+              "purpose": "The instance this app created for p's type, nil before Create or for an unknown type; nil while the provider's module is not ready (AsyncImports)"
             },
             {
               "name": "SetLogger",
               "signature": "SetLogger(logger log.LogAdapter) *App",
               "purpose": "The one way to set the logger (before Create; nil panics)"
+            },
+            {
+              "name": "SetStartupTimeout",
+              "signature": "SetStartupTimeout(d time.Duration) *App",
+              "purpose": "Budget of Create for the module factories of Imports (default 30 s); before Create; d <= 0 panics"
             },
             {
               "name": "Logger",
@@ -177,9 +184,9 @@
           "fields": [
             "Name string - resolved by Build from the variable or function name (<package>.<name>); used in the InstanceLoader log line",
             "IsGlobal bool - makes providers available to every module without an explicit import",
-            "OnInit func() - called during app.Create(), a module after the modules it imports, then its providers are constructed",
-            "OnReady func() - called once per app at the end of app.Create(), in the OnInit order",
-            "OnShutdown func() - called on graceful shutdown (SIGINT/SIGTERM, or app.Stop()), in the exact reverse of the OnInit order"
+            "OnInit func() - called during app.Create(), a module after the modules it imports, then its providers are constructed; for a module not ready at Create, in the background before its providers",
+            "OnReady func() - called once per app at the end of app.Create(), in the OnInit order; for a module not ready at Create, right after its gate opens",
+            "OnShutdown func() - called on graceful shutdown (SIGINT/SIGTERM, or app.Stop()), in the exact reverse of the OnInit order; only for ready modules, in the reverse of the order they became ready"
           ],
           "methods": [
             "Prefix(prefix string) *Module - path prefix for the module's routes and its imports' routes",
@@ -189,7 +196,8 @@
         "ModuleBuilder": {
           "description": "Fluent API for building modules: core.NewModuleBuilder() (ginject.ModuleBuilder()) returns a new *core.ModuleBuilder",
           "methods": [
-            "Imports(modules ...any) *ModuleBuilder - *Module values or module funcs (func(...) *core.Module)",
+            "Imports(modules ...any) *ModuleBuilder - *Module values or module factories (func(deps...) *core.Module, func(deps...) (*core.Module, error), func(ctx, deps...) (*core.Module, error)); fail fast at Create",
+            "AsyncImports(modules ...any) *ModuleBuilder - the same entries, built in the background; dependents pending (routes 503) until ready; one entry in both lists panics",
             "Providers(providers ...Provider) *ModuleBuilder",
             "Controllers(controllers ...Controller) *ModuleBuilder",
             "PathStyle(style common.PathStyle) *ModuleBuilder - PathStyleKebab (default: READ_user_profile -> /user-profile) or PathStyleAsWritten (/user_profile); inherited by imports like Prefix, an explicit setting wins; another value panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten`",

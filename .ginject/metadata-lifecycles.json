@@ -26,11 +26,12 @@
       {
         "from": "CREATED",
         "to": "CREATED",
-        "action": "configuration: BindGlobal*, EnableVersioning, EnableWS, EnableDevtool, EnableAccessLog, SetLogger",
+        "action": "configuration: BindGlobal*, EnableVersioning, EnableWS, EnableDevtool, EnableAccessLog, SetLogger, SetStartupTimeout",
         "effects": [
           "each returns *App",
           "after Create each panics 'invalid app: <Method> must be called before Create'",
-          "SetLogger(nil) panics 'invalid app: SetLogger needs a logger'"
+          "SetLogger(nil) panics 'invalid app: SetLogger needs a logger'",
+          "SetStartupTimeout(d <= 0) panics 'invalid app: SetStartupTimeout needs a positive duration'"
         ]
       },
       {
@@ -40,7 +41,7 @@
         "critical": true,
         "order": [
           "container.addInterface(log.Logger)",
-          "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",
+          "container.wire(root): addGlobals(root), scanGlobals, discover (sync-set module factories called in dependency order on helper goroutines within the startup timeout; arguments from siblings, globals, Logger, Publisher), module states and needs, then per ready module in init order OnInit() and provide() of its providers, injectController for every controller of a ready module, probe and gate the controllers of pending modules",
           "initWS (only if EnableWS)",
           "initRoutes",
           "initMiddlewares",
@@ -51,13 +52,16 @@
           "http.finishRoutes",
           "initDevtool (if enabled)",
           "initAccessLog (if enabled)",
-          "callOnReady",
+          "startAsync: one goroutine per AsyncImports entry",
+          "callOnReady (ready modules only)",
           "isCreated = true"
         ],
         "effects": [
           "every provider constructed once per app",
           "all routes, events and layers registered",
-          "panics: 'invalid module: Create needs a root module', 'invalid app: Create called twice', 'dependency injection: ...', 'route conflict: ...', 'event conflict: ...'"
+          "panics: 'invalid module: Create needs a root module', 'invalid app: Create called twice', 'dependency injection: ...', 'route conflict: ...', 'event conflict: ...'",
+          "module factory failures in Imports panic 'invalid module: module factory ...' (error, panic, nil module, startup timeout)",
+          "AsyncImports entries never stop Create; modules that need them stay pending"
         ]
       },
       {
@@ -76,10 +80,12 @@
         "action": "SIGINT / SIGTERM or app.Stop()",
         "critical": true,
         "effects": [
+          "AsyncImports ctx canceled first: no module changes state, no gate opens",
           "signals no longer intercepted",
           "listener and idle connections closed",
           "running requests drained for ServerOptions.ShutdownTimeout (default 30 s), then their connections closed",
-          "runShutdownHooks once per app (app.shutdownOnce): OnShutdown in the exact reverse of the init order; a panicking hook is logged as OnShutdownPanic and the others run",
+          "waits for the AsyncImports goroutines until ShutdownTimeout since shutdown began; ModuleShutdownTimeout for each one abandoned",
+          "runShutdownHooks once per app (app.shutdownOnce): OnShutdown of ready modules only, in the reverse of the order they became ready; a panicking hook is logged as OnShutdownPanic and the others run",
           "access log stopped after the hooks, suppressed panic stacks reported, stdout log pipeline flushed (at most 2 s) and synchronous again",
           "returns nil, 'ginject: shutdown timed out after <timeout>' or 'ginject: serve: <err>'",
           "WebSocket connections are not drained"
@@ -359,7 +365,7 @@
     "critical": "Create's call order is fixed (comment on App.Create in internal/core/app.go)",
     "sequence": [
       "container.addInterface(log.Logger)",
-      "container.wire(root): addGlobals(root), discover (module funcs called, IsGlobal providers global), then per module in init order OnInit() and provide() of its providers, then injectController for every controller",
+      "container.wire(root): addGlobals(root), scanGlobals, discover (sync-set module factories called in dependency order on helper goroutines within the startup timeout; arguments from siblings, globals, Logger, Publisher), module states and needs, then per ready module in init order OnInit() and provide() of its providers, injectController for every controller of a ready module, probe and gate the controllers of pending modules",
       "initWS (only if EnableWS)",
       "initRoutes",
       "initMiddlewares",
@@ -370,6 +376,7 @@
       "http.finishRoutes",
       "initDevtool (if enabled)",
       "initAccessLog (if enabled)",
+      "startAsync: one goroutine per AsyncImports entry",
       "callOnReady",
       "isCreated = true"
     ],
@@ -380,5 +387,46 @@
       "callOnReady last; only then is the app marked created"
     ],
     "if_reordered": "Uninitialized references, missing state, panic"
+  },
+  "module_states": {
+    "source": "internal/core/module_state.go, module_async.go, retry.go; design 0020; README.md › Module lifecycle",
+    "states": [
+      "pending",
+      "ready",
+      "failed"
+    ],
+    "transitions": [
+      {
+        "from": "pending",
+        "to": "ready",
+        "action": "every AsyncImports entry the module needs is ready",
+        "effects": [
+          "OnInit, providers, controllers (under wireMu)",
+          "gate opens in one atomic store",
+          "log ModuleReady",
+          "OnReady (a panic is logged OnReadyPanic, the module stays ready)"
+        ]
+      },
+      {
+        "from": "pending",
+        "to": "failed",
+        "action": "an entry it needs failed: factory error or panic, nil module, panic while building, type never resolved, controllers in an async factory's module, routes changed since the probe",
+        "effects": [
+          "log ModuleFailed with the cause",
+          "its routes answer 503 without Retry-After forever",
+          "no OnShutdown"
+        ]
+      }
+    ],
+    "one_way": "ready and failed never change again; after ready, run-time failures are the business code's job",
+    "need": "M needs entry E when a provider of E's unit (or of a module that needs E) is the type of a field of M's providers, controllers, bound layers or pipes; importing alone is not a need",
+    "gate": {
+      "http_pending": "503 ServiceUnavailableException body, Retry-After = seconds to the next Retry attempt (1-60) or 5",
+      "http_failed": "503, no Retry-After",
+      "page": "503.html, 5xx.html, built-in page",
+      "ws": "error reply code 503 'not ready: <topic>'",
+      "layers": "global middlewares run first; no module layer, filter or handler"
+    },
+    "retry": "ginject.Retry(ctx, *RetryOptions, fn): backoff InitialDelay 500 ms doubling to MaxDelay 30 s with jitter [d/2, d], MaxAttempts 0 = until ctx done; with an AsyncImports factory's ctx it reports attempts (ModuleRetry, devtool attempts / last_error, Retry-After)"
   }
 }

@@ -91,6 +91,7 @@ package-reference.md (independent API reference)
 
 ### 1. Module → Controller → Provider Pattern
 - **Module**: Composition root (controllers, providers, imports), built with `ginject.ModuleBuilder()…Build()`
+- **Imports**: Modules and module factories (`func(ctx, deps...) (ginject.Module, error)` and two shorter shapes); `Imports` fails fast at `Create()` (startup timeout, `SetStartupTimeout`), `AsyncImports` builds in the background with `pending` / `ready` / `failed` states and `503` on the routes that need it; `ginject.Retry` for transient errors ([modules-and-providers.md](modules-and-providers.md) § 2.2-2.4, `README.md` › Module lifecycle)
 - **Controller**: HTTP/WS handler container (embeds `ginject.HTTP` and/or `ginject.WS`)
 - **Provider**: Injected business logic, constructed once per app
 
@@ -119,7 +120,7 @@ error from a guard onwards → module exception filter → global exception filt
 
 ### 6. Server and Lifecycle
 - `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*ginject.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`)
-- Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`, then `OnShutdown` hooks in reverse init order
+- Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`: the `AsyncImports` context is canceled, requests drain, background goroutines are awaited, then `OnShutdown` hooks of ready modules in reverse order
 - One logger API: `app.SetLogger(l)` (any `log.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
 - Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
 - Request tracing: one internal `trace.Tracer` per app; `EnableAccessLog()` is its only listener
@@ -281,7 +282,14 @@ All `metadata-*.json` files contain structured data for AI parsing:
 ## Version & Updates
 
 **Knowledge Base Version**: 1.2  
-**Last Updated**: 2026-11-16 (roadmap 0003: dispatch, server, per-app container, `trace.Tracer`)
+**Last Updated**: 2026-11-18 (roadmap 0009: startup and dependency lifecycle)
+
+### 2026-11-18 Update (roadmap 0009)
+
+Design 0020: module factories with errors, `ctx` and a startup timeout; sibling scope and dependency
+order; `AsyncImports`, module states and the readiness gate; `ginject.Retry`; `sample/async`. Pages
+updated: modules-and-providers, startup-lifecycle-analysis, anti-patterns-gotchas § 13, package-reference,
+the lifecycle, concurrency and API metadata.
 
 ### 2026-11-16 Update (roadmap 0003)
 

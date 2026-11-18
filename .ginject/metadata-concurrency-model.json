@@ -21,7 +21,7 @@
   "global_shared_state": {
     "app container (internal/core/container.go)": {
       "description": "per-app providers, layers, routes, events and handler plans",
-      "access": "written during app.Create() on the calling goroutine, read-only afterwards",
+      "access": "written during app.Create() on the calling goroutine; with AsyncImports, the background wiring adds providers and module states under container.mu (RWMutex), one wiring goroutine at a time (wireMu); everything a request reads without a gate stays immutable after Create",
       "thread_safe": true,
       "synchronization": "immutable after initialization; two apps never share one"
     },
@@ -74,10 +74,16 @@
       "synchronization": "single sync.RWMutex over 4 maps, no sharding; PublishAsync additionally coordinates via sync.WaitGroup so Close() can drain in-flight async goroutines before clearing state"
     },
     "module_state": {
-      "description": "Module configuration and providers",
-      "access": "read-only after app.Create()",
+      "description": "Module configuration, providers and pending / ready / failed state (internal/core/module_state.go, module_async.go)",
+      "access": "read-only after app.Create() for modules ready then; AsyncImports entries are built on one goroutine each (ended when settled), wiring serialized by wireMu, factories outside it",
       "thread_safe": true,
-      "synchronization": "immutable after initialization"
+      "synchronization": "status and attempts are atomics; settle is first-call-wins; a gated module's routes and events open by one atomic.Pointer Store of a fully built table (the happens-before edge); lock order wireMu → mu, never held while user code runs except wireMu around OnInit / NewProvider / NewController / OnReady; a stopping flag under mu stops wiring at shutdown"
+    },
+    "ginject.Retry": {
+      "description": "Retry helper for module factories (internal/core/retry.go)",
+      "access": "runs on the caller's goroutine",
+      "thread_safe": true,
+      "synchronization": "no goroutine of its own: one time.Timer stopped on return; reports attempts and the next retry time to the entry through atomics"
     }
   },
   "not_thread_safe": {

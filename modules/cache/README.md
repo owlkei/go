@@ -26,6 +26,7 @@
   - [Errors](#errors)
   - [The `Cache` contract](#the-cache-contract)
   - [Write your own backend](#write-your-own-backend)
+  - [Connect a backend at startup](#connect-a-backend-at-startup)
 
 ## Key Features
 
@@ -372,3 +373,38 @@ var Module = cache.Register(&cache.CacheModuleOptions{
 ```
 
 Application code keeps injecting `cache.CacheService`; only the module's options change.
+
+## Connect a backend at startup
+
+`Register` is not a module factory: you call it, and it returns a module. It does no I/O, so the
+default memory cache belongs in `Imports`.
+
+A backend that connects to a server (Redis, Memcached) should connect in a module factory that
+returns `Register`'s module. List that factory in `Imports` to stop the boot when the server is
+down, or in `AsyncImports` to serve at once: the routes that inject `CacheService` answer `503`
+until the factory returns. Retry transient errors with `ginject.Retry` and the factory's `ctx`;
+return a bad address at once.
+
+```go
+func NewCacheModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+	addr, _ := configService.Get("REDIS_ADDR").(string)
+	backend, err := newRedisBackend(addr)
+	if err != nil {
+		return nil, err
+	}
+	err = ginject.Retry(ctx, nil, backend.Ping)
+	if err != nil {
+		return nil, err
+	}
+	return cache.Register(&cache.CacheModuleOptions{IsGlobal: true, Backend: backend}), nil
+}
+
+var CacheModule = ginject.ModuleBuilder().
+	AsyncImports(NewCacheModule).
+	Controllers(VisitController{}).
+	Build()
+```
+
+`newRedisBackend` stands for your backend's constructor: a type that implements `Cache` and has a
+`Ping(ctx context.Context) error` method. The module that the factory returns may hold providers only:
+keep controllers in a static module, as `CacheModule` does. See the main README › Module lifecycle.

@@ -460,3 +460,16 @@ comes from and what it must be.
 - Rules parsed once per type at `Create()` (a malformed tag panics there), no reflection per request
   beyond what binding already does; no new dependency without a decision.
 - Same rules for WebSocket message bodies.
+
+## Timing-sensitive tests (found in roadmap 0009)
+
+Tests that pass alone but fail when the machine is busy (another `go test` run, a second session),
+none of them on code roadmap 0009 changed:
+- `guards/throttler` `TestTokenBucket_RetryAfterNeverZeroOnRefusal`: assumes 100 requests finish within
+  the 10 ms refill of one token; under `-race` and load the bucket refills and the 101st is served.
+  Use a fake clock or a lower rate.
+- `internal/core` `TestListenTLS_GetCertificateIsACertificateSource`: picks a free port, then binds it
+  later; another process took it (`bind: address already in use`). Bind `:0` and read the address.
+- `middlewares/loadshed` `TestAdaptive_RecoversWhenHandlerSlows_1CPU` (78 req/s against a 79 minimum)
+  and L12 (noted above): throughput floors on a shared machine.
+- Low, unrelated: the `InstanceLoader` log line prints the root module twice (before `ae5fe4e` too).

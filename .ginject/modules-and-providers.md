@@ -4,14 +4,17 @@
 
 ## 1. Module System Basics
 
-The user-facing reference is `internal/core/README.md` › Modules and lifecycle (builder, fields, `Prefix`,
-hooks, rules from the tests). This page explains how the container resolves things.
+The user-facing guide is `README.md` › Module lifecycle (kinds, factory shapes, `AsyncImports`, states,
+hooks, `Retry`, with a timeline). The rules from the tests are in `internal/core/README.md` › Modules and
+lifecycle (builder, fields, Module factories, AsyncImports and module states, Retry). Design 0020. This
+page explains how the container resolves things.
 
 ### 1.1 Module Purpose
 
 **Module** = composition root:
 - Declare controllers (HTTP/WS handlers) and providers (services)
-- Declare imports (other modules, or module funcs)
+- Declare imports: `Imports(...)` (fail fast) and `AsyncImports(...)` (built in the background), each
+  entry a Module or a module factory
 - Lifecycle hooks: the `OnInit`, `OnReady`, `OnShutdown` fields
 - Visibility: `IsGlobal` makes its providers visible to every module
 
@@ -23,11 +26,14 @@ type Module struct {
     Name     string
     prefixes []string
 
-    imports        []any
-    staticModules  []*Module
+    pathStyle common.PathStyle
+
+    imports         []any
+    asyncImports    []any
+    staticModules   []*Module
     moduleFactories []any
-    providers      []Provider
-    controllers    []Controller
+    providers       []Provider
+    controllers     []Controller
 
     IsGlobal   bool
     OnInit     func()
@@ -54,7 +60,7 @@ RootModule                    its providers are global
 ├── Imports:
 │   ├── AuthModule            Providers: JWTService, AuthService
 │   ├── UserModule            Controllers: UserController; Providers: UserService, UserRepository
-│   └── ConfigModule          a module func or Register(...) result; IsGlobal = true
+│   └── ConfigModule          a Register(...) result (a Module); IsGlobal = true
 ├── Controllers: AppController
 └── Providers: AppConfig
 ```
@@ -80,26 +86,43 @@ var AppModule = ginject.ModuleBuilder().
 
 `Build()` resolves `Name` from the variable (`main.UserModule`), used in the `InstanceLoader` log line.
 
-### 2.2 Module Funcs
+### 2.2 Module Factories
 
-`Imports` also accepts a function whose type starts with `func(` and returns `*core.Module`. The app
-calls it once (per app, whatever the number of importers) while discovering the tree, **before** it
-discovers the importing module's other imports. Before any module func runs, `scanGlobals` walks the
-static `*Module` imports from the root, so its arguments resolve from the global providers of the whole
-static tree (the root module's providers, and those of every `IsGlobal` module at any depth, imported
-before or after the func), then `log.Logger` and `common.Publisher`. Each func's result is scanned
-the same way before the next func is called. A provider used this way is constructed then, after the
-`OnInit` of the module that declares it (that hook then does not run again). An unresolvable
-argument panics `dependency injection: can't resolve argument of '<func>' …`.
+Two kinds of entries exist: a Module and a module factory. Global is a property (`IsGlobal`), async is how
+an entry is imported, `Register` is only a function name. A factory has one of three shapes, checked by
+`reflect.Type` at `Build()` (`internal/core/module_builder.go`, `checkImports`):
+
+```go
+func(deps...) ginject.Module
+func(deps...) (ginject.Module, error)
+func(ctx context.Context, deps...) (ginject.Module, error)
+```
+
+**Scope** (`internal/core/module_factory.go`): a factory listed by module `P` resolves each argument from
+the providers visible in the other entries of `P`'s `Imports` / `AsyncImports` (siblings), then the
+global providers (the root's, every `IsGlobal` module's at any depth), then `log.Logger` /
+`common.Publisher`. `P`'s own providers are not in scope.
+
+**Order**: `Create()` scans the static tree first (`scanGlobals`), then repeats: call, in discovery order,
+the first factory not yet called whose arguments all resolve, and scan what it returns. So a factory may
+come before the sibling it needs, or need what another factory returns. One factory left unresolved
+panics `dependency injection: can't resolve argument of '<func>' …`; two or more panic
+`dependency injection: module factories can't be ordered: '<a>' needs '<T>' → …`. A provider used as an
+argument is constructed then, after the `OnInit` of its module (that hook then does not run again).
+
+**Startup timeout**: every factory of the sync set runs on a helper goroutine; `Create()` waits for its
+return, its panic or the deadline of `app.SetStartupTimeout(d)` (default 30 s, one budget from the start
+of `Create()`, also the deadline of the `ctx` it passes, canceled when `Create()` returns). An error, a
+panic, a nil module or the deadline panics `invalid module: module factory '<label>' …`.
 
 ```go
 type ReportService struct{}
 
 func (instance ReportService) NewProvider() ginject.Provider { return instance }
 
-func ReportModule(logger log.Logger) ginject.Module {
+func ReportModule(ctx context.Context, logger log.Logger) (ginject.Module, error) {
 	logger.Info("ReportModule")
-	return ginject.ModuleBuilder().Providers(ReportService{}).Build()
+	return ginject.ModuleBuilder().Providers(ReportService{}).Build(), nil
 }
 
 var AppModule = ginject.ModuleBuilder().
@@ -107,14 +130,45 @@ var AppModule = ginject.ModuleBuilder().
 	Build()
 ```
 
-A module func may be called by two apps at once: it must not write shared state without its own
+A factory is called once per app (keyed by its code pointer: two closures of one literal are one
+factory). It may be called by two apps at once: it must not write shared state without its own
 protection.
 
 ### 2.3 Register Functions (built-in modules)
 
 Every built-in module is a package-level `Register(opts *<X>ModuleOptions) *core.Module` that returns
-a configured module (`config.Register`, `cache.Register`). A backend it creates is shared by every app
-that imports the returned module value.
+a configured module (`config.Register`, `cache.Register`). It is a Module, not a factory: the caller runs
+it, before `Create()`. A backend it creates is shared by every app that imports the returned module
+value. A backend that does I/O connects in a user factory that returns `cache.Register(...)`.
+
+### 2.4 AsyncImports (`internal/core/module_async.go`, `module_state.go`)
+
+`AsyncImports(entries...)` takes the same entries as `Imports`. The **sync set** is the root plus every
+module reachable through `Imports` only; each `AsyncImports` entry found in it, with its **unit** (the
+modules only it brings in), is built on its own goroutine after `Create()`'s static wiring.
+
+```
+state per module: pending ──▶ ready
+                     └──────▶ failed        (one way; ready never goes back)
+
+M needs entry E  ⇔  a provider owned by E's unit (or by a module that needs E) is the type of a field
+                    of M's providers, controllers, bound layers or pipes. Importing alone is not a need.
+M ready  ⇔ every entry it needs is ready;  M failed ⇔ one of them failed.
+```
+
+- At `Create()`: modules that are not ready get no `OnInit`, providers or controllers; their controllers
+  are probed (`NewController` on a throwaway instance, unready providers zero) so routes are checked and
+  registered behind a closed `moduleGate` (one `atomic.Pointer`).
+- Background per entry: wait for needed entries → factory (`ctx` canceled at shutdown, no deadline) →
+  `OnInit`, providers, controllers per module of the unit → gate opens → `ready` → `OnReady`; then the
+  pending dependents whose needs are all ready, the same way. Wiring is serialized (`wireMu`).
+- A closed gate answers `503` (`Retry-After` from the next `Retry` attempt, else 5; none when failed),
+  pages render `503.html`; WS replies `not ready: <topic>`.
+- Refused: controllers in a module an async factory returns (the entry fails), one entry in both lists,
+  a probed `NewController` that panics, app-wide layers injecting async providers, an `Imports` factory
+  needing an async module, async modules that need each other.
+- `ginject.Retry(ctx, opts, fn)` retries inside a factory; with the factory's `ctx` it reports attempts
+  to the entry (`ModuleRetry`, devtool `attempts`, `Retry-After`).
 
 ---
 
@@ -123,13 +177,15 @@ that imports the returned module value.
 ```go
 func ModuleBuilder() *moduleBuilder
 func (m *moduleBuilder) Imports(modules ...any) *moduleBuilder
+func (m *moduleBuilder) AsyncImports(modules ...any) *moduleBuilder
 func (m *moduleBuilder) Providers(providers ...Provider) *moduleBuilder
 func (m *moduleBuilder) Controllers(controllers ...Controller) *moduleBuilder
 func (m *moduleBuilder) Build() *Module
 ```
 
 - Calls chain and accumulate: `Providers(P1{}).Providers(P2{})` lists both
-- An import that is neither a `*Module` nor a module func panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
+- One entry in both `Imports` and `AsyncImports` panics `invalid module: '<label>' is in both Imports and AsyncImports`
+- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
 - `Prefix("v1")` on the built module prefixes its routes and its imports' routes; an importer's prefix goes in front (`/api/v1/ping`)
 
 ---
@@ -236,7 +292,7 @@ var InfraModule = func() ginject.Module {
 
 - The providers of the root module and of every `IsGlobal` module (at any import depth) are visible to every module
 - A global module still has to be in the tree (imported somewhere) to be discovered
-- Module funcs' arguments resolve only from global providers (the root's and every `IsGlobal` module's of the static tree, plus those returned by funcs called earlier), then `log.Logger` and `common.Publisher`
+- Module factories' arguments resolve from their siblings' providers, then global providers (the root's and every `IsGlobal` module's, including those returned by factories called earlier), then `log.Logger` and `common.Publisher`
 
 ---
 
@@ -245,7 +301,8 @@ var InfraModule = func() ginject.Module {
 The `Create()` sequence is in [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md) § Phase 2.
 Modules are initialized depth first: a module after every module it imports, imports in `Imports(…)`
 order, each once per app. `OnReady` follows the same order at the end of `Create`; `OnShutdown` runs in
-the exact reverse.
+the exact reverse. Modules that are not ready at `Create()` run `OnInit` and `OnReady` in the background
+when they are built, and `OnShutdown` only if they became ready, in the reverse of the ready order.
 
 ---
 
@@ -255,14 +312,20 @@ the exact reverse.
 
 - ✓ Keep modules focused (single responsibility)
 - ✓ Use imports to declare dependencies; `IsGlobal` only for truly global services
-- ✓ Open resources in `NewProvider()` or `OnInit`, close them in `OnShutdown`
+- ✓ Open resources in a module factory (it can return an error and take a `ctx`), close them in `OnShutdown`
+- ✓ Put a dependency that may be slow or down at start in `AsyncImports`, and retry transient errors
+  with `ginject.Retry(ctx, …)`; return permanent errors (bad config) at once
 - ✓ Keep shared mutable state behind a pointer, protected by a mutex or atomics
 
 ### 8.2 DON'T
 
 - ✗ Change a module (`Prefix`, `IsGlobal`, a hook) after giving it to `Create`
 - ✗ Call `NewProvider()` yourself (the instance would have no injected fields)
-- ✗ Write shared state from a module func without protection (two apps may call it at once)
+- ✗ Write shared state from a module factory without protection (two apps may call it at once)
+- ✗ Retry in a goroutine of your own: return an error and the module is `failed` for good; return a
+  module and connect later, and its routes open before the connection exists
+- ✗ Use injected providers in `NewController` (gated controllers run it twice, the first time with zero
+  providers)
 
 ---
 

@@ -471,7 +471,7 @@ about 6 ns; a line through it costs what a plain line does (`log/README.md` › 
 
 ### 8.1 GOTCHA: State Shared Between Tests Outside the Framework
 
-Every `ginject.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module func.
+Every `ginject.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module factory.
 
 **Rule**: A new `ginject.New()` per test; build modules that hold resources per test when the tests must not share them
 
@@ -659,3 +659,41 @@ Each is documented once in the package README named; generated code must respect
 - **Throttler**: a client with an IPv6 /48 can evict its own /64 counters from the 32,768-entry
   default store; `SlidingWindow` / `TokenBucket` are exact within one process only, even with a
   shared `Backend` (`guards/throttler/README.md` › Known limits).
+
+## 13. Module Lifecycle Gotchas (design 0020)
+
+Guide: `README.md` › Module lifecycle. Rules: `internal/core/README.md` › Module factories, AsyncImports and module states.
+
+### 13.1 GOTCHA: Connecting in `OnInit`, `NewProvider` or a Goroutine of Your Own
+
+**WRONG**: `go client.Connect()` in a hook, or a factory that returns a module at once and connects later.
+The module is `ready`, its routes open, and requests reach a client that isn't connected; nothing shows
+in the log or the devtool and nothing is canceled at shutdown.
+
+**RIGHT**: connect in a module factory (`func(ctx, deps...) (ginject.Module, error)`). In `Imports` the
+app waits (startup timeout); in `AsyncImports` it serves at once and gates the routes that need it.
+
+### 13.2 GOTCHA: Retrying Permanent Errors, or Returning Transient Ones
+
+**WRONG**: `ginject.Retry` around a bad URL (it never recovers and fills the log), or returning a
+`connection refused` from an async factory (the module is `failed` for good: the framework calls a
+factory once).
+
+**RIGHT**: return configuration errors at once; retry only the connect step, without an attempt limit:
+`ginject.Retry(ctx, nil, func(ctx context.Context) error { return db.PingContext(ctx) })`.
+
+### 13.3 GOTCHA: Controllers in an Async Factory's Module
+
+A module returned by an async factory may hold providers only; one with controllers fails its entry.
+Put the controllers in a static module that lists the factory in `AsyncImports`.
+
+### 13.4 GOTCHA: Using Injected Providers in `NewController`
+
+In apps with `AsyncImports`, `NewController` can run twice (a probe at `Create()` with the providers
+that are not ready left zero, then for real). Keep it to `Prefix`, `Path` and `Bind…`, with no side
+effects; a panic in the probe stops `Create()` with `NewController must not use injected providers`.
+
+### 13.5 GOTCHA: Expecting a Ready Module to Close When Its Dependency Fails Later
+
+States are one way. After `ready`, a database that goes down is the handler's problem: return an
+exception (`exception.ServiceUnavailableException`) and let the driver reconnect.

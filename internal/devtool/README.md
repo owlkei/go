@@ -11,6 +11,7 @@ Internal package: applications use `app.EnableDevtool()` instead.
   - [`DevtoolBuilder`](#devtoolbuilder)
     - [Build](#build)
   - [Render](#render)
+  - [Modules](#modules)
   - [Snapshot types](#snapshot-types)
 
 ## Usage
@@ -71,6 +72,7 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 | `AddVersioning(*versioning.Options)` | the app's versioning, or `nil` without versioning |
 | `AddHTTPMainHandlers([]common.HTTPLayer)` | the routes, sorted by path |
 | `AddRender(*Render)` | the render section, or `nil` without `EnableRender` |
+| `AddModules(func() []*ModuleStatus)` | the module states, read at each `GetConfiguration` call |
 
 ### Build
 
@@ -112,9 +114,27 @@ omitted:
 snapshot reports live counts. `Counters` itself is not encoded; a decoded `Render` holds the counts
 as plain numbers.
 
+## Modules
+
+`core` passes a function to `AddModules`; `GetConfiguration` calls it each time, so the `modules` list
+(JSON `modules`) shows live states. Without `AddModules` the key is omitted. One `ModuleStatus` per
+module, in discovery order:
+
+| Field | Type | Description |
+|---|---|---|
+| `Name` (`name`) | `string` | The module's name |
+| `State` (`state`) | `string` | `pending`, `ready` or `failed` |
+| `IsAsync` (`is_async`) | `bool` | An `AsyncImports` entry, a module of its unit, or a module not ready at `Create` |
+| `WaitingFor` (`waiting_for`) | `[]string` | While pending: the entries it waits for, or `can't resolve <T>` items |
+| `Attempts` (`attempts`) | `int` | Failed `ginject.Retry` attempts of the entry |
+| `LastError` (`last_error`) | `string` | The last attempt's error, or the cause once failed |
+| `ReadyAfterMs` (`ready_after_ms`) | `int64` | Milliseconds from the start of `Create` to ready |
+
+`LastError` may hold a driver's error text, such as a host name: the devtool is for development only.
+
 ## Snapshot types
 
-- `GetConfigurationRequest` (no fields) and `GetConfigurationResponse` (`Controller *Controller`, `Render *Render`).
+- `GetConfigurationRequest` (no fields) and `GetConfigurationResponse` (`Controller *Controller`, `Render *Render`, `Modules []*ModuleStatus`).
 - `Controller` (`Http []*HTTPComponent`).
 - `HTTPComponent`: `Id`, `Kind`, `Handler`, `HttpMethod`, `Route` (`string`), `ExceptionFilters`, `Middlewares`, `Guards`, `Interceptors` (`[]*Layer`), `Versioning *HTTPVersioning`, `Request *HTTPRequest`.
 - `Render` (see [Render](#render)) and `RenderPage` (`Name`, `Route`, `Layout`, `Assets`). `PageKind` is `"page"`.
