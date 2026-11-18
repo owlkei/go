@@ -1,6 +1,8 @@
 package test
 
-import "testing"
+import (
+	"testing"
+)
 
 func BenchmarkDiffMessage_WithDesc(b *testing.B) {
 	for b.Loop() {
