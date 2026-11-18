@@ -414,18 +414,21 @@ func TestThrottler_ConcurrentMixedKeysUnderRace(t *testing.T) {
 }
 
 func TestTokenBucket_RetryAfterNeverZeroOnRefusal(t *testing.T) {
-	// 100 tokens per second: once the bucket is empty, the next token is 10 ms away.
-	a := compile(t, Throttler{Limit: 100, TTL: time.Second, Strategy: StrategyTokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")})
-	for range 100 {
+	// 2 tokens per second: once the bucket is empty, the next token is 500 ms away, far more than
+	// the three calls take even under -race on a busy machine.
+	a := compile(t, Throttler{Limit: 2, TTL: time.Second, Strategy: StrategyTokenBucket, Backend: newTestCache(), KeyFunc: fixedKeyFunc("k")})
+	for range 2 {
 		try(a, newCtx("203.0.113.9:1", nil))
 	}
 	c := newCtx("203.0.113.9:1", nil)
 	if ok, _ := try(a, c); ok {
-		t.Fatal(test.DiffMessage(ok, false, "the 101st request within a second is refused"))
+		t.Fatal(test.DiffMessage(ok, false, "the 3rd request within a second is refused"))
 	}
 	h := headersOf(c)
-	if got := h.Get("Retry-After"); got != "1" {
-		t.Error(test.DiffMessage(got, "1", "a wait under a second rounds up, so a client that obeys it is served"))
+	// A wait under a second rounds up to the next whole second: 1, or 2 when the wait crosses a
+	// second boundary of the Unix clock. Never 0, or a client that obeys it is refused again.
+	if got := h.Get("Retry-After"); got != "1" && got != "2" {
+		t.Error(test.DiffMessage(got, "1 or 2", "a wait under a second rounds up, so a client that obeys it is served"))
 	}
 	reset, _ := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64)
 	if now := time.Now().Unix(); reset <= now-1 {

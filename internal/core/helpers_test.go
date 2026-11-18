@@ -6881,6 +6881,31 @@ func (h *srvHarness) startWith(f func() error) {
 	}
 }
 
+// startOnFreePort starts serve on a free port and returns it. Another process may take the port
+// between srvFreePort and the bind, so a bind that fails with "address already in use" is retried
+// on a new port.
+func (h *srvHarness) startOnFreePort(serve func(port int) error) int {
+	h.t.Helper()
+	h.started = true
+	for attempt := 1; ; attempt++ {
+		port := srvFreePort(h.t)
+		go func() { h.done <- serve(port) }()
+		select {
+		case <-h.log.seen("ServerListening"):
+			return port
+		case err := <-h.done:
+			if attempt < 5 && err != nil && strings.Contains(err.Error(), "address already in use") {
+				continue
+			}
+			h.waited = true
+			h.t.Fatalf("the serving call returned before it was serving: %v", err)
+		case <-time.After(srvWait):
+			h.t.Fatal("the server did not start")
+		}
+		return port
+	}
+}
+
 func (h *srvHarness) start(opts *ServerOptions) {
 	h.t.Helper()
 	h.startWith(func() error { return h.app.Serve(h.ln, opts) })

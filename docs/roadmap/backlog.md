@@ -463,15 +463,9 @@ comes from and what it must be.
 
 ## Timing-sensitive tests (found in roadmap 0009)
 
-Tests that pass alone but fail when the machine is busy (another `go test` run, a second session),
-none of them on code roadmap 0009 changed:
-- `guards/throttler` `TestTokenBucket_RetryAfterNeverZeroOnRefusal`: assumes 100 requests finish within
-  the 10 ms refill of one token; under `-race` and load the bucket refills and the 101st is served.
-  Use a fake clock or a lower rate.
-- `internal/core` `TestListenTLS_GetCertificateIsACertificateSource`: picks a free port, then binds it
-  later; another process took it (`bind: address already in use`). Bind `:0` and read the address.
-- `middlewares/loadshed` `TestAdaptive_RecoversWhenHandlerSlows_1CPU` (78 req/s against a 79 minimum),
-  `TestAdaptive_Stable_CPUBound_1CPU` / `_2CPU` and L12 (noted above): throughput floors on a shared
-  machine (the final `make check` of 0009 failed on three of them with a browser using a full core;
-  `loadshed` is unchanged since `688eeb1`).
+Fixed 2026-11-18: `TestTokenBucket_RetryAfterNeverZeroOnRefusal` uses a 500 ms refill and accepts 1 or 2
+(a second boundary); the `ListenTLS` tests retry the bind on a new port when another process took it;
+the `loadshed` L12 acceptance runs (`make check` only, without `-race`) are measured up to 3 times and
+fail only when every attempt does. A machine that stays busy for minutes (a browser using a full core)
+can still fail L12: rerun `make check` on a quiet machine.
 - Low, unrelated: the `InstanceLoader` log line prints the root module twice (before `ae5fe4e` too).

@@ -561,8 +561,7 @@ func TestServe_TLSConfigWithoutCertificatesIsAnError(t *testing.T) {
 func TestListenTLS_TLSConfigCertificates(t *testing.T) {
 	h := newSrv(t)
 	certs := srvMakeCert(t)
-	port := srvFreePort(t)
-	h.startWith(func() error {
+	port := h.startOnFreePort(func(port int) error {
 		return h.app.ListenTLS(port, "", "", &ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
 	})
 
@@ -576,8 +575,7 @@ func TestListenTLS_TLSConfigCertificates(t *testing.T) {
 func TestListenTLS_GetCertificateIsACertificateSource(t *testing.T) {
 	h := newSrv(t)
 	certs := srvMakeCert(t)
-	port := srvFreePort(t)
-	h.startWith(func() error {
+	port := h.startOnFreePort(func(port int) error {
 		return h.app.ListenTLS(port, "", "", &ServerOptions{TLSConfig: &tls.Config{
 			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &certs.cert, nil },
 		}})
@@ -602,8 +600,7 @@ func TestListenTLS_CertificateFiles(t *testing.T) {
 	if err := os.WriteFile(keyFile, certs.keyPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	port := srvFreePort(t)
-	h.startWith(func() error { return h.app.ListenTLS(port, certFile, keyFile, nil) })
+	port := h.startOnFreePort(func(port int) error { return h.app.ListenTLS(port, certFile, keyFile, nil) })
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://127.0.0.1:"+strconv.Itoa(port)+"/proto", "", false)
 
