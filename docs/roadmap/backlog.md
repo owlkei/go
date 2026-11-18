@@ -237,13 +237,11 @@ Ginject gets a command-line tool. Commands discussed so far:
 
 ## Route DSL changes
 
-Follow-ups found by the roadmap 0008 review (2026-11-18), not decided:
-- Words after `BY`/`AND` and after `VERSION` absorb any all-upper-case word: `READ_users_BY_id_CREATE_x`
-  → `{id_CREATE_x}`, `READ_users_BY_id_ALL` → `{id_ALL}`, `READ_x_VERSION_OF_y` → version `OF_y`. A
-  future token would then change such a route silently, which the upper-case rule exists to prevent.
-  Proposal: stop a parameter name or a version at any all-upper-case word that is not a token, and
-  panic as the upper-case rule does.
-- Odd names accepted without a panic: `READ_logo_png_FILE_FILE` → `/logo.png`, `READ_ANY_ANY_FILE` →
+Follow-ups found by the roadmap 0008 review (2026-11-18):
+- Decided 2026-11-19 (owner): parameter names and versions stay verbatim, upper-case words included
+  (`BY_userID` → `{userID}`, `VERSION_V1` → `V1`); only an all-upper-case path segment that is not a
+  route word panics. No change.
+- Not decided: odd names accepted without a panic: `READ_logo_png_FILE_FILE` → `/logo.png`, `READ_ANY_ANY_FILE` →
   `/*.*`, `SERVE_x_ANY_ANY` → `/x*/*`.
 
 Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
@@ -296,6 +294,16 @@ amendment 2; written here, not fixed):
   CSS of the login page, while without one the CSS and JS of guarded pages (`/assets/_pages/admin/…`)
   are fetched by anyone and their URLs reveal the template tree and parameter names. The authentication
   roadmap decides the exemptions (design 0018 open question 7 covered `/assets/*` only).
+  Proposal (2026-11-19, the owner is thinking about it): no guard runs for `public/` and the shared
+  `/assets/*` (public by definition; global middlewares still run); `/assets/_pages/<page>/…` runs the
+  guards of that page's `RENDER_` route (global, controller and route-bound), so whoever can't see a
+  page can't fetch its CSS and JS either. Private files go through a guarded `READ_…` route, not
+  `public/`. Cost: `throttler` (a guard) no longer covers static files (`loadshed` still does); an
+  opt-in option if that is needed.
+- **Error format, decided 2026-11-19:** once a route matched, the route decides (a page route answers
+  HTML, an API route JSON, whatever `Accept` says: guards such as `throttler`, filters, handlers);
+  before routing (`csrf`, `hostcheck`, `loadshed`) and without a route (404, 405), `Accept` decides.
+  Already the behavior (`TestPageError_ThrottlerFollowsRoute`); document it in the REST review.
 - **Kebab-case moves URLs:** every multi-word resource changes from `_` to `-` (design 0019). Anything
   outside the app keyed on the old paths must follow: reverse proxy and WAF allowlists, `throttler`
   `KeyFunc`s built from the path, monitoring. An old URL answers 404, not a redirect.
