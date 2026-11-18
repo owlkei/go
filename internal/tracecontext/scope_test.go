@@ -15,27 +15,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-type unrelatedKey struct{}
-
-var fixedNow = time.UnixMilli(1763300000123)
-
-func headerOf(pairs ...string) http.Header {
-	h := http.Header{}
-	for i := 0; i+1 < len(pairs); i += 2 {
-		h.Add(pairs[i], pairs[i+1])
-	}
-	return h
-}
-
-func flagsOf(t *testing.T, s *Scope) byte {
-	t.Helper()
-	_, _, flags, ok := ParseTraceparent(s.Traceparent())
-	if !ok {
-		t.Fatal(test.DiffMessage(s.Traceparent(), "<a valid traceparent>", "S6: Traceparent parses"))
-	}
-	return flags
-}
-
 func TestNewRequest_OwnTrace(t *testing.T) {
 	c, s := NewRequest(context.Background(), http.Header{}, fixedNow)
 	if len(s.TraceID) != 32 || !isLowerHex(s.TraceID) {
@@ -397,11 +376,6 @@ func TestScope_ConcurrentReadsNoRace(t *testing.T) {
 	wg.Wait()
 }
 
-func connectionContext(t *testing.T, flags string) (context.Context, *Scope) {
-	t.Helper()
-	return NewRequest(context.Background(), headerOf("Traceparent", "00-"+validTraceID+"-"+validParentID+"-"+flags), fixedNow)
-}
-
 func TestNewMessage_FromConnection(t *testing.T) {
 	connCtx, conn := connectionContext(t, "01")
 	c, s := NewMessage(connCtx, fixedNow)
@@ -540,19 +514,6 @@ func TestScope_AppendArgs_SkipsEveryEmptyValue(t *testing.T) {
 	}
 }
 
-func streamDelta(from, to byte) int {
-	return ((int(to)-int(from))%251 + 251) % 251
-}
-
-func hasDelta(starts []byte, delta int) bool {
-	for i := 1; i < len(starts); i++ {
-		if streamDelta(starts[i-1], starts[i]) == delta {
-			return true
-		}
-	}
-	return false
-}
-
 func TestNewRequest_OneReadOf18Bytes(t *testing.T) {
 	installReader(t, &streamReader{})
 	resetSources()
@@ -650,5 +611,54 @@ func TestNewRequest_TwoAllocations(t *testing.T) {
 		if got := testing.AllocsPerRun(500, func() { NewRequest(context.Background(), h, fixedNow) }); got > 2 {
 			t.Error(test.DiffMessage(got, "<= 2", "R8: NewRequest allocates the scope context and the traceparent string only"))
 		}
+	}
+}
+
+func TestNewRequest_RedrawsZeroRequestID(t *testing.T) {
+	block := patternBlock(repeated(0x11, 10), repeated(0, 8))
+	for range 28 {
+		block = append(block, patternBlock(repeated(0x22, 18))...)
+	}
+	block = block[:504]
+	installReader(t, &blockReader{blocks: [][]byte{block}})
+	resetSources()
+
+	_, s := NewRequest(t.Context(), nil, fixedNow)
+	if s.Request == "0000000000000000" {
+		t.Fatal(test.DiffMessage(s.Request, "<not all zeros>", "R4: a zero request ID is drawn again"))
+	}
+	if want := "2222222222222222"; s.Request != want {
+		t.Error(test.DiffMessage(s.Request, want, "R4: the whole 18-byte read is drawn again"))
+	}
+	if want := "22222222222222222222"; s.TraceID[12:] != want {
+		t.Error(test.DiffMessage(s.TraceID[12:], want, "R4: the trace tail comes from the new draw too"))
+	}
+}
+
+func TestNewRequest_RedrawsZeroTraceTail(t *testing.T) {
+	block := patternBlock(repeated(0, 10), repeated(0x11, 8))
+	for range 28 {
+		block = append(block, repeated(0x22, 18)...)
+	}
+	block = block[:504]
+	installReader(t, &blockReader{blocks: [][]byte{block}})
+	resetSources()
+
+	_, s := NewRequest(t.Context(), nil, fixedNow)
+	if want := "22222222222222222222"; s.TraceID[12:] != want {
+		t.Error(test.DiffMessage(s.TraceID[12:], want, "R4: an all-zero trace tail is drawn again"))
+	}
+	if want := "2222222222222222"; s.Request != want {
+		t.Error(test.DiffMessage(s.Request, want, "R4: the request ID comes from the new draw"))
+	}
+}
+
+func TestNewRequest_RedrawsAllZeroBlock(t *testing.T) {
+	installReader(t, &zeroFirstReader{})
+	resetSources()
+
+	_, s := NewRequest(t.Context(), nil, fixedNow)
+	if s.Request == "0000000000000000" || s.TraceID[12:] == "00000000000000000000" {
+		t.Error(test.DiffMessage([]string{s.Request, s.TraceID[12:]}, "<non-zero>", "R4: zeros from the reader never reach an ID"))
 	}
 }

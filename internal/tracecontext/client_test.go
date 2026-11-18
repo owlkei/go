@@ -12,14 +12,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
-func scopedRequest(t *testing.T, remoteAddr string) (*http.Request, *Scope) {
-	t.Helper()
-	ctx, scope := NewRequest(context.Background(), http.Header{}, time.Now())
-	r := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
-	r.RemoteAddr = remoteAddr
-	return r, scope
-}
-
 func TestClientIP_UnresolvedUsesRemoteAddr(t *testing.T) {
 	r, _ := scopedRequest(t, "203.0.113.9:4711")
 	if got, want := ClientIP(r), netip.MustParseAddr("203.0.113.9"); got != want {

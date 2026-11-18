@@ -3,18 +3,9 @@ package tracecontext
 import (
 	"strings"
 	"testing"
-	"unsafe"
 
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-func expectRejected(t *testing.T, value, desc string) {
-	t.Helper()
-	traceID, parentID, flags, ok := ParseTraceparent(value)
-	if ok || traceID != "" || parentID != "" || flags != 0 {
-		t.Error(test.DiffMessage([]any{traceID, parentID, flags, ok}, []any{"", "", byte(0), false}, desc))
-	}
-}
 
 func TestParseTraceparent_Valid(t *testing.T) {
 	traceID, parentID, flags, ok := ParseTraceparent(validHeader)
@@ -152,15 +143,6 @@ func TestParseTraceparent_FutureVersionOneMegabyteSuffixIsBounded(t *testing.T) 
 	if !ok || traceID != validTraceID || parentID != validParentID || flags != 1 {
 		t.Error(test.DiffMessage([]any{traceID, parentID, flags, ok}, []any{validTraceID, validParentID, byte(1), true}, "P2: only the first 55 bytes of a long future value are read"))
 	}
-}
-
-func within(s, container string) bool {
-	if s == "" || container == "" {
-		return false
-	}
-	start := uintptr(unsafe.Pointer(unsafe.StringData(container)))
-	p := uintptr(unsafe.Pointer(unsafe.StringData(s)))
-	return p >= start && p+uintptr(len(s)) <= start+uintptr(len(container))
 }
 
 func TestParseTraceparent_LongValueReturnsCopies(t *testing.T) {
