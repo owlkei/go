@@ -2,12 +2,13 @@ package cors
 
 import (
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/common"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/ctx"
@@ -15,24 +16,45 @@ import (
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
+func benchCORS(b *testing.B, r *http.Request) {
+	b.Helper()
+	mw := CORS{AllowOrigins: []string{appOrigin, "https://*.example.com"}, ExposeHeaders: []string{"X-Total"}}.NewMiddleware()
+	w := &discardWriter{header: http.Header{}}
+	b.ReportAllocs()
+	for b.Loop() {
+		clear(w.header)
+		mw.Use(r, w, noop)
+	}
+}
+
 func noop() {}
 
 type okController struct{ common.HTTP }
 
 func (c okController) NewController() core.Controller { return c }
-func (okController) READ_ok() string                  { return "ok" }
-func (okController) CREATE_ok() string                { return "ok" }
-func (okController) UPDATE_ok() string                { return "ok" }
-func (okController) MODIFY_ok() string                { return "ok" }
-func (okController) DELETE_ok() string                { return "ok" }
-func (okController) PREFLIGHT_ok() string             { return "options-route" }
+
+func (okController) READ_ok() string { return "ok" }
+
+func (okController) CREATE_ok() string { return "ok" }
+
+func (okController) UPDATE_ok() string { return "ok" }
+
+func (okController) MODIFY_ok() string { return "ok" }
+
+func (okController) DELETE_ok() string { return "ok" }
+
+func (okController) PREFLIGHT_ok() string { return "options-route" }
 
 type silentLogger struct{}
 
 func (silentLogger) Debug(string, ...any) {}
-func (silentLogger) Info(string, ...any)  {}
-func (silentLogger) Warn(string, ...any)  {}
+
+func (silentLogger) Info(string, ...any) {}
+
+func (silentLogger) Warn(string, ...any) {}
+
 func (silentLogger) Error(string, ...any) {}
+
 func (silentLogger) Fatal(string, ...any) {}
 
 type probeMiddleware struct{ Name string }
@@ -69,8 +91,10 @@ type discardWriter struct {
 	code   int
 }
 
-func (w *discardWriter) Header() http.Header         { return w.header }
-func (w *discardWriter) WriteHeader(code int)        { w.code = code }
+func (w *discardWriter) Header() http.Header { return w.header }
+
+func (w *discardWriter) WriteHeader(code int) { w.code = code }
+
 func (w *discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
@@ -126,4 +150,65 @@ func expectRefusal(t *testing.T, w *httptest.ResponseRecorder, code int, body, d
 	if got := w.Header().Get("Content-Type"); got != "application/json" {
 		t.Error(test.DiffMessage(got, "application/json", "G1: "+desc+": Content-Type"))
 	}
+}
+
+const (
+	appOrigin       = "https://app.example.com"
+	defaultMethods  = "GET,HEAD,PUT,PATCH,POST,DELETE"
+	defaultHeaders  = "Content-Type,Authorization"
+	originRefusal   = `{"code":403,"error":"Forbidden","message":"Origin not allowed"}`
+	optionsRouteOut = "options-route"
+)
+
+var listed = CORS{AllowOrigins: []string{appOrigin}}
+
+func compact(s string) string { return strings.ReplaceAll(s, " ", "") }
+
+func headerTokens(h http.Header, key string) []string {
+	var tokens []string
+	for _, value := range h.Values(key) {
+		for _, token := range strings.Split(value, ",") {
+			if token = strings.TrimSpace(token); token != "" {
+				tokens = append(tokens, token)
+			}
+		}
+	}
+	return tokens
+}
+
+func hasToken(h http.Header, key, token string) bool {
+	for _, t := range headerTokens(h, key) {
+		if t == token {
+			return true
+		}
+	}
+	return false
+}
+
+func corsRequest(method, target, origin string, headers ...string) *http.Request {
+	r := request(method, target, headers...)
+	if origin != "" {
+		r.Header.Set("Origin", origin)
+	}
+	return r
+}
+
+func preflight(origin string, headers ...string) *http.Request {
+	return corsRequest(http.MethodOptions, "/ok", origin, append([]string{"Access-Control-Request-Method", "POST"}, headers...)...)
+}
+
+func expectNoCORSHeaders(t *testing.T, w *httptest.ResponseRecorder, desc string) {
+	t.Helper()
+	for key := range w.Header() {
+		if strings.HasPrefix(key, "Access-Control-") {
+			t.Error(test.DiffMessage(key, "<no CORS header>", desc))
+		}
+	}
+}
+
+type varyBefore struct{ Value string }
+
+func (v varyBefore) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+	w.Header().Add("Vary", v.Value)
+	next()
 }

@@ -2,74 +2,18 @@ package cors
 
 import (
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/net/websocket"
-
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
+	"golang.org/x/net/websocket"
 )
-
-const (
-	appOrigin       = "https://app.example.com"
-	defaultMethods  = "GET,HEAD,PUT,PATCH,POST,DELETE"
-	defaultHeaders  = "Content-Type,Authorization"
-	originRefusal   = `{"code":403,"error":"Forbidden","message":"Origin not allowed"}`
-	optionsRouteOut = "options-route"
-)
-
-var listed = CORS{AllowOrigins: []string{appOrigin}}
-
-func compact(s string) string { return strings.ReplaceAll(s, " ", "") }
-
-func headerTokens(h http.Header, key string) []string {
-	var tokens []string
-	for _, value := range h.Values(key) {
-		for _, token := range strings.Split(value, ",") {
-			if token = strings.TrimSpace(token); token != "" {
-				tokens = append(tokens, token)
-			}
-		}
-	}
-	return tokens
-}
-
-func hasToken(h http.Header, key, token string) bool {
-	for _, t := range headerTokens(h, key) {
-		if t == token {
-			return true
-		}
-	}
-	return false
-}
-
-func corsRequest(method, target, origin string, headers ...string) *http.Request {
-	r := request(method, target, headers...)
-	if origin != "" {
-		r.Header.Set("Origin", origin)
-	}
-	return r
-}
-
-func preflight(origin string, headers ...string) *http.Request {
-	return corsRequest(http.MethodOptions, "/ok", origin, append([]string{"Access-Control-Request-Method", "POST"}, headers...)...)
-}
-
-func expectNoCORSHeaders(t *testing.T, w *httptest.ResponseRecorder, desc string) {
-	t.Helper()
-	for key := range w.Header() {
-		if strings.HasPrefix(key, "Access-Control-") {
-			t.Error(test.DiffMessage(key, "<no CORS header>", desc))
-		}
-	}
-}
 
 func TestNewCORS_Panics_EmptyOrigins(t *testing.T) {
 	for _, c := range []CORS{{}, {AllowOrigins: []string{}}, {IsAllowCredentials: true}} {
@@ -172,13 +116,6 @@ func TestNewCORS_ValidOptions(t *testing.T) {
 			t.Error(test.DiffMessage(text, "<no panic>", fmt.Sprintf("C1: valid %+v", c)))
 		}
 	}
-}
-
-type varyBefore struct{ Value string }
-
-func (v varyBefore) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
-	w.Header().Add("Vary", v.Value)
-	next()
 }
 
 func TestCORS_VaryOnEveryResponse(t *testing.T) {
