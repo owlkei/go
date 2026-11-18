@@ -6,9 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 	"github.com/dangduoc08/ginject/internal/tracecontext"
@@ -27,8 +31,10 @@ func (b failBody) Read([]byte) (int, error) {
 
 type discardWriter struct{ header http.Header }
 
-func (w *discardWriter) Header() http.Header         { return w.header }
-func (w *discardWriter) WriteHeader(int)             {}
+func (w *discardWriter) Header() http.Header { return w.header }
+
+func (w *discardWriter) WriteHeader(int) {}
+
 func (w *discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func scoped(remote string, headers ...string) *http.Request {
@@ -96,3 +102,35 @@ func field(s inspect.Snapshot, key string) any {
 	}
 	return nil
 }
+
+func joinEntries(prefix string, from, to int) string {
+	parts := make([]string, 0, to-from+1)
+	for i := from; i <= to; i++ {
+		parts = append(parts, fmt.Sprintf("%s.%d", prefix, i))
+	}
+	return strings.Join(parts, ", ")
+}
+
+type failBodyCloser struct{ failBody }
+
+func (failBodyCloser) Close() error { return nil }
+
+type whoController struct{ common.HTTP }
+
+func (c whoController) NewController() core.Controller { return c }
+
+func (c whoController) READ_who(hc *ctx.HTTPContext) string {
+	return ClientIP(hc.Request).String() + "|" + Scheme(hc.Request) + "|" + Host(hc.Request)
+}
+
+type silentLogger struct{}
+
+func (silentLogger) Debug(string, ...any) {}
+
+func (silentLogger) Info(string, ...any) {}
+
+func (silentLogger) Warn(string, ...any) {}
+
+func (silentLogger) Error(string, ...any) {}
+
+func (silentLogger) Fatal(string, ...any) {}

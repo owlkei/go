@@ -3,7 +3,6 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/dangduoc08/ginject"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -11,9 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
 	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 )
@@ -256,14 +254,6 @@ func TestProxy_InvalidEntryStops(t *testing.T) {
 	expectIP(t, ipFrom(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "8.8.8.8, 10.0.0.2, unknown"), "10.0.0.1", "P6: an invalid first entry read leaves the peer")
 	expectIP(t, ipFrom(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1,,10.0.0.2"), "10.0.0.2", "P6: an empty entry ends the walk")
 	expectIP(t, ipFrom(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1, 8.8.4.4, _hidden, 10.0.0.2"), "10.0.0.2", "P6: obfuscated identifiers end the walk")
-}
-
-func joinEntries(prefix string, from, to int) string {
-	parts := make([]string, 0, to-from+1)
-	for i := from; i <= to; i++ {
-		parts = append(parts, fmt.Sprintf("%s.%d", prefix, i))
-	}
-	return strings.Join(parts, ", ")
 }
 
 func TestProxy_SeventeenEntries(t *testing.T) {
@@ -578,31 +568,12 @@ func TestProxy_DoesNotReadBody(t *testing.T) {
 	run(t, trustedPrivate, r)
 }
 
-type failBodyCloser struct{ failBody }
-
-func (failBodyCloser) Close() error { return nil }
-
 func TestProxy_ResultIsParsedAddress_NeverHeaderText(t *testing.T) {
 	r := resolve(t, trustedPrivate, "10.0.0.1:80", "X-Forwarded-For", "1.1.1.1\r\nX-Injected: 1")
 	if got := ClientIP(r).String(); strings.ContainsAny(got, "\r\n ") {
 		t.Error(test.DiffMessage(got, "<an address>", "P6: the result is a parsed address and cannot inject into logs"))
 	}
 }
-
-type whoController struct{ common.HTTP }
-
-func (c whoController) NewController() core.Controller { return c }
-func (c whoController) READ_who(hc *ctx.HTTPContext) string {
-	return ClientIP(hc.Request).String() + "|" + Scheme(hc.Request) + "|" + Host(hc.Request)
-}
-
-type silentLogger struct{}
-
-func (silentLogger) Debug(string, ...any) {}
-func (silentLogger) Info(string, ...any)  {}
-func (silentLogger) Warn(string, ...any)  {}
-func (silentLogger) Error(string, ...any) {}
-func (silentLogger) Fatal(string, ...any) {}
 
 func TestProxy_InApp_HandlerReadsClient(t *testing.T) {
 	app := core.New()
