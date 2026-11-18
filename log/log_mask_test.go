@@ -8,13 +8,14 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
-	"strconv"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dangduoc08/ginject/internal/color"
+	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/test"
 )
 
@@ -244,22 +245,6 @@ func TestWrapLogger_ConcurrentMaskingCallsNoDataRace(t *testing.T) {
 	wg.Wait()
 }
 
-type maskUser struct {
-	Name     string
-	Password string
-}
-
-type maskUserTagged struct {
-	Name     string `log:"name"`
-	Password string `log:"password"`
-}
-
-func maskedJSON(rules []string, msg string, args ...any) string {
-	logger, buf := newTestLog(FormatJSON, LogOptions{MaskFields: rules})
-	logger.Info(msg, args...)
-	return buf.String()
-}
-
 func TestWrapLogger_CaseInsensitive_Key(t *testing.T) {
 	cap := &capturingLogger{}
 	WrapLogger(cap, []string{"password"}).Info("x", "Password", "s", "PASSWORD", "s", "pAsSwOrD", "s")
@@ -451,19 +436,6 @@ func TestWrapLogger_BuiltInWithFieldsReachesWriterOnce(t *testing.T) {
 	}
 }
 
-type callCounter struct {
-	capturingLogger
-	mu    sync.Mutex
-	calls int
-}
-
-func (c *callCounter) Info(msg string, args ...any) {
-	c.mu.Lock()
-	c.calls++
-	c.mu.Unlock()
-	c.capturingLogger.Info(msg, args...)
-}
-
 func TestWrapLogger_TwiceMergesRules(t *testing.T) {
 	custom := &callCounter{}
 	wrapped := WrapLogger(WrapLogger(custom, []string{"a"}), []string{"b"})
@@ -526,39 +498,6 @@ func TestWrapLogger_NilPanics(t *testing.T) {
 			t.Error(test.DiffMessage(rec, want, "M7: WrapLogger(nil, …) panics with the bootstrap message"))
 		}
 	}
-}
-
-func randomArgs(r *rand.Rand) []any {
-	pool := []func() any{
-		func() any { return r.Intn(1000) },
-		func() any { return "s" + strconv.Itoa(r.Intn(100)) },
-		func() any { return r.Float64() > 0.5 },
-		func() any { return maskUser{Name: "n" + strconv.Itoa(r.Intn(9)), Password: "p"} },
-		func() any { return &maskUser{Name: "m"} },
-		func() any { return map[string]any{"a": r.Intn(5), "Password": "x", "n": []int{1, 2}} },
-		func() any { return map[string]int{"a": 1, "b": 2} },
-		func() any { return map[int]string{1: "a", 2: "b"} },
-		func() any { return []string{"a", "b"} },
-		func() any { return []maskUser{{Name: "a"}, {Name: "b", Password: "z"}} },
-		func() any { return [2]int{1, 2} },
-		func() any { return errors.New("err" + strconv.Itoa(r.Intn(9))) },
-		func() any { return time.Duration(r.Intn(1e6)) },
-		func() any { return slog.String("password", "attr") },
-		func() any { return slog.Group("g", "password", "p", "k", 1) },
-		func() any { return (*maskUser)(nil) },
-		func() any { return nil },
-	}
-	n := 1 + r.Intn(5)
-	args := make([]any, 0, n*2)
-	for i := range n {
-		pick := pool[r.Intn(len(pool))]()
-		if _, isAttr := pick.(slog.Attr); isAttr {
-			args = append(args, pick)
-			continue
-		}
-		args = append(args, "key"+strconv.Itoa(i), pick)
-	}
-	return args
 }
 
 func TestLog_FastPathEqualsGeneralPath(t *testing.T) {
@@ -632,5 +571,186 @@ func TestWrapLogger_EmptyTopLevelKeyAddsNoDot(t *testing.T) {
 	WrapLogger(cap, []string{"card.cvv"}).Info("m", slog.Group("", slog.Group("card", slog.String("cvv", "SECRET"))))
 	if strings.Contains(fmt.Sprint(cap.args()), "SECRET") {
 		t.Error(test.DiffMessage(cap.args(), "cvv masked", "an empty top-level group key adds no leading dot to the path"))
+	}
+}
+
+func TestWrapLogger_AcceptsFiveMethodAdapter(t *testing.T) {
+	adapter := &fromAdapter{}
+	logger := WrapLogger(adapter, nil)
+	logger.Info("hello", "k", "v")
+	if calls := adapter.all(); len(calls) != 1 || calls[0].msg != "hello" {
+		t.Error(test.DiffMessage(calls, "one call", "I1: WrapLogger accepts a type with five methods"))
+	}
+	var nilAdapter LogAdapter
+	defer func() {
+		if recover() == nil {
+			t.Error(test.DiffMessage("no panic", "panic", "I1: WrapLogger(nil, ...) panics as today"))
+		}
+	}()
+	WrapLogger(nilAdapter, nil)
+}
+
+func TestFrom_AdapterGetsFieldsFirst(t *testing.T) {
+	adapter := &fromAdapter{}
+	l := WrapLogger(adapter, nil)
+	l.From(requestContext()).Warn("hello", "a", 1, "lonely")
+	calls := adapter.all()
+	if len(calls) != 1 {
+		t.Fatal(test.DiffMessage(len(calls), 1, "F4: the adapter's method is called once"))
+	}
+	want := []any{"trace_id", fromTraceID, "request", fromRequest, "a", 1, "lonely"}
+	if calls[0].level != "warn" || calls[0].msg != "hello" || !slices.Equal(calls[0].args, want) {
+		t.Error(test.DiffMessage(calls[0], want, "F4: msg, then the fields, then the converted arguments"))
+	}
+}
+
+func TestFrom_AdapterMasksFields(t *testing.T) {
+	adapter := &fromAdapter{}
+	l := WrapLogger(adapter, []string{"request", "password"})
+	l.From(requestContext()).Info("m", "password", "secret")
+	want := []any{"trace_id", fromTraceID, "request", maskPlaceholder, "password", maskPlaceholder}
+	if calls := adapter.all(); len(calls) != 1 || !slices.Equal(calls[0].args, want) {
+		t.Error(test.DiffMessage(calls, want, "F4: the fields and the arguments are masked by the wrapper's rules"))
+	}
+}
+
+func TestFrom_AdapterChainOfWrappersKeepsRules(t *testing.T) {
+	adapter := &fromAdapter{}
+	l := WrapLogger(WrapLogger(adapter, []string{"password"}), []string{"request"})
+	l.From(requestContext()).Info("m", "password", "secret")
+	want := []any{"trace_id", fromTraceID, "request", maskPlaceholder, "password", maskPlaceholder}
+	if calls := adapter.all(); len(calls) != 1 || !slices.Equal(calls[0].args, want) {
+		t.Error(test.DiffMessage(calls, want, "F4: rules of every wrapper apply to a scoped adapter"))
+	}
+}
+
+func TestWrapLogger_NilFieldsOnWrappedReturnsSame(t *testing.T) {
+	wrapped := WrapLogger(&instanceRecorder{}, nil)
+
+	if again := WrapLogger(wrapped, nil); again != wrapped {
+		t.Error(test.DiffMessage(again, wrapped, "G3: WrapLogger(l, nil) returns a wrapped logger unchanged"))
+	}
+
+	built := NewLog(nil)
+	if again := WrapLogger(built, nil); again != built {
+		t.Error(test.DiffMessage(again, built, "G3: WrapLogger(l, nil) returns a logger from NewLog unchanged"))
+	}
+}
+
+func TestWrapLogger_PlainLoggerStillWrapped(t *testing.T) {
+	rec := &instanceRecorder{}
+	wrapped := WrapLogger(rec, nil)
+
+	if any(wrapped) == any(rec) {
+		t.Error(test.DiffMessage(wrapped, "a wrapper", "G3: a custom logger is wrapped"))
+	}
+	wrapped.Info("through")
+	if len(rec.calls) != 1 || rec.calls[0] != "through" {
+		t.Error(test.DiffMessage(rec.calls, []string{"through"}, "G3: the wrapper forwards to the custom logger"))
+	}
+}
+
+func TestLog_MasksKeyAfterNonStringKey(t *testing.T) {
+	for _, format := range allFormats {
+		out := logOnce(format, LogOptions{MaskFields: []string{"password"}}, "login failed", errors.New("bad credentials"), "password", "s3cret-pw")
+		if strings.Contains(out, "s3cret-pw") {
+			t.Error(test.DiffMessage(out, "<no password>", "M3: password is masked after a non-string key ("+formatName(format)+")"))
+		}
+	}
+}
+
+func TestLog_MasksKeyAfterSeveralNonStringKeys(t *testing.T) {
+	for _, format := range allFormats {
+		out := logOnce(format, LogOptions{MaskFields: []string{"password"}}, "m", 1, 2, 3, "password", "s3cret-pw", "ok", "visible")
+		if strings.Contains(out, "s3cret-pw") {
+			t.Error(test.DiffMessage(out, "<no password>", "M3: password is masked after three non-string keys ("+formatName(format)+")"))
+		}
+		if !strings.Contains(out, "visible") {
+			t.Error(test.DiffMessage(out, "contains visible", "M3: unrelated pairs stay ("+formatName(format)+")"))
+		}
+	}
+}
+
+func TestLog_MasksKeyAfterNonStringKeyBeforeAttr(t *testing.T) {
+	for _, format := range allFormats {
+		out := logOnce(format, LogOptions{MaskFields: []string{"password"}}, "m", errors.New("e"), slog.String("password", "s3cret-attr"))
+		if strings.Contains(out, "s3cret-attr") {
+			t.Error(test.DiffMessage(out, "<no password>", "M3: an Attr after a non-string key is masked ("+formatName(format)+")"))
+		}
+	}
+}
+
+func TestWrapLogger_MasksKeyAfterNonStringKey(t *testing.T) {
+	cap := &capturingLogger{}
+	WrapLogger(cap, []string{"password"}).Error("login failed", errors.New("bad credentials"), "password", "s3cret-pw")
+	if strings.Contains(fmt.Sprint(cap.args()...), "s3cret-pw") {
+		t.Error(test.DiffMessage(cap.args(), "<no password>", "M3: WrapLogger masks password after a non-string key"))
+	}
+}
+
+func TestLog_LogValuerGroupMaskedByPath(t *testing.T) {
+	for _, rule := range []string{"password", "user.password"} {
+		for _, format := range allFormats {
+			out := logOnce(format, LogOptions{MaskFields: []string{rule}}, "m", "user", groupValuer{})
+			if strings.Contains(out, "s3cret-group") {
+				t.Error(test.DiffMessage(out, "<no password>", "L1: a LogValuer group is masked by path with rule "+rule+" ("+formatName(format)+")"))
+			}
+			if !strings.Contains(out, "duoc") {
+				t.Error(test.DiffMessage(out, "contains duoc", "L1: siblings in the group stay ("+formatName(format)+")"))
+			}
+		}
+	}
+}
+
+func TestWrapLogger_LogValuerGroupMaskedByPath(t *testing.T) {
+	cap := &capturingLogger{}
+	WrapLogger(cap, []string{"password"}).Info("m", "user", groupValuer{})
+	if strings.Contains(fmt.Sprint(cap.args()...), "s3cret-group") {
+		t.Error(test.DiffMessage(cap.args(), "<no password>", "L1: WrapLogger masks a LogValuer group"))
+	}
+}
+
+func TestWrapLogger_AdapterCalledDirectlyInAsyncMode(t *testing.T) {
+	w := newHoldWriter()
+	restore := logpipe.SetStdout(w)
+	defer restore()
+	logpipe.Stdout().StartAsync()
+	defer logpipe.Stdout().StopAsync(time.Minute)
+	defer w.openAll()
+	adapter := &fromAdapter{}
+	l := WrapLogger(adapter, nil)
+	l.Info("direct", "k", 1)
+	if calls := adapter.all(); len(calls) != 1 {
+		t.Error(test.DiffMessage(len(calls), 1, "O4: an adapter is called on the caller, before the call returns, in every mode"))
+	}
+}
+
+func TestWrapLogger_FatalFlushesStdoutSink(t *testing.T) {
+	buf := &syncBuf{}
+	restore := logpipe.SetStdout(buf)
+	defer restore()
+	logpipe.Stdout().StartAsync()
+	defer logpipe.Stdout().StopAsync(time.Minute)
+	builtin := NewLog(&LogOptions{Format: FormatJSON})
+	builtin.Info("before-fatal")
+	var seen string
+	adapter := &fatalAdapter{fromAdapter: &fromAdapter{}, onFatal: func() { seen = buf.String() }}
+	WrapLogger(adapter, nil).Fatal("bye", "k", 1)
+	if adapter.fatals != 1 || len(adapter.all()) != 1 || adapter.all()[0].msg != "bye" {
+		t.Error(test.DiffMessage(adapter.fatals, 1, "X2: the adapter's Fatal is called once"))
+	}
+	if !strings.Contains(seen, "before-fatal") {
+		t.Error(test.DiffMessage(seen, "the line logged before", "X2: the stdout sink is flushed before the adapter's Fatal"))
+	}
+}
+
+func TestWrapLogger_LaterMaskFieldChangesIgnored(t *testing.T) {
+	cap := &capturingLogger{}
+	fields := []string{"password"}
+	l := WrapLogger(cap, fields)
+	fields[0] = "other"
+	l.Info("x", "password", "secret")
+	if cap.args()[1] != maskPlaceholder {
+		t.Error(test.DiffMessage(cap.args()[1], maskPlaceholder, "L2: WrapLogger copies maskFields"))
 	}
 }

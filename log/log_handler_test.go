@@ -8,19 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dangduoc08/ginject/internal/color"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-const (
-	testRed   = "\x1b[31m"
-	testReset = "\x1b[0m"
-)
-
-func prettyOnce(msg string, args ...any) string {
-	logger, buf := newTestLog(FormatPretty, LogOptions{})
-	logger.Info(msg, args...)
-	return buf.String()
-}
 
 func TestPretty_ContainsLevelLabels(t *testing.T) {
 	saved := exit
@@ -168,16 +158,6 @@ func TestPretty_StringerStructPrintedInline(t *testing.T) {
 	}
 }
 
-func valueColumn(t *testing.T, line, value string) int {
-	t.Helper()
-	line = plain(line)
-	i := strings.Index(line, value)
-	if i == -1 {
-		t.Fatalf("value %q not found in line %q", value, line)
-	}
-	return len([]rune(line[:i]))
-}
-
 func TestPretty_NestedValuesAlignAcrossDepths(t *testing.T) {
 	type inner struct{ VeryLongFieldName string }
 	out := prettyOnce("msg", "a", inner{VeryLongFieldName: "deep"}, "bb", "shallow")
@@ -204,10 +184,6 @@ func TestPretty_ErrorValue(t *testing.T) {
 		t.Error(test.DiffMessage(out, "contains boom", "V2: an error is shown in Pretty"))
 	}
 }
-
-type errString struct{ text string }
-
-func (e *errString) Error() string { return e.text }
 
 func TestPretty_MessageControlCharsEscaped(t *testing.T) {
 	out := prettyOnce("GET /a\n\x1b[2K FAKE [admin login ok]\r\tend\x7f")
@@ -357,5 +333,15 @@ func TestPretty_LineSeparatorsAndBidiEscaped(t *testing.T) {
 	}
 	if !strings.Contains(prettyOnce("a\u202fb", "k", "v"), "a\u202fb") {
 		t.Error(test.DiffMessage("escaped", "kept", "L5: U+202F is not a control and is kept"))
+	}
+}
+
+func TestPretty_UserRecordDurationsNeverColored(t *testing.T) {
+	out := prettyOnce("GET /x 5ms (4%)", "middleware", "CORS 5ms (4%), CSRF 2s (96%)", "total", "3s")
+	if strings.Contains(out, string(color.Gray)) || strings.Contains(out, string(color.Red)+"3s") || strings.Contains(out, string(color.Yellow)) {
+		t.Error(test.DiffMessage(out, "no duration color", "A2: a user value that looks like an access line is not colored"))
+	}
+	if !strings.Contains(out, ansiGreen+"CORS 5ms (4%), CSRF 2s (96%)"+ansiReset) {
+		t.Error(test.DiffMessage(out, "the whole value as one green string", "A2: user records are never colored by their durations"))
 	}
 }

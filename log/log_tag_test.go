@@ -1,7 +1,6 @@
 package log
 
 import (
-	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -9,51 +8,6 @@ import (
 
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-type tagPerson struct {
-	Age    int    `log:"age"`
-	name   string `log:"name"`
-	School string
-	policy string
-}
-
-type tagSkipped struct {
-	Keep    string `log:"keep"`
-	Skipped string `log:"-"`
-}
-
-type tagAddress struct {
-	City    string `log:"city"`
-	country string `log:"country"`
-}
-
-type tagPersonWithAddress struct {
-	Name string     `log:"name"`
-	Addr tagAddress `log:"addr"`
-}
-
-type capturingLogger struct {
-	mu       sync.Mutex
-	lastArgs []any
-}
-
-func (c *capturingLogger) capture(args []any) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lastArgs = args
-}
-
-func (c *capturingLogger) args() []any {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.lastArgs
-}
-
-func (c *capturingLogger) Debug(_ string, args ...any) { c.capture(args) }
-func (c *capturingLogger) Info(_ string, args ...any)  { c.capture(args) }
-func (c *capturingLogger) Warn(_ string, args ...any)  { c.capture(args) }
-func (c *capturingLogger) Error(_ string, args ...any) { c.capture(args) }
-func (c *capturingLogger) Fatal(_ string, args ...any) { c.capture(args) }
 
 func TestWrapLogger_TaggedUnexportedFieldIncluded(t *testing.T) {
 	p := tagPerson{Age: 10, name: "Joh", School: "MIT", policy: "ok"}
@@ -140,14 +94,6 @@ func TestWrapLogger_LogValuerNotOverridden(t *testing.T) {
 	if _, ok := cap.args()[1].(fnLogValuerStub); !ok {
 		t.Error(test.DiffMessage(cap.args()[1], "an unexpanded fnLogValuerStub", "a type implementing slog.LogValuer should pass through untouched, not get expanded into fields"))
 	}
-}
-
-type fnLogValuerStub struct {
-	secret string
-}
-
-func (fnLogValuerStub) LogValue() slog.Value {
-	return slog.StringValue("resolved")
 }
 
 func TestWrapLogger_CustomLoggerAutomaticallyBenefits(t *testing.T) {
