@@ -470,6 +470,8 @@ none of them on code roadmap 0009 changed:
   Use a fake clock or a lower rate.
 - `internal/core` `TestListenTLS_GetCertificateIsACertificateSource`: picks a free port, then binds it
   later; another process took it (`bind: address already in use`). Bind `:0` and read the address.
-- `middlewares/loadshed` `TestAdaptive_RecoversWhenHandlerSlows_1CPU` (78 req/s against a 79 minimum)
-  and L12 (noted above): throughput floors on a shared machine.
+- `middlewares/loadshed` `TestAdaptive_RecoversWhenHandlerSlows_1CPU` (78 req/s against a 79 minimum),
+  `TestAdaptive_Stable_CPUBound_1CPU` / `_2CPU` and L12 (noted above): throughput floors on a shared
+  machine (the final `make check` of 0009 failed on three of them with a browser using a full core;
+  `loadshed` is unchanged since `688eeb1`).
 - Low, unrelated: the `InstanceLoader` log line prints the root module twice (before `ae5fe4e` too).
