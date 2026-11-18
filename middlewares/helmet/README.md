@@ -19,6 +19,8 @@
   - [`Helmet` Methods](#helmet-methods)
     - [NewMiddleware](#newmiddleware)
     - [Use](#use)
+  - [Nonce](#nonce)
+  - [Snapshot](#snapshot)
   - [Rules](#rules)
   - [Benchmarks](#benchmarks)
 
@@ -28,6 +30,7 @@
 - One rule for every field: `""` is the default, `helmet.Disabled` turns the header off, any other value is sent as written
 - `Permissions-Policy` denies powerful browser features by default
 - Every header value is built once at startup; no allocation per request
+- Pages rendered by Ginject that call `{{nonce}}` get a per-response nonce in `script-src` and `style-src`, with no option to set
 
 ## Usage
 
@@ -73,8 +76,9 @@ func main() {
 
 `X-Download-Options` is no longer sent: only Internet Explorer read it.
 
-The default CSP allows scripts, styles, images and fonts from your own origin only. A page with
-inline `<style>` or `<script>`, or assets on a CDN, must set its own policy. Serve your assets
+The default CSP allows scripts, styles, images and fonts from your own origin only. An inline
+`<style>` or `<script>` runs when it carries `nonce="{{nonce}}"` in a page that Ginject renders
+(see [Nonce](#nonce)); other inline code, or assets on a CDN, need your own policy. Serve your assets
 (Owlky's CSS and JavaScript included) from your own origin and the default works as is.
 `upgrade-insecure-requests` makes the browser load `http:` subresources over HTTPS; when you test
 plain HTTP from another device (not `localhost`), set your own policy without it.
@@ -194,6 +198,50 @@ func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ginject.
 Makes `Helmet` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
+## Nonce
+
+`helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Ginject
+(`EnableRender`) that calls `{{nonce}}`, the response's `Content-Security-Policy` carries
+`'nonce-<N>'`, where `<N>` is the same 32-character value the page writes. Every other response
+(API routes, assets, pages without `{{nonce}}`) sends the static policy, byte for byte.
+
+```html
+<script nonce="{{nonce}}">document.documentElement.dataset.theme = "dark"</script>
+```
+
+With the default policy, a page with a nonce answers:
+
+```text
+default-src 'self'; script-src 'self' 'nonce-<N>'; style-src 'self' 'nonce-<N>'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests
+```
+
+For a custom policy, each of `script-src` and `style-src`, and `script-src-elem` and
+`style-src-elem` when present, follows this table:
+
+| Directive in the policy | Result on a page with a nonce |
+|---|---|
+| present, without `'unsafe-inline'` and without `'none'` | ` 'nonce-<N>'` appended to it |
+| present with `'unsafe-inline'` or `'none'` | unchanged |
+| `script-src` or `style-src` absent, `default-src` present without `'unsafe-inline'` and without `'none'` | inserted right after `default-src`, with `default-src`'s sources plus `'nonce-<N>'` |
+| absent and `default-src` absent, or `default-src` holds `'unsafe-inline'` or `'none'` | unchanged |
+
+`'unsafe-inline'` and `'none'` are never touched: a nonce in a directive with `'unsafe-inline'`
+would make browsers ignore `'unsafe-inline'`, and one in `'none'` would loosen a strict policy.
+
+- With `ContentSecurityPolicy: helmet.Disabled`, a page still renders its nonce and no CSP header is
+  sent.
+- A `Content-Security-Policy` set by the handler or by a middleware that runs after `helmet` is
+  left as it is.
+- The shared static header slice is never changed: a page with a nonce gets a new slice.
+- `html/template` removes JavaScript comments from an inline script: write comments about it in a
+  template comment (`{{/* … */}}`).
+
+## Snapshot
+
+The compiled middleware implements the devtool snapshot: one field per header (its effective
+value, `-` when disabled) and `nonce_directives`, the directives that receive a nonce
+(`["script-src","style-src"]` for the default policy, `[]` when none does).
+
 ## Rules
 - `Strict-Transport-Security` is sent only when `proxy.Scheme(r)` is `https`: a direct TLS
   connection, or `https` forwarded by a trusted `proxy`. An untrusted client cannot claim HTTPS,
@@ -217,3 +265,6 @@ Machine-dependent; captured on an Intel i7-9750H, Go 1.27.4, when this README wa
 |---|---|---|---|---|
 | `Helmet_HTTP` | 196 ns | 193 ns | 0 | 0 |
 | `Helmet_HTTPS` | 213 ns | 210 ns | 0 | 0 |
+
+Handing the nonce form to the framework's writer is one type assertion and one pointer store; the
+numbers above did not move (191 and 205 ns on a rerun with the nonce form).

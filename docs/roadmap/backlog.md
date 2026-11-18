@@ -176,7 +176,8 @@ Decided 2026-11-18: `pattern` now uses the glob syntax of `main`'s D-030 (`*` on
 the WebSocket roadmap:
 - `SUBSCRIBE_chat_ANY` still registers `chat.*`, now one segment after `chat` (was one or more), and
   `SUBSCRIBE_ANY` registers `*`, now single-segment topics only (was every topic). The method-name
-  DSL needs a token for `**`.
+  DSL needs a token for `**`: decided 2026-11-18, the token is `ALL` (`SUBSCRIBE_chat_ALL` → `chat.**`,
+  `SUBSCRIBE_ALL` → `**`).
 - Topics from clients and `Publish` are not validated: reject empty segments (`a..b`, `b.`), limit
   segment characters to `A-Z a-z 0-9 _ -` and bound the length, so the edge cases of
   `pattern/README.md` › Edge cases never reach the matcher.
@@ -189,3 +190,78 @@ ordinary requests. Options to design: exclude routes or requests marked long-liv
 (a per-route opt-out or a separate fixed budget), or let a handler release its slot once it starts
 streaming. Needs its own design; today the README documents it as a known limit.
 
+
+## Less configuration in `main` (discussed 2026-11-18, outside the SSR roadmap)
+
+Proposals the maintainer asked to keep for later (not decided):
+- **Built-in middleware order:** moved to "Security roadmap" below.
+- **One mode switch.** `GINJECT_ENV=development` turns on, together, the pretty log, template reload
+  from disk and the devtools; unset means production. Replaces per-feature switches
+  (`IsReload`, the log format, the sample's `PAGES_DEV`).
+- **Enable from the controllers.** A `ginject.WS` controller opens `/ws` without `EnableWS` (the
+  render side cannot do the same: `//go:embed` must stay in the app). Weigh against "one obvious way".
+- **`Listen()` without arguments** reads `PORT` (default 3000), as PaaS platforms expect.
+
+## Shared layout data for pages (SSR follow-up, discussed 2026-11-18)
+
+Layouts don't repeat HTML, but every page handler must still put the data its header and sidebar need
+(current user, active menu item) into its `View.Data`. Proposal: `RenderOptions.Layout func(c
+ginject.HTTPContext) any`, called once per render; the layout receives `.Layout` and `.Page` and places
+the page with `{{template "content" .Page}}`; `error.html` gets the same `.Layout`. Changes design
+0018's rule that page and layout share `.`. Belongs with the authentication roadmap (the current user).
+
+## Ginject CLI and editor tools (decided 2026-11-18)
+
+Ginject gets a command-line tool. Commands discussed so far:
+- **`ginject routes [packages]`**: the route table of an app (method, path, page or API, handler,
+  file and line, WebSocket events), computed with the runtime's own parser (`ParseFuncNameToURL`,
+  `ParseWSFuncNameToEvent`), never a re-implementation. `--json` for tools; usable in CI to catch
+  route conflicts or diff routes between branches.
+- **`ginject routes -w`** (optional, `go:generate`): writes a `// GET /path` comment above each
+  handler, with `-check` for CI. Only if routes in the source are wanted; the editor tool below is
+  preferred because it never goes stale.
+- **VS Code extension**: a CodeLens or inlay hint above each handler with its method and path,
+  updated as the name is typed, fed by `ginject routes --json`. `gopls` has no custom CodeLens, so
+  an extension is the only way. JetBrains later, if needed.
+- **`ginject new`**: scaffolds a project (module, controller, provider; for SSR the `web/`
+  directory with `layout.html`, `error.html` and one page with its controller). The runtime never
+  creates files (design 0018 amendment 1).
+- Later: the local devtools binary (`ginject devtools`) discussed for the devtools platform.
+
+## Route DSL changes
+
+Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
+
+## Security roadmap (decided 2026-11-18: right after the SSR phase)
+
+Server-rendered pages with sessions are stateful: browsers send cookies on every request, which opens
+CSRF, cache leaks of personal pages, open redirects and session theft that a stateless token API
+mostly avoids. The roadmap reviews the SSR side first, then the REST side again, and settles the
+middleware order.
+
+**Rule while the SSR phase runs:** any security-relevant point found while building is written here at
+once (what, where, why), not fixed on the spot unless it blocks the work.
+
+Findings so far (2026-11-18 review of the SSR work):
+- **Cache leak:** pages and error pages default to `Cache-Control: no-cache`, which lets a shared cache
+  (CDN, proxy) store a personal page. Proposal: `private, no-cache` by default; a public page sets its
+  own `Cache-Control`.
+- **Open redirect:** `c.Redirect(url)` accepts any URL; `c.Redirect(form.Next)` sends users to any site.
+  Proposal: on page routes, only same-origin paths; an absolute URL to another host needs an explicit call.
+- **SSR without protection:** `EnableRender` works without `csrf` and `helmet`, so an SSR app can run
+  with no CSRF check and no CSP. Options: (a) panic at `Create()` unless turned off explicitly; (b)
+  `EnableRender` binds `csrf` and `helmet` with defaults, in the right order, unless the app bound them,
+  and logs it. Leaning (b), "safe defaults".
+- **Docs:** `template.HTML` in `Data` disables escaping (warn); `Bind` fills only `bind`-tagged fields
+  (mass assignment); the rules of `public/` (dotfiles, `..`, directories) as for `assets/`.
+- **Sessions** (with the authentication roadmap): `HttpOnly`, `Secure`, `SameSite=Lax`, a new session
+  ID at login, lifetimes; brute force on login with `throttler`.
+
+Also in scope:
+- **Middleware order and automatic ordering** (moved from "Less configuration in `main`"): the framework
+  orders the built-in middlewares by the production checklist (`loadshed` → `proxy` → `hostcheck` →
+  `httpsredirect` → `helmet` → `cors` → `csrf` → `compress`) whatever order they are bound in, user
+  middlewares after them. Today a wrong order (`proxy` after `hostcheck`) runs silently wrong. To decide
+  together with the SSR auto-binding above.
+- **REST review again** after the API review (0007) and the SSR changes (R24 client text, `Vary: Accept`,
+  the asset and public routes): `ginject-security` audit as in roadmap 0005, report in `docs/review/`.

@@ -11,6 +11,8 @@
   - [Phương Thức Của `Helmet`](#phương-thức-của-helmet)
     - [NewMiddleware](#newmiddleware)
     - [Use](#use)
+  - [Nonce](#nonce)
+  - [Snapshot](#snapshot)
   - [Quy Tắc](#quy-tắc)
   - [Benchmark](#benchmark)
 
@@ -20,6 +22,7 @@
 - Một quy tắc cho mọi field: `""` là mặc định, `helmet.Disabled` tắt header, giá trị khác được gửi đúng như viết
 - `Permissions-Policy` mặc định từ chối các tính năng mạnh của trình duyệt
 - Mọi giá trị header được dựng một lần khi khởi động; không cấp phát mỗi request
+- Trang do Ginject render có gọi `{{nonce}}` nhận một nonce riêng cho mỗi response trong `script-src` và `style-src`, không cần option nào
 
 ## Cách Dùng
 
@@ -63,8 +66,9 @@ func main() {
 | `X-Permitted-Cross-Domain-Policies` | `none` (luôn gửi) |
 | `Origin-Agent-Cluster` | `?1` (luôn gửi) |
 
-`X-Download-Options` không còn được gửi (chỉ Internet Explorer đọc nó). Trang có `<style>` hoặc
-`<script>` inline, hoặc asset trên CDN, phải tự đặt policy; phục vụ asset (kể cả CSS và JavaScript
+`X-Download-Options` không còn được gửi (chỉ Internet Explorer đọc nó). `<style>` hoặc `<script>`
+inline chạy được khi mang `nonce="{{nonce}}"` trong trang do Ginject render (xem [Nonce](#nonce));
+code inline khác, hoặc asset trên CDN, phải tự đặt policy; phục vụ asset (kể cả CSS và JavaScript
 của Owlky) từ chính origin của bạn thì mặc định dùng được ngay.
 
 ## Hằng Số
@@ -97,6 +101,48 @@ func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ginject.
 ```
 
 Giúp `Helmet` là một `ginject.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
+
+## Nonce
+
+`helmet` biên dịch sẵn dạng nonce của policy trong `NewMiddleware()`. Trên trang do Ginject render
+(`EnableRender`) có gọi `{{nonce}}`, `Content-Security-Policy` của response mang `'nonce-<N>'`, với
+`<N>` đúng là giá trị 32 ký tự mà trang ghi ra. Mọi response khác (API route, asset, trang không có
+`{{nonce}}`) gửi policy tĩnh, giữ nguyên từng byte.
+
+```html
+<script nonce="{{nonce}}">document.documentElement.dataset.theme = "dark"</script>
+```
+
+Với policy mặc định, trang có nonce trả về:
+
+```text
+default-src 'self'; script-src 'self' 'nonce-<N>'; style-src 'self' 'nonce-<N>'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests
+```
+
+Với policy tự đặt, mỗi directive `script-src` và `style-src`, cùng `script-src-elem` và
+`style-src-elem` khi có mặt, theo bảng sau:
+
+| Directive trong policy | Kết quả trên trang có nonce |
+|---|---|
+| có mặt, không có `'unsafe-inline'` và không có `'none'` | thêm ` 'nonce-<N>'` vào cuối |
+| có mặt với `'unsafe-inline'` hoặc `'none'` | giữ nguyên |
+| thiếu `script-src` hoặc `style-src`, có `default-src` không chứa `'unsafe-inline'` và `'none'` | chèn ngay sau `default-src`, với các source của `default-src` cộng `'nonce-<N>'` |
+| thiếu, và không có `default-src`, hoặc `default-src` chứa `'unsafe-inline'` hoặc `'none'` | giữ nguyên |
+
+`'unsafe-inline'` và `'none'` không bao giờ bị đụng tới: nonce trong directive có `'unsafe-inline'`
+khiến trình duyệt bỏ qua `'unsafe-inline'`, còn nonce trong `'none'` sẽ nới lỏng một policy chặt.
+
+- Với `ContentSecurityPolicy: helmet.Disabled`, trang vẫn render nonce và không gửi header CSP.
+- `Content-Security-Policy` do handler hoặc middleware chạy sau `helmet` đặt được giữ nguyên.
+- Slice header tĩnh dùng chung không bao giờ bị sửa: trang có nonce nhận một slice mới.
+- `html/template` xóa comment JavaScript trong script inline: ghi chú về script bằng comment của
+  template (`{{/* … */}}`).
+
+## Snapshot
+
+Middleware đã biên dịch cung cấp snapshot cho devtool: một field cho mỗi header (giá trị hiệu lực,
+`-` khi tắt) và `nonce_directives`, các directive nhận nonce (`["script-src","style-src"]` với
+policy mặc định, `[]` khi không directive nào nhận).
 
 ## Quy Tắc
 - `Strict-Transport-Security` chỉ được gửi khi `proxy.Scheme(r)` là `https`: kết nối TLS trực tiếp,

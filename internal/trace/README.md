@@ -53,12 +53,12 @@ func main() {
 | `SpanID` | `string` | the span of the event: the unit's ID on `complete`, a fresh 16-hex ID on every other stage |
 | `ParentID` | `string` | `complete`: the incoming `traceparent` parent ID or `""` (HTTP, handshake), the connection ID (WS message); every other stage: the unit's ID |
 | `Stage` | `string` | every event, one of the stages below |
-| `Name` | `string` | every stage event: the middleware, guard, interceptor, filter or pipe type, or the handler's method name |
+| `Name` | `string` | every stage event: the middleware, guard, interceptor, filter or pipe type, the handler's method name, or, on `render`, the page name (`bookings/list`), `error` (`error.html`) or `error (built-in)` |
 | `Transport` | `string` | every event: `TransportHTTP` or `TransportWS` |
 | `Duration` | `time.Duration` | every event; for `complete`, the wall-clock time of the request |
 | `Operation` | `string` | `complete`: the HTTP method, or the WS message type |
 | `Target` | `string` | `complete`: the URL path without the query string, or the WS topic |
-| `Code` | `int` | `complete`: the status written; a `middleware` event that ended in a panic: the status of the error response |
+| `Code` | `int` | `complete`: the status written; a `middleware` event that ended in a panic: the status of the error response; a `render` event: `500` when the render failed, `0` otherwise |
 | `ClientIP` | `netip.Addr` | `complete` of an HTTP request or handshake: the client's address as `proxy.ClientIP` resolves it (the peer of `RemoteAddr` without `proxy`); the zero `Addr` on every other event and when the address is unknown |
 
 ## Spans
@@ -73,7 +73,8 @@ The events of one request (or WebSocket message) form a flat tree in the W3C Tra
 
 ## Stages and transports
 
-- Stages: `StageMiddleware`, `StageGuard`, `StagePreInterceptor`, `StagePostInterceptor`, `StageExceptionFilter`, `StagePipe`, `StageHandler`, `StageComplete`.
+- Stages: `StageMiddleware`, `StageGuard`, `StagePreInterceptor`, `StagePostInterceptor`, `StageExceptionFilter`, `StagePipe`, `StageHandler`, `StageRender`, `StageComplete`.
+- `StageRender` (`"render"`): one event per HTML render of a page or an error page, after `handler` and before `complete`; its `Duration` is the time to execute the template and place the nonce. A JSON error emits none.
 - Transport values: `TransportHTTP` (`"HTTP"`), `TransportWS` (`"WS"`).
 - `core` asks `Enabled()` once per request and emits nothing for a request that started without a listener.
 

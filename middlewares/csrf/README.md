@@ -6,6 +6,7 @@
   - [Key Features](#key-features)
   - [Usage](#usage)
   - [How it decides](#how-it-decides)
+  - [Forms on rendered pages](#forms-on-rendered-pages)
   - [`CSRF` Struct](#csrf-struct)
     - [TrustedOrigins](#trustedorigins)
   - [`CSRF` Methods](#csrf-methods)
@@ -65,6 +66,21 @@ requests. Non-browser clients send neither.
 | other | absent | absent | pass (not a browser) |
 | other | absent | its host equals the request's host | pass (a browser from before 2023, or plain HTTP) |
 | other | absent | another host, `null` or unparsable | `Origin` in `TrustedOrigins`: pass; else `403` |
+
+## Forms on rendered pages
+
+A page that Ginject renders (`EnableRender`, a `ginject.Page` controller) needs nothing more for its
+forms: no token, no hidden field and no template function. Browsers send `Sec-Fetch-Site` with the
+form post, and `csrf` refuses it when it comes from another origin.
+
+- `csrf` is a middleware, so its refusal comes before any route: a request whose `Accept` header
+  holds `text/html`, as a browser's form post does, gets the app's HTML error page (`403`, with
+  `error.html` when the templates have one); any other request gets the JSON body above. The
+  response carries `Vary: Accept`.
+- A same-origin form post passes and reaches the page handler and its `Form` pipe.
+- Without `EnableRender`, every refusal is the JSON body.
+
+See [Pages › Forms](../../README.md#forms) in the main README.
 
 ## `CSRF` Struct
 

@@ -13,7 +13,7 @@ and CI). An application imports only these paths; every other package is under `
 
 | Import path | Holds |
 |---|---|
-| `github.com/dangduoc08/ginject` | `New`, `ModuleBuilder`, `TraceTransport`; aliases `App`, `Module`, `Controller`, `Provider`, `ServerOptions`, `WSOptions`, `HTTP`, `WS`, `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher`, `HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel`, `DataFile`, `Aggregation`, `VersioningOptions`, `VersioningType`; constants `VersioningQuery`, `VersioningHeader`, `VersioningCustom`, `VersioningMediaType` |
+| `github.com/dangduoc08/ginject` | `New`, `ModuleBuilder`, `TraceTransport`; aliases `App`, `Module`, `Controller`, `Provider`, `ServerOptions`, `WSOptions`, `RenderOptions`, `HTTP`, `Page`, `View`, `WS`, `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher`, `HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel`, `DataFile`, `Aggregation`, `VersioningOptions`, `VersioningType`; constants `VersioningQuery`, `VersioningHeader`, `VersioningCustom`, `VersioningMediaType` |
 | `…/exception` | `Exception` (`Code`, `Message`, `StatusText`, `Error`, `Unwrap`, `AppendJSON`, `MarshalJSON`), `ExceptionOptions`, `NewException`, the 31 `<Status>Exception` constructors |
 | `…/log` | `NewLog`, `WrapLogger`, `LogOptions{Level, Format, IsAddSource, MaskFields}`, `Logger`, `LogAdapter`, `Format`, `LevelDebug`…`LevelFatal`, `FormatText`/`FormatJSON`/`FormatPretty` |
 | `…/middlewares/{compress,cors,csrf,helmet,hostcheck,httpsredirect,loadshed,proxy}` | One option struct each (`NewMiddleware`, `Use`); `helmet.Disabled`; `proxy.Header`, `HeaderXForwarded`, `HeaderForwarded`, `ClientIP`, `Host`, `Scheme` |
@@ -67,6 +67,7 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `BindGlobalInterceptors(i ...any) *App` | Register global interceptors |
 | `BindGlobalExceptionFilters(f ...any) *App` | Register global exception filters |
 | `EnableWS(cfg *WSOptions, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSOptions` argument**, not zero-arg |
+| `EnableRender(opts *RenderOptions) *App` | Server-rendered pages for `common.Page` controllers (design 0018). `RenderOptions{FS fs.FS; Dir string; IsReload bool}`: `FS` required, `Dir` the directory inside it (default `web`, `.` the root; missing → `invalid render: RenderOptions.FS has no "<dir>" directory…`), `IsReload` on an `embed.FS` reads `Dir` from disk and logs `Warn RenderReloadOn` at `Create()` (`invalid render: EnableRender needs RenderOptions.FS`), a second call panics `invalid render: EnableRender called twice`, after `Create` `invalid app: EnableRender must be called before Create`. `Create()` parses every template once (`invalid render: <file>: <error>`) and adds `/assets/*` when `FS/assets` exists. File conventions and the three template functions (`nonce`, `asset`, `dict`): `internal/render/README.md` |
 | `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
 | `EnableAccessLog() *App` | Enable access logging |
 | `EnableVersioning(opts *versioning.Options) *App` | Enable API versioning; `nil` = zero options, the options are copied |
@@ -281,6 +282,8 @@ type UserController struct {
     common.ExceptionFilter   // optional: BindExceptionFilter(any, handlers ...any) *ExceptionFilter
 }
 ```
+
+`common.Page` (`type Page HTTP`, its own `Prefix`) is embedded **instead of** `common.HTTP` for HTML page routes (design 0018): same route words and layers, handlers return `common.View{Name string; Data any}` as their only or last result (`(int, View)` allowed; `SERVE_…` handlers keep returning a path and are not page routes). Both embeds → `invalid controller: <Type> embeds both ginject.HTTP and ginject.Page`; `Page` without `EnableRender` → `invalid render: …`; a wrong result → `invalid handler: <Type>.<Method> must return ginject.View` / `… returns ginject.View, which needs a ginject.Page controller`. Default status 200 for every method; `c.Redirect` without a 3xx status → 303.
 
 `common.HTTP` itself only carries unexported routing bookkeeping, read by `core` through `common.HTTPPatternToFuncNameMap(h)`, `HTTPFuncNameToPatternMap(h)`, `HTTPRouterMap(h)` — it has no `Middleware`/`Guard`/`Interceptor`/`ExceptionFilter` fields; those are separate embeds. `common.WS` follows the same pattern for WebSocket controllers (`funcNameByEvent`, `eventMap` read by `common.WSEventMap(ws)`).
 
@@ -542,6 +545,7 @@ const (
     StageExceptionFilter = "exception_filter"   // NOT "filter"
     StagePipe            = "pipe"
     StageHandler         = "handler"
+    StageRender          = "render"             // one per HTML render (page or error page), after handler
     StageComplete        = "complete"
 )
 // No StageHandshake exists.
@@ -804,7 +808,7 @@ type HTTPSRedirect struct { Host string; Port int }  // fixed target host (no po
 type CSRF struct { TrustedOrigins []string } // scheme://host[:port], at most 64
 ```
 
-Wraps `http.CrossOriginProtection` (Go 1.25+): safe methods pass; `Sec-Fetch-Site` `same-origin`/`none` pass; any other value → `TrustedOrigins` or `403 Cross-origin request refused`; no `Sec-Fetch-Site` and no `Origin` → pass (not a browser); `Origin` host equal to the host → pass. `Origin` > 256 bytes refused. No token, no cookie, no context value, no body read. **`TrustedOrigins` is the only field and the package exports nothing else: do not generate token fields or helpers.**
+Wraps `http.CrossOriginProtection` (Go 1.25+): safe methods pass; `Sec-Fetch-Site` `same-origin`/`none` pass; any other value → `TrustedOrigins` or `403 Cross-origin request refused`; no `Sec-Fetch-Site` and no `Origin` → pass (not a browser); `Origin` host equal to the host → pass. `Origin` > 256 bytes refused. No token, no cookie, no context value, no body read. **`TrustedOrigins` is the only field and the package exports nothing else: do not generate token fields or helpers.** Server-rendered forms need nothing more (no token, no hidden field); a refusal is a 403 HTML page when `Accept` holds `text/html` and `EnableRender` is on, else JSON.
 
 ### `middlewares/cors` (changed, design 0014)
 
@@ -834,7 +838,7 @@ type Helmet struct {
 }
 ```
 
-Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **The eight string fields above are the only options; the always-sent headers can't be configured.**
+Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **The eight string fields above are the only options; the always-sent headers can't be configured.** On pages rendered by Ginject that call `{{nonce}}`, the CSP carries `'nonce-<N>'` in `script-src` / `style-src` (inserted after `default-src` when absent) and in `script-src-elem` / `style-src-elem` when present; directives with `'unsafe-inline'` or `'none'` are untouched; no new field (design 0018 R30-R35). Snapshot adds `nonce_directives`.
 
 ### `middlewares/compress`
 
@@ -861,11 +865,12 @@ Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `htt
 
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
-- `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning and request schemas; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
+- `internal/render` — the template engine behind `EnableRender` (design 0018): `New(fsys, isReload) *Engine`, `Load`, `Render(name, data) (*Buffer, error)`, `RenderError(data)`, `Release`, `Assets`, `AssetHashes`, `IsReload`, `Snapshot`, `Counters`, `NonceDraws`; `Buffer{Bytes, Len, Nonce}`, `FileError{File, Err}`, `ErrUnknownPage`, `ErrPageTooLarge`, `ErrNoErrorPage`. Pooled buffers (256 KiB retention, 8 MiB limit), the nonce placeholder overwritten in place. Not for users.
+- `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning, request schemas and `kind: "page"` for page routes; `Render` (`render`: `is_reload`, `pages`, `partials`, `error_template`, `assets`, `renders`, `failures`) with `EnableRender`; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
 - `accesslog` — `NewAccessLog(cfg *AccessLogOptions) *AccessLog` (`AccessLogOptions{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
 - `versioning` (`internal/versioning`) — `Options{Type, Key, DefaultVersion, Extractor}`, `type Type int` (`TypeQuery`, `TypeHeader`, `TypeCustom`, `TypeMediaType` = 1–4), hooks `TypeString(o) string` / `Version(o, c *ctx.HTTPContext) string`; users write `app.EnableVersioning(&ginject.VersioningOptions{Type: ginject.VersioningHeader, …})`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
-- `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`: the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.
+- `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`, `CSP{Value, Parts}` + `CSPWriter{SetCSP}` (helmet's nonce form, design 0018): the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.
 - `internal/inspect` — besides `CacheStateOf` / `ConfigStateOf`: `Field`, `Snapshot`, `Snapshotter`; every compiled middleware of design 0014 implements `Snapshotter` (effective options + counters, snake_case keys, built only when called). All random bytes from `crypto/rand`, through a `sync.Pool` of 512-byte sources (504-byte refills, no mutex, design 0013); one 18-byte read per new trace (tail + request ID), 8 bytes for a continued trace or a message under a connection.
 - `internal/logpipe` — the output pipeline of the built-in logger (design 0012): `Level` (`Debug`…`Fatal`), `Sink` (`Write`, `StartAsync`, `StopAsync`, `Flush`, `Snapshot`: an `inspect.Snapshotter` named `logpipe`; async writes are woken 1 ms after a burst's first record or at 16 KiB, design 0016), `New`, `Stdout`, `SetStdout` (tests), `FlushTimeout` (2 s), `AccessLine` (the access log's line handed to the built-in logger).
 - `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.

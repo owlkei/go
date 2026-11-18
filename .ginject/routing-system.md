@@ -57,6 +57,10 @@
 | `SERVE` | Static file serving (GET only) |
 | `FILE` | File upload/download marker |
 
+`RENDER` is **not** a token: pages are a controller role (`common.Page`, design 0018 D1), so a method
+`RENDER_x` is not a route. Pages use the same tokens: `READ_bookings` is a GET page,
+`CREATE_bookings` its form post.
+
 ---
 
 ## 2. Route Matching Algorithm
@@ -229,6 +233,13 @@ If both versioned and unversioned routes exist:
 - No dependency injection in static routes
 - Bypasses normal handler pipeline
 
+### 6.2 Asset route (design 0018)
+
+With `EnableRender` and an `assets` directory in `RenderOptions.FS`, `Create()` adds a built-in
+`SERVE` route at `/assets/*` (`addAssetRoute`, `internal/core/http_asset.go`) serving `FS/assets`.
+A user route of the same shape (`SERVE_ANY_OF_assets`) panics `route conflict: …`; without the
+directory no route is added.
+
 ---
 
 ## 7. Route Registration Process
@@ -272,7 +283,16 @@ If both versioned and unversioned routes exist:
 
 ### 8.1 Controller Discovery
 
-**Requirement**: Embed `common.HTTP` or `common.WS`
+**Requirement**: Embed `common.HTTP`, `common.Page` or `common.WS` (the role names are
+`fieldNameByRole` in `internal/core`; `HTTP` and `Page` together panic `invalid controller: <Type>
+embeds both ginject.HTTP and ginject.Page`)
+
+A `common.Page` controller (needs `EnableRender`, else `invalid render: <Type> embeds ginject.Page,
+call EnableRender before Create`) builds its routes exactly like `common.HTTP` (same tokens,
+prefixes, module prefix, version); every non-`SERVE` route is a page route and its handler's last
+result must be `common.View` (`invalid handler: <Type>.<Method> must return ginject.View`); an HTTP
+handler returning `common.View` panics `invalid handler: <Type>.<Method> returns ginject.View, which
+needs a ginject.Page controller`.
 
 ```go
 type UserController struct {

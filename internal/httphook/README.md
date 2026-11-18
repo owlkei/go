@@ -8,13 +8,15 @@
   - [Types](#types)
     - [Hook](#hook)
     - [Writer](#writer)
+    - [CSP](#csp)
+    - [CSPWriter](#cspwriter)
   - [Functions](#functions)
     - [Of](#of)
   - [Rules](#rules)
   - [Cost](#cost)
 
 The package is internal: only code in the Ginject module can import it. `compress` and `loadshed`
-use it; users never see it.
+use it, and `helmet` hands its precompiled nonce policy to the framework through it; users never see it.
 
 ## Why it exists
 
@@ -77,6 +79,37 @@ type Writer interface {
 | `SetInner` | Puts a writer in front: every later `Header`, `WriteHeader`, `Write`, `Flush`, `ReadFrom`, `Hijack` and `Unwrap` of the framework's writer goes to it |
 | `OnDone` | Registers a hook for the end of this exchange |
 
+### CSP
+
+```go
+type CSP struct {
+	Value []string
+	Parts []string
+}
+```
+
+The nonce form of a `Content-Security-Policy`, built once by `helmet.NewMiddleware()`.
+
+| Member | Meaning |
+|---|---|
+| `Value` | The static header slice `helmet` sets on every response |
+| `Parts` | The policy cut where `'nonce-<N>'` goes: `Parts[0] + N + Parts[1] + … + N + Parts[last]` is the policy with the nonce |
+| `Header(nonce string) []string` | A new one-element header slice holding the policy with `nonce` (two allocations) |
+| `IsSent(h http.Header) bool` | Whether `h` still holds `Value` itself (the same slice, not an equal string), so nothing after `helmet` replaced the header |
+
+### CSPWriter
+
+```go
+type CSPWriter interface {
+	SetCSP(p *CSP)
+}
+```
+
+The framework's writer implements it. `helmet` calls `SetCSP` once per request when its policy has
+a directive that takes a nonce; a page that placed a nonce then replaces the header with
+`Header(nonce)` when `IsSent` is true. `Writer` does not include it, so writers of other packages
+keep implementing `Writer` unchanged; assert `w.(httphook.CSPWriter)` instead.
+
 ## Functions
 
 ### Of
@@ -100,6 +133,7 @@ no-op: it calls `next()` and does nothing else.
   writes to its own `http.ResponseWriter`.
 - The status the framework records is the one the layer passed to `WriteHeader`, whatever writer
   is in front.
+- The `CSP` set with `SetCSP` belongs to one exchange and is cleared when the writer is reset.
 
 ## Cost
 With no hook registered the request path pays one length check and allocates nothing. The hook

@@ -1,8 +1,8 @@
 # Common
 
-Internal package: applications use `ginject.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
+Internal package: applications use `ginject.HTTP`, `Page`, `View`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
 
-*Common is a part of `Ginject` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
+*Common is a part of `Ginject` framework: it holds the contracts a controller embeds (`HTTP`, `Page`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
 
 - [Common](#common)
   - [Key Features](#key-features)
@@ -16,6 +16,8 @@ Internal package: applications use `ginject.HTTP`, `WS`, `Middleware`, `Guard`, 
   - [`HTTP` Controller Embed](#http-controller-embed)
     - [Prefix](#prefix)
     - [AddHandlerToRouterMap](#addhandlertoroutermap)
+  - [`Page` Controller Embed](#page-controller-embed)
+  - [`View`](#view)
   - [`WS` Controller Embed](#ws-controller-embed)
     - [AddHandlerToEventMap](#addhandlertoeventmap)
   - [Layers](#layers)
@@ -271,7 +273,7 @@ Each map is `nil` until `AddHandlerToRouterMap` adds a route.
 
 Related types:
 - `Prefix` (`Value string`, `Handlers []any`): one call of `HTTP.Prefix`.
-- `HTTPLayer` (`Handler any`, `ControllerPath`, `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, all `string`): a layer bound to one route, as `core` stores it.
+- `HTTPLayer` (`Handler any`, `ControllerPath`, `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, all `string`, and `IsPage bool`): a layer bound to one route, as `core` stores it. `IsPage` is set on the main handler of a page route (a `Page` controller's route other than `SERVE`).
 
 ### Prefix
 
@@ -331,6 +333,36 @@ common.AddHandlerToRouterMap(&instance.HTTP, nil, "READ_items", handler)
 #### Rules
 - `READ_items` adds one route: `HTTPPatternToFuncNameMap(h)["/items/||/[GET]/"]` is `READ_items`.
 - It never panics: route conflicts are checked per app by `core` (`route conflict: <name> method is conflicted with <name> method`), so two apps may declare the same route.
+
+## `Page` Controller Embed
+
+`type Page HTTP` makes a controller a page controller: every method named by the HTTP route words becomes a route with the same method, path, prefixes and version as under `HTTP`, and its handlers return a [`View`](#view) that `core` renders as HTML (`App.EnableRender`). `Page` is a defined type with the same unexported maps, so `core` reads it as an `HTTP` value.
+
+### Prefix
+
+`(*Page).Prefix(v string, handlers ...any) *Page` is `HTTP.Prefix` for a page controller: same parameters, same rules, and it returns the receiver.
+
+```go
+func (instance BookingPages) NewController() core.Controller {
+	instance.Prefix("site")
+	return instance
+}
+```
+
+## `View`
+
+The result of a page handler.
+
+| Field | Type | Description |
+|---|---|---|
+| `Name` | `string` | The page name: its path inside the render `fs.FS` without `.html` (`bookings/list`) |
+| `Data` | `any` | `.` in the page and its layout; `nil` is allowed |
+
+```go
+func (instance BookingPages) READ_bookings() common.View {
+	return common.View{Name: "bookings/list", Data: map[string]any{"Bookings": instance.Bookings.All()}}
+}
+```
 
 ## `WS` Controller Embed
 

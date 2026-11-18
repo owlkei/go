@@ -10,6 +10,7 @@ Internal package: applications use `app.EnableDevtool()` instead.
     - [GetConfiguration](#getconfiguration)
   - [`DevtoolBuilder`](#devtoolbuilder)
     - [Build](#build)
+  - [Render](#render)
   - [Snapshot types](#snapshot-types)
 
 ## Usage
@@ -54,7 +55,7 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 `GetConfiguration(context.Context, *GetConfigurationRequest) (*GetConfigurationResponse, error)` returns the snapshot.
 
 #### Rules
-- The response's `Controller` is the snapshot's `Controller`, and the error is `nil`.
+- The response's `Controller` and `Render` are the snapshot's, and the error is `nil`.
 - The response encodes to JSON and decodes back unchanged.
 
 ## `DevtoolBuilder`
@@ -69,6 +70,7 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 | `AddInterceptors([]any, []common.HTTPLayer)` | global and per-route interceptors |
 | `AddVersioning(*versioning.Options)` | the app's versioning, or `nil` without versioning |
 | `AddHTTPMainHandlers([]common.HTTPLayer)` | the routes, sorted by path |
+| `AddRender(*Render)` | the render section, or `nil` without `EnableRender` |
 
 ### Build
 
@@ -85,16 +87,36 @@ snapshot := devtool.DevtoolBuilder().
 
 #### Rules
 - Each route gives one `HTTPComponent` with its handler name, HTTP method, route and a non-empty `Id`.
+- A page route (`HTTPLayer.IsPage`) has `Kind` `page` (JSON `kind`); an API route has none, so `kind` is omitted.
 - A global layer is listed with `Scope` `GLOBAL_SCOPE` and its type name (`devtool.snapshotGlobalGuard`).
 - A body pipe's fields are listed in `Request.Body`.
 - With versioning, `Versioning` holds the route's version, the versioning `Key` and its `Type`.
 - Without versioning (`AddVersioning` not called, or called with `nil`), `Build` does not panic: `Versioning.Value` is the route's version, `Key` is `""` and `Type` is `0`.
 
+## Render
+
+With `EnableRender`, `core` adds a `render` section (JSON keys in parentheses); without it the key is
+omitted:
+
+| Field | Type | Description |
+|---|---|---|
+| `IsReload` (`is_reload`) | `bool` | `RenderOptions.IsReload` |
+| `Pages` (`pages`) | `[]*RenderPage` | Every page, sorted by name: `Name` (`name`, `bookings/list`) and `Layout` (`layout`, the layout file such as `b/layout.html`, omitted without one) |
+| `Partials` (`partials`) | `[]string` | Partial names, sorted (`partials/field`) |
+| `ErrorTemplate` (`error_template`) | `string` | `error.html`, or `built-in` without one |
+| `Assets` (`assets`) | `int` | Files under `assets/`, hidden ones not counted |
+| `Renders`, `Failures` (`renders`, `failures`) | `int64` | Renders that succeeded and failed so far |
+
+`Renders` and `Failures` are read from `Counters` each time the section is encoded, so the same
+snapshot reports live counts. `Counters` itself is not encoded; a decoded `Render` holds the counts
+as plain numbers.
+
 ## Snapshot types
 
-- `GetConfigurationRequest` (no fields) and `GetConfigurationResponse` (`Controller *Controller`).
+- `GetConfigurationRequest` (no fields) and `GetConfigurationResponse` (`Controller *Controller`, `Render *Render`).
 - `Controller` (`Http []*HTTPComponent`).
-- `HTTPComponent`: `Id`, `Handler`, `HttpMethod`, `Route` (`string`), `ExceptionFilters`, `Middlewares`, `Guards`, `Interceptors` (`[]*Layer`), `Versioning *HTTPVersioning`, `Request *HTTPRequest`.
+- `HTTPComponent`: `Id`, `Kind`, `Handler`, `HttpMethod`, `Route` (`string`), `ExceptionFilters`, `Middlewares`, `Guards`, `Interceptors` (`[]*Layer`), `Versioning *HTTPVersioning`, `Request *HTTPRequest`.
+- `Render` (see [Render](#render)) and `RenderPage` (`Name`, `Layout`). `PageKind` is `"page"`.
 - `Layer`: `Scope LayerScope`, `Name string`.
 - `HTTPVersioning`: `Type int32`, `Value string`, `Key string`.
 - `HTTPRequest`: `Body`, `Form`, `Query`, `Header`, `Param`, `File` (`[]*Schema`).

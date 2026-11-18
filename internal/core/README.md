@@ -44,6 +44,7 @@ Internal package: applications use `ginject.New()`, `ginject.ModuleBuilder()` an
     - [Panic stacks](#panic-stacks)
   - [No route, HEAD and versioning](#no-route-head-and-versioning)
   - [Static files](#static-files)
+  - [Pages](#pages)
   - [Response writer](#response-writer)
   - [Handler injection](#handler-injection)
     - [Parameters](#parameters)
@@ -209,6 +210,7 @@ Each returns the `App` so calls can be chained. Call them before `Create`: after
 | `BindGlobalExceptionFilters(...any)` | Exception filters for every HTTP route and WS event |
 | `EnableVersioning(*versioning.Options)` | Route versioning (`Key` defaults to `v`). `nil` is the zero options; the options are copied, so a later change of the caller's struct changes nothing |
 | `EnableWS(*WSOptions, ...common.MiddlewareFn)` | The WebSocket server, with handshake middlewares |
+| `EnableRender(*RenderOptions)` | Server-rendered pages for `common.Page` controllers (see [Pages](#pages)) |
 | `EnableDevtool()` | The devtool snapshot of routes and layers |
 | `EnableAccessLog()` | One access log line per request |
 | `SetLogger(log.LogAdapter)` | The app's logger (see [SetLogger and Logger](#setlogger-and-logger)) |
@@ -615,17 +617,48 @@ func (instance AuthMiddleware) Use(r *http.Request, w http.ResponseWriter, next 
 
 ## Error response
 
-The HTTP layer and the built-in exception filter write the same response, with no mode that returns more detail:
+The HTTP layer and the built-in exception filter write the same response, with no mode that returns more detail.
 
-- Status: the exception's code. A code outside 400-599 answers `500` (the body's `code` too); `error` and `message` are kept.
-- `Content-Type: application/json`; the headers `Content-Length`, `Content-Encoding`, `ETag` and `Last-Modified` set earlier are removed, the others (`X-Request-Id`, CORS headers) stay.
+**Format.** Without `EnableRender`, every error is JSON. With it:
+
+| Where the error happened | Format |
+|---|---|
+| A page route (`common.Page`), from its first guard on: a guard returning `false`, a panic in a guard, pipe, interceptor, handler or filter | HTML |
+| An API route (`common.HTTP`) or a `SERVE_…` route, from its first guard on | JSON, whatever `Accept` says |
+| Before any guard: a global or module middleware (`csrf` 403, `hostcheck` 421, `loadshed` 503), no route (404, 405, 410) | HTML when a value of the `Accept` header contains `text/html` (ASCII case-insensitive, q-values are not read), else JSON. `*/*` alone, `application/xhtml+xml` alone or no `Accept` answer JSON. The response carries `Vary: Accept` |
+
+`guards/throttler` is a guard: its 429 follows the route kind and keeps its `Retry-After` and rate headers.
+
+**Client text.** One rule computes `code`, `error` and `message` (JSON) or `.Code`, `.Status` and `.Message` (HTML). No cause text and no 500 detail ever reach the client:
+
+| Source | Code sent | `error` / `.Status` | `message` / `.Message` | Logged |
+|---|---|---|---|---|
+| Exception without a cause, code 400-599 except 500 | its code | its description, else the status text (`Internal Server Error` when the code has none) | its message (empty: `Unhandled exception has occurred`) | no |
+| Exception with a cause (`exception.X("m", err)` or `ExceptionOptions.Cause`), code except 500 | its code | the status text, even when a description is set | its message | `Debug` `ExceptionCause` with `method`, `path`, `code`, `cause` |
+| Exception with code 500, or a code outside 400-599 | 500 | `Internal Server Error` | `Internal Server Error` | `Error` `InternalServerError` with `method`, `path`, `message`, `cause`, when its message or cause is not the fixed text |
+| Any other panic value | 500 | `Internal Server Error` | `Internal Server Error` | `Error` `UnhandledPanic` (below) |
+| A failed page render | 500 | `Internal Server Error` | `Internal Server Error` | `Error` `RenderFailed` |
+
+**JSON.**
+
+- `Content-Type: application/json`; the headers `Content-Length`, `Content-Encoding`, `ETag` and `Last-Modified` set earlier are removed, the others (`X-Request-Id`, `Allow`, `Retry-After`, CORS headers) stay.
 - Body: exactly `{"code":<int>,"error":<string>,"message":<string>}` (`Exception.AppendJSON`).
-- An exception is an `exception.Exception`, a non-nil `*exception.Exception`, or an `error` that wraps one at any depth. An empty `Error()` becomes the status text of the code (`Internal Server Error` when it has none); an empty message becomes `Unhandled exception has occurred`.
-- Anything else answers `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}`. The framework logs `Logger.From(c.Context()).Error("UnhandledPanic", "method", …, "path", …, "panic", <the value>, "stack", <at most 4 KiB>)`: the line starts with the scope's fields (`trace_id`, `request`, and `upstream` when the request carried one) and `stack` may be left out (see [Panic stacks](#panic-stacks)), and exception filters receive `exception.InternalServerErrorException("Internal Server Error")` instead of the value.
+
+**HTML.**
+
+- `error.html` at the root of `FS`, inside the root `layout.html` when there is one, with the data `map[string]any{"Code": int, "Status": string, "Message": string, "RequestID": string}` (`RequestID` is `c.ID()`, the `X-Request-Id` of the response).
+- Without `error.html`, a built-in page: a complete HTML document with no layout, no style, no script and no external resource (it passes any CSP), holding the code, the status text and the message, escaped.
+- When `error.html` or its layout fails, the built-in page is sent with the same code and `RenderFailed` is logged. An error page is never empty and never a half page.
+- `Content-Type: text/html; charset=utf-8`; the same headers as JSON are removed or kept.
+- A filter of yours runs first on a page route and may answer by itself; an exception it panics with continues to the next filter and ends as an HTML error.
+
+**Common rules.**
+
+- An exception is an `exception.Exception`, a non-nil `*exception.Exception`, or an `error` that wraps one at any depth.
+- Anything else answers the fixed 500. The framework logs `Logger.From(c.Context()).Error("UnhandledPanic", "method", …, "path", …, "panic", <the value>, "stack", <at most 4 KiB>)`: the line starts with the scope's fields (`trace_id`, `request`, and `upstream` when the request carried one) and `stack` may be left out (see [Panic stacks](#panic-stacks)), and exception filters receive `exception.InternalServerErrorException("Internal Server Error")` instead of the value.
+- A body or form over `MaxRequestBodyBytes` answers `413` `Request body too large`, a file that cannot be opened `400` `Invalid file upload`; the error stays as the cause.
 - Once a status or body bytes were sent, no filter runs and nothing more is written: the framework logs `Logger.From(c.Context()).Error("ErrorAfterResponse", "method", …, "path", …, "code", <status sent>, "panic", <value or the exception's message>, "stack", …)`, sampled like `UnhandledPanic`.
 - `panic(http.ErrAbortHandler)` is re-panicked so `net/http` aborts the connection; nothing is written or logged.
-
-`exception.X("message", err)` puts `err.Error()` in the `error` field: pass a cause only when its text is safe to show.
 
 ### Error response rules
 
@@ -635,7 +668,13 @@ From the tests (`http_error_test.go`):
 - A string, an `error`, a runtime error, `panic(nil)`, a nil `*exception.Exception` or any other value answers the fixed 500 body; nothing of the value is in the response. It is logged once as `UnhandledPanic`; an exception is not.
 - A filter that prints `Message()` of a non-exception panic prints `Internal Server Error`; a filter's own non-exception panic reaches the next filter as the same fixed exception, and is logged.
 - After `c.Text`, `c.JSON`, `c.Redirect`, `w.Write`, `w.WriteHeader` with a code of 200 or more, or `http.ServeFile`, a later panic changes neither status nor body, runs no filter and logs one `ErrorAfterResponse` line. An informational status (`103`) does not count as a response.
-- Codes `0`, `7`, `200`, `399`, `600`, `999`, `1008`, `4001` and `-1` answer `500`; `400` and `599` are kept. `WriteHeader` is never called with an invalid code.
+- Codes `0`, `7`, `200`, `399`, `600`, `999`, `1008`, `4001` and `-1` answer the fixed 500; `400` and `599` are kept. `WriteHeader` is never called with an invalid code.
+
+From the tests (`http_page_error_test.go`, `guards/throttler/throttler_page_test.go`):
+
+- On a page route a refused guard, a panic in a guard, pipe, interceptor, handler or a filter's re-panic answers HTML even with `Accept: application/json`; the same on an API route answers JSON even with `Accept: text/html`.
+- `text/html`, `TEXT/HTML`, a browser's list, `text/html;q=0` and a second `Accept` line holding `text/html` pick HTML before the guards; `*/*`, `application/xhtml+xml`, `text/plain`, an empty or missing `Accept` pick JSON. Without `EnableRender` nothing changes, and no `Vary` is added.
+- No case of the client-text table sends a cause's text, an IP or a 500 exception's own message, in either format.
 - With a trace listener, a middleware that panics still emits its `middleware` event, with `Code` = the status of the error response; one that returns emits `Code` 0.
 
 ### Panic stacks
@@ -680,11 +719,96 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
   No file name is treated as hashed automatically: a wrong guess would cache a file for a year with no way back.
 - An error a `SERVE_…` route answers itself (`404`, `400`) removes `Cache-Control` first, so an `immutable` set for assets never lands on an error. Responses of other routes are not touched.
 
+## Pages
+
+`EnableRender(&RenderOptions{FS: web})` turns on server-rendered HTML. A controller that embeds `common.Page` instead of `common.HTTP` declares page routes: the same route words, prefixes, versions, modules, guards, interceptors, middlewares, pipes and filters, with handlers that return a `common.View` (`Name`, `Data`). The template files follow the conventions of [render](../render/README.md#file-conventions): `layout.html` per directory tree, top-level `partials/`, `error.html`, `assets/`, and every other `.html` is a page named by its path without `.html`.
+
+### `RenderOptions` fields
+
+| Field | Type | Default | Required | Description |
+|---|---|---|---|---|
+| `FS` | `fs.FS` | none | yes | The templates and assets, usually the app's `embed.FS` |
+| `Dir` | `string` | `"web"` | no | The directory of `FS` that holds them; `"."` is the root of `FS`. A missing directory panics `invalid render: RenderOptions.FS has no "<dir>" directory: embed it with //go:embed <dir>, or set Dir` |
+| `IsReload` | `bool` | `false` | no | Development only: re-parse the templates when a file changed. With an `embed.FS`, the directory `Dir` is read from disk (relative to the working directory) instead of the binary; a missing one panics at `EnableRender`. `Create()` logs a `Warn` `RenderReloadOn` |
+
+```go
+package main
+
+import (
+	"embed"
+
+	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+)
+
+//go:embed web
+var web embed.FS
+
+type BookingPages struct {
+	common.Page
+}
+
+func (instance BookingPages) NewController() core.Controller { return instance }
+
+func (instance BookingPages) READ_bookings() common.View {
+	return common.View{Name: "bookings/list", Data: map[string]any{"Count": 3}}
+}
+
+func main() {
+	app := core.New()
+	app.EnableRender(&core.RenderOptions{FS: web})
+	app.Create(core.NewModuleBuilder().Controllers(BookingPages{}).Build())
+}
+```
+
+### Page rules
+- `Create()` panics `invalid controller: <Type> embeds both ginject.HTTP and ginject.Page` for a controller that embeds both, and `invalid render: <Type> embeds ginject.Page, call EnableRender before Create` for a `Page` controller without `EnableRender`.
+- A page handler (not `SERVE_…`) whose only or last result is not `common.View` (`any`, `string`, no result) panics `invalid handler: <Type>.<Method> must return ginject.View`; `(int, common.View)` and `SERVE_…` handlers are accepted. An `HTTP` controller handler whose last result is `common.View` panics `invalid handler: <Type>.<Method> returns ginject.View, which needs a ginject.Page controller`.
+- `EnableRender(nil)` or a nil `FS` panics `invalid render: EnableRender needs RenderOptions.FS`; a second call panics `invalid render: EnableRender called twice`; after `Create`, `invalid app: EnableRender must be called before Create`.
+- `Create()` parses every template once; a parse error, a call of a template that does not exist or an `html/template` escaping error panics `invalid render: <file path>: <error>`.
+- A page answers inside its nearest layout with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and `Cache-Control: no-cache` unless a layer or the handler set `Cache-Control`. Its status is 200 for every method (POST too) unless `c.Status(code)` or the `(int, common.View)` result sets it. `c.Redirect(url)` (or the `ctx.Redirect` parameter) without a 3xx status answers `303 See Other` on a page route; an explicit 3xx is kept, and API routes still answer `301`.
+- Forms bind on page routes as on API routes (urlencoded and multipart, through a `Form` pipe). A malformed form body answers `400` `Invalid form body` and one over `MaxRequestBodyBytes` `413` `Request body too large`, as HTML errors. `csrf.CSRF{}` refuses a cross-origin form POST with a 403 in the format `Accept` picks. `HEAD` answers the status and headers with no body.
+- Values in `Data` are escaped for their context by `html/template`: text, attributes, URLs (a `javascript:` URL becomes `#ZgotmplZ`) and scripts.
+- When the handler already answered (`c.Redirect`, `c.Text`), the returned `View` is ignored.
+- A `View` whose `Name` is no page (unknown, empty, `error`, a partial, a layout, `../x`), a template that fails while executing (a missing field, a failed `dict` or `asset`), a page larger than 8 MiB, or a result that is no `View` after the interceptors answers the fixed 500 as an [HTML error](#error-response), and logs one `Error` `RenderFailed` with `template` and `cause`. No byte of the failed page is sent and no file is opened. An interceptor that returns a `View` without calling the handler renders it.
+- Without `IsReload`, a file changed after `Create()` is never read. With `IsReload`, the next render sees a page, layout or partial that was added, removed or changed (name, size or modification time); a file that fails to parse answers the fixed 500 and logs `Error` `RenderReloadFailed` with `file` and `cause` until it is fixed, never the error text in the response.
+
+### CSP nonce
+
+`{{nonce}}` in a page, its layout, a partial it reaches or `error.html` writes the response's nonce: 32 lowercase hexadecimal characters from `crypto/rand`, the same at every use in the page and in the `Content-Security-Policy` header that `helmet` sent. Put it on inline scripts and styles:
+
+```html
+<script nonce="{{nonce}}">document.documentElement.dataset.theme = "dark"</script>
+```
+
+#### Nonce rules
+- A nonce is drawn only for a response whose page set (or the error page's set) calls `{{nonce}}`. API routes, assets and pages without it draw none, and their `Content-Security-Policy` is `helmet`'s static value, byte for byte.
+- With `helmet` and its default policy, a page that calls `{{nonce}}` answers `Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-<N>'; style-src 'self' 'nonce-<N>'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests`. Custom policies follow [helmet › Nonce](../../middlewares/helmet/README.md#nonce).
+- Every response has its own nonce (1,000 responses, 1,000 values; 64 concurrent clients never share one). A value from the request (a header, a query, a submitted `Content-Security-Policy`) never becomes the nonce.
+- Without `helmet`, or with `ContentSecurityPolicy: helmet.Disabled`, `{{nonce}}` still renders a nonce and no CSP header is added.
+- A `Content-Security-Policy` set by the handler, or by a middleware that runs after `helmet`, is left as it is.
+
+### Assets
+
+When `FS` has an `assets` directory, `Create()` adds a built-in route of the `SERVE` kind at `/assets/*` that serves `FS/assets`. Link files with `{{asset "css/app.css"}}`, which writes `/assets/css/app.css?v=<16 hex>` (the first 8 bytes of the file's SHA-256, hashed once at `Create()`).
+
+#### Asset rules
+- `GET` and `HEAD /assets/<path>` serve `FS/assets/<path>` with the content type of its extension (`text/css`, `text/javascript`, `image/svg+xml`).
+- A directory, a missing file, a path with `..` or with a segment starting with `.` (except `.well-known`, which is served and hashed) answers `404` as JSON, whatever `Accept` says. Templates are not reachable through it.
+- Without `IsReload`, every file answers `ETag: "<16 hex>"`. With `?v=` equal to that hash it answers `Cache-Control: public, max-age=31536000, immutable`; without `v`, or with another value, `Cache-Control: no-cache`. `If-None-Match` with the ETag answers `304`.
+- With `IsReload`, assets answer `Cache-Control: no-cache` and no `ETag`, each request reads the file from `FS` (a file changed or added after `Create()` is served), and `{{asset}}` adds no `?v=`.
+- A user route of the same shape (`SERVE_ANY_OF_assets`) panics `route conflict: …` at `Create()`. Without an `assets` directory no route is added and `/assets/*` is free.
+- Global middlewares and global guards run for the asset route like for any route; a refusal is JSON.
+
+### Render events and devtool
+- With a trace listener, each render emits a `render` event (see [Trace events](#trace-events)).
+- With `EnableDevtool()`, each page route has `kind: "page"` in the snapshot, and the snapshot has a `render` section (see [devtool](../devtool/README.md#render)).
+
 ## Response writer
 
 Every layer receives the same writer as `c.ResponseWriter` (middlewares as their `http.ResponseWriter`). It records whether a response was sent, and forwards `Flush`, `Hijack`, `ReadFrom` (so `http.ServeFile` keeps `sendfile`) and `Unwrap` (so `http.ResponseController` reaches `SetWriteDeadline` and friends). Like `net/http`'s own writer, never write to it after the handler returns: until the context is reused, such a write gets an error and reaches nothing; after that it can reach another request's response, and it is a data race.
 
-Some header values are slices built once and shared, so setting them costs no allocation: the `Cache-Control: no-cache` of static files, the headers of `helmet`, `cors` and `compress`, and the `X-Request-Id` and `Traceparent` values, which share their memory with the request's trace scope. Change a header only through `Header().Set`, `Add` or `Del`, or by assigning a new slice. Never write into the slice you read (`w.Header()["Cache-Control"][0] = "no-store"`): that changes the value for every other response that shares it, and is a data race.
+Some header values are slices built once and shared, so setting them costs no allocation: the `Cache-Control: no-cache` of static files, the headers of `helmet`, `cors` and `compress`, and the `X-Request-Id` and `Traceparent` values, which share their memory with the request's trace scope. A page with a nonce never edits `helmet`'s shared policy slice: `helmet` hands its precompiled nonce form to the writer (`internal/httphook`'s `CSPWriter`), and the page assigns a new slice only when the header still holds `helmet`'s own. Change a header only through `Header().Set`, `Add` or `Del`, or by assigning a new slice. Never write into the slice you read (`w.Header()["Cache-Control"][0] = "no-store"`): that changes the value for every other response that shares it, and is a data race.
 
 ## Handler injection
 
@@ -745,7 +869,7 @@ WS handlers reply with their last result as the message.
 
 ### Trace events
 
-Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read.
+Each app has its own `trace.Tracer`. It is internal: `EnableAccessLog()` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read. Each render of a page or an HTML error page emits a `render` event after the `handler` event and before `complete`: `Name` is the page name (`bookings/list`), `error` for `error.html` or `error (built-in)` for the built-in page, `Duration` the time to execute the template and place the nonce, and `Code` 500 when the render failed. A JSON error renders nothing.
 
 Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic), `Code` and, for an HTTP request or handshake, `ClientIP` (as `proxy.ClientIP` resolves it). `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
 

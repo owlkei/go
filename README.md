@@ -1,7 +1,8 @@
 # Ginject
 
-Ginject is a dependency injection web framework for Go, inspired by NestJS. You build HTTP and
-WebSocket servers from modules, controllers and providers, and Ginject wires them together.
+Ginject is a dependency injection web framework for Go, inspired by NestJS. You build REST APIs,
+server-rendered HTML pages and WebSocket servers from modules, controllers and providers, and
+Ginject wires them together.
 
 - **No routing code.** A method named `READ_users_BY_id` answers `GET /users/{id}`. You declare
   routes and WebSocket events by naming methods.
@@ -32,6 +33,7 @@ WebSocket servers from modules, controllers and providers, and Ginject wires the
     - [Interceptor](#interceptor)
     - [Exception filter](#exception-filter)
     - [Pipes](#pipes)
+  - [Pages](#pages)
   - [WebSocket](#websocket)
   - [Versioning](#versioning)
   - [Static files](#static-files)
@@ -51,6 +53,8 @@ WebSocket servers from modules, controllers and providers, and Ginject wires the
 
 - Reflection-based dependency injection, done once at startup: no tags, no code generation
 - Routes and WebSocket events from method names
+- Server-rendered HTML pages with `html/template`: layouts, partials, HTML error pages, forms, a
+  CSP nonce per response and hashed assets, from one `embed.FS`
 - A fixed request pipeline: middleware, guard, interceptor, handler, exception filter
 - WebSocket with topics, publish and subscribe, and the same guards, interceptors and filters as HTTP
 - API versioning from the query, a header, the `Accept` media type or your own function
@@ -352,7 +356,8 @@ provider from outside the module tree, use `app.Get(UserService{}).(UserService)
 ### Controller
 
 A controller is a struct with a `NewController() ginject.Controller` method. Embed `ginject.HTTP` for
-HTTP routes or `ginject.WS` for WebSocket events, plus one embed per kind of layer you bind:
+HTTP routes, `ginject.Page` for HTML pages (see [Pages](#pages)) or `ginject.WS` for WebSocket
+events, plus one embed per kind of layer you bind:
 `ginject.Middleware`, `ginject.Guard`, `ginject.Interceptor` and `ginject.ExceptionFilter`.
 
 Bind layers in `NewController`. Pass method values to bind a layer to some handlers only, or none
@@ -553,6 +558,7 @@ A handler returns nothing, one value, or a status code and a value:
 | A map, slice, struct, array or pointer | JSON, `application/json` |
 | `any` | A string as text, anything else as JSON |
 | `(int, value)` | The first result sets the status code |
+| `ginject.View` | An HTML page, in a `ginject.Page` controller only. See [Pages](#pages) |
 
 The status is `200`, or `201` for `POST`, unless a layer or the handler sets another one. To
 write the response yourself, take `ginject.HTTPContext` and call `c.Status(code).JSON(data)`,
@@ -954,10 +960,483 @@ With `{}` it answers `400`.
 - A pipe's exported fields get providers injected at `Create()`, like a controller's.
 - `Transform` runs on a fresh copy of the pipe for every request: changing its fields affects no
   other request.
+- A pipe can't have unexported fields: they stop `Create()` with
+  `dependency injection: can't set value to unexported '<field>' field of the main.CreateUserBody pipe`.
 - A pointer parameter (`*CreateUserBody`) stops `Create()`. A `Transform` that returns another
   type answers `500`.
 
 See [core › Pipes](internal/core/README.md#pipes) and [ctx › Binding](internal/ctx/README.md#binding).
+
+---
+
+## Pages
+
+Ginject also serves finished HTML pages, rendered on the server with Go's `html/template`. A page
+controller uses the same route words, modules, guards, interceptors, pipes and filters as an API
+controller. One binary carries its templates and assets, and nothing extra runs while the server
+is idle.
+
+- **Escaped by default.** Every value is escaped for where it appears: text, attribute, URL or
+  script.
+- **Errors in the right format.** A page route answers errors as an HTML page, an API route as
+  JSON.
+- **Strict CSP without work.** With `helmet`, an inline `<script nonce="{{nonce}}">` runs and every
+  other inline script is blocked.
+- **Forms without tokens.** `csrf.CSRF{}` refuses cross-origin form posts, and a `Form` pipe binds
+  and checks the fields.
+
+### Render a page
+
+Turn on rendering with `app.EnableRender(&ginject.RenderOptions{FS: web})` before `Create`, then
+embed `ginject.Page` instead of `ginject.HTTP` in a controller. Each handler returns a
+`ginject.View`: the name of a page and its data.
+
+This booking site lists bookings, shows one, and takes new ones through a form. It is a shorter
+version of [`sample/pages`](sample/pages/README.md). The files:
+
+```
+main.go
+web/layout.html
+web/error.html
+web/bookings/list.html
+web/bookings/detail.html
+web/bookings/new.html
+web/partials/field.html
+web/assets/app.css
+```
+
+`main.go`:
+
+```go
+package main
+
+import (
+	"embed"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/dangduoc08/ginject"
+	"github.com/dangduoc08/ginject/exception"
+	"github.com/dangduoc08/ginject/middlewares/csrf"
+	"github.com/dangduoc08/ginject/middlewares/helmet"
+)
+
+//go:embed web
+var web embed.FS
+
+type Booking struct {
+	ID     string
+	Guest  string
+	Nights string
+}
+
+type BookingTable struct {
+	mu   sync.Mutex
+	rows []Booking
+}
+
+type BookingService struct {
+	Table *BookingTable
+}
+
+func (instance BookingService) NewProvider() ginject.Provider {
+	instance.Table = &BookingTable{}
+	return instance
+}
+
+func (instance BookingService) All() []Booking {
+	instance.Table.mu.Lock()
+	defer instance.Table.mu.Unlock()
+	return append([]Booking(nil), instance.Table.rows...)
+}
+
+func (instance BookingService) Find(id string) (Booking, bool) {
+	for _, booking := range instance.All() {
+		if booking.ID == id {
+			return booking, true
+		}
+	}
+	return Booking{}, false
+}
+
+func (instance BookingService) Add(guest, nights string) {
+	instance.Table.mu.Lock()
+	defer instance.Table.mu.Unlock()
+	id := strconv.Itoa(len(instance.Table.rows) + 1)
+	instance.Table.rows = append(instance.Table.rows, Booking{ID: id, Guest: guest, Nights: nights})
+}
+
+type BookingForm struct {
+	Guest  string `bind:"guest"`
+	Nights string `bind:"nights"`
+	Errors map[string]string
+}
+
+func (instance BookingForm) Transform(form ginject.Form, _ ginject.ArgumentMetadata) any {
+	bound, fields := form.Bind(instance)
+	dto := bound.(BookingForm)
+	dto.Errors = map[string]string{}
+	for _, field := range fields {
+		if value, _ := field.Value().(string); !field.IsValue() || strings.TrimSpace(value) == "" {
+			dto.Errors[field.Tag()] = "Fill in this field"
+		}
+	}
+	return dto
+}
+
+type BookingPages struct {
+	ginject.Page
+	Bookings BookingService
+}
+
+func (instance BookingPages) NewController() ginject.Controller {
+	return instance
+}
+
+func (instance BookingPages) READ_bookings() ginject.View {
+	return ginject.View{Name: "bookings/list", Data: ginject.Map{"Bookings": instance.Bookings.All()}}
+}
+
+func (instance BookingPages) READ_new_OF_bookings() ginject.View {
+	return ginject.View{Name: "bookings/new", Data: BookingForm{Nights: "1"}}
+}
+
+func (instance BookingPages) READ_bookings_BY_id(param ginject.Param) ginject.View {
+	booking, ok := instance.Bookings.Find(param.Get("id"))
+	if !ok {
+		panic(exception.NotFoundException("No booking has this number"))
+	}
+	return ginject.View{Name: "bookings/detail", Data: booking}
+}
+
+func (instance BookingPages) CREATE_bookings(c ginject.HTTPContext, form BookingForm) ginject.View {
+	if len(form.Errors) > 0 {
+		c.Status(http.StatusUnprocessableEntity)
+		return ginject.View{Name: "bookings/new", Data: form}
+	}
+	instance.Bookings.Add(form.Guest, form.Nights)
+	c.Redirect("/bookings")
+	return ginject.View{}
+}
+
+func main() {
+	app := ginject.New()
+	app.BindGlobalMiddlewares(helmet.Helmet{}, csrf.CSRF{})
+	// The web directory of the embedded files; PAGES_DEV=1 reads it from disk and reloads it.
+	app.EnableRender(&ginject.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"})
+	app.Create(
+		ginject.ModuleBuilder().
+			Controllers(BookingPages{}).
+			Providers(BookingService{}).
+			Build(),
+	)
+	if err := app.Listen(3000, nil); err != nil {
+		app.Logger().Fatal("AppError", "error", err)
+	}
+}
+```
+
+`web/layout.html` wraps every page. `{{template "content" .}}` places the page, and the `title`
+block is the default that a page can replace:
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{block "title" .}}Bookings{{end}} · Hotel</title>
+  <link rel="stylesheet" href="{{asset "app.css"}}">
+  <script nonce="{{nonce}}">
+    document.documentElement.dataset.theme = "light";
+  </script>
+</head>
+<body>
+  <main>
+{{template "content" .}}
+  </main>
+</body>
+</html>
+```
+
+`web/bookings/list.html` is the page `bookings/list`. Its data is the handler's `View.Data`:
+
+```html
+<h1>Bookings</h1>
+<ul>
+  {{range .Bookings}}<li><a href="/bookings/{{.ID}}">{{.Guest}}</a>, {{.Nights}} nights</li>
+  {{else}}<li>No bookings yet.</li>{{end}}
+</ul>
+<p><a href="/bookings/new">New booking</a></p>
+```
+
+`web/bookings/detail.html` replaces the layout's title:
+
+```html
+{{define "title"}}Booking #{{.ID}}{{end}}
+<h1>Booking #{{.ID}}</h1>
+<p>{{.Guest}} stays {{.Nights}} nights.</p>
+```
+
+`web/bookings/new.html` calls the partial `partials/field` once per field, with `dict`:
+
+```html
+{{define "title"}}New booking{{end}}
+<h1>New booking</h1>
+<form method="post" action="/bookings">
+  {{template "partials/field" dict "Name" "guest" "Label" "Guest name" "Value" .Guest "Error" .Errors.guest}}
+  {{template "partials/field" dict "Name" "nights" "Label" "Nights" "Value" .Nights "Error" .Errors.nights}}
+  <button type="submit">Book</button>
+</form>
+```
+
+`web/partials/field.html`:
+
+```html
+<p>
+  <label for="{{.Name}}">{{.Label}}</label>
+  <input id="{{.Name}}" name="{{.Name}}" value="{{.Value}}"{{if .Error}} aria-invalid="true"{{end}}>
+  {{with .Error}}<span>{{.}}</span>{{end}}
+</p>
+```
+
+`web/error.html` renders every error of a page route, inside the layout:
+
+```html
+{{define "title"}}{{.Status}}{{end}}
+<h1>{{.Code}} {{.Status}}</h1>
+<p>{{.Message}}</p>
+{{with .RequestID}}<p>Request ID: {{.}}</p>{{end}}
+```
+
+`web/assets/app.css`:
+
+```css
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+```
+
+Run it with `go run .`, then open the pages in a browser:
+
+- `GET /bookings/new` answers the form with `200`, as `text/html; charset=utf-8`.
+- `POST /bookings` with an empty field answers `422` with the form again: the message next to the
+  field and the submitted values kept, escaped (`"><script>` arrives as
+  `value="&#34;&gt;&lt;script&gt;"`).
+- `POST /bookings` with both fields answers `303 See Other` with `Location: /bookings`.
+- `GET /bookings/9` answers `404` with `web/error.html` in the layout: "No booking has this
+  number".
+- `GET /assets/app.css?v=<hash>` answers the stylesheet with
+  `Cache-Control: public, max-age=31536000, immutable`.
+
+### File conventions
+
+`RenderOptions.FS` holds the templates and the assets, usually the app's `embed.FS`
+(`//go:embed web`). Ginject reads the directory `RenderOptions.Dir` inside it: `web` when `Dir` is empty,
+the root of `FS` with `Dir: "."`. A `FS` without that directory stops `EnableRender` with
+`invalid render: RenderOptions.FS has no "web" directory: embed it with //go:embed web, or set Dir`.
+With `IsReload` on an `embed.FS`, Ginject reads the same directory from disk instead (relative to the
+working directory), so edits show without a rebuild; `Create()` logs a `Warn` `RenderReloadOn`, and a
+missing directory on disk stops it. Where a file is decides what it is:
+
+| Path | Role | Template name |
+|---|---|---|
+| `layout.html` in any directory | The layout of the pages in that directory and below it. The nearest one wins | none |
+| `partials/**/*.html` (the top-level `partials` directory only) | A partial, included with `{{template "partials/field" .}}` | the path without `.html` |
+| `error.html` (at the root) | Replaces the built-in error page | none: `View{Name: "error"}` is not a page |
+| `assets/**` | Static files at `/assets/…`, never parsed | none |
+| Every other `**/*.html` | A page | the path without `.html`, with `/`: `bookings/list` |
+| Any other file, and any path with a segment that starts with `.` | Ignored | none |
+
+- **Page:** the whole file is the page's content. It needs no `{{define}}`.
+- **Layout:** places the page with `{{template "content" .}}`. A page replaces a layout's
+  `{{block "title" .}}…{{end}}` with its own `{{define "title"}}…{{end}}`. A page without a layout
+  is rendered alone.
+- **Data:** `View.Data` is `.` in the page and in its layout. A partial gets what the caller passes.
+
+`Create()` reads and parses every layout, page, partial and `error.html` once. A parse error, a
+call of a template that doesn't exist, or an escaping error stops the boot with the file's path, so
+a request never finds one:
+
+```
+invalid render: bookings/new.html: template: bookings/new.html:4: function "dcit" not defined
+```
+
+### Template functions
+
+Templates have three functions, and you can't add your own. Format values with methods on your
+data instead, such as `{{.Date.Format "2 Jan 2006"}}`.
+
+| Function | Writes | Notes |
+|---|---|---|
+| `{{nonce}}` | The response's CSP nonce: 32 lowercase hexadecimal characters from `crypto/rand` | The same value at every use in one response and in its `Content-Security-Policy` header. See [Content Security Policy](#content-security-policy) |
+| `{{asset "app.css"}}` | `/assets/app.css?v=<16 hex>`, where the hash is the first 8 bytes of the file's SHA-256 | With `IsReload`, `/assets/app.css` with no `?v=`. A file that is not in `assets/` fails the render |
+| `{{dict "Name" "email" "Value" .Email}}` | A `map[string]any` | Passes several values to a partial. An odd number of arguments or a key that is not a string fails the render |
+
+### Status codes and redirects
+
+| Situation | Status |
+|---|---|
+| A page handler returns a `View` | `200` for every method, `POST` too |
+| The handler calls `c.Status(code)`, or returns `(int, ginject.View)` | That code, such as `422` for a form with errors |
+| The handler calls `c.Redirect(url)`, or the `ginject.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
+| The handler set a 3xx status with `c.Status` before the redirect | That status |
+
+- A page answers with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and
+  `Cache-Control: no-cache`, unless a layer or the handler set `Cache-Control`.
+- After a redirect, or any response the handler wrote itself, the returned `View` is ignored.
+- `HEAD` on a page answers its status and headers with no body.
+- On an API route (`ginject.HTTP`), `c.Redirect` still answers `301` and `POST` still answers `201`.
+
+A controller embeds `ginject.Page` or `ginject.HTTP`, never both. A page handler's only or last
+result is `ginject.View`, and only a page handler returns one. A `SERVE_…` handler in a page
+controller serves files as in an API controller. Each mistake stops `Create()`:
+
+| Mistake | Panic |
+|---|---|
+| A controller embeds both | `invalid controller: BookingPages embeds both ginject.HTTP and ginject.Page` |
+| A page controller without `EnableRender` | `invalid render: BookingPages embeds ginject.Page, call EnableRender before Create` |
+| A page handler that returns something else | `invalid handler: BookingPages.READ_bookings must return ginject.View` |
+| An API handler that returns a `View` | `invalid handler: BookingAPI.READ_bookings returns ginject.View, which needs a ginject.Page controller` |
+| `EnableRender(nil)`, or no `FS` | `invalid render: EnableRender needs RenderOptions.FS` |
+| `EnableRender` called twice | `invalid render: EnableRender called twice` |
+| `EnableRender` after `Create` | `invalid app: EnableRender must be called before Create` |
+
+A render that fails at run time answers the fixed `500` error page and logs one `Error` record
+`RenderFailed`, with `template` and `cause`. No byte of the failed page is sent. It happens for a
+`View` whose name is no page (unknown, empty, `error`, a partial or a layout), a template that fails
+while it runs (a missing field, a failed `dict` or `asset`), a page larger than 8 MiB, or an
+interceptor that replaced the `View` with another value.
+
+### Error pages
+
+Where an error happened decides its format:
+
+| Where | Format |
+|---|---|
+| A page route, from its first guard on: a guard that refuses (`403`), an exception or a panic in a guard, pipe, interceptor, handler or filter, and the `429` of `guards/throttler` | HTML |
+| An API route, a `SERVE_…` route or the asset route, from its first guard on | JSON |
+| Before any guard: a refusal of a middleware (`csrf` `403`, `hostcheck` `421`, `loadshed` `503`, your own), and no route (`404`, `405` with its `Allow` header, `410`) | HTML when a value of the request's `Accept` header contains `text/html`, else JSON. The response carries `Vary: Accept` |
+
+- Browsers send `Accept: text/html,…`, so they get HTML. `*/*` alone, `application/xhtml+xml` alone,
+  or no `Accept` header gets JSON. Ginject doesn't read q-values.
+- An HTML error is `web/error.html` in the root `layout.html`, with
+  `Content-Type: text/html; charset=utf-8` and the error's status. Headers that layers set, such as
+  `Retry-After` and `Allow`, are kept.
+- Without `error.html`, Ginject sends a built-in page: a complete HTML document with the code, the
+  status text and the message, and no style, script or external resource, so it passes any CSP.
+- When `error.html` or its layout fails to render, Ginject sends the built-in page with the same
+  code and logs `RenderFailed`. An error page is never empty and never half a page.
+- Your exception filters run first on a page route, and can answer by themselves.
+- Without `EnableRender`, every error is JSON, as in the rest of this README.
+
+`error.html` gets this data:
+
+| Key | Type | Example |
+|---|---|---|
+| `.Code` | `int` | `404` |
+| `.Status` | `string` | `Not Found` |
+| `.Message` | `string` | `No booking has this number` |
+| `.RequestID` | `string` | The `X-Request-Id` of the response, for a user to quote |
+
+The client sees the same three values in both formats, `code`, `error` and `message` in JSON, and
+`.Code`, `.Status` and `.Message` in HTML:
+
+- **No internal detail.** A cause's text never reaches the client: an exception with a cause sends
+  the status text in `.Status` and logs the cause at `Debug` (`ExceptionCause`).
+- **A fixed 500.** A `500` exception, a code outside 400 to 599, any other panic and a failed render
+  all send `Internal Server Error` as the status and the message. The detail goes to the log.
+- **Our own words.** A body or form over the size limit answers `413` `Request body too large`, and
+  a broken file upload `400` `Invalid file upload`.
+
+See [Exceptions](#exceptions) and [core › Error response](internal/core/README.md#error-response).
+
+### Forms
+
+A form is a pipe whose `Transform` takes `ginject.Form`, as `BookingForm` above:
+
+1. `form.Bind(instance)` copies the fields by their `bind` tags (`application/x-www-form-urlencoded`
+   and `multipart/form-data`, the same as on an API route) and returns one `ginject.FieldLevel` per
+   field.
+2. `Transform` checks the fields and keeps its messages in an exported field of the DTO, such as
+   `Errors map[string]string`.
+3. The handler passes the DTO back to the form's view with status `422` when it holds errors. The
+   page shows each message next to its field and keeps the submitted values, escaped.
+4. When the form is valid, the handler saves it and calls `c.Redirect`, which answers `303`. The
+   browser loads the next page with `GET`, so a reload never posts the form twice.
+
+- A pipe's fields are exported. Ginject injects providers into them, and an unexported field stops
+  `Create()`: `dependency injection: can't set value to unexported 'nights' field of the main.BookingForm pipe`.
+  Keep computed values out of the pipe, or compute them again where you need them.
+- A malformed form body (`400`) or one over `ServerOptions.MaxRequestBodyBytes` (`413`) answers the
+  HTML error page.
+- Bind `csrf.CSRF{}`. It needs no token and no hidden field: it reads the `Sec-Fetch-Site` and
+  `Origin` headers that browsers send. A cross-origin form post gets a `403` error page. See
+  [csrf](middlewares/csrf/README.md).
+
+### Content Security Policy
+
+`helmet`'s default policy allows no inline script or style. Give an inline `<script>` or `<style>`
+the attribute `nonce="{{nonce}}"`, and it runs: on a page that calls `{{nonce}}`, `helmet` adds the
+same value to `script-src` and `style-src`.
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-<N>'; style-src 'self' 'nonce-<N>'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests
+```
+
+- Every response gets its own nonce, never derived from the request. Pages default to
+  `Cache-Control: no-cache`, so a shared cache doesn't replay one.
+- API routes, assets and pages that don't call `{{nonce}}` draw no nonce and send `helmet`'s
+  policy unchanged.
+- A custom policy gets the nonce in the directives that allow it; one with `'unsafe-inline'` or
+  `'none'` is left as it is. See [helmet › Nonce](middlewares/helmet/README.md#nonce).
+- Without `helmet`, `{{nonce}}` still writes a nonce and no policy is sent.
+- `html/template` removes JavaScript comments from inline scripts. Write comments about a script in
+  a template comment (`{{/* … */}}`) next to it.
+
+### Assets
+
+When `FS` has an `assets` directory, Ginject serves it at `GET /assets/*` with a built-in route.
+Link a file with `{{asset "app.css"}}`: Ginject hashes every asset once at `Create()`, so the URL
+changes when the file does.
+
+| Request | `Cache-Control` |
+|---|---|
+| `?v=` equals the file's hash | `public, max-age=31536000, immutable` |
+| No `v`, or another value | `no-cache` |
+| Any, with `IsReload` | `no-cache`, and no `ETag` |
+
+- Without `IsReload`, every file carries `ETag: "<16 hex>"`, and `If-None-Match` with it answers
+  `304`.
+- The content type comes from the file's extension.
+- A directory, a missing file, or a path with `..` or a segment that starts with `.` (except
+  `.well-known`) answers `404` as JSON. Templates are not reachable through this route.
+- Global middlewares and global guards run for the asset route. A route of your own at `/assets/*`
+  stops `Create()` with `route conflict:`. Without an `assets` directory, Ginject adds no route.
+
+### Develop with reload
+
+With `IsReload: true`, each render checks the template files' names, sizes and modification times,
+and parses them again after a change. Assets are read from `FS` on each request. Point `FS` at the
+disk, as `main.go` does with `PAGES_DEV=1`, and run it from the directory that holds `web`.
+
+- No goroutine or file watcher runs: the check happens during a render.
+- A file that fails to parse answers the fixed `500` page and logs `RenderReloadFailed` with `file`
+  and `cause`, until you fix it. The error text is never in the response.
+- Turn `IsReload` off in production: each render then walks the files, and assets are not cached.
+
+### Cost
+
+- **Without `EnableRender`:** nothing changes for API routes.
+- **At `Create()`:** every template is parsed and escaped once, and every asset hashed once.
+- **Per page:** one lookup in a table, one pooled buffer, the template's execution and one write.
+  A layout and a 40-row list take about 31 µs and 246 allocations, nearly all of them in
+  `html/template` (Intel Core i7-9750H, Go 1.27.4, `BenchmarkRender_Nonce` in `internal/render`).
+  Two `{{nonce}}` calls add about 3 µs and 14 allocations.
+- **Idle:** no goroutine, timer or watcher, in production and with `IsReload`.
+
+See [core › Pages](internal/core/README.md#pages) and the full [`sample/pages`](sample/pages/README.md),
+built with Owlky's framework-free HTML components.
 
 ---
 
@@ -1196,6 +1675,9 @@ func main() {
   `Cache-Control`, as above. Set a long lifetime only for files whose names change with their
   content, such as `app.3f9a1c.js`.
 
+With `EnableRender`, the `assets` directory of the templates' `FS` is served at `/assets/*` without
+a handler, with hashed URLs and immutable caching. See [Pages › Assets](#assets).
+
 See [core › Static files](internal/core/README.md#static-files).
 
 ---
@@ -1383,8 +1865,8 @@ func main() {
 }
 ```
 
-The error is logged, not passed to the exception: an exception's cause becomes the `error` field
-of the response, and this one names an internal host.
+The error is logged here with its context. An exception's cause never reaches the client either:
+the framework logs it (`ExceptionCause`, at `Debug`) and sends only the status text in `error`.
 
 ---
 
@@ -1585,14 +2067,19 @@ func main() {
 ```
 
 `GET /invoices` answers `404` with
-`{"code":404,"error":"no invoice with this id: sql: no rows in result set","message":"Invoice not found"}`.
+`{"code":404,"error":"Not Found","message":"Invoice not found"}` and logs the cause at `Debug`
+(`ExceptionCause`).
 
 - **Message:** the first argument, the `message` field. Write it for the client.
 - **Error text:** the `error` field. It is the code's status text by default, a `string` option,
-  or `ExceptionOptions.Description`. A cause (an `error` option or `ExceptionOptions.Cause`) adds
-  its text, and `errors.Is` and `errors.As` find it.
+  or `ExceptionOptions.Description`. With a cause (an `error` option or `ExceptionOptions.Cause`)
+  the client gets the status text and the cause is logged; `errors.Is` and `errors.As` find it.
 - **Custom codes:** `exception.NewException("Too many attempts", 429)` builds an exception with
-  any code. A code outside 400 to 599 answers `500`.
+  any code. A code of 500 or outside 400 to 599 answers the fixed
+  `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}` and logs the
+  exception's message and cause (`InternalServerError`).
+- **HTML pages:** on a page route the same three values fill the error page (`.Code`,
+  `.Status`, `.Message`). See [Pages › Error pages](#error-pages).
 
 | Constructor | Code |
 |---|---|
@@ -1641,12 +2128,13 @@ An application imports `github.com/dangduoc08/ginject`, plus the packages it use
 
 | Type | Description |
 |---|---|
-| `App` | The application returned by `New`. Configure it with `SetLogger`, `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`, `EnableVersioning`, `EnableWS`, `EnableAccessLog` and `EnableDevtool`; wire it with `Create(Module)`; serve it with `Listen(port, opts)`, `ListenTLS(port, certFile, keyFile, opts)` or `Serve(listener, opts)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
+| `App` | The application returned by `New`. Configure it with `SetLogger`, `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`, `EnableVersioning`, `EnableWS`, `EnableRender`, `EnableAccessLog` and `EnableDevtool`; wire it with `Create(Module)`; serve it with `Listen(port, opts)`, `ListenTLS(port, certFile, keyFile, opts)` or `Serve(listener, opts)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
 | `Module` | A built module. Set its fields after `Build()`: `Name`, `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown`. `Prefix(path)` adds a path prefix. |
 | `Provider` | The interface of a provider: `NewProvider() Provider`. |
 | `Controller` | The interface of a controller: `NewController() Controller`. |
 | `ServerOptions` | The second argument of `Listen`, `ListenTLS` and `Serve`; `nil` gives the defaults. `ShutdownTimeout` (default 30 s), `MaxRequestBodyBytes` (default 10 MiB, negative turns the cap off), `TLSConfig`, and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |
 | `WSOptions` | The first argument of `EnableWS`. `Path` is the endpoint path (default `/ws`). |
+| `RenderOptions` | The argument of `EnableRender`. `FS` holds the templates and the `assets` directory (required); `Dir` is the directory inside it (default `web`, `.` for the root); `IsReload` reads that directory from disk and parses it again when a file changes (development only). See [Pages](#pages). |
 | `VersioningOptions` | The argument of `EnableVersioning`: `Type`, `Key` (default `v`), `DefaultVersion` and `Extractor`. See [Versioning](#versioning). |
 | `VersioningType` | The type of `VersioningOptions.Type`: `VersioningQuery`, `VersioningHeader`, `VersioningMediaType` or `VersioningCustom`. |
 
@@ -1655,6 +2143,7 @@ An application imports `github.com/dangduoc08/ginject`, plus the packages it use
 | Type | Description |
 |---|---|
 | `HTTP` | Makes a controller serve HTTP routes. `Prefix(path, handlers...)` adds a route prefix. |
+| `Page` | Makes a controller serve HTML pages: the same routes as `HTTP`, with handlers that return a `View`. `Prefix(path, handlers...)` adds a route prefix. A controller embeds `HTTP` or `Page`, not both. |
 | `WS` | Makes a controller handle WebSocket events. |
 | `Middleware` | `BindMiddleware(middleware, handlers...)` binds a middleware to the controller's handlers. |
 | `Guard` | `BindGuard(guard, handlers...)` binds a guard. |
@@ -1690,6 +2179,7 @@ wrong one, for example
 | `DataFile` | One uploaded file: the embedded `*multipart.FileHeader`, `Index`, `Size`, `Total`, `Key`, `Filename`, `Type` and `Dest`. A file DTO may implement `IsValid(DataFile) bool` to refuse a file (`400`) and `Store(DataFile, multipart.File)` to save it. |
 | `FieldLevel` | One bound field, returned by `Bind` for validation: `Tag`, `NestedTag`, `Namespace`, `Field`, `Index`, `Value`, `IsValue`, `Kind` and `Type`. |
 | `Map` | `map[string]any`, the JSON object a handler returns. |
+| `View` | The result of a page handler: `Name` is the page (`bookings/list`), `Data` is `.` in the template. |
 | `Next` | `func()`: continues the pipeline. |
 | `Redirect` | `func(string)`: sends a redirect to the given URL. |
 

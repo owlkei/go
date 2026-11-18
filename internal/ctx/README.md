@@ -161,6 +161,7 @@ What `core` needs from a context and a handler must not touch is a package-level
 | `HTTPParamValues(c) []string` | The parameter values; `core` passes `HTTPParamValues(c)[:0]` to the router so a match reuses the kept capacity |
 | `HTTPNext(c) Next` / `HTTPSetNext(c, next Next)` | The `next` of the request's middlewares: it only says "continue". `core` sets it per request (a shared no-op on routes without middleware). `nil` on a new context |
 | `HTTPCode(c) int` / `HTTPSetCode(c, code int)` | The status code that `Text`, `JSON`, `JSONP` and `Redirect` write. `Status` sets the same value |
+| `HTTPSetPage(c)` / `HTTPIsPage(c) bool` | Marks the request as served by a page route; `core` sets it before the guards. `Redirect` then defaults to `303`, and the built-in exception filter answers HTML. Cleared by `HTTPReset` |
 | `HTTPTimestamp(c) *time.Time` | The time `HTTPInit` ran; zero before. Never `nil`: it points into the context |
 
 ### ID and Context
@@ -246,7 +247,7 @@ c.JSON(`{"greeting":"%s"}`, "hi")
 `Redirect(url string)` answers with `http.Redirect`.
 
 #### Rules
-- The status is the status code when it is 3xx, else `301`; the status code then holds the status sent.
+- The status is the status code when it is 3xx, else `301` (`303 See Other` on a page route); the status code then holds the status sent.
 - The `Location` header is the given URL.
 
 ```go
@@ -277,7 +278,7 @@ c.Status(http.StatusSeeOther).Redirect(next)
 - `null`, an empty body and a body of JSON whitespace give an empty `Body`.
 - The body is read once and cached: the second call returns the same map.
 - Malformed JSON or a top-level value that is not an object panics with an `exception.Exception` of code `400` and message `Invalid JSON body`; `errors.As` reaches the `encoding/json` error.
-- A body over the limit panics with code `413`; `errors.As` reaches the `*http.MaxBytesError`.
+- A body over the limit panics with code `413` and message `Request body too large`; `errors.As` reaches the `*http.MaxBytesError`.
 - Another read error panics with code `400` and message `Cannot read request body`.
 
 ### Form
@@ -287,7 +288,7 @@ c.Status(http.StatusSeeOther).Redirect(next)
 #### Rules
 - Forms are parsed for exactly `application/x-www-form-urlencoded` and `multipart/form-data` (case-insensitive, parameters ignored); any other request gives an empty `Form`.
 - `Form` never returns `nil` and is computed once, also without a form content type.
-- A malformed form panics with an `exception.Exception` of code `400` and message `Invalid form body`; a form over the body limit with code `413`; `errors.As` reaches the cause.
+- A malformed form panics with an `exception.Exception` of code `400` and message `Invalid form body`; a form over the body limit with code `413` and message `Request body too large`; `errors.As` reaches the cause.
 - A multipart body is parsed once for `Form` and `File`, in either order.
 - Parts over 32 MiB are written to temporary files in the OS temporary directory; the framework removes them once the request ends, also when the handler panics. Don't keep a `multipart.File` or a `FileHeader` after the handler returns.
 
@@ -392,7 +393,7 @@ b.Has("user.email")     // false
 
 #### Rules
 - When `s` implements `IsValid(*DataFile) bool` and a file is refused, `Bind` panics with a `400` exception.
-- When `s` implements `Store(*DataFile, multipart.File)`, `Bind` opens each file, calls `Store` and closes the file, also when `Store` panics (the panic still reaches the caller).
+- When `s` implements `Store(*DataFile, multipart.File)`, `Bind` opens each file, calls `Store` and closes the file, also when `Store` panics (the panic still reaches the caller). A file that cannot be opened panics with a `400` exception, message `Invalid file upload`, with the open error as its cause.
 
 ```go
 type UploadDTO struct {

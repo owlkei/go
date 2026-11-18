@@ -60,16 +60,23 @@ error from a guard onwards       ► module exception filter ► global exceptio
 
 ### 1.2 The HTTP layer's error response
 
-One fixed format, the built-in filter's JSON; users cannot change it (no hook). A middleware that
-wants its own response writes it and returns without `next()`.
+One writer for the HTTP layer, `recoverRequest`, `answerNoRoute` and the built-in filter
+(`internal/core/http_error.go`); users cannot change it (no hook). A middleware that wants its own
+response writes it and returns without `next()`.
 
-- Body `{"code":<int>,"error":<string>,"message":<string>}`, `Content-Type: application/json`;
-  `Content-Length`, `Content-Encoding`, `ETag` and `Last-Modified` set earlier are removed, other
-  headers (`X-Request-Id`, `Traceparent`, CORS) stay.
-- An exception (`exception.Exception`, a non-nil `*exception.Exception`, an `error` wrapping one at
-  any depth) answers with its code, `Error()` and message. An empty `Error()` becomes the status text
-  (or `Internal Server Error`), an empty message `Unhandled exception has occurred`. A code outside
-  400-599 answers 500 (`WriteHeader` never gets an invalid code).
+- Format: JSON without `EnableRender`. With it: a page route from its first guard on is HTML
+  (`ctx.HTTPIsPage`), an API / `SERVE` route JSON; before any guard (middlewares, 404, 405, 410)
+  HTML when an `Accept` value contains `text/html`, else JSON, plus `Vary: Accept`.
+- JSON body `{"code":<int>,"error":<string>,"message":<string>}`, `Content-Type: application/json`;
+  HTML is `error.html` in the root layout (data `Code`, `Status`, `Message`, `RequestID`) or a
+  built-in page when it is missing or fails (`RenderFailed`). `Content-Length`, `Content-Encoding`,
+  `ETag` and `Last-Modified` set earlier are removed, other headers (`X-Request-Id`, `Traceparent`,
+  CORS, `Allow`, `Retry-After`) stay.
+- Client text (`clientText` in `internal/core/fn.go`, design 0018 R24): code 500 or outside 400-599
+  answers the fixed 500 text and logs `InternalServerError` (Error) when the message or a cause is
+  not the fixed text; a cause never reaches the client (`error` = status text, cause logged as
+  `ExceptionCause` at Debug); otherwise the code, `Error()` (status text when empty, `Internal Server
+  Error` when the code has none) and the message (`Unhandled exception has occurred` when empty).
 - Anything else (string, error, runtime error, `panic(nil)`, any value) answers
   `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}` and logs
   `Logger.From(c.Context()).Error("UnhandledPanic", "method", "path", "panic", "stack" ≤ 4 KiB)`: the
@@ -98,6 +105,27 @@ wants its own response writes it and returns without `next()`.
   directory answers 400 `Invalid URL path`. Wildcard `SERVE` routes open files through `os.Root`
   (`serveFromRoot` in `internal/core/http.go`): dot segments other than `.well-known` and symbolic links
   leaving the served directory answer 404.
+
+### 1.3a Page routes (design 0018)
+
+A route of a controller that embeds `common.Page` (`HTTPLayer.IsPage` → `httpRoute.isPage`; never a
+`SERVE_…` handler) runs the same boxes. The differences:
+
+- `serveRoute` marks the context (`ctx.HTTPSetPage`) before the first guard: the default status stays
+  200 for every method (no 201 for POST), `c.Redirect` without a 3xx status answers 303 (API: 301),
+  and errors from the first guard on are HTML (§ 1.2).
+- `writeResult` → `writePage` (`internal/core/http_page.go`) after the post-interceptors: if the
+  writer already has a status (redirect, direct write) nothing is written; a result that is not a
+  `common.View` (a post-interceptor replaced it) or a failed render → fixed 500 HTML +
+  `RenderFailed` (`RenderReloadFailed` with `IsReload`); else the whole page from a pooled
+  `render.Buffer`, `Content-Type: text/html; charset=utf-8`, `Content-Length`, `Cache-Control:
+  no-cache` unless set, and the nonce placed into `helmet`'s precompiled CSP form. `HEAD` writes no
+  body.
+- With a tracer listener: one `render` stage event after `handler`, before `complete` (`error` /
+  `error (built-in)` for error pages).
+- The asset route (`/assets/*`, `addAssetRoute` in `internal/core/http_asset.go`) exists only when
+  `RenderOptions.FS` has an `assets` directory; it is a `SERVE` route (JSON errors), runs the global
+  middlewares and guards, and answers `ETag` + `immutable` for a matching `?v=` hash.
 
 ### 1.4 Where it lives in the code
 
@@ -502,6 +530,8 @@ the route's filters receive ForbiddenException("Access denied")
     ↓
 the built-in filter answers 403 {"code":403,"error":"Forbidden","message":"Access denied"} unless a user filter handles it
 ```
+
+On a page route (`common.Page`, with `EnableRender`) the same 403 is the HTML error page.
 
 ### 7.3 Timeout Handling
 

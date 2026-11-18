@@ -32,7 +32,7 @@
 
 ## Usage
 
-Panic with an exception from a handler or a guard. The default filter answers with its code and the JSON body:
+Panic with an exception from a handler or a guard. The default filter answers with its code and the error body:
 
 ```go
 package main
@@ -71,8 +71,12 @@ func main() {
 `GET /` responds with status `404` and:
 
 ```json
-{"code":404,"error":"no user with this id: no rows","message":"User not found"}
+{"code":404,"error":"Not Found","message":"User not found"}
 ```
+
+The exception has a cause, so the client gets the status text in `error` and the framework logs the
+cause at `Debug` (`ExceptionCause`). On a page route of a server-rendered app (`ginject.Page`), the
+same three values fill the HTML error page as `.Code`, `.Status` and `.Message`.
 
 ## `ExceptionOptions` Fields
 
@@ -208,7 +212,7 @@ panic(exception.TopicNotFoundException("Unknown topic"))
 
 ### Error
 
-Returns the error text, built from the first option as described in [NewException](#newexception). It is the `error` field of the JSON body.
+Returns the error text, built from the first option as described in [NewException](#newexception). Without a cause it is the `error` field of an HTTP error body; with one, the body holds the status text instead.
 
 #### Returns
 - 1st value: `string`
@@ -340,7 +344,7 @@ body, _ := json.Marshal(ex)
 
 ## Security
 
-- The message and the error text go to the client as is. Put only client-safe text in an exception: wrapping an internal error as the `Cause` sends its text in the `error` field.
+- The message goes to the client as is: write it for the client. An HTTP response never carries a cause's text (the framework logs it and sends the status text in `error`), and a 500 never carries its own message or description.
 - A message can hold client input (a request path, a file name). The JSON escaping above keeps it inside its string, also when a page embeds the body.
 
 ## Performance notes

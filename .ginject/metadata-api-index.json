@@ -23,7 +23,10 @@
       "Provider": "core.Provider",
       "ServerOptions": "core.ServerOptions",
       "WSOptions": "core.WSOptions",
+      "RenderOptions": "core.RenderOptions",
       "HTTP": "common.HTTP",
+      "Page": "common.Page",
+      "View": "common.View",
       "WS": "common.WS",
       "Guard": "common.Guard",
       "Interceptor": "common.Interceptor",
@@ -146,6 +149,11 @@
               "purpose": "Enable WebSocket support with handshake middlewares"
             },
             {
+              "name": "EnableRender",
+              "signature": "EnableRender(opts *RenderOptions) *App",
+              "purpose": "Server-rendered HTML pages for common.Page controllers (before Create; nil opts or nil FS panics `invalid render: EnableRender needs RenderOptions.FS`, a second call `invalid render: EnableRender called twice`); templates parsed once at Create (design 0018)"
+            },
+            {
               "name": "EnableDevtool",
               "signature": "EnableDevtool() *App",
               "purpose": "Devtool snapshot of routes and layers"
@@ -199,6 +207,13 @@
             "TLSConfig *tls.Config - ListenTLS / Serve TLS config, cloned",
             "IsH2C bool - Listen / Serve without TLS also accept unencrypted HTTP/2"
           ]
+        },
+        "RenderOptions": {
+          "description": "Argument of EnableRender (root alias ginject.RenderOptions)",
+          "fields": {
+            "FS": "fs.FS, required: templates (layout.html per directory, top-level partials/, root error.html, every other .html is a page named by its path without .html) and assets/ served at /assets/*",
+            "IsReload": "bool: re-parse when a template file's name, size or modification time changed, checked per render; assets read per request, no-cache, no ?v= (development only)"
+          }
         },
         "Controller": {
           "description": "Any struct implementing NewController() Controller; embeds common.HTTP and/or common.WS",
@@ -281,6 +296,7 @@
       },
       "embedded_types": {
         "HTTP": "Embed in controller to enable HTTP routing (there is NO common.REST type — do not generate it)",
+        "Page": "Embed instead of HTTP for server-rendered HTML page routes (same route words, prefixes, layers, pipes). Handlers return common.View{Name, Data}. Embedding both HTTP and Page panics `invalid controller: <Type> embeds both ginject.HTTP and ginject.Page`; needs EnableRender. Has its own Prefix(path, handlers...) *Page. Default status 200 for every method, c.Redirect without a 3xx status answers 303, errors from the first guard on are HTML",
         "WS": "Embed in controller to enable WebSocket routing",
         "Middleware": "Separate embeddable type providing BindMiddleware(MiddlewareFn, ...any) *Middleware — not a field on HTTP/WS",
         "Guard": "Separate embeddable type providing BindGuard(any, ...any) *Guard",
@@ -320,6 +336,20 @@
       "notes": [
         "Router.Match signature is func (r *Router) Match(method, path, version string, params []string) (*RouterItem, []string): nil on a miss; the item is shared and read-only; the slice is params plus one value per route parameter (design 0002). Router.Group does not exist.",
         "Route parameters are {name} whole segments (READ_BY_ID routes to GET /{ID}: the parameter name keeps the case of the method name); there is no :id syntax."
+      ]
+    },
+    "render": {
+      "responsibility": "internal/render, not importable: html/template sets of RenderOptions.FS parsed once at Create, pooled buffers (dropped past 256 KiB, 8 MiB page limit), the {{nonce}} placeholder overwritten in place, the asset hash table (docs: internal/render/README.md)",
+      "template_functions": {
+        "nonce": "the response's CSP nonce, 32 lowercase hex from crypto/rand, same in helmet's header",
+        "asset": "/assets/<path>?v=<first 8 bytes of SHA-256 as hex>; no ?v= with IsReload; unknown file fails the render",
+        "dict": "map[string]any from key/value pairs, for partials"
+      },
+      "errors": [
+        "ErrUnknownPage",
+        "ErrPageTooLarge",
+        "ErrNoErrorPage",
+        "*FileError{File, Err}"
       ]
     },
     "exception": {
@@ -501,7 +531,9 @@
     "NEVER retain pooled objects beyond request lifetime",
     "Code after next() runs before the next layer, not after the handler: post-handler work belongs in an interceptor's Pipe operators",
     "Configuration methods (BindGlobal*, Enable*, SetLogger) only before Create",
-    "Providers are fields, never handler parameters"
+    "Providers are fields, never handler parameters",
+    "Page handlers return ginject.View (only or last result); API handlers never do. Template functions are fixed (nonce, asset, dict): no user FuncMap",
+    "Errors: a matched page route from its first guard on answers HTML, an API / SERVE / asset route JSON; before any guard (middlewares, 404, 405, 410) HTML only when Accept contains text/html. A cause's text and a 500's own message never reach the client"
   ],
   "common_mistakes": [
     "Type mismatch between provider and handler parameter",
@@ -511,6 +543,8 @@
     "Retaining context references after request",
     "Not implementing NewProvider() interface",
     "Assuming message ordering in WebSocket",
-    "Slow clients causing message drops in WebSocket"
+    "Slow clients causing message drops in WebSocket",
+    "Unexported fields in a pipe (form DTO): Create() panics `dependency injection: can't set value to unexported ...` like any injected struct",
+    "JavaScript comments in an inline <script> of a template: html/template strips them; use {{/* */}}"
   ]
 }
