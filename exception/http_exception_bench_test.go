@@ -1,6 +1,8 @@
 package exception
 
-import "testing"
+import (
+	"testing"
+)
 
 func BenchmarkBadRequestException(b *testing.B) {
 	b.ReportAllocs()
