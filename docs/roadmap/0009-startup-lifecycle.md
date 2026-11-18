@@ -1,6 +1,6 @@
 # 0009: Startup and dependency lifecycle
 
-Status: Approved
+Status: Running
 
 ## Goal
 A module that waits on a dependency (a database, a cache) can no longer hang or crash the app at start
@@ -21,7 +21,7 @@ The lifecycle is documented in detail.
 ## Steps
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
-| 1 | Names: Module and Module factory everywhere (internal `isDynamicModule`, `dynamicModules`, `callModuleFunc` renamed; README, `.ginject/`, CLAUDE.md wording) | light | - | - | no "dynamic module" left in code or docs; `make check` green | todo |
+| 1 | Names: Module and Module factory everywhere (internal `isDynamicModule`, `dynamicModules`, `callModuleFunc` renamed; README, `.ginject/`, CLAUDE.md wording) | light | - | - | no "dynamic module" left in code or docs; `make check` green | done |
 | 2 | Factory signatures: `func(deps...) Module`, `func(deps...) (Module, error)`, `func(ctx, deps...) (Module, error)`; any other shape panics listing the valid ones; one startup deadline for `Create()` (app option, default 30 s) in `ctx`; an error, a panic or the deadline stops `Create()` with a clear message | tdd | docs/design/0020-startup-lifecycle.md | 1 | a factory that never returns fails `Create()` at the deadline with the module's name | todo |
 | 3 | Factory scope and order: a factory resolves providers from its siblings in the same `Imports`, factories run in dependency order whatever their position, a cycle panics with the chain | tdd | docs/design/0020-startup-lifecycle.md | 2 | the order cases verified on `402b10f` (sibling, factory after factory) resolve; a cycle names the chain | todo |
 | 4 | Module states and the readiness gate: `pending` / `ready` / `failed` per module, held atomically; readiness propagates through imports and injected providers; routes of a module that is not ready stay registered and answer `503` (`503.html` for pages), WebSocket events answer "not ready"; one atomic load on the affected routes only | tdd | docs/design/0020-startup-lifecycle.md | 3 | a gated route answers `503` and the others keep their benchmarks | todo |
@@ -48,3 +48,4 @@ Agreed with the owner on 2026-11-18 (backlog › "Startup and dependency lifecyc
 - This roadmap runs before the security roadmap (the owner's choice, 2026-11-18).
 
 ## Log
+- 2026-11-18: design 0020 approved with every recommendation of its open questions; run started at `688eeb1`.
