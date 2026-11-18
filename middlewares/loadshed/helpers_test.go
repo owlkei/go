@@ -6,17 +6,496 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dangduoc08/ginject"
+	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/common"
+	"github.com/dangduoc08/ginject/internal/core"
+	"github.com/dangduoc08/ginject/internal/ctx"
+	"github.com/dangduoc08/ginject/internal/httphook"
+	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 )
+
+const (
+	rigProcs  = 4
+	rigMemory = 64 << 20
+	rigMin    = 4
+	rigMax    = 64
+	rigStart  = 32
+)
+
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
+}
+
+type rig struct {
+	t     *testing.T
+	mw    common.MiddlewareFn
+	s     inspect.Snapshotter
+	clock *fakeClock
+	pool  []*call
+}
+
+func newRig(t *testing.T) *rig { return newRigProcs(t, rigProcs) }
+
+func newRigProcs(t *testing.T, procs int) *rig {
+	t.Helper()
+	withMachine(t, procs, rigMemory)
+	mw := LoadShed{MaxQueue: -1}.NewMiddleware()
+	clock := &fakeClock{t: time.Now()}
+	mw.(*compiledLoadShed).adaptive.now = clock.Now
+	return &rig{t: t, mw: mw, s: snapshotter(t, mw), clock: clock}
+}
+
+func (g *rig) limit() int64 { return intOf(g.s.Snapshot(), "limit") }
+
+func (g *rig) window() int { return 4 * int(g.limit()) }
+
+func (g *rig) admit() bool {
+	c, ok := tryAdmit(g.mw)
+	if ok {
+		g.pool = append(g.pool, c)
+	}
+	return ok
+}
+
+func (g *rig) finishOldest(elapsed time.Duration) {
+	g.t.Helper()
+	if len(g.pool) == 0 {
+		g.t.Fatal("fixture: nothing in flight")
+	}
+	c := g.pool[0]
+	g.pool = g.pool[1:]
+	c.ex.finish(elapsed)
+}
+
+func (g *rig) fill(n int) {
+	for len(g.pool) < n && g.admit() {
+	}
+}
+
+func (g *rig) sequential(elapsed time.Duration, samples int) {
+	g.t.Helper()
+	for i := 0; i < samples; i++ {
+		if !g.admit() {
+			g.t.Fatal("fixture: a sequential request is refused")
+		}
+		g.finishOldest(elapsed)
+	}
+}
+
+func (g *rig) saturated(elapsed time.Duration, windows int, keep func() int) {
+	g.t.Helper()
+	for i := 0; i < windows*g.window(); i++ {
+		g.fill(keep())
+		if len(g.pool) == 0 {
+			g.t.Fatal("fixture: nothing to finish")
+		}
+		g.finishOldest(elapsed)
+	}
+}
+
+func (g *rig) pressure() {
+	g.t.Helper()
+	g.fill(int(g.limit()))
+	if g.admit() {
+		g.t.Fatal(test.DiffMessage(true, false, "fixture: one request over the limit is refused"))
+	}
+}
+
+func (g *rig) cycle(elapsed time.Duration, finished int) {
+	g.t.Helper()
+	for i := 0; i < finished; i++ {
+		g.finishOldest(elapsed)
+		if i < finished-1 {
+			g.admit()
+		}
+	}
+}
+
+func (g *rig) pressureWindow(elapsed time.Duration) {
+	g.t.Helper()
+	size := g.window()
+	g.pressure()
+	g.cycle(elapsed, size)
+}
+
+func (g *rig) steady(keep int) func() int { return func() int { return keep } }
+
+func (g *rig) atLimit() func() int { return func() int { return int(g.limit()) } }
+
+func (g *rig) drain(elapsed time.Duration) {
+	for len(g.pool) > 0 {
+		g.finishOldest(elapsed)
+	}
+}
+
+func cgroupMemoryLimited() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	for _, name := range []string{"/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"} {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			continue
+		}
+		text := strings.TrimSpace(string(raw))
+		if text == "max" {
+			continue
+		}
+		if n, err := strconv.ParseInt(text, 10, 64); err == nil && n < 1<<60 {
+			return true
+		}
+	}
+	return false
+}
+
+func slowFirst(slow, base time.Duration) func(int) time.Duration {
+	return func(i int) time.Duration {
+		if i == 0 {
+			return slow
+		}
+		return base
+	}
+}
+
+func (g *rig) sequentialOf(elapsed func(int) time.Duration, samples int) {
+	g.t.Helper()
+	for i := 0; i < samples; i++ {
+		if !g.admit() {
+			g.t.Fatal("fixture: a sequential request is refused")
+		}
+		g.finishOldest(elapsed(i))
+	}
+}
+
+func (g *rig) pressureWindowOf(elapsed func(int) time.Duration) {
+	g.t.Helper()
+	size := g.window()
+	g.pressure()
+	for i := 0; i < size; i++ {
+		g.finishOldest(elapsed(i))
+		if i < size-1 {
+			g.admit()
+		}
+	}
+}
+
+func (g *rig) contended(elapsed func(int) time.Duration, samples int) {
+	g.t.Helper()
+	for i := 0; i < samples; i++ {
+		g.fill(8)
+		g.finishOldest(elapsed(i))
+	}
+}
+
+func probesOf(g *rig) int64 { return intOf(g.s.Snapshot(), "probes") }
+
+func floorRig(t *testing.T) *rig {
+	t.Helper()
+	g := newRig(t)
+	g.sequential(10*time.Millisecond, g.window())
+	for i := 0; i < 200 && g.limit() < 40; i++ {
+		g.pressureWindow(10 * time.Millisecond)
+	}
+	if g.limit() != 40 {
+		t.Fatal(test.DiffMessage(g.limit(), int64(40), "fixture: the limit grew to 40"))
+	}
+	for i := 0; i < 200 && probesOf(g) == 0; i++ {
+		g.pressureWindow(60 * time.Millisecond)
+		if g.limit() < 20 {
+			t.Fatal(test.DiffMessage(g.limit(), ">= 20", "L10: the limit never falls below half of the limit it earned"))
+		}
+	}
+	if got := g.limit(); got != 20 {
+		t.Fatal(test.DiffMessage(got, int64(20), "L10: the limit falls to the floor"))
+	}
+	if probesOf(g) != 1 || field(g.s.Snapshot(), "probing") != true {
+		t.Fatal(test.DiffMessage([]any{probesOf(g), field(g.s.Snapshot(), "probing")}, []any{int64(1), true}, "L11: the close that holds the floor starts a probe"))
+	}
+	g.clock.Advance(1100 * time.Millisecond)
+	g.admit()
+	if got := field(g.s.Snapshot(), "probing"); got != false {
+		t.Fatal(test.DiffMessage(got, false, "L11: a probe running for over 1 s ends at the next admission"))
+	}
+	return g
+}
+
+func benchAdmit(b *testing.B, c LoadShed) {
+	b.Helper()
+	mw := c.NewMiddleware()
+	ex := newExchange(&discardWriter{header: http.Header{}})
+	r := request(http.MethodGet, "/ok")
+	b.ReportAllocs()
+	for b.Loop() {
+		mw.Use(r, ex, noop)
+		ex.finish(time.Millisecond)
+	}
+}
+
+type twoReads struct{ reads int }
+
+func (b *twoReads) Read(p []byte) (int, error) {
+	b.reads++
+	if b.reads == 1 {
+		return copy(p, "body"), nil
+	}
+	return 0, io.EOF
+}
+
+func (*twoReads) Close() error { return nil }
+
+func bodyAdmission() (step func()) {
+	mw := LoadShed{}.NewMiddleware()
+	ex := newExchange(&discardWriter{header: http.Header{}})
+	r := request(http.MethodPost, "/ok")
+	body := &twoReads{}
+	buf := make([]byte, 8)
+	read := func() {
+		_, _ = r.Body.Read(buf)
+		_, _ = r.Body.Read(buf)
+	}
+	return func() {
+		body.reads = 0
+		r.Body = body
+		mw.Use(r, ex, read)
+		ex.finish(time.Millisecond)
+	}
+}
+
+func noop() {}
+
+type okController struct{ common.HTTP }
+
+func (c okController) NewController() core.Controller { return c }
+
+func (okController) READ_ok() string { return "ok" }
+
+func (okController) CREATE_ok() string { return "ok" }
+
+type silentLogger struct{}
+
+func (silentLogger) Debug(string, ...any) {}
+
+func (silentLogger) Info(string, ...any) {}
+
+func (silentLogger) Warn(string, ...any) {}
+
+func (silentLogger) Error(string, ...any) {}
+
+func (silentLogger) Fatal(string, ...any) {}
+
+type probeMiddleware struct{ Name string }
+
+type probed struct {
+	request *http.Request
+	context any
+}
+
+var probes sync.Map
+
+func (p probeMiddleware) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+	probes.Store(p.Name, probed{request: r, context: r.Context()})
+	next()
+}
+
+func probeOf(name string) probed {
+	v, _ := probes.Load(name)
+	p, _ := v.(probed)
+	return p
+}
+
+type failBody struct{ t *testing.T }
+
+func (b failBody) Read([]byte) (int, error) {
+	b.t.Error("G3: the middleware read the request body")
+	return 0, fmt.Errorf("body must not be read")
+}
+
+func (failBody) Close() error { return nil }
+
+type discardWriter struct {
+	header http.Header
+	code   int
+}
+
+func (w *discardWriter) Header() http.Header { return w.header }
+
+func (w *discardWriter) WriteHeader(code int) { w.code = code }
+
+func (w *discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
+	t.Helper()
+	app := core.New()
+	app.SetLogger(silentLogger{})
+	app.BindGlobalMiddlewares(mws...)
+	app.Create(ginject.ModuleBuilder().Controllers(okController{}).Build())
+	return app
+}
+
+func serve(app *core.App, r *http.Request) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+	return w
+}
+
+func request(method, target string, headers ...string) *http.Request {
+	r := httptest.NewRequest(method, target, nil)
+	for i := 0; i+1 < len(headers); i += 2 {
+		r.Header.Add(headers[i], headers[i+1])
+	}
+	return r
+}
+
+func panicText(fn func()) (text string, panicked bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			text, panicked = fmt.Sprint(r), true
+		}
+	}()
+	fn()
+	return "", false
+}
+
+func field(s inspect.Snapshot, key string) any {
+	for _, f := range s.Fields {
+		if f.Key == key {
+			return f.Value
+		}
+	}
+	return nil
+}
+
+func expectRefusal(t *testing.T, w *httptest.ResponseRecorder, code int, body, desc string) {
+	t.Helper()
+	if w.Code != code {
+		t.Error(test.DiffMessage(w.Code, code, "G1: "+desc+": status"))
+	}
+	if w.Body.String() != body {
+		t.Error(test.DiffMessage(w.Body.String(), body, "G1: "+desc+": body"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "G1: "+desc+": Content-Type"))
+	}
+}
+
+func benchLoad(b *testing.B, kind string, overload float64) {
+	b.Helper()
+	procs := runtime.GOMAXPROCS(0)
+	var factor atomic.Int64
+	factor.Store(1)
+	w := newWorkload(kind, procs, &factor)
+	for b.Loop() {
+		mw := LoadShed{}.NewMiddleware()
+		o := runLoad(b, mw, w.work, overload*w.capacity, 30*time.Second, overload < 1, 9)
+		limits := slices.Clone(o.limits)
+		slices.Sort(limits)
+		if len(limits) > 0 {
+			b.ReportMetric(float64(limits[0]), "limit-min")
+			b.ReportMetric(float64(limits[len(limits)/2]), "limit-median")
+			b.ReportMetric(float64(limits[len(limits)-1]), "limit-max")
+		}
+		var stats runtime.MemStats
+		runtime.ReadMemStats(&stats)
+		b.ReportMetric(float64(o.p99())/float64(time.Millisecond), "p99-ms")
+		b.ReportMetric(float64(w.noLoad)/float64(time.Millisecond), "no-load-ms")
+		b.ReportMetric(float64(stats.HeapInuse)/(1<<20), "heap-MiB")
+		b.ReportMetric(float64(o.served), "status-2xx")
+		b.ReportMetric(float64(o.refused), "status-503")
+		b.ReportMetric(o.throughput()/w.capacity, "throughput/capacity")
+	}
+}
+
+func (g *rig) holdOutside(n int) []*call {
+	g.t.Helper()
+	var held []*call
+	for i := 0; i < n; i++ {
+		c, ok := tryAdmit(g.mw)
+		if !ok {
+			g.t.Fatal(test.DiffMessage(false, true, "fixture: a request is admitted and held outside the pool"))
+		}
+		held = append(held, c)
+	}
+	return held
+}
+
+func (g *rig) admitOutside(desc string) *call {
+	g.t.Helper()
+	c, ok := tryAdmit(g.mw)
+	if !ok {
+		g.t.Fatal(test.DiffMessage(false, true, desc))
+	}
+	return c
+}
+
+func (g *rig) expectProbing(want bool, desc string) {
+	g.t.Helper()
+	if got := field(g.s.Snapshot(), "probing"); got != want {
+		g.t.Fatal(test.DiffMessage(got, want, desc))
+	}
+}
+
+func (g *rig) startProbeBeside(elapsed time.Duration) {
+	g.t.Helper()
+	g.pressure()
+	for i := 0; i < 3*g.window() && field(g.s.Snapshot(), "probing") != true; i++ {
+		g.finishOldest(elapsed)
+		if field(g.s.Snapshot(), "probing") == true {
+			break
+		}
+		g.admit()
+		g.admit()
+	}
+	g.expectProbing(true, "fixture: a window under pressure with a stale baseline starts a probe")
+}
+
+func queuedLoadShed(t *testing.T, maxQueue int) (*compiledLoadShed, *call, *call) {
+	t.Helper()
+	mw := LoadShed{MaxInFlight: 1, MaxQueue: maxQueue}.NewMiddleware()
+	s := snapshotter(t, mw)
+	first := admitNow(t, mw)
+	waiter := startCall(mw, request(http.MethodGet, "/ok"))
+	waitUntil(t, "the waiter is queued", func() bool { return intOf(s.Snapshot(), "waiting") == 1 })
+	return mw.(*compiledLoadShed), first, waiter
+}
+
+func startEnqueue(c *compiledLoadShed) *call {
+	n := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
+	n.ex = newExchange(n.rec)
+	go func() {
+		defer close(n.done)
+		defer func() { n.refusal = recover() }()
+		r := request(http.MethodGet, "/ok")
+		c.enqueue(r, n.ex, n.ex, func() { n.admitted.Store(true) })
+	}()
+	return n
+}
 
 const (
 	stabilityWarmup  = 10 * time.Second
@@ -293,11 +772,6 @@ func stableRun(t *testing.T, procs int, kind string) {
 	expectStable(t, w, o, kind+" GOMAXPROCS "+strconv.Itoa(procs))
 }
 
-func TestAdaptive_Stable_CPUBound_1CPU(t *testing.T) { stableRun(t, 1, "cpu") }
-func TestAdaptive_Stable_CPUBound_2CPU(t *testing.T) { stableRun(t, 2, "cpu") }
-func TestAdaptive_Stable_IOBound_1CPU(t *testing.T)  { stableRun(t, 1, "io") }
-func TestAdaptive_Stable_IOBound_2CPU(t *testing.T)  { stableRun(t, 2, "io") }
-
 func belowCapacityRun(t *testing.T, procs int) {
 	t.Helper()
 	if testing.Short() || raceEnabled {
@@ -320,9 +794,6 @@ func belowCapacityRun(t *testing.T, procs int) {
 		}
 	}
 }
-
-func TestAdaptive_NoRefusalBelowCapacity_1CPU(t *testing.T) { belowCapacityRun(t, 1) }
-func TestAdaptive_NoRefusalBelowCapacity_2CPU(t *testing.T) { belowCapacityRun(t, 2) }
 
 func recoversRun(t *testing.T, procs int) {
 	t.Helper()
@@ -352,9 +823,6 @@ func recoversRun(t *testing.T, procs int) {
 		t.Error(test.DiffMessage(o.served, "> 0", "L12: the slow handler is still served"))
 	}
 }
-
-func TestAdaptive_RecoversWhenHandlerSlows_1CPU(t *testing.T) { recoversRun(t, 1) }
-func TestAdaptive_RecoversWhenHandlerSlows_2CPU(t *testing.T) { recoversRun(t, 2) }
 
 const (
 	steerLength   = 40 * time.Second
@@ -580,32 +1048,6 @@ func steeringRun(t *testing.T, attack launcher, label string, floorShare float64
 	expectSteering(t, runSteering(t, attack), label, floorShare, wantServed, wantRecovery)
 }
 
-func TestAdaptive_Steering_FreeBursts(t *testing.T) {
-	steeringRun(t, freeBursts, "free bursts", 0.5, true, true)
-}
-
-func TestAdaptive_Steering_SlowUploads(t *testing.T) {
-	steeringRun(t, slowUploads, "slow uploads", 0.5, true, true)
-}
-
-func TestAdaptive_Steering_SlowRoute(t *testing.T) {
-	steeringRun(t, slowRoute, "slow route", 0.45, false, false)
-}
-
-func BenchmarkLoadShed_L13_SlowRouteTuned(b *testing.B) {
-	for b.Loop() {
-		s := runSteering(b, slowRouteTuned)
-		limits := s.limitsBetween(steerAttackAt, steerAttackTo)
-		slices.Sort(limits)
-		if len(limits) > 0 {
-			b.ReportMetric(float64(limits[0]), "limit-min")
-			b.ReportMetric(float64(limits[len(limits)/2]), "limit-median")
-			b.ReportMetric(float64(limits[len(limits)-1]), "limit-max")
-		}
-		b.ReportMetric(s.servedShare(), "served/capacity")
-	}
-}
-
 const (
 	heldLength   = 45 * time.Second
 	heldWarmup   = 10 * time.Second
@@ -815,9 +1257,223 @@ func longHeldRun(t *testing.T, procs int, kind string, k int) {
 	}
 }
 
-func TestAdaptive_LongHeld_OneStream_1CPU(t *testing.T)    { longHeldRun(t, 1, "cpu", 1) }
-func TestAdaptive_LongHeld_TwoStreams_1CPU(t *testing.T)   { longHeldRun(t, 1, "cpu", 2) }
-func TestAdaptive_LongHeld_ThreeStreams_2CPU(t *testing.T) { longHeldRun(t, 2, "cpu", 3) }
-func TestAdaptive_LongHeld_OneStream_IOBound_1CPU(t *testing.T) {
-	longHeldRun(t, 1, "io", 1)
+const busyBody = `{"code":503,"error":"Service Unavailable","message":"Server is busy"}`
+
+type exchange struct {
+	inner http.ResponseWriter
+	hooks []httphook.Hook
+}
+
+func newExchange(w http.ResponseWriter) *exchange { return &exchange{inner: w} }
+
+func (e *exchange) Header() http.Header { return e.inner.Header() }
+
+func (e *exchange) Write(p []byte) (int, error) { return e.inner.Write(p) }
+
+func (e *exchange) WriteHeader(code int) { e.inner.WriteHeader(code) }
+
+func (e *exchange) Inner() http.ResponseWriter { return e.inner }
+
+func (e *exchange) SetInner(w http.ResponseWriter) { e.inner = w }
+
+func (e *exchange) OnDone(h httphook.Hook) { e.hooks = append(e.hooks, h) }
+
+func (e *exchange) finish(elapsed time.Duration) {
+	for i := len(e.hooks) - 1; i >= 0; i-- {
+		e.hooks[i].Done(elapsed)
+	}
+	clear(e.hooks)
+	e.hooks = e.hooks[:0]
+}
+
+type call struct {
+	rec      *httptest.ResponseRecorder
+	ex       *exchange
+	done     chan struct{}
+	admitted atomic.Bool
+	refusal  any
+}
+
+func startCall(mw common.MiddlewareFn, r *http.Request) *call {
+	c := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
+	c.ex = newExchange(c.rec)
+	go func() {
+		defer close(c.done)
+		defer func() { c.refusal = recover() }()
+		mw.Use(r, c.ex, func() { c.admitted.Store(true) })
+	}()
+	return c
+}
+
+func (c *call) returned() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *call) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-c.done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("a call did not return")
+	}
+}
+
+func admitNow(t *testing.T, mw common.MiddlewareFn) *call {
+	t.Helper()
+	c := startCall(mw, request(http.MethodGet, "/ok"))
+	c.wait(t)
+	if !c.admitted.Load() || c.refusal != nil {
+		t.Fatal(test.DiffMessage([]any{c.admitted.Load(), c.refusal}, []any{true, nil}, "fixture: the request is admitted"))
+	}
+	return c
+}
+
+func tryAdmit(mw common.MiddlewareFn) (*call, bool) {
+	c := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
+	c.ex = newExchange(c.rec)
+	func() {
+		defer func() { c.refusal = recover() }()
+		mw.Use(request(http.MethodGet, "/ok"), c.ex, func() { c.admitted.Store(true) })
+	}()
+	return c, c.admitted.Load()
+}
+
+func refusalOf(v any) (code int, message string, ok bool) {
+	var e *exception.Exception
+	switch x := v.(type) {
+	case *exception.Exception:
+		e = x
+	case exception.Exception:
+		e = &x
+	}
+	if e == nil {
+		return 0, "", false
+	}
+	return e.Code(), e.Message(), true
+}
+
+func expectBusy(t *testing.T, c *call, desc string) {
+	t.Helper()
+	code, message, ok := refusalOf(c.refusal)
+	if !ok || code != http.StatusServiceUnavailable || message != "Server is busy" {
+		t.Error(test.DiffMessage([]any{ok, code, message}, []any{true, 503, "Server is busy"}, "L3, G1: "+desc))
+	}
+	if got := c.rec.Header().Get("Retry-After"); got != "1" {
+		t.Error(test.DiffMessage(got, "1", "L3: Retry-After on "+desc))
+	}
+}
+
+func intOf(s inspect.Snapshot, key string) int64 {
+	v, _ := field(s, key).(int64)
+	return v
+}
+
+func durationOf(s inspect.Snapshot, key string) time.Duration {
+	v, _ := field(s, key).(time.Duration)
+	return v
+}
+
+func waitUntil(t *testing.T, desc string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for: " + desc)
+		}
+		runtime.Gosched()
+	}
+}
+
+func snapshotter(t testing.TB, mw common.MiddlewareFn) inspect.Snapshotter {
+	t.Helper()
+	s, ok := mw.(inspect.Snapshotter)
+	if !ok {
+		t.Fatal(test.DiffMessage(mw, "an inspect.Snapshotter", "I1: the compiled loadshed implements Snapshotter"))
+	}
+	return s
+}
+
+func withMachine(t *testing.T, procs int, memoryLimit int64) {
+	t.Helper()
+	previousProcs := runtime.GOMAXPROCS(procs)
+	previousLimit := debug.SetMemoryLimit(memoryLimit)
+	t.Cleanup(func() {
+		runtime.GOMAXPROCS(previousProcs)
+		debug.SetMemoryLimit(previousLimit)
+	})
+}
+
+type terminal struct{ ID int }
+
+type terminalFunc func(w http.ResponseWriter, r *http.Request, next ctx.Next)
+
+var (
+	terminals    sync.Map
+	nextTerminal atomic.Int64
+)
+
+func (t terminal) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+	fn, _ := terminals.Load(t.ID)
+	fn.(terminalFunc)(w, r, next)
+}
+
+func terminalMiddleware(fn terminalFunc) terminal {
+	id := int(nextTerminal.Add(1))
+	terminals.Store(id, fn)
+	return terminal{ID: id}
+}
+
+func isRefused(w *httptest.ResponseRecorder) bool {
+	return w.Code == http.StatusServiceUnavailable && strings.Contains(w.Body.String(), "Server is busy")
+}
+
+func describe(c LoadShed) string {
+	return "MaxInFlight " + strconv.Itoa(c.MaxInFlight) + ", MaxQueue " + strconv.Itoa(c.MaxQueue)
+}
+
+type scriptedStep struct {
+	data string
+	err  error
+}
+
+type scriptedBody struct {
+	steps    []scriptedStep
+	delay    time.Duration
+	closeErr error
+	closed   int
+}
+
+func (b *scriptedBody) Read(p []byte) (int, error) {
+	if b.delay > 0 {
+		time.Sleep(b.delay)
+	}
+	if len(b.steps) == 0 {
+		return 0, io.EOF
+	}
+	step := b.steps[0]
+	b.steps = b.steps[1:]
+	return copy(p, step.data), step.err
+}
+
+func (b *scriptedBody) Close() error {
+	b.closed++
+	return b.closeErr
+}
+
+func (g *rig) admitRequest(r *http.Request) bool {
+	c := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
+	c.ex = newExchange(c.rec)
+	func() {
+		defer func() { c.refusal = recover() }()
+		g.mw.Use(r, c.ex, func() { c.admitted.Store(true) })
+	}()
+	if c.admitted.Load() {
+		g.pool = append(g.pool, c)
+	}
+	return c.admitted.Load()
 }

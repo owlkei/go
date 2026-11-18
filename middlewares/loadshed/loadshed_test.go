@@ -3,7 +3,6 @@ package loadshed
 import (
 	"context"
 	"errors"
-	"github.com/dangduoc08/ginject"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/net/websocket"
-
+	"github.com/dangduoc08/ginject"
 	"github.com/dangduoc08/ginject/exception"
 	"github.com/dangduoc08/ginject/internal/core"
 	"github.com/dangduoc08/ginject/internal/test"
+	"golang.org/x/net/websocket"
 )
 
 func TestNewLoadShed_Panics(t *testing.T) {
@@ -29,10 +28,6 @@ func TestNewLoadShed_Panics(t *testing.T) {
 			t.Error(test.DiffMessage(text, "invalid loadshed: ...", "L5, G4: "+strings.TrimSpace(text)+" for "+describe(c)))
 		}
 	}
-}
-
-func describe(c LoadShed) string {
-	return "MaxInFlight " + strconv.Itoa(c.MaxInFlight) + ", MaxQueue " + strconv.Itoa(c.MaxQueue)
 }
 
 func TestNewLoadShed_ValidOptions(t *testing.T) {
@@ -418,48 +413,6 @@ func TestLoadShed_DoesNotReadBody(t *testing.T) {
 	}
 }
 
-type scriptedStep struct {
-	data string
-	err  error
-}
-
-type scriptedBody struct {
-	steps    []scriptedStep
-	delay    time.Duration
-	closeErr error
-	closed   int
-}
-
-func (b *scriptedBody) Read(p []byte) (int, error) {
-	if b.delay > 0 {
-		time.Sleep(b.delay)
-	}
-	if len(b.steps) == 0 {
-		return 0, io.EOF
-	}
-	step := b.steps[0]
-	b.steps = b.steps[1:]
-	return copy(p, step.data), step.err
-}
-
-func (b *scriptedBody) Close() error {
-	b.closed++
-	return b.closeErr
-}
-
-func (g *rig) admitRequest(r *http.Request) bool {
-	c := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
-	c.ex = newExchange(c.rec)
-	func() {
-		defer func() { c.refusal = recover() }()
-		g.mw.Use(r, c.ex, func() { c.admitted.Store(true) })
-	}()
-	if c.admitted.Load() {
-		g.pool = append(g.pool, c)
-	}
-	return c.admitted.Load()
-}
-
 func TestLoadShed_BodyReadTimeNotSampled(t *testing.T) {
 	g := newRig(t)
 	g.sequential(10*time.Millisecond, g.window())
@@ -729,4 +682,89 @@ func TestLoadShed_Allocations_Fixed(t *testing.T) {
 	if got != 0 {
 		t.Error(test.DiffMessage(got, 0.0, "L1: an admitted request costs no allocation"))
 	}
+}
+
+func TestLoadShed_AdaptiveBodyAdmissionAllocatesAtMostOnce(t *testing.T) {
+	step := bodyAdmission()
+	if got := testing.AllocsPerRun(200, step); got > 1 {
+		t.Error(test.DiffMessage(got, "<= 1", "L8: an admitted request with a body costs one allocation, the wrapper"))
+	}
+}
+
+func TestLoadShed_AdaptiveAdmissionWithoutBodyAllocatesNothing(t *testing.T) {
+	mw := LoadShed{}.NewMiddleware()
+	ex := newExchange(&discardWriter{header: http.Header{}})
+	r := request(http.MethodGet, "/ok")
+	step := func() {
+		mw.Use(r, ex, noop)
+		ex.finish(time.Millisecond)
+	}
+	if got := testing.AllocsPerRun(200, step); got != 0 {
+		t.Error(test.DiffMessage(got, 0.0, "L8: a request without a body adds no allocation"))
+	}
+}
+
+func TestLoadShed_QueuedNewcomerYieldsToWaiter(t *testing.T) {
+	c, _, waiter := queuedLoadShed(t, 4)
+	c.inFlight.Add(-1)
+	newcomer := startEnqueue(c)
+	waiter.wait(t)
+	if !waiter.admitted.Load() || waiter.refusal != nil {
+		t.Fatal(test.DiffMessage([]any{waiter.admitted.Load(), waiter.refusal}, []any{true, nil}, "L2: a slot freed for a waiter goes to it, not to a newcomer"))
+	}
+	waitUntil(t, "the newcomer is counted as waiting", func() bool { return intOf(c.Snapshot(), "waiting") == 1 })
+	time.Sleep(20 * time.Millisecond)
+	if newcomer.returned() {
+		t.Fatal(test.DiffMessage(true, false, "L2: the newcomer is still waiting after 20 ms"))
+	}
+	c.wake()
+	if newcomer.returned() || newcomer.admitted.Load() {
+		t.Error(test.DiffMessage(true, false, "L2: wake admits nobody more"))
+	}
+	waiter.ex.finish(time.Millisecond)
+	newcomer.wait(t)
+	if !newcomer.admitted.Load() || newcomer.refusal != nil {
+		t.Error(test.DiffMessage([]any{newcomer.admitted.Load(), newcomer.refusal}, []any{true, nil}, "L2: the newcomer is admitted when the waiter finishes"))
+	}
+	newcomer.ex.finish(time.Millisecond)
+}
+
+func TestLoadShed_FreeSlotsGoToWaitersBeforeQueueFull(t *testing.T) {
+	c, _, waiter := queuedLoadShed(t, 1)
+	c.inFlight.Add(-1)
+	newcomer := startEnqueue(c)
+	waiter.wait(t)
+	if !waiter.admitted.Load() || waiter.refusal != nil {
+		t.Fatal(test.DiffMessage([]any{waiter.admitted.Load(), waiter.refusal}, []any{true, nil}, "L2: the free slot goes to the waiter"))
+	}
+	waitUntil(t, "the newcomer waits", func() bool { return intOf(c.Snapshot(), "waiting") == 1 })
+	if newcomer.returned() {
+		t.Fatal(test.DiffMessage(newcomer.refusal, nil, "L2: the newcomer finds the queue full only after the free slots went to the waiters before it"))
+	}
+	waiter.ex.finish(time.Millisecond)
+	newcomer.wait(t)
+	if !newcomer.admitted.Load() {
+		t.Error(test.DiffMessage(false, true, "L2: the newcomer is admitted in its turn"))
+	}
+	newcomer.ex.finish(time.Millisecond)
+}
+
+func TestLoadShed_ArrivalAtFreedSlotMayTakeIt(t *testing.T) {
+	c, _, waiter := queuedLoadShed(t, 4)
+	c.inFlight.Add(-1)
+	newcomer := startCall(c, request(http.MethodGet, "/ok"))
+	newcomer.wait(t)
+	if !newcomer.admitted.Load() || newcomer.refusal != nil {
+		t.Fatal(test.DiffMessage([]any{newcomer.admitted.Load(), newcomer.refusal}, []any{true, nil}, "L2: an arrival at the instant a slot frees may take it"))
+	}
+	c.wake()
+	if waiter.returned() || waiter.admitted.Load() {
+		t.Error(test.DiffMessage(true, false, "L2: wake admits nobody while the newcomer holds the slot"))
+	}
+	newcomer.ex.finish(time.Millisecond)
+	waiter.wait(t)
+	if !waiter.admitted.Load() || waiter.refusal != nil {
+		t.Error(test.DiffMessage([]any{waiter.admitted.Load(), waiter.refusal}, []any{true, nil}, "L2: the waiter is admitted one finish later"))
+	}
+	waiter.ex.finish(time.Millisecond)
 }

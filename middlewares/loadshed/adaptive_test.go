@@ -3,164 +3,15 @@ package loadshed
 import (
 	"math"
 	"net/http"
-	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/inspect"
 	"github.com/dangduoc08/ginject/internal/test"
 )
-
-const (
-	rigProcs  = 4
-	rigMemory = 64 << 20
-	rigMin    = 4
-	rigMax    = 64
-	rigStart  = 32
-)
-
-type fakeClock struct {
-	mu sync.Mutex
-	t  time.Time
-}
-
-func (c *fakeClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.t
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	c.t = c.t.Add(d)
-	c.mu.Unlock()
-}
-
-type rig struct {
-	t     *testing.T
-	mw    common.MiddlewareFn
-	s     inspect.Snapshotter
-	clock *fakeClock
-	pool  []*call
-}
-
-func newRig(t *testing.T) *rig { return newRigProcs(t, rigProcs) }
-
-func newRigProcs(t *testing.T, procs int) *rig {
-	t.Helper()
-	withMachine(t, procs, rigMemory)
-	mw := LoadShed{MaxQueue: -1}.NewMiddleware()
-	clock := &fakeClock{t: time.Now()}
-	mw.(*compiledLoadShed).adaptive.now = clock.Now
-	return &rig{t: t, mw: mw, s: snapshotter(t, mw), clock: clock}
-}
-
-func (g *rig) limit() int64 { return intOf(g.s.Snapshot(), "limit") }
-func (g *rig) window() int  { return 4 * int(g.limit()) }
-
-func (g *rig) admit() bool {
-	c, ok := tryAdmit(g.mw)
-	if ok {
-		g.pool = append(g.pool, c)
-	}
-	return ok
-}
-
-func (g *rig) finishOldest(elapsed time.Duration) {
-	g.t.Helper()
-	if len(g.pool) == 0 {
-		g.t.Fatal("fixture: nothing in flight")
-	}
-	c := g.pool[0]
-	g.pool = g.pool[1:]
-	c.ex.finish(elapsed)
-}
-
-func (g *rig) fill(n int) {
-	for len(g.pool) < n && g.admit() {
-	}
-}
-
-func (g *rig) sequential(elapsed time.Duration, samples int) {
-	g.t.Helper()
-	for i := 0; i < samples; i++ {
-		if !g.admit() {
-			g.t.Fatal("fixture: a sequential request is refused")
-		}
-		g.finishOldest(elapsed)
-	}
-}
-
-func (g *rig) saturated(elapsed time.Duration, windows int, keep func() int) {
-	g.t.Helper()
-	for i := 0; i < windows*g.window(); i++ {
-		g.fill(keep())
-		if len(g.pool) == 0 {
-			g.t.Fatal("fixture: nothing to finish")
-		}
-		g.finishOldest(elapsed)
-	}
-}
-
-func (g *rig) pressure() {
-	g.t.Helper()
-	g.fill(int(g.limit()))
-	if g.admit() {
-		g.t.Fatal(test.DiffMessage(true, false, "fixture: one request over the limit is refused"))
-	}
-}
-
-func (g *rig) cycle(elapsed time.Duration, finished int) {
-	g.t.Helper()
-	for i := 0; i < finished; i++ {
-		g.finishOldest(elapsed)
-		if i < finished-1 {
-			g.admit()
-		}
-	}
-}
-
-func (g *rig) pressureWindow(elapsed time.Duration) {
-	g.t.Helper()
-	size := g.window()
-	g.pressure()
-	g.cycle(elapsed, size)
-}
-
-func (g *rig) steady(keep int) func() int { return func() int { return keep } }
-func (g *rig) atLimit() func() int        { return func() int { return int(g.limit()) } }
-
-func (g *rig) drain(elapsed time.Duration) {
-	for len(g.pool) > 0 {
-		g.finishOldest(elapsed)
-	}
-}
-
-func cgroupMemoryLimited() bool {
-	if runtime.GOOS != "linux" {
-		return false
-	}
-	for _, name := range []string{"/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"} {
-		raw, err := os.ReadFile(name)
-		if err != nil {
-			continue
-		}
-		text := strings.TrimSpace(string(raw))
-		if text == "max" {
-			continue
-		}
-		if n, err := strconv.ParseInt(text, 10, 64); err == nil && n < 1<<60 {
-			return true
-		}
-	}
-	return false
-}
 
 func TestAdaptive_Bounds(t *testing.T) {
 	cases := []struct {
@@ -299,45 +150,6 @@ func TestAdaptive_LoweringDoesNotRefreshBaselineAge(t *testing.T) {
 	g.drain(7 * time.Millisecond)
 }
 
-func slowFirst(slow, base time.Duration) func(int) time.Duration {
-	return func(i int) time.Duration {
-		if i == 0 {
-			return slow
-		}
-		return base
-	}
-}
-
-func (g *rig) sequentialOf(elapsed func(int) time.Duration, samples int) {
-	g.t.Helper()
-	for i := 0; i < samples; i++ {
-		if !g.admit() {
-			g.t.Fatal("fixture: a sequential request is refused")
-		}
-		g.finishOldest(elapsed(i))
-	}
-}
-
-func (g *rig) pressureWindowOf(elapsed func(int) time.Duration) {
-	g.t.Helper()
-	size := g.window()
-	g.pressure()
-	for i := 0; i < size; i++ {
-		g.finishOldest(elapsed(i))
-		if i < size-1 {
-			g.admit()
-		}
-	}
-}
-
-func (g *rig) contended(elapsed func(int) time.Duration, samples int) {
-	g.t.Helper()
-	for i := 0; i < samples; i++ {
-		g.fill(8)
-		g.finishOldest(elapsed(i))
-	}
-}
-
 func TestAdaptive_SampleCappedAt32Baselines(t *testing.T) {
 	g := newRig(t)
 	g.sequential(10*time.Millisecond, g.window())
@@ -387,38 +199,6 @@ func TestAdaptive_NoGrowthFromFarFasterWindow(t *testing.T) {
 		t.Error(test.DiffMessage(got, int64(33), "L10: the next window at 4 ms grows the limit"))
 	}
 	g.drain(4 * time.Millisecond)
-}
-
-func probesOf(g *rig) int64 { return intOf(g.s.Snapshot(), "probes") }
-
-func floorRig(t *testing.T) *rig {
-	t.Helper()
-	g := newRig(t)
-	g.sequential(10*time.Millisecond, g.window())
-	for i := 0; i < 200 && g.limit() < 40; i++ {
-		g.pressureWindow(10 * time.Millisecond)
-	}
-	if g.limit() != 40 {
-		t.Fatal(test.DiffMessage(g.limit(), int64(40), "fixture: the limit grew to 40"))
-	}
-	for i := 0; i < 200 && probesOf(g) == 0; i++ {
-		g.pressureWindow(60 * time.Millisecond)
-		if g.limit() < 20 {
-			t.Fatal(test.DiffMessage(g.limit(), ">= 20", "L10: the limit never falls below half of the limit it earned"))
-		}
-	}
-	if got := g.limit(); got != 20 {
-		t.Fatal(test.DiffMessage(got, int64(20), "L10: the limit falls to the floor"))
-	}
-	if probesOf(g) != 1 || field(g.s.Snapshot(), "probing") != true {
-		t.Fatal(test.DiffMessage([]any{probesOf(g), field(g.s.Snapshot(), "probing")}, []any{int64(1), true}, "L11: the close that holds the floor starts a probe"))
-	}
-	g.clock.Advance(1100 * time.Millisecond)
-	g.admit()
-	if got := field(g.s.Snapshot(), "probing"); got != false {
-		t.Fatal(test.DiffMessage(got, false, "L11: a probe running for over 1 s ends at the next admission"))
-	}
-	return g
 }
 
 func TestAdaptive_FloorIsHalfOfEarnedLimit(t *testing.T) {
@@ -881,4 +661,278 @@ func TestAdaptive_Snapshot(t *testing.T) {
 	if got := durationOf(snap, "baseline"); got != 0 {
 		t.Error(test.DiffMessage(got, time.Duration(0), "I4: baseline unknown"))
 	}
+}
+
+func TestAdaptive_NeverAboveLimitDuringProbe(t *testing.T) {
+	withMachine(t, 1, rigMemory)
+	mw := LoadShed{MaxQueue: -1}.NewMiddleware()
+	c := mw.(*compiledLoadShed)
+	s := snapshotter(t, mw)
+	var current, peak, heldViolations atomic.Int64
+	observe := func() {
+		now := current.Add(1)
+		for {
+			seen := peak.Load()
+			if now <= seen || peak.CompareAndSwap(seen, now) {
+				break
+			}
+		}
+		if c.admit.Load() < 0 {
+			if record := c.adaptive.current.Load(); record != nil && record.held.Load() > c.adaptive.min {
+				runtime.Gosched()
+				if c.admit.Load() < 0 && record.held.Load() > c.adaptive.min {
+					heldViolations.Add(1)
+				}
+			}
+		}
+		runtime.Gosched()
+		current.Add(-1)
+	}
+	var wg sync.WaitGroup
+	for g := 0; g < 16; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 600; i++ {
+				call, ok := tryAdmit(mw)
+				if !ok {
+					runtime.Gosched()
+					continue
+				}
+				observe()
+				call.ex.finish(time.Duration(g*i%50+1) * time.Microsecond)
+			}
+		}()
+	}
+	wg.Wait()
+	snap := s.Snapshot()
+	if peak.Load() > c.adaptive.max {
+		t.Error(test.DiffMessage(peak.Load(), c.adaptive.max, "L1: never more requests in flight than max, during a probe too"))
+	}
+	if got := heldViolations.Load(); got != 0 {
+		t.Error(test.DiffMessage(got, int64(0), "L1: a probe never holds more than min of its own requests"))
+	}
+	if got := intOf(snap, "in_flight"); got != 0 {
+		t.Error(test.DiffMessage(got, int64(0), "L4: every slot released"))
+	}
+	if intOf(snap, "probes") == 0 {
+		t.Error(test.DiffMessage(intOf(snap, "probes"), "> 0", "fixture: the run went through a probe"))
+	}
+}
+
+func TestAdaptive_ProbeAdmitsBesideHeldRequests(t *testing.T) {
+	g := newRig(t)
+	g.holdOutside(rigMin)
+	g.startProbeBeside(100 * time.Millisecond)
+	g.drain(100 * time.Millisecond)
+	for i := 0; i < rigMin; i++ {
+		if !g.admit() {
+			t.Fatal(test.DiffMessage(false, true, "L1, L11: a probe admits min requests of its own beside requests held from before it"))
+		}
+	}
+	if g.admit() {
+		t.Error(test.DiffMessage(true, false, "L1, L11: the request after the probe's min is refused"))
+	}
+	for i := 0; i < rigMin; i++ {
+		g.finishOldest(5 * time.Millisecond)
+	}
+	g.sequential(5*time.Millisecond, 8-rigMin)
+	snap := g.s.Snapshot()
+	if got := field(snap, "probing"); got != false {
+		t.Error(test.DiffMessage(got, false, "L11: the probe ends after 8 probe samples"))
+	}
+	if got := durationOf(snap, "baseline"); got != 5*time.Millisecond {
+		t.Error(test.DiffMessage(got, 5*time.Millisecond, "L11: the probe learns the baseline beside held requests"))
+	}
+}
+
+func TestAdaptive_ProbeSlotsBelongToOneProbe(t *testing.T) {
+	g := newRig(t)
+	g.startProbeBeside(100 * time.Millisecond)
+	g.drain(5 * time.Millisecond)
+	g.admitOutside("fixture: probe 1 admits a request")
+	g.sequential(5*time.Millisecond, 8)
+	g.expectProbing(false, "fixture: probe 1 ended after 8 samples")
+	g.pressureWindow(100 * time.Millisecond)
+	g.clock.Advance(31 * time.Second)
+	g.startProbeBeside(100 * time.Millisecond)
+	if probesOf(g) != 2 {
+		t.Fatal(test.DiffMessage(probesOf(g), int64(2), "fixture: probe 2 started"))
+	}
+	g.drain(5 * time.Millisecond)
+	for i := 0; i < rigMin; i++ {
+		if !g.admit() {
+			t.Fatalf("L1: probe 2 admits min requests beside the request held from probe 1 (admitted %d of %d)", i, rigMin)
+		}
+	}
+	if g.admit() {
+		t.Error(test.DiffMessage(true, false, "L1: probe 2 admits no more than min of its own"))
+	}
+	g.drain(5 * time.Millisecond)
+}
+
+func TestAdaptive_ProbeKeepsLimit(t *testing.T) {
+	g := newRig(t)
+	held := g.holdOutside(30)
+	g.startProbeBeside(100 * time.Millisecond)
+	g.drain(100 * time.Millisecond)
+	limit := g.limit()
+	if limit != rigStart {
+		t.Fatal(test.DiffMessage(limit, int64(rigStart), "fixture: the limit is unchanged by the probe's window"))
+	}
+	for i := 0; i < 2; i++ {
+		if !g.admit() {
+			t.Fatal(test.DiffMessage(false, true, "L1, L11: the probe admits while the total stays within the limit and below its min"))
+		}
+	}
+	if g.admit() {
+		t.Error(test.DiffMessage(true, false, "L1: the total in flight never passes the limit during a probe"))
+	}
+	held[0].ex.finish(5 * time.Millisecond)
+	if !g.admit() {
+		t.Error(test.DiffMessage(false, true, "L1: a finished request frees one slot of the limit during a probe"))
+	}
+	if g.admit() {
+		t.Error(test.DiffMessage(true, false, "L1: and only one"))
+	}
+}
+
+func TestAdaptive_ProbeSampleOverlappingOutsideFinishIgnored(t *testing.T) {
+	g := newRig(t)
+	g.startProbeBeside(100 * time.Millisecond)
+	probe := g.admitOutside("L1, L11: the probe admits into the slot the window left free")
+	g.finishOldest(100 * time.Millisecond)
+	probe.ex.finish(50 * time.Millisecond)
+	g.drain(100 * time.Millisecond)
+	g.expectProbing(true, "L11: a probe sample that overlapped an old request's finish does not count toward the 8")
+	g.sequential(5*time.Millisecond, 8)
+	snap := g.s.Snapshot()
+	if got := field(snap, "probing"); got != false {
+		t.Error(test.DiffMessage(got, false, "L11: the probe ends after 8 clean samples"))
+	}
+	if got := durationOf(snap, "baseline"); got != 5*time.Millisecond {
+		t.Error(test.DiffMessage(got, 5*time.Millisecond, "L11: the overlapping 50 ms sample is ignored"))
+	}
+}
+
+func TestAdaptive_ProbeOfOverlappingSamplesOnlyIsEmpty(t *testing.T) {
+	g := newRig(t)
+	g.startProbeBeside(100 * time.Millisecond)
+	limit := g.limit()
+	for i := 0; i < 8; i++ {
+		probe := g.admitOutside("L1, L11: the probe admits one request beside the old ones")
+		g.finishOldest(100 * time.Millisecond)
+		probe.ex.finish(5 * time.Millisecond)
+	}
+	g.expectProbing(true, "L11: samples that overlap old finishes do not end the probe")
+	g.clock.Advance(1100 * time.Millisecond)
+	g.admit()
+	snap := g.s.Snapshot()
+	if got := field(snap, "probing"); got != false {
+		t.Error(test.DiffMessage(got, false, "L11: the next admission after 1 s ends the probe"))
+	}
+	if got := durationOf(snap, "baseline"); got != 0 {
+		t.Error(test.DiffMessage(got, time.Duration(0), "L11: a probe with no clean sample leaves the baseline"))
+	}
+	if got := intOf(snap, "probes"); got != 1 {
+		t.Error(test.DiffMessage(got, int64(1), "I4: one probe"))
+	}
+	if got := g.limit(); got != limit {
+		t.Error(test.DiffMessage(got, limit, "L11: an empty probe leaves the limit"))
+	}
+}
+
+func TestAdaptive_ProbeRequestAfterProbeIsOrdinary(t *testing.T) {
+	g := newRig(t)
+	g.startProbeBeside(100 * time.Millisecond)
+	g.drain(5 * time.Millisecond)
+	earlier := g.admitOutside("fixture: probe 1 admits a request")
+	g.sequential(5*time.Millisecond, 8)
+	g.expectProbing(false, "fixture: probe 1 ended")
+	g.pressureWindow(100 * time.Millisecond)
+	g.clock.Advance(31 * time.Second)
+	g.startProbeBeside(100 * time.Millisecond)
+	g.drain(5 * time.Millisecond)
+	running := g.admitOutside("L1, L11: probe 2 admits a request")
+	earlier.ex.finish(7 * time.Millisecond)
+	running.ex.finish(50 * time.Millisecond)
+	g.sequential(5*time.Millisecond, 7)
+	g.expectProbing(true, "L11: a request of probe 1 finishing during probe 2 is no sample of probe 2, and the sample it spoiled is ignored")
+	g.sequential(5*time.Millisecond, 1)
+	snap := g.s.Snapshot()
+	if got := field(snap, "probing"); got != false {
+		t.Error(test.DiffMessage(got, false, "L11: probe 2 ends with its own 8th clean sample"))
+	}
+	if got := durationOf(snap, "baseline"); got != 5*time.Millisecond {
+		t.Error(test.DiffMessage(got, 5*time.Millisecond, "L11: only probe 2's clean samples are learned"))
+	}
+}
+
+func TestAdaptive_ProbeEndingOnTimeWakesWaiters(t *testing.T) {
+	withMachine(t, rigProcs, rigMemory)
+	mw := LoadShed{MaxQueue: 4}.NewMiddleware()
+	c := mw.(*compiledLoadShed)
+	s := snapshotter(t, mw)
+	clock := &fakeClock{t: time.Now()}
+	c.adaptive.now = clock.Now
+	c.adaptive.mu.Lock()
+	c.adaptive.startProbeLocked(c, clock.Now())
+	c.adaptive.mu.Unlock()
+	var held []*call
+	for i := int64(0); i < c.adaptive.min; i++ {
+		held = append(held, admitNow(t, mw))
+	}
+	waiter := startCall(mw, request(http.MethodGet, "/ok"))
+	waitUntil(t, "the waiter is queued behind the probe's full slots", func() bool { return intOf(s.Snapshot(), "waiting") == 1 })
+
+	clock.Advance(2 * time.Second)
+	newcomer, ok := tryAdmit(mw)
+	if !ok {
+		t.Fatal(test.DiffMessage(false, true, "L11: the first admission after 1 s ends the probe and is admitted"))
+	}
+	waiter.wait(t)
+	if !waiter.admitted.Load() || waiter.refusal != nil {
+		t.Error(test.DiffMessage([]any{waiter.admitted.Load(), waiter.refusal}, []any{true, nil}, "L2: a probe that ends on time hands the freed slots to the waiters"))
+	}
+	for _, h := range append(held, newcomer, waiter) {
+		h.ex.finish(time.Millisecond)
+	}
+}
+
+func TestAdaptive_Stable_CPUBound_1CPU(t *testing.T) { stableRun(t, 1, "cpu") }
+
+func TestAdaptive_Stable_CPUBound_2CPU(t *testing.T) { stableRun(t, 2, "cpu") }
+
+func TestAdaptive_Stable_IOBound_1CPU(t *testing.T) { stableRun(t, 1, "io") }
+
+func TestAdaptive_Stable_IOBound_2CPU(t *testing.T) { stableRun(t, 2, "io") }
+
+func TestAdaptive_NoRefusalBelowCapacity_1CPU(t *testing.T) { belowCapacityRun(t, 1) }
+
+func TestAdaptive_NoRefusalBelowCapacity_2CPU(t *testing.T) { belowCapacityRun(t, 2) }
+
+func TestAdaptive_RecoversWhenHandlerSlows_1CPU(t *testing.T) { recoversRun(t, 1) }
+
+func TestAdaptive_RecoversWhenHandlerSlows_2CPU(t *testing.T) { recoversRun(t, 2) }
+
+func TestAdaptive_Steering_FreeBursts(t *testing.T) {
+	steeringRun(t, freeBursts, "free bursts", 0.5, true, true)
+}
+
+func TestAdaptive_Steering_SlowUploads(t *testing.T) {
+	steeringRun(t, slowUploads, "slow uploads", 0.5, true, true)
+}
+
+func TestAdaptive_Steering_SlowRoute(t *testing.T) {
+	steeringRun(t, slowRoute, "slow route", 0.45, false, false)
+}
+
+func TestAdaptive_LongHeld_OneStream_1CPU(t *testing.T) { longHeldRun(t, 1, "cpu", 1) }
+
+func TestAdaptive_LongHeld_TwoStreams_1CPU(t *testing.T) { longHeldRun(t, 1, "cpu", 2) }
+
+func TestAdaptive_LongHeld_ThreeStreams_2CPU(t *testing.T) { longHeldRun(t, 2, "cpu", 3) }
+
+func TestAdaptive_LongHeld_OneStream_IOBound_1CPU(t *testing.T) {
+	longHeldRun(t, 1, "io", 1)
 }
