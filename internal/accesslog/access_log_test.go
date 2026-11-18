@@ -1,11 +1,10 @@
 package accesslog
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"regexp"
+	"net/netip"
 	"runtime"
 	"slices"
 	"strconv"
@@ -21,268 +20,6 @@ import (
 	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/log"
 )
-
-type recordedLog struct {
-	msg  string
-	args []any
-}
-
-type fakeLogger struct {
-	mu     sync.Mutex
-	calls  int
-	infos  []recordedLog
-	warns  []recordedLog
-	onInfo func(n int)
-}
-
-func newFakeLogger() *fakeLogger {
-	return &fakeLogger{}
-}
-
-func (f *fakeLogger) Debug(msg string, args ...any) {}
-func (f *fakeLogger) Fatal(msg string, args ...any) {}
-func (f *fakeLogger) Error(msg string, args ...any) {}
-
-func (f *fakeLogger) Info(msg string, args ...any) {
-	f.mu.Lock()
-	f.calls++
-	n := f.calls
-	hook := f.onInfo
-	f.mu.Unlock()
-	if hook != nil {
-		hook(n)
-	}
-	f.mu.Lock()
-	f.infos = append(f.infos, recordedLog{msg: msg, args: slices.Clone(args)})
-	f.mu.Unlock()
-}
-
-func (f *fakeLogger) Warn(msg string, args ...any) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.warns = append(f.warns, recordedLog{msg: msg, args: slices.Clone(args)})
-}
-
-func (f *fakeLogger) lines() []recordedLog {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.infos)
-}
-
-func (f *fakeLogger) warnings() []recordedLog {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.warns)
-}
-
-func setup(t *testing.T) (*trace.Tracer, *fakeLogger, *AccessLog) {
-	t.Helper()
-	tr := &trace.Tracer{}
-	logger := newFakeLogger()
-	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: logger})
-	t.Cleanup(al.Stop)
-	return tr, logger, al
-}
-
-func stageEvent(id, stage, name string, d time.Duration) trace.Event {
-	return trace.Event{ID: id, TraceID: "trace-" + id, Stage: stage, Name: name, Transport: trace.TransportHTTP, Duration: d}
-}
-
-func completeEvent(id string, code int, target string, d time.Duration) trace.Event {
-	return trace.Event{ID: id, TraceID: "trace-" + id, Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: target, Code: code, Duration: d}
-}
-
-func argValue(t *testing.T, args []any, key string) any {
-	t.Helper()
-	for i := 0; i+1 < len(args); i += 2 {
-		if args[i] == key {
-			return args[i+1]
-		}
-	}
-	t.Fatalf("argument %q not found in %v", key, args)
-	return nil
-}
-
-func hasArg(args []any, key string) bool {
-	for i := 0; i+1 < len(args); i += 2 {
-		if args[i] == key {
-			return true
-		}
-	}
-	return false
-}
-
-func stageOf(t *testing.T, args []any, stage string) string {
-	t.Helper()
-	text, ok := argValue(t, args, stage).(string)
-	if !ok {
-		t.Fatalf("stage %q is not a string: %T", stage, argValue(t, args, stage))
-	}
-	return text
-}
-
-func entriesOf(t *testing.T, args []any, stage string) []string {
-	t.Helper()
-	return strings.Split(stageOf(t, args, stage), ", ")
-}
-
-func argKeys(args []any) []string {
-	var keys []string
-	for i := 0; i+1 < len(args); i += 2 {
-		keys = append(keys, args[i].(string))
-	}
-	return keys
-}
-
-func percentsOf(t *testing.T, durations ...time.Duration) []int {
-	t.Helper()
-	tr, logger, _ := setup(t)
-	for i, d := range durations {
-		tr.Emit(stageEvent("p", trace.StageMiddleware, "M"+strconv.Itoa(i), d))
-	}
-	tr.Emit(completeEvent("p", 200, "/", time.Second))
-	lines := logger.lines()
-	if len(lines) != 1 {
-		t.Fatalf("expected one line, got %d", len(lines))
-	}
-	var out []int
-	for _, text := range entriesOf(t, lines[0].args, trace.StageMiddleware) {
-		open := strings.IndexByte(text, '(')
-		closeIdx := strings.IndexByte(text, '%')
-		p, err := strconv.Atoi(text[open+1 : closeIdx])
-		if err != nil {
-			t.Fatalf("cannot read a percent from %q", text)
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
-func sum(vals []int) int {
-	total := 0
-	for _, v := range vals {
-		total += v
-	}
-	return total
-}
-
-func goroutineID() int {
-	var buf [64]byte
-	n := runtime.Stack(buf[:], false)
-	fields := strings.Fields(string(buf[:n]))
-	id, _ := strconv.Atoi(fields[1])
-	return id
-}
-
-func blockedLogger() (*fakeLogger, chan struct{}, chan struct{}) {
-	logger := newFakeLogger()
-	gate := make(chan struct{})
-	entered := make(chan struct{}, 1)
-	logger.onInfo = func(int) {
-		select {
-		case entered <- struct{}{}:
-		default:
-		}
-		<-gate
-	}
-	return logger, gate, entered
-}
-
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		fn()
-	}()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal(test.DiffMessage("blocked for 30s", "returned", what))
-	}
-}
-
-func goroutinesAtMost(base int) bool {
-	for range 200000 {
-		if runtime.NumGoroutine() <= base {
-			return true
-		}
-		runtime.Gosched()
-	}
-	return runtime.NumGoroutine() <= base
-}
-
-type holdWriter struct {
-	mu   sync.Mutex
-	gate chan struct{}
-	buf  bytes.Buffer
-}
-
-func newHoldWriter() *holdWriter { return &holdWriter{gate: make(chan struct{})} }
-
-func (w *holdWriter) openAll() {
-	w.mu.Lock()
-	if w.gate != nil {
-		close(w.gate)
-		w.gate = nil
-	}
-	w.mu.Unlock()
-}
-
-func (w *holdWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	gate := w.gate
-	w.mu.Unlock()
-	if gate != nil {
-		<-gate
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.buf.Write(p)
-}
-
-func (w *holdWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.buf.String()
-}
-
-type outBuf struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *outBuf) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *outBuf) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-func builtinAccessLog(t *testing.T, format int) (*trace.Tracer, *outBuf) {
-	t.Helper()
-	out := &outBuf{}
-	restore := logpipe.SetStdout(out)
-	t.Cleanup(restore)
-	opts := &log.LogOptions{Level: log.LevelDebug}
-	switch format {
-	case 0:
-		opts.Format = log.FormatJSON
-	case 1:
-		opts.Format = log.FormatText
-	default:
-		opts.Format = log.FormatPretty
-	}
-	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: log.NewLog(opts)})
-	t.Cleanup(al.Stop)
-	return tr, out
-}
 
 func TestAccessLog_AcceptsLogAdapter(t *testing.T) {
 	var adapter log.LogAdapter = newFakeLogger()
@@ -687,10 +424,6 @@ func TestAccessLog_ExactlySixtyFourStagesHasNoDropCount(t *testing.T) {
 	if hasArg(logger.lines()[0].args, "stages_dropped") {
 		t.Error(test.DiffMessage(logger.lines()[0].args, "no stages_dropped", "A6: nothing dropped, nothing reported"))
 	}
-}
-
-func spreadID(i int) string {
-	return fmt.Sprintf("%016x-%04x", uint64(i+1)*0x9E3779B97F4A7C15, i&0xffff)
 }
 
 func TestAccessLog_PendingIsBounded(t *testing.T) {
@@ -1279,4 +1012,64 @@ func TestAccessLog_PrettyUserStageLikeValueStaysString(t *testing.T) {
 	}
 }
 
-var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
+func TestAccessLog_IP(t *testing.T) {
+	tr, logger, _ := setup(t)
+	e := completeEvent("r1", 200, "/users", time.Millisecond)
+	e.ClientIP = netip.MustParseAddr("203.0.113.7")
+	tr.Emit(e)
+	lines := logger.lines()
+	if len(lines) != 1 {
+		t.Fatal(test.DiffMessage(len(lines), 1, "fixture: one access line"))
+	}
+	if got := fmt.Sprint(argValue(t, lines[0].args, "ip")); got != "203.0.113.7" {
+		t.Error(test.DiffMessage(got, "203.0.113.7", "A1: the line prints the client IP as ip"))
+	}
+}
+
+func TestAccessLog_IP_IPv6(t *testing.T) {
+	tr, logger, _ := setup(t)
+	e := completeEvent("r1", 200, "/users", time.Millisecond)
+	e.ClientIP = netip.MustParseAddr("2001:db8::1")
+	tr.Emit(e)
+	if got := fmt.Sprint(argValue(t, logger.lines()[0].args, "ip")); got != "2001:db8::1" {
+		t.Error(test.DiffMessage(got, "2001:db8::1", "A1: an IPv6 client prints in its short form"))
+	}
+}
+
+func TestAccessLog_IPOmittedWhenUnknown(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(completeEvent("r1", 200, "/users", time.Millisecond))
+	lines := logger.lines()
+	if len(lines) != 1 {
+		t.Fatal(test.DiffMessage(len(lines), 1, "fixture: one access line"))
+	}
+	if hasArg(lines[0].args, "ip") {
+		t.Error(test.DiffMessage(argKeys(lines[0].args), "<no ip>", "A1: the zero Addr is omitted"))
+	}
+}
+
+func TestAccessLog_IP_BuiltinJSON(t *testing.T) {
+	tr, out := builtinAccessLog(t, 0)
+	e := completeEvent("r1", 200, "/users", time.Millisecond)
+	e.ClientIP = netip.MustParseAddr("203.0.113.7")
+	tr.Emit(e)
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out.String()), &parsed); err != nil {
+		t.Fatal(test.DiffMessage(out.String(), "one JSON object", "fixture: the built-in JSON line"))
+	}
+	if parsed["ip"] != "203.0.113.7" {
+		t.Error(test.DiffMessage(parsed["ip"], "203.0.113.7", "A1: the built-in logger prints ip as a plain string"))
+	}
+}
+
+func TestAccessLog_IPOmittedWhenUnknown_BuiltinJSON(t *testing.T) {
+	tr, out := builtinAccessLog(t, 0)
+	tr.Emit(completeEvent("r1", 200, "/users", time.Millisecond))
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out.String()), &parsed); err != nil {
+		t.Fatal(test.DiffMessage(out.String(), "one JSON object", "fixture: the built-in JSON line"))
+	}
+	if _, ok := parsed["ip"]; ok {
+		t.Error(test.DiffMessage(parsed, "<no ip>", "A1: the zero Addr is omitted by the built-in logger too"))
+	}
+}

@@ -1,42 +1,14 @@
 package accesslog
 
 import (
-	"io"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/logpipe"
 	"github.com/dangduoc08/ginject/internal/trace"
 	"github.com/dangduoc08/ginject/log"
 )
-
-type discardLogger struct {
-	lines atomic.Int64
-}
-
-func (d *discardLogger) Debug(string, ...any) {}
-func (d *discardLogger) Warn(string, ...any)  {}
-func (d *discardLogger) Error(string, ...any) {}
-func (d *discardLogger) Fatal(string, ...any) {}
-func (d *discardLogger) Info(string, ...any)  { d.lines.Add(1) }
-
-func benchStages(id string, n int) []trace.Event {
-	names := []struct{ stage, name string }{
-		{trace.StageMiddleware, "cors.CORS"},
-		{trace.StageMiddleware, "csrf.CSRF"},
-		{trace.StageMiddleware, "helmet.Helmet"},
-		{trace.StageGuard, "auth.AuthGuard"},
-		{trace.StagePreInterceptor, "log.LogInterceptor"},
-		{trace.StageHandler, "READ_users"},
-	}
-	events := make([]trace.Event, 0, n+1)
-	for i := range n {
-		events = append(events, trace.Event{ID: id, TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "00f067aa0ba902b7", ParentID: id, Stage: names[i].stage, Name: names[i].name, Transport: trace.TransportHTTP, Duration: time.Duration(40+i*20) * time.Microsecond})
-	}
-	return append(events, trace.Event{ID: id, TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: id, Stage: trace.StageComplete, Transport: trace.TransportHTTP, Operation: "GET", Target: "/api/v1/users", Code: 200, Duration: 3 * time.Millisecond})
-}
 
 func BenchmarkAccessLog_Request_1Stage(b *testing.B) {
 	tr := &trace.Tracer{}
@@ -82,22 +54,6 @@ func BenchmarkAccessLog_Request_6Stages_Parallel(b *testing.B) {
 		}
 		total.Add(local)
 	})
-}
-
-func benchBuiltinLine(b *testing.B, opts *log.LogOptions) {
-	b.Helper()
-	restore := logpipe.SetStdout(io.Discard)
-	defer restore()
-	tr := &trace.Tracer{}
-	al := NewAccessLog(&AccessLogOptions{Tracer: tr, Logger: log.NewLog(opts)})
-	defer al.Stop()
-	events := benchStages("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 6)
-	b.ReportAllocs()
-	for b.Loop() {
-		for _, e := range events {
-			tr.Emit(e)
-		}
-	}
 }
 
 func BenchmarkAccessLog_Line_6Stages(b *testing.B) {
