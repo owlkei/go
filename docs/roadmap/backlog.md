@@ -335,6 +335,10 @@ Also in scope:
 
 ## Regroup test files
 
+Done in roadmap 0008 step 20. Follow-up: by the 1,500-line signal, split the code behind the largest core test
+files (`helpers_test.go` 7,615 lines: split it by the code its helpers serve; `app_test.go` 2,357,
+`http_page_test.go` 1,908, `container_test.go` 1,605, `server_test.go` 1,511).
+
 Taken by roadmap 0008 (step 20, 2026-11-18: after its review, before its `make check`).
 
 ### Plan

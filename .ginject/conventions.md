@@ -33,8 +33,8 @@ don't mass-rewrite the exceptions.
     for example `internal/core/fn_plan.go`.
   - Moves are pure: no logic change in the same commit as a move.
 - **Tests and benchmarks sit next to the file:** `<file>_test.go`, `<file>_bench_test.go`
-  (`internal/common/http_guard_test.go`, `internal/common/http_guard_bench_test.go`). A test that spans files gets its
-  own name (`internal/core/ws_fanout_test.go`).
+  (`internal/common/http_guard_test.go`, `internal/common/http_guard_bench_test.go`). A test goes to the file of the
+  code that implements the behavior (see Tests › Files below).
 - **Test packages are internal** (`package core`, not `core_test`): 2 files in the repository are
   external (`wsevent`). Write internal tests unless the test is about the public API only.
 

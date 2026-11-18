@@ -527,7 +527,7 @@ func (instance UserController) SUBSCRIBE_users_created(pub ginject.Publisher) st
 
 ### Key Features
 
-- ✓ Thread-safe concurrent Subscribe/Unsubscribe/Publish/PublishAsync/Close (single mutex, race-tested — see `broker_test.go`'s concurrent test suite)
+- ✓ Thread-safe concurrent Subscribe/Unsubscribe/Publish/PublishAsync/Close (single mutex, race-tested — see `memory_broker_test.go`'s concurrent test suite)
 - ✓ `publishInternal` sizes the handler slice exactly and skips allocation entirely when nothing matches a topic
 - ✓ No sharding, no background sweep, no TTL/expiration — this package holds no state beyond active subscriptions (compare `memorycache`, which does shard and sweep)
 

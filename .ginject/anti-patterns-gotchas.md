@@ -515,7 +515,7 @@ func TestWSHandler(t *testing.T) {
 
 ### 9.1 GOTCHA: Calling Close() Synchronously From a PublishAsync Handler
 
-**VERIFIED** (reproduced deterministically, not speculative — see `internal/memorybroker/broker_test.go`'s `TestClose_FromWithinPublishAsyncHandler_Deadlocks`):
+**VERIFIED** (reproduced deterministically, not speculative — see `internal/memorybroker/memory_broker_test.go`'s `TestClose_FromWithinPublishAsyncHandler_Deadlocks`):
 
 ```go
 b.Subscribe("foo", func(*memorybroker.Message) {

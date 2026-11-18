@@ -1,6 +1,6 @@
 # 0008: Server-rendered HTML and the route DSL
 
-Status: Running
+Status: Done
 
 ## Goal
 A Ginject app serves finished HTML pages from the same controllers, modules and layers as its REST
@@ -36,7 +36,7 @@ HTML components.
 | 17 | `public/` served at the root URL (`no-cache` + `ETag`, conflicts with routes panic) and page CSS/JS next to templates with `{{pageAssets}}` (orphans and a missing `{{pageAssets}}` panic) | tdd | docs/design/0018-server-rendered-html.md | 14 | `/robots.txt` from `public/`; `/bookings/new` links `new.css` and `new.form.js` after the layout's files | done |
 | 18 | Migrate every route name, template and test in the repo (`sample/`, `bench/`, docs) to the new DSL and pages; the startup route log and the devtool snapshot show final paths and page routes | light | - | 11-17 | `make check` green; samples serve what they document | done |
 | 19 | Docs: README (routes, pages), `internal/common` › Route DSL, `internal/render`, `.ginject/`, `CLAUDE.md`, Sổ tay; every example compiles | light | - | 18 | every new rule documented with an example | done |
-| 20 | Regroup test files by the rule of `.ginject/conventions.md` › Tests › Files (plan in backlog › "Regroup test files"), after the review's fixes and before the final `make check`: moves only | light | - | 19 and the review | the count of tests and benchmarks per package is unchanged (`go test -list .`); `make check` green | todo |
+| 20 | Regroup test files by the rule of `.ginject/conventions.md` › Tests › Files (plan in backlog › "Regroup test files"), after the review's fixes and before the final `make check`: moves only | light | - | 19 and the review | the count of tests and benchmarks per package is unchanged (`go test -list .`); `make check` green | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -136,3 +136,5 @@ The maintainer wants pages like Next.js: the route picks the template.
 - 2026-11-18: steps 14-18: eight rewritten tests contradicted the design or html/template (format by `Accept` for paths with no route, `{{.Nope}}` on nil data renders empty, script-context escaping, an unbound fixture file, a missing `bind` tag); the tests were corrected. A `common.HTTP` field for the page version cost static requests one allocation, so `AddHandlerToRouterMapWithPageVersion` was added instead. Public files named with `{` or `*` noted for the security roadmap.
 - 2026-11-18, the maintainer: regrouping the test files is step 20 of this roadmap, after the review and before the final `make check`.
 - 2026-11-18: step 19 done. `TestAdaptive_NoRefusalBelowCapacity_1CPU` failed under a host load average of 3-4 (other sessions). It also failed once in three runs at `402b10f`, and no file on loadshed's code path changed in this roadmap (its test drives the middleware directly; `internal/httphook` only gained types loadshed doesn't use), so it is noise; recorded in the backlog.
+- 2026-11-18: step 20: 43 commits (`e67f328`..`a4fbd92`), one per package, moves only; the full `go test -list` equals the list taken before. Kept: `internal/core/http_lifecycle_test.go` (the lifecycle specification), `log/log_from_test.go` (its assertion checks its own file name), build-tagged files (`race_on`/`race_off`, `cpu_*`, `dotenv_unix`), the root's `helpers_external_test.go`. Five core test files are over the 1,500-line signal (helpers 7,615, app 2,357, http_page 1,908, container 1,605, server 1,511): backlog.
+- 2026-11-18: `make check` green (with the loadshed acceptance step, 570 s). Roadmap done; open: the review's medium finding on upper-case words inside parameter names and versions (backlog › "Route DSL changes"), waiting for the maintainer.
