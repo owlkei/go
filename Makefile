@@ -50,7 +50,7 @@ BENCH_COUNT ?= 5
 
 .PHONY: bench
 bench: ## End-to-end HTTP benchmark of owlky (bench/), median of BENCH_COUNT runs
-	cd bench && go test -run '^$$' -bench 'BenchmarkOwlky Go' -benchmem -count $(BENCH_COUNT) ./...
+	cd bench && go test -run '^$$' -bench 'BenchmarkOwlky' -benchmem -count $(BENCH_COUNT) ./...
 
 .PHONY: bench-compare
 bench-compare: ## Same scenarios on owlky, net/http, Gin, Echo, Chi and Fiber (bench/)
