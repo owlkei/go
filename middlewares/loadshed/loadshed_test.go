@@ -750,6 +750,7 @@ func TestLoadShed_FreeSlotsGoToWaitersBeforeQueueFull(t *testing.T) {
 }
 
 func TestLoadShed_ArrivalAtFreedSlotMayTakeIt(t *testing.T) {
+	withWaitTimeout(t, 10*time.Second)
 	c, _, waiter := queuedLoadShed(t, 4)
 	c.inFlight.Add(-1)
 	newcomer := startCall(c, request(http.MethodGet, "/ok"))

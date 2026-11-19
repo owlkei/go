@@ -485,6 +485,13 @@ func queuedLoadShed(t *testing.T, maxQueue int) (*compiledLoadShed, *call, *call
 	return mw.(*compiledLoadShed), first, waiter
 }
 
+func withWaitTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := waitTimeout
+	waitTimeout = d
+	t.Cleanup(func() { waitTimeout = old })
+}
+
 func startEnqueue(c *compiledLoadShed) *call {
 	n := &call{rec: httptest.NewRecorder(), done: make(chan struct{})}
 	n.ex = newExchange(n.rec)

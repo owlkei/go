@@ -19,11 +19,12 @@ const (
 	maxInFlightLimit = 1_000_000
 	maxQueueLimit    = 65_536
 	defaultQueue     = 64
-	waitTimeout      = 100 * time.Millisecond
 	retryAfter       = time.Second
 	retryAfterKey    = "Retry-After"
 	retryAfterValue  = "1"
 )
+
+var waitTimeout = 100 * time.Millisecond
 
 var busy = exception.ServiceUnavailableException("Server is busy")
 
