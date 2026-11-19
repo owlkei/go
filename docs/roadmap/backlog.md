@@ -269,8 +269,9 @@ Follow-ups found by the roadmap 0008 review (2026-11-18):
 - Decided 2026-11-19 (owner): parameter names and versions stay verbatim, upper-case words included
   (`BY_userID` → `{userID}`, `VERSION_V1` → `V1`); only an all-upper-case path segment that is not a
   route word panics. No change.
-- Not decided: odd names accepted without a panic: `READ_logo_png_FILE_FILE` → `/logo.png`, `READ_ANY_ANY_FILE` →
-  `/*.*`, `SERVE_x_ANY_ANY` → `/x*/*`.
+- Done 2026-11-19 (owner): the odd names now stop `Create()`: `FILE` twice in one resource
+  (`READ_logo_png_FILE_FILE`), `ANY` as an extension (`READ_logo_ANY_FILE`), `ANY` twice in a row
+  (`READ_ANY_ANY_FILE`, `SERVE_x_ANY_ANY`). A name may still be `ANY` (`READ_ANY_html_FILE` → `/*.html`).
 
 Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
 
@@ -327,7 +328,13 @@ amendment 2; written here, not fixed):
   guards of that page's `RENDER_` route (global, controller and route-bound), so whoever can't see a
   page can't fetch its CSS and JS either. Private files go through a guarded `READ_…` route, not
   `public/`. Cost: `throttler` (a guard) no longer covers static files (`loadshed` still does); an
-  opt-in option if that is needed.
+  opt-in option if that is needed. NestJS (checked 2026-11-19) serves static files with
+  `express.static` / `@fastify/static` mounted as platform middleware before its pipeline, so no
+  guard, global or not, runs on them (middlewares bound with `app.use()` do), and a protected file goes
+  through a guarded controller route: the proposal's first row matches it; page assets guarded by their
+  page have no NestJS equivalent. Draft roadmap: `docs/roadmap/0012-security.md` (paused 2026-11-19,
+  its three open decisions recommended: `EnableRender` binds `csrf` and `helmet` itself; `Create()`
+  panics on a wrong middleware order; this static-file rule).
 - **Error format, decided 2026-11-19:** once a route matched, the route decides (a page route answers
   HTML, an API route JSON, whatever `Accept` says: guards such as `throttler`, filters, handlers);
   before routing (`csrf`, `hostcheck`, `loadshed`) and without a route (404, 405), `Accept` decides.
@@ -499,9 +506,11 @@ comes from and what it must be.
 
 ## Timing-sensitive tests (found in roadmap 0009)
 
+Fixed 2026-11-19: `TestLoadShed_ArrivalAtFreedSlotMayTakeIt` raced the 100 ms queue timeout on a busy
+machine; the test lengthens it (`waitTimeout` is a package variable for that).
 Fixed 2026-11-18: `TestTokenBucket_RetryAfterNeverZeroOnRefusal` uses a 500 ms refill and accepts 1 or 2
 (a second boundary); the `ListenTLS` tests retry the bind on a new port when another process took it;
 the `loadshed` L12 acceptance runs (`make check` only, without `-race`) are measured up to 3 times and
 fail only when every attempt does. A machine that stays busy for minutes (a browser using a full core)
 can still fail L12: rerun `make check` on a quiet machine.
-- Low, unrelated: the `InstanceLoader` log line prints the root module twice (before `a4440f8` too).
+- Low, unrelated: the `InstanceLoader` log line printed the root module twice (seen once in roadmap 0009); not reproducible on 2026-11-19 with static, imported and async modules: closed.
