@@ -17,10 +17,10 @@ the start of a real app. The old kitchen-sink `sample/` is gone.
 ## Steps
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
-| 1 | Layout: `examples/` with one module per example, `go.work`, CI and `make check` run `go vet` and `go test -race` in every example; a shared README template (what you learn, run, try with `curl`, files to read first) | light | - | - | an empty example builds and its test runs in CI | todo |
-| 2 | `01-hello`: one controller, two routes, a parameter (the Quick start) | light | - | 1 | README and test; `go run .` answers the README's `curl` calls | todo |
-| 3 | `02-rest-api`: CRUD of one resource with a module, a provider, a pipe that validates, exceptions (404, 422), JSON | light | - | 1 | test covers every route and error | todo |
-| 4 | `03-pages`: move `sample/pages` (`RENDER_`, `SUBMIT_`, layout, a form with field errors, Owlky UI markup) | light | - | 1 | its tests pass in the new module | todo |
+| 1 | Layout: `examples/` with one module per example, `go.work`, CI and `make check` run `go vet` and `go test -race` in every example; a shared README template (what you learn, run, try with `curl`, files to read first) | light | - | - | an empty example builds and its test runs in CI | done |
+| 2 | `01-hello`: one controller, two routes, a parameter (the Quick start) | light | - | 1 | README and test; `go run .` answers the README's `curl` calls | done |
+| 3 | `02-rest-api`: CRUD of one resource with a module, a provider, a pipe that validates, exceptions (404, 422), JSON | light | - | 1 | test covers every route and error | done |
+| 4 | `03-pages`: move `sample/pages` (`RENDER_`, `SUBMIT_`, layout, a form with field errors, Owlky UI markup) | light | - | 1 | its tests pass in the new module | done |
 | 5 | `04-async-modules`: move `sample/async` (`AsyncImports`, `Retry`, 503 until ready) | light | - | 1 | its behavior is tested in the new module | todo |
 | 6 | `05-production`: `helmet`, `csrf`, `cors`, `loadshed`, `throttler`, access log, graceful shutdown, one logging layer | light | - | 1 | test checks the security headers, a refused request and a clean shutdown | todo |
 | 7 | Remove `sample/` (`main.go`, `shop`, `shared`, `benchmarks`, `confs`, `data`, `pages`, `async`); update every link to it | light | - | 2-6 | no reference to `sample/` left | todo |
@@ -53,3 +53,8 @@ Approved by the owner on 2026-11-19, to run before the security roadmap. Agreed 
 - Commits follow `.claude/commands/commit.md`: no Claude attribution or trailers.
 
 ## Log
+- 2026-11-19: run started at `31c7eb3` (after `578de69`, a fix of the bench target the rename broke). The owner asked for steps 1-4 first.
+- 2026-11-19: step 1: no `go.work`. A workspace would pull `bench/` and every example into the root's `go test ./...`, `go vet` and the API check; `make examples` loops over `examples/*/go.mod` instead (vet + `test -race` in each), run by `make check` and by a CI step. Each example's `go.mod` requires `go.owlky.com/owlky v0.0.0` with `replace => ../..`, the same lines a user writes until the vanity path serves.
+- 2026-11-19: step 3: providers can't have unexported fields, so the catalog's shared state is an exported pointer set by `NewCatalog()`, and `NewBooksModule()` builds a fresh catalog per app (each test gets its own). `golangci-lint` is clean in every example (run by hand; the root lint skips nested modules).
+- 2026-11-19: step 4 landed as two commits: the move (`2b418cb`) and the module files and README (`ff565e5`).
+- 2026-11-19: `TestLoadShed_ArrivalAtFreedSlotMayTakeIt` failed once in a pre-commit hook under load (passes 30 of 30 alone): another timing-sensitive test for the backlog list.
