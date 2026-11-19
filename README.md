@@ -1,12 +1,61 @@
-# Owlky Go
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" alt="Owlky Go logo" width="120">
+  </picture>
+</p>
 
-Owlky Go is a dependency injection web framework for Go, inspired by NestJS. You build REST APIs,
-server-rendered HTML pages and WebSocket servers from modules, controllers and providers, and
-Owlky Go wires them together.
+<h1 align="center">Owlky Go</h1>
+
+<p align="center">
+  <strong>Build Go backends the way you think.</strong><br>
+  Name a method, get a route. APIs, web pages and real-time apps in one framework,<br>
+  with dependency injection that wires your app for you.
+</p>
+
+<p align="center">
+  <a href="https://github.com/dangduoc08/go/actions/workflows/ci.yml"><img src="https://github.com/dangduoc08/go/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/dangduoc08/go?logo=go&amp;label=Go" alt="Go version"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/github/license/dangduoc08/go?color=4D7A5C" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/status-pre--release-E8A33D" alt="Status: pre-release">
+  <a href="https://owlky.com"><img src="https://img.shields.io/badge/part%20of-Owlky-3E6A8A" alt="Part of Owlky"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#core-concepts">Concepts</a> ·
+  <a href="sample/">Examples</a> ·
+  <a href="#module-lifecycle">Lifecycle</a> ·
+  <a href="https://owlky.com">Owlky UI</a>
+</p>
+
+---
+
+Most Go web code is plumbing: routes registered by hand, constructors passed down by hand, and the
+same checks written in every handler. Owlky Go takes that work off your plate. You write modules,
+controllers and services; Owlky Go reads their names and types once at startup and wires the whole
+app, so a mistake stops the boot instead of reaching production. If you have used NestJS, you will
+feel at home.
+
+```go
+type UserController struct {
+	owlky.HTTP
+	Users UserService // injected by type
+}
+
+func (c UserController) READ_users_BY_id(param owlky.Param) User { // GET /users/{id}
+	return c.Users.Find(param.Get("id"))
+}
+```
 
 Owlky Go is part of [Owlky](https://owlky.com). It works on its own, and it pairs with **Owlky UI**,
 the component library: page routes render Owlky UI's HTML markup, and its stylesheet and scripts are
 served from your app's own origin.
+
+> **Pre-release.** Owlky Go is not published yet and its API may change before 1.0. See
+> [Installation](#installation) to try it today.
+
+## Why Owlky Go
 
 - **No routing code.** A method named `READ_users_BY_id` answers `GET /users/{id}`. You declare
   routes and WebSocket events by naming methods.
@@ -19,7 +68,9 @@ served from your app's own origin.
 - **Safe defaults.** The server has timeouts, a request body limit and graceful shutdown. Only
   exceptions reach the client: any other panic answers a fixed `500` and is logged.
 
-- [Owlky Go](#owlky-go)
+## Contents
+
+- [Why Owlky Go](#why-owlky-go)
   - [Features](#features)
   - [Installation](#installation)
   - [Quick start](#quick-start)
