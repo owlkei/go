@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dangduoc08/ginject/bench"
+	"go.owlky.com/owlky/bench"
 )
 
 func main() {
-	framework := flag.String("framework", "ginject", "ginject, nethttp, gin, echo, chi or fiber")
+	framework := flag.String("framework", "owlky", "owlky, nethttp, gin, echo, chi or fiber")
 	port := flag.Int("port", 8080, "port to listen on")
 	isLogged := flag.Bool("log", false, "turn the framework's request logger on (JSON to stdout where the framework has one; net/http has none)")
 	flag.Parse()
@@ -22,8 +22,8 @@ func main() {
 	addr := fmt.Sprintf(":%d", *port)
 	var err error
 	switch *framework {
-	case "ginject":
-		err = pick(*isLogged, bench.NewGinjectApp, bench.NewGinjectAppWithLog)().Listen(*port, nil)
+	case "owlky":
+		err = pick(*isLogged, bench.NewOwlkyApp, bench.NewOwlkyAppWithLog)().Listen(*port, nil)
 	case "nethttp":
 		err = http.ListenAndServe(addr, bench.NewNetHTTP())
 	case "gin":

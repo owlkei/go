@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestBindMiddleware_Chaining(t *testing.T) {

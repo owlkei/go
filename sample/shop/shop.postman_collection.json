@@ -1,9 +1,9 @@
 {
   "info": {
-    "name": "Ginject Shop Sample",
-    "description": "Demo API for sample/shop: account registration, session-based login/logout, and per-user store/category/product management.\n\nFlow: Register -> Login (captures {{token}} automatically) -> Store/Category/Product CRUD (Authorization: Bearer {{token}}).\n\nResponses are wrapped as { \"data\": ... } on success and { \"code\", \"error\", \"message\" } on failure (see BUILDING_WITH_GINJECT.md).",
+    "name": "Owlky Go Shop Sample",
+    "description": "Demo API for sample/shop: account registration, session-based login/logout, and per-user store/category/product management.\n\nFlow: Register -> Login (captures {{token}} automatically) -> Store/Category/Product CRUD (Authorization: Bearer {{token}}).\n\nResponses are wrapped as { \"data\": ... } on success and { \"code\", \"error\", \"message\" } on failure (see BUILDING_WITH_OWLKY.md).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_postman_id": "ginject-shop-sample"
+    "_postman_id": "owlky-shop-sample"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:4000" },

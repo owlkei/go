@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/pattern"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/pattern"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestNewPattern_Kind(t *testing.T) {

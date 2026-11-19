@@ -1,24 +1,24 @@
 package shop
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/sample/shop/accounts"
-	accountsdto "github.com/dangduoc08/ginject/sample/shop/accounts/dto"
-	"github.com/dangduoc08/ginject/sample/shop/catalog"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/sample/shop/accounts"
+	accountsdto "go.owlky.com/owlky/sample/shop/accounts/dto"
+	"go.owlky.com/owlky/sample/shop/catalog"
 )
 
 type UsersController struct {
-	ginject.HTTP
+	owlky.HTTP
 
 	accounts.UserService
 	catalog.StoreService
 }
 
-func (instance UsersController) NewController() ginject.Controller {
+func (instance UsersController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance UsersController) CREATE_users(q accountsdto.QueryDTO, userDTO accountsdto.UserDTO) ginject.Map {
+func (instance UsersController) CREATE_users(q accountsdto.QueryDTO, userDTO accountsdto.UserDTO) owlky.Map {
 	user, err := instance.UserService.Register(userDTO.Email, userDTO.Name, userDTO.Password)
 	if err != nil {
 		panic(err)
@@ -29,7 +29,7 @@ func (instance UsersController) CREATE_users(q accountsdto.QueryDTO, userDTO acc
 		panic(err)
 	}
 
-	return ginject.Map{
+	return owlky.Map{
 		"user":  user,
 		"store": store,
 	}

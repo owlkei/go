@@ -1,24 +1,24 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/middlewares/cors"
-	"github.com/dangduoc08/ginject/middlewares/helmet"
-	"github.com/dangduoc08/ginject/sample/benchmarks"
-	"github.com/dangduoc08/ginject/sample/confs"
-	"github.com/dangduoc08/ginject/sample/shared"
-	"github.com/dangduoc08/ginject/sample/shop"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/log"
+	"go.owlky.com/owlky/middlewares/cors"
+	"go.owlky.com/owlky/middlewares/helmet"
+	"go.owlky.com/owlky/sample/benchmarks"
+	"go.owlky.com/owlky/sample/confs"
+	"go.owlky.com/owlky/sample/shared"
+	"go.owlky.com/owlky/sample/shop"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	logger := log.NewLog(&log.LogOptions{
 		Level:  log.LevelDebug,
 		Format: log.FormatPretty,
 	})
 
-	mw := []ginject.MiddlewareFn{
+	mw := []owlky.MiddlewareFn{
 		cors.CORS{AllowOrigins: []string{"http://localhost:3000"}}, helmet.Helmet{}, shared.LogMiddleware{},
 	}
 
@@ -29,14 +29,14 @@ func main() {
 		BindGlobalInterceptors(shared.LogHTTPInterceptor{}, shared.LogWSInterceptor{}).
 		BindGlobalExceptionFilters(shared.LogHTTPExceptionFilter{}, shared.LogWSExceptionFilter{})
 
-	app.EnableWS(&ginject.WSOptions{
+	app.EnableWS(&owlky.WSOptions{
 		Path: "ws",
 	}, mw...)
 
 	app.EnableAccessLog()
 
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(benchmarks.Module, shop.Module, confs.ConfModule).
 			Build(),
 	)

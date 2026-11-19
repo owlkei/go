@@ -1,17 +1,17 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
 type LogModuleHTTPGuard struct {
-	ginject.Guard
+	owlky.Guard
 	log.Logger
 }
 
-func (instance LogModuleHTTPGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance LogModuleHTTPGuard) CanActivate(c owlky.HTTPContext) bool {
 
 	if c.Query().Get("error_module_http_guard") == "true" {
 		panic(exception.InternalServerErrorException("LogModuleHTTPGuard error triggered"))

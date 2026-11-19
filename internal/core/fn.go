@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlky.com/owlky/log"
 )
 
 func sameImport(a, b any) bool {

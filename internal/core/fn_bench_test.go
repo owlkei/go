@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 func BenchmarkReturnHTTP_String(b *testing.B) {

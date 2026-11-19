@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/str"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/str"
 )
 
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)

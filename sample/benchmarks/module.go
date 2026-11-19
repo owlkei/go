@@ -1,11 +1,11 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
-var Module = func() ginject.Module {
-	var module = ginject.ModuleBuilder().
+var Module = func() owlky.Module {
+	var module = owlky.ModuleBuilder().
 		Controllers(Controller{}).
 		Build()
 

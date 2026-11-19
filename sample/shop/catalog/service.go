@@ -1,16 +1,16 @@
 package catalog
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/sample/shared"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/sample/shared"
 )
 
 type StoreService struct {
 	Stores StoreRepository
 }
 
-func (svc StoreService) NewProvider() ginject.Provider {
+func (svc StoreService) NewProvider() owlky.Provider {
 	return svc
 }
 

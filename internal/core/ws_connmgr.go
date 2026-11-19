@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/memorybroker"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/internal/memorybroker"
+	"go.owlky.com/owlky/log"
 	"golang.org/x/net/websocket"
 )
 

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 type ConfigService struct {

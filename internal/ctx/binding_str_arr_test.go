@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestBindStrArr(t *testing.T) {

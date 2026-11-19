@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 // BookingForm is the "New booking" form. It is a Form pipe: Transform binds the
@@ -28,7 +28,7 @@ var requiredMessages = map[string]string{
 	"nights": "Enter the number of nights",
 }
 
-func (form BookingForm) Transform(f ginject.Form, _ ginject.ArgumentMetadata) any {
+func (form BookingForm) Transform(f owlky.Form, _ owlky.ArgumentMetadata) any {
 	bound, fields := f.Bind(form)
 	dto := bound.(BookingForm)
 	dto.Guest = strings.TrimSpace(dto.Guest)

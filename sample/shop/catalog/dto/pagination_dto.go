@@ -1,7 +1,7 @@
 package dto
 
 import (
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 const (
@@ -15,7 +15,7 @@ type PaginationDTO struct {
 	Limit int `bind:"limit"`
 }
 
-func (paginationDTO PaginationDTO) Transform(query ginject.Query, arg ginject.ArgumentMetadata) any {
+func (paginationDTO PaginationDTO) Transform(query owlky.Query, arg owlky.ArgumentMetadata) any {
 	bound, _ := query.Bind(paginationDTO)
 	dto := bound.(PaginationDTO)
 

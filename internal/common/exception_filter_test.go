@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestBindExceptionFilter_Chaining(t *testing.T) {

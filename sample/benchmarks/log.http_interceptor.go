@@ -1,16 +1,16 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
 type LogModuleHTTPInterceptor struct {
 	log.Logger
 }
 
-func (instance LogModuleHTTPInterceptor) Intercept(c ginject.HTTPContext, aggregation ginject.Aggregation) any {
+func (instance LogModuleHTTPInterceptor) Intercept(c owlky.HTTPContext, aggregation owlky.Aggregation) any {
 
 	if c.Query().Get("error_module_http_pre_intercept") == "true" {
 		panic(exception.InternalServerErrorException("LogModuleHTTPInterceptor error triggered"))
@@ -23,7 +23,7 @@ func (instance LogModuleHTTPInterceptor) Intercept(c ginject.HTTPContext, aggreg
 				panic(exception.InternalServerErrorException("LogModuleHTTPInterceptor error triggered"))
 			}
 
-			transformedData := ginject.Map{
+			transformedData := owlky.Map{
 				"data": data,
 			}
 			return transformedData

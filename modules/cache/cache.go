@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/memorycache"
+	"go.owlky.com/owlky/internal/memorycache"
 )
 
 type Cache interface {

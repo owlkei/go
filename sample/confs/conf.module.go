@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky/modules/config"
 )
 
 var ENV ConfModel

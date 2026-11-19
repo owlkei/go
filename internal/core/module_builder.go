@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/common"
 )
 
 const maxModuleNameStackDepth = 32
@@ -98,7 +98,7 @@ func appendImportErrors(errors []string, entries []any, list string) []string {
 	return errors
 }
 
-const importShapesHint = ": an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)"
+const importShapesHint = ": an import is a owlky.Module or a module factory: func(deps...) owlky.Module, func(deps...) (owlky.Module, error) or func(ctx context.Context, deps...) (owlky.Module, error)"
 
 var (
 	moduleType  = reflect.TypeFor[*Module]()
@@ -146,7 +146,7 @@ func (m *ModuleBuilder) Controllers(controllers ...Controller) *ModuleBuilder {
 
 func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder {
 	if style != common.PathStyleKebab && style != common.PathStyleAsWritten {
-		panic(color.FmtRed("invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten"))
+		panic(color.FmtRed("invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten"))
 	}
 	m.pathStyle = style
 	return m

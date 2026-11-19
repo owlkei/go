@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func TestTransport_ReturnsNonNil(t *testing.T) {

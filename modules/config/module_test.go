@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestRegister_DefaultFileAtModuleRoot(t *testing.T) {

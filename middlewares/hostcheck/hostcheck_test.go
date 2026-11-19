@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/middlewares/proxy"
 	"golang.org/x/net/websocket"
 )
 
@@ -254,7 +254,7 @@ func TestHostCheck_WebSocketHandshake(t *testing.T) {
 		app := core.New()
 		app.SetLogger(silentLogger{})
 		app.EnableWS(&core.WSOptions{Path: "/ws"}, HostCheck{Hosts: hosts})
-		app.Create(ginject.ModuleBuilder().Build())
+		app.Create(owlky.ModuleBuilder().Build())
 		return httptest.NewServer(app)
 	}
 	dial := func(server *httptest.Server) error {

@@ -3,9 +3,9 @@ package devtool
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 type snapshotGlobalGuard struct{}

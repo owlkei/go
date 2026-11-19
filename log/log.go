@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 type Format int

@@ -4,11 +4,11 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/str"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/str"
 )
 
 type HTTPCatch = func(*ctx.HTTPContext, *exception.Exception)
@@ -56,7 +56,7 @@ func InjectProvidersIntoHTTPExceptionFilters(e *ExceptionFilter, r *HTTP, cb fun
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid exception filter: %v.%s must be func(ginject.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter",
+				"invalid exception filter: %v.%s must be func(owlky.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter",
 				exceptionFilterableType,
 				ExceptionFilterMethodName,
 			)))

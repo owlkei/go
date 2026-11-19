@@ -13,14 +13,14 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/versioning"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
-	"github.com/dangduoc08/ginject/middlewares/hostcheck"
-	"github.com/dangduoc08/ginject/middlewares/loadshed"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/versioning"
+	"go.owlky.com/owlky/middlewares/csrf"
+	"go.owlky.com/owlky/middlewares/hostcheck"
+	"go.owlky.com/owlky/middlewares/loadshed"
 )
 
 func TestHTTPError_Format(t *testing.T) {

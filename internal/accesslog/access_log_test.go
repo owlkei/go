@@ -14,11 +14,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/log"
 )
 
 func TestAccessLog_AcceptsLogAdapter(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestLogger_ExtendsLogAdapter(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestParseDotEnv_Comments(t *testing.T) {

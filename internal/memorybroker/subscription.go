@@ -1,7 +1,7 @@
 package memorybroker
 
 import (
-	ptrn "github.com/dangduoc08/ginject/internal/pattern"
+	ptrn "go.owlky.com/owlky/internal/pattern"
 )
 
 type Subscription interface {

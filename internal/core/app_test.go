@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
-	"github.com/dangduoc08/ginject/internal/versioning"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlky.com/owlky/internal/versioning"
+	"go.owlky.com/owlky/log"
 	"golang.org/x/net/websocket"
 )
 

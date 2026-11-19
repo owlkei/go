@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/middlewares/proxy"
 )
 
 func TestHelmet_Disabled_Constant(t *testing.T) {

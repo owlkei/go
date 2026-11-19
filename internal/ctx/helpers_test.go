@@ -18,10 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/tracecontext"
 	"golang.org/x/net/websocket"
 )
 

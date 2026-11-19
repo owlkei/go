@@ -1,13 +1,13 @@
 package shop
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/sample/shop/accounts"
-	"github.com/dangduoc08/ginject/sample/shop/catalog"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/sample/shop/accounts"
+	"go.owlky.com/owlky/sample/shop/catalog"
 )
 
-var Module = func() ginject.Module {
-	var module = ginject.ModuleBuilder().
+var Module = func() owlky.Module {
+	var module = owlky.ModuleBuilder().
 		Imports(accounts.Module, catalog.Module).
 		Controllers(UsersController{}).
 		Build()

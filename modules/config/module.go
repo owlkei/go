@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/core"
+	"go.owlky.com/owlky/internal/core"
 )
 
 type (

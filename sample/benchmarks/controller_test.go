@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 func TestPingRoute(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Imports(Module).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Imports(Module).Build())
 
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ping", nil))

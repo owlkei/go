@@ -6,12 +6,12 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/render"
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/render"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/str"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 var fieldNameByRole = map[string]string{

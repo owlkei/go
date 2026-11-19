@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 type globalHTTPExceptionFilter struct {

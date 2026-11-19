@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func benchTransport(b *testing.B, c context.Context, header string) {

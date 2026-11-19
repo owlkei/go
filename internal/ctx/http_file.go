@@ -4,7 +4,7 @@ import (
 	"mime/multipart"
 	"strings"
 
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky/exception"
 )
 
 type fileValidator interface {

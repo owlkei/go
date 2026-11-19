@@ -3,7 +3,7 @@ package trace
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 const traceparentHeader = "Traceparent"

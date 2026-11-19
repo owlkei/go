@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky/exception"
 )
 
 type Body map[string]any

@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/internal/color"
 
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/str"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/str"
 )
 
 var HTTPOperations = map[string]string{

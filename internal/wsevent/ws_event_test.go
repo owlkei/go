@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/wsevent"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/wsevent"
 )
 
 func TestWSEvent_MatchExactPattern(t *testing.T) {

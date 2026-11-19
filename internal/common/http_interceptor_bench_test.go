@@ -3,8 +3,8 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 func BenchmarkInjectProvidersIntoHTTPInterceptors_ApplyAll(b *testing.B) {

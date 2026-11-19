@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 	"golang.org/x/net/websocket"
 )
 

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestPretty_ContainsLevelLabels(t *testing.T) {

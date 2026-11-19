@@ -3,7 +3,7 @@ package accounts
 import (
 	"sync"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 type userRecord struct {
@@ -21,7 +21,7 @@ type UserRepository struct {
 	Table *userTable
 }
 
-func (repo UserRepository) NewProvider() ginject.Provider {
+func (repo UserRepository) NewProvider() owlky.Provider {
 	repo.Table = &userTable{
 		byID:    map[string]userRecord{},
 		byEmail: map[string]string{},

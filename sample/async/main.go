@@ -4,7 +4,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 const defaultPort = 8081
@@ -19,7 +19,7 @@ func main() {
 		port = p
 	}
 
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(Module)
 	if err := app.Listen(port, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)

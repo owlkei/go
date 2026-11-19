@@ -11,13 +11,13 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func benchHelmet(b *testing.B, r *http.Request) {
@@ -106,7 +106,7 @@ func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(mws...)
-	app.Create(ginject.ModuleBuilder().Controllers(okController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(okController{}).Build())
 	return app
 }
 

@@ -1,8 +1,8 @@
 package memorybroker
 
 import (
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/crypto"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/crypto"
 )
 
 func newID() string {

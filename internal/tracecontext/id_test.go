@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestNewSpanID_Format(t *testing.T) {

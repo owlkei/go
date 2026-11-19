@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/str"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlky.com/owlky/log"
 	"golang.org/x/net/websocket"
 )
 

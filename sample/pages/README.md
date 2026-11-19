@@ -1,6 +1,6 @@
 # sample/pages
 
-A small booking site rendered on the server: Ginject page routes (`RENDER_`, `SUBMIT_`), `html/template` and
+A small booking site rendered on the server: Owlky Go page routes (`RENDER_`, `SUBMIT_`), `html/template` and
 [Owlky](https://github.com/dangduoc08/owlky)'s framework-free HTML components. It has no JavaScript of
 its own apart from one inline line that picks the light or dark theme.
 
@@ -30,10 +30,10 @@ go test ./sample/pages                # TestPages_FormFlow drives the whole flow
 
 ## What it shows
 
-- **Pages by route.** `BookingPages` embeds `ginject.HTTP`. Each `RENDER_` route renders the template its
+- **Pages by route.** `BookingPages` embeds `owlky.HTTP`. Each `RENDER_` route renders the template its
   path names and returns the template's data. `SUBMIT_new_OF_bookings` posts to the page that shows the
   form: when it renders, it answers `422`; `c.Redirect("/bookings")` answers `303`.
-- **A form pipe.** `BookingForm` binds the body with `Form.Bind`, reads the `[]ginject.FieldLevel` for
+- **A form pipe.** `BookingForm` binds the body with `Form.Bind`, reads the `[]owlky.FieldLevel` for
   missing fields and fills `Errors`; the handler returns the form, which the page shows again.
 - **File conventions.** `web/layout.html` wraps every page; pages override its `title` block.
   `web/partials/field.html` is one text field, called with `dict`. `web/4xx.html` renders the client

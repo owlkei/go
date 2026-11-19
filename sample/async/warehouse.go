@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 const defaultWarehouseURL = "http://warehouse.local"
@@ -37,7 +37,7 @@ type Warehouse struct {
 	Client *warehouseClient
 }
 
-func (instance Warehouse) NewProvider() ginject.Provider {
+func (instance Warehouse) NewProvider() owlky.Provider {
 	return instance
 }
 
@@ -45,18 +45,18 @@ func (instance Warehouse) Quantity(sku string) int {
 	return instance.Client.quantity(sku)
 }
 
-func NewWarehouseModule(ctx context.Context) (ginject.Module, error) {
+func NewWarehouseModule(ctx context.Context) (owlky.Module, error) {
 	client, err := newWarehouseClient(os.Getenv("WAREHOUSE_URL"), os.Getenv("WAREHOUSE_DELAY"))
 	if err != nil {
 		return nil, err
 	}
 
-	err = ginject.Retry(ctx, &ginject.RetryOptions{InitialDelay: time.Second, MaxDelay: 10 * time.Second}, client.ping)
+	err = owlky.Retry(ctx, &owlky.RetryOptions{InitialDelay: time.Second, MaxDelay: 10 * time.Second}, client.ping)
 	if err != nil {
 		return nil, err
 	}
 
-	return ginject.ModuleBuilder().
+	return owlky.ModuleBuilder().
 		Providers(Warehouse{Client: client}).
 		Build(), nil
 }

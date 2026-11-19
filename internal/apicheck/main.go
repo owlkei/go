@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const apiFile = "api/ginject.txt"
+const apiFile = "api/owlky.txt"
 
 var targetPackages = []string{
 	".",

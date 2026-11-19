@@ -4,7 +4,7 @@ import (
 	"go/token"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 var formatByKind = map[reflect.Kind]string{

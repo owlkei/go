@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 	"golang.org/x/net/websocket"
 )
 
@@ -111,7 +111,7 @@ func TestListen_TLSConfigIsAnError(t *testing.T) {
 
 	err := h.app.Listen(port, &ServerOptions{TLSConfig: &tls.Config{}})
 
-	want := "ginject: TLSConfig is set: use ListenTLS, or Serve with your listener"
+	want := "owlky: TLSConfig is set: use ListenTLS, or Serve with your listener"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "O4: Listen refuses a TLSConfig"))
 	}
@@ -127,7 +127,7 @@ func TestListenTLS_H2CIsAnError(t *testing.T) {
 		IsH2C:     true,
 	})
 
-	want := "ginject: IsH2C applies to connections without TLS"
+	want := "owlky: IsH2C applies to connections without TLS"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "O5: ListenTLS refuses H2C"))
 	}
@@ -142,7 +142,7 @@ func TestServe_TLSConfigWithH2CIsAnError(t *testing.T) {
 		IsH2C:     true,
 	})
 
-	want := "ginject: IsH2C applies to connections without TLS"
+	want := "owlky: IsH2C applies to connections without TLS"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "O5: Serve refuses TLSConfig with H2C"))
 	}
@@ -176,8 +176,8 @@ func TestServe_ShutdownTimeoutReadOnce(t *testing.T) {
 	h.sigs <- syscall.SIGTERM
 
 	err := h.wait()
-	if err == nil || err.Error() != "ginject: shutdown timed out after 50ms" {
-		t.Error(test.DiffMessage(err, "ginject: shutdown timed out after 50ms", "O6: the timeout is the one read at the start"))
+	if err == nil || err.Error() != "owlky: shutdown timed out after 50ms" {
+		t.Error(test.DiffMessage(err, "owlky: shutdown timed out after 50ms", "O6: the timeout is the one read at the start"))
 	}
 	<-res
 }
@@ -237,7 +237,7 @@ func TestListen_BeforeCreateReturnsError(t *testing.T) {
 		err = app.Listen(port, nil)
 	}()
 
-	want := "ginject: Create must be called before serving"
+	want := "owlky: Create must be called before serving"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "S2: Listen before Create"))
 	}
@@ -254,7 +254,7 @@ func TestServe_BeforeCreateReturnsError(t *testing.T) {
 
 	got := app.Serve(ln, nil)
 
-	want := "ginject: Create must be called before serving"
+	want := "owlky: Create must be called before serving"
 	if got == nil || got.Error() != want {
 		t.Error(test.DiffMessage(got, want, "S2: Serve before Create"))
 	}
@@ -277,7 +277,7 @@ func TestServe_SecondCallReturnsError(t *testing.T) {
 
 	got := h.app.Serve(second, nil)
 
-	want := "ginject: app is already serving"
+	want := "owlky: app is already serving"
 	if got == nil || got.Error() != want {
 		t.Error(test.DiffMessage(got, want, "S2: a second serving call"))
 	}
@@ -304,7 +304,7 @@ func TestServe_AfterStopReturnsError(t *testing.T) {
 
 	got := h.app.Serve(again, nil)
 
-	want := "ginject: app is stopped"
+	want := "owlky: app is stopped"
 	if got == nil || got.Error() != want {
 		t.Error(test.DiffMessage(got, want, "S2/G9: a serving call after the app stopped"))
 	}
@@ -320,7 +320,7 @@ func TestServe_ErrorLeavesListenerOpen(t *testing.T) {
 	h := newSrv(t)
 	err := h.app.Serve(h.ln, &ServerOptions{TLSConfig: &tls.Config{}})
 
-	want := "ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
+	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "S5: a TLSConfig without certificates"))
 	}
@@ -342,7 +342,7 @@ func TestListen_PortInUseReturnsBeforeLogging(t *testing.T) {
 	var got error
 	out := srvCaptureStdout(t, func() { got = h.app.Listen(port, nil) })
 
-	prefix := fmt.Sprintf("ginject: listen on :%d: ", port)
+	prefix := fmt.Sprintf("owlky: listen on :%d: ", port)
 	if got == nil || !strings.HasPrefix(got.Error(), prefix) {
 		t.Fatal(test.DiffMessage(got, prefix+"<err>", "S3: the bind error is wrapped"))
 	}
@@ -373,8 +373,8 @@ func TestListen_PortOutOfRangeReturnsError(t *testing.T) {
 
 	got := h.app.Listen(70000, nil)
 
-	if got == nil || !strings.HasPrefix(got.Error(), "ginject: listen on :70000: ") {
-		t.Error(test.DiffMessage(got, "ginject: listen on :70000: <err>", "S3: an invalid port"))
+	if got == nil || !strings.HasPrefix(got.Error(), "owlky: listen on :70000: ") {
+		t.Error(test.DiffMessage(got, "owlky: listen on :70000: <err>", "S3: an invalid port"))
 	}
 	if n := len(h.log.all()); n != before {
 		t.Error(test.DiffMessage(n, before, "S3: nothing is logged"))
@@ -502,12 +502,12 @@ func TestListenTLS_BadCertificateFile(t *testing.T) {
 
 	err := h.app.ListenTLS(port, certFile, keyFile, nil)
 
-	if err == nil || !strings.HasPrefix(err.Error(), "ginject: load TLS certificate: ") {
-		t.Error(test.DiffMessage(err, "ginject: load TLS certificate: <err>", "S5: garbage in the pair"))
+	if err == nil || !strings.HasPrefix(err.Error(), "owlky: load TLS certificate: ") {
+		t.Error(test.DiffMessage(err, "owlky: load TLS certificate: <err>", "S5: garbage in the pair"))
 	}
 	missing := h.app.ListenTLS(port, filepath.Join(dir, "none.pem"), keyFile, nil)
-	if missing == nil || !strings.HasPrefix(missing.Error(), "ginject: load TLS certificate: ") {
-		t.Error(test.DiffMessage(missing, "ginject: load TLS certificate: <err>", "S5: a missing file"))
+	if missing == nil || !strings.HasPrefix(missing.Error(), "owlky: load TLS certificate: ") {
+		t.Error(test.DiffMessage(missing, "owlky: load TLS certificate: <err>", "S5: a missing file"))
 	}
 	if n := len(h.log.all()); n != before {
 		t.Error(test.DiffMessage(n, before, "S5: nothing is logged"))
@@ -517,7 +517,7 @@ func TestListenTLS_BadCertificateFile(t *testing.T) {
 func TestListenTLS_NoCertificateSource(t *testing.T) {
 	h := newSrv(t)
 	port := srvHeldPort(t)
-	want := "ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
+	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
 
 	for name, opts := range map[string]*ServerOptions{
 		"nil options":       nil,
@@ -534,7 +534,7 @@ func TestListenTLS_NoCertificateSource(t *testing.T) {
 func TestListenTLS_OneEmptyFileName(t *testing.T) {
 	h := newSrv(t)
 	port := srvHeldPort(t)
-	want := "ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
+	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
 
 	if err := h.app.ListenTLS(port, "cert.pem", "", nil); err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "S5: key name empty"))
@@ -549,7 +549,7 @@ func TestServe_TLSConfigWithoutCertificatesIsAnError(t *testing.T) {
 
 	err := h.app.Serve(h.ln, &ServerOptions{TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}})
 
-	want := "ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
+	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "C15, S5: Serve never falls back to plaintext"))
 	}
@@ -974,7 +974,7 @@ func TestShutdown_TimeoutCutsRequestAndReports(t *testing.T) {
 	h.sigs <- syscall.SIGTERM
 	err := h.wait()
 
-	want := "ginject: shutdown timed out after 50ms"
+	want := "owlky: shutdown timed out after 50ms"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "C11, G4: the error names the timeout"))
 	}
@@ -1029,8 +1029,8 @@ func TestShutdown_ListenerFailureRunsHooks(t *testing.T) {
 
 	err := h.wait()
 
-	if err == nil || err.Error() != "ginject: serve: boom" {
-		t.Error(test.DiffMessage(err, "ginject: serve: boom", "G8: the listener failure is returned"))
+	if err == nil || err.Error() != "owlky: serve: boom" {
+		t.Error(test.DiffMessage(err, "owlky: serve: boom", "G8: the listener failure is returned"))
 	}
 	if names := srvCur.hookNames(); fmt.Sprint(names) != "[root child]" {
 		t.Error(test.DiffMessage(names, []string{"root", "child"}, "G8: the hooks run when the server stops by itself"))
@@ -1083,8 +1083,8 @@ func TestShutdown_AppCannotServeAgain(t *testing.T) {
 
 	got := h.app.Serve(again, nil)
 
-	if got == nil || got.Error() != "ginject: app is stopped" {
-		t.Error(test.DiffMessage(got, "ginject: app is stopped", "G9: the app cannot serve again"))
+	if got == nil || got.Error() != "owlky: app is stopped" {
+		t.Error(test.DiffMessage(got, "owlky: app is stopped", "G9: the app cannot serve again"))
 	}
 	w := httptest.NewRecorder()
 	h.app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ok", nil))

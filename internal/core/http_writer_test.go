@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/httphook"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/httphook"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
 	"golang.org/x/net/websocket"
 )
 

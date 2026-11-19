@@ -3,8 +3,8 @@ package dto
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 type LoginDTO struct {
@@ -12,7 +12,7 @@ type LoginDTO struct {
 	Password string `bind:"password"`
 }
 
-func (loginDTO LoginDTO) Transform(body ginject.Body, arg ginject.ArgumentMetadata) any {
+func (loginDTO LoginDTO) Transform(body owlky.Body, arg owlky.ArgumentMetadata) any {
 	bound, _ := body.Bind(loginDTO)
 	dto := bound.(LoginDTO)
 

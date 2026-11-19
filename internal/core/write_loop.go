@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/log"
 	"golang.org/x/net/websocket"
 )
 

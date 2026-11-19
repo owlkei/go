@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
 	"golang.org/x/net/websocket"
 )
 

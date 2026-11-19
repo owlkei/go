@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	ptrn "github.com/dangduoc08/ginject/internal/pattern"
+	ptrn "go.owlky.com/owlky/internal/pattern"
 )
 
 type MemoryBroker struct {

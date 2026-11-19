@@ -1,4 +1,4 @@
-module github.com/dangduoc08/ginject
+module go.owlky.com/owlky
 
 go 1.27.4
 

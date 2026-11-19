@@ -1,9 +1,9 @@
-module github.com/dangduoc08/ginject/bench
+module go.owlky.com/owlky/bench
 
 go 1.27.4
 
 require (
-	github.com/dangduoc08/ginject v0.0.0
+	go.owlky.com/owlky v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/gofiber/fiber/v2 v2.52.16
@@ -54,4 +54,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace github.com/dangduoc08/ginject => ../
+replace go.owlky.com/owlky => ../

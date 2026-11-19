@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/httphook"
+	"go.owlky.com/owlky/internal/httphook"
 )
 
 const cspHeader = "Content-Security-Policy"
 
-var errResponseEnded = errors.New("ginject: response writer used after the request ended")
+var errResponseEnded = errors.New("owlky: response writer used after the request ended")
 
 type responseWriter struct {
 	w     http.ResponseWriter

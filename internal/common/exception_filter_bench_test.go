@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky/exception"
 )
 
 func BenchmarkNormalizeRecovered_Exception(b *testing.B) {

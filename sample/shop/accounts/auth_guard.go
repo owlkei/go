@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 type contextKey string
@@ -12,7 +12,7 @@ type contextKey string
 const currentUserKey contextKey = "shop.currentUser"
 
 type AuthGuard struct {
-	ginject.Guard
+	owlky.Guard
 	UserService
 }
 
@@ -20,7 +20,7 @@ func (instance AuthGuard) NewGuard() AuthGuard {
 	return instance
 }
 
-func (instance AuthGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance AuthGuard) CanActivate(c owlky.HTTPContext) bool {
 	token := strings.TrimPrefix(c.Header().Get("Authorization"), "Bearer ")
 	if token == "" {
 		return false
@@ -36,7 +36,7 @@ func (instance AuthGuard) CanActivate(c ginject.HTTPContext) bool {
 	return true
 }
 
-func CurrentUser(c ginject.HTTPContext) User {
+func CurrentUser(c owlky.HTTPContext) User {
 	user, _ := c.Context().Value(currentUserKey).(User)
 
 	return user

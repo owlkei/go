@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 func TestShopRoutes(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Imports(Module).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Imports(Module).Build())
 
 	user := `{"email":"a@example.com","name":"Ann","password":"secret12"}`
 	if code, out := call(t, app, http.MethodPost, "/users?email=a@example.com&name=Ann&password=secret12", "", user); code >= 300 || out["store"] == nil {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/internal/color"
 )
 
 type factoryNode struct {

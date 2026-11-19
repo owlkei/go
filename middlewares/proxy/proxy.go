@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 type Header int

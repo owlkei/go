@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func TestNewHTTPContext_DefaultCode(t *testing.T) {

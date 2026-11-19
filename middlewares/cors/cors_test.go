@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
 	"golang.org/x/net/websocket"
 )
 
@@ -441,7 +441,7 @@ func TestCORS_WebSocketHandshake(t *testing.T) {
 		app := core.New()
 		app.SetLogger(silentLogger{})
 		app.EnableWS(&core.WSOptions{Path: "/ws"}, CORS{AllowOrigins: allowed})
-		app.Create(ginject.ModuleBuilder().Build())
+		app.Create(owlky.ModuleBuilder().Build())
 		server := httptest.NewServer(app)
 		defer server.Close()
 		conn, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", "", origin)

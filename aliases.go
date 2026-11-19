@@ -1,13 +1,13 @@
-package ginject
+package owlky
 
 import (
 	"context"
 
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 type (

@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/memorycache"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func benchGuard(b *testing.B, strategy Strategy) activator {

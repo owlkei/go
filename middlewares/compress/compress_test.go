@@ -14,11 +14,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestCompress_RoundTrip_2KiB(t *testing.T) {
@@ -70,7 +70,7 @@ func TestCompress_RoundTrip_ThroughRoute(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Compress{})
-	app.Create(ginject.ModuleBuilder().Controllers(bigController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(bigController{}).Build())
 	w := serve(app, request(http.MethodGet, "/big", "Accept-Encoding", "gzip"))
 	res, body := resultOf(t, w)
 	if res.Header.Get("Content-Encoding") != "gzip" {
@@ -452,7 +452,7 @@ func TestCompress_ServeFileKeepsReadFrom(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Compress{})
-	app.Create(ginject.ModuleBuilder().Controllers(fileController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(fileController{}).Build())
 
 	for _, name := range []string{"logo.png", "small.html"} {
 		w := &readerFromWriter{header: http.Header{}}

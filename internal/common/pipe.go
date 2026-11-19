@@ -1,7 +1,7 @@
 package common
 
 import (
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 const (

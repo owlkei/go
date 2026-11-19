@@ -1,20 +1,20 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 type Controller struct {
-	ginject.HTTP
-	ginject.WS
-	ginject.Middleware
-	ginject.Guard
-	ginject.Interceptor
-	ginject.ExceptionFilter
+	owlky.HTTP
+	owlky.WS
+	owlky.Middleware
+	owlky.Guard
+	owlky.Interceptor
+	owlky.ExceptionFilter
 }
 
-func (instance Controller) NewController() ginject.Controller {
+func (instance Controller) NewController() owlky.Controller {
 	instance.BindMiddleware(LogModuleMiddleware{})
 	instance.BindGuard(LogModuleHTTPGuard{})
 	instance.BindGuard(LogModuleWSGuard{})
@@ -26,19 +26,19 @@ func (instance Controller) NewController() ginject.Controller {
 	return instance
 }
 
-func (instance Controller) READ_ping(query ginject.Query) ginject.Map {
+func (instance Controller) READ_ping(query owlky.Query) owlky.Map {
 
 	if query.Get("error") == "true" {
 		panic(exception.InternalServerErrorException("READ_ping error triggered"))
 	}
 
-	return ginject.Map{
+	return owlky.Map{
 		"message": "Hello, World!",
 	}
 }
 
-func (instance Controller) SUBSCRIBE_chat_person_ANY() ginject.Map {
-	return ginject.Map{
+func (instance Controller) SUBSCRIBE_chat_person_ANY() owlky.Map {
+	return owlky.Map{
 		"message": "Hello, World!",
 	}
 }

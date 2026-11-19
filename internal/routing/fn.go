@@ -3,7 +3,7 @@ package routing
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/str"
+	"go.owlky.com/owlky/internal/str"
 )
 
 var patternByMethod = func() map[string]string {

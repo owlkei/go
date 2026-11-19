@@ -31,14 +31,14 @@ curl -i localhost:8081/health      # 200 ok from the first request
 
 ## What it shows
 
-- **An async module factory.** `NewWarehouseModule(ctx)` returns `(ginject.Module, error)`.
+- **An async module factory.** `NewWarehouseModule(ctx)` returns `(owlky.Module, error)`.
   `StockModule` lists it in `AsyncImports`, so `Create()` does not wait for it.
 - **Controllers in a static module.** The factory's module has providers only. `StockController` sits
   in `StockModule`, which imports the factory: controllers in a module that an async factory returns
   are refused.
 - **Transient and permanent errors.** A bad `WAREHOUSE_URL` or `WAREHOUSE_DELAY` is returned at once:
   the module is `failed` and the stock route answers `503` without `Retry-After` until you fix the value
-  and restart. A refused connection is transient: `ginject.Retry` tries again with backoff (1 s, then up
+  and restart. A refused connection is transient: `owlky.Retry` tries again with backoff (1 s, then up
   to 10 s) until it works or the app shuts down.
 - **What clients see.** While the module is `pending`, the `503` carries `Retry-After` with the seconds
   until the next attempt. The health route is in the root module and injects nothing from the

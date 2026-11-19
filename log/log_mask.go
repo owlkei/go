@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/pattern"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/pattern"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 type convertMode uint8

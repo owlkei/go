@@ -3,8 +3,8 @@ package dto
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 type UserDTO struct {
@@ -13,7 +13,7 @@ type UserDTO struct {
 	Password string `bind:"password"`
 }
 
-func (userDTO UserDTO) Transform(body ginject.Body, arg ginject.ArgumentMetadata) any {
+func (userDTO UserDTO) Transform(body owlky.Body, arg owlky.ArgumentMetadata) any {
 	bound, _ := body.Bind(userDTO)
 	dto := bound.(UserDTO)
 
@@ -39,7 +39,7 @@ type QueryDTO struct {
 	Password string `bind:"password"`
 }
 
-func (userDTO QueryDTO) Transform(body ginject.Query, arg ginject.ArgumentMetadata) any {
+func (userDTO QueryDTO) Transform(body owlky.Query, arg owlky.ArgumentMetadata) any {
 	bound, _ := body.Bind(userDTO)
 	dto := bound.(QueryDTO)
 

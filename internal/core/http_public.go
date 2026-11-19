@@ -4,9 +4,9 @@ import (
 	stdHTTP "net/http"
 	"slices"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 const publicRoutePrefix = "public/"

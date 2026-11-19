@@ -3,7 +3,7 @@ package aggregation
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestTransform_RegisteredAndApplied(t *testing.T) {

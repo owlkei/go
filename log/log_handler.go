@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/internal/color"
 )
 
 const (

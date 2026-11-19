@@ -5,11 +5,11 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/memorycache"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestRegister_NilOptions(t *testing.T) {
@@ -100,7 +100,7 @@ func TestRegister_StartsNoGoroutine(t *testing.T) {
 
 func TestRegister_InjectedServicesShareBackend(t *testing.T) {
 	cacheModule := Register(&CacheModuleOptions{IsGlobal: true})
-	root := ginject.ModuleBuilder().
+	root := owlky.ModuleBuilder().
 		Imports(cacheModule).
 		Providers(consumerA{}, consumerB{}).
 		Build()

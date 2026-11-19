@@ -3,8 +3,8 @@ package ctx
 import (
 	"reflect"
 
-	"github.com/dangduoc08/ginject/internal/num"
-	"github.com/dangduoc08/ginject/internal/slice"
+	"go.owlky.com/owlky/internal/num"
+	"go.owlky.com/owlky/internal/slice"
 )
 
 type number interface {

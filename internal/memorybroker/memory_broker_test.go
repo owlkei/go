@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestSubscribeAndPublish(t *testing.T) {

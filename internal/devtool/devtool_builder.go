@@ -4,10 +4,10 @@ import (
 	reflect "reflect"
 	"sort"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/slice"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/slice"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 type devtoolBuilder struct {

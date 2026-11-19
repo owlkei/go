@@ -1,4 +1,4 @@
-package ginject_test
+package owlky_test
 
 import (
 	"bytes"
@@ -22,18 +22,18 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/guards/throttler"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
-	"github.com/dangduoc08/ginject/modules/cache"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/guards/throttler"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/log"
+	"go.owlky.com/owlky/middlewares/proxy"
+	"go.owlky.com/owlky/modules/cache"
 	"golang.org/x/net/websocket"
 )
 
 func TestSurface_HTTPContextHasNoHooks(t *testing.T) {
-	typ := reflect.TypeFor[ginject.HTTPContext]()
+	typ := reflect.TypeFor[owlky.HTTPContext]()
 	assertNoMethods(t, typ, "B5", "Init", "Reset", "AddAggregation", "Aggregations", "GetID")
 	if _, ok := typ.MethodByName("ID"); !ok {
 		t.Error(test.DiffMessage("<missing>", "ID", "B16: HTTPContext has ID()"))
@@ -46,7 +46,7 @@ func TestSurface_HTTPContextHasNoHooks(t *testing.T) {
 }
 
 func TestSurface_WSContextHasNoHooks(t *testing.T) {
-	typ := reflect.TypeFor[ginject.WSContext]()
+	typ := reflect.TypeFor[owlky.WSContext]()
 	assertNoMethods(t, typ, "B5", "Init", "Reset", "AddAggregation", "Aggregations", "SetSend", "SetWSPayload", "GetID")
 	if _, ok := typ.MethodByName("ID"); !ok {
 		t.Error(test.DiffMessage("<missing>", "ID", "B16: WSContext has ID()"))
@@ -59,7 +59,7 @@ func TestSurface_WSContextHasNoHooks(t *testing.T) {
 }
 
 func TestSurface_AggregationMembers(t *testing.T) {
-	typ := reflect.TypeFor[ginject.Aggregation]()
+	typ := reflect.TypeFor[owlky.Aggregation]()
 	got := exportedMethods(typ)
 	want := []string{"Filter", "Pipe", "Tap", "Transform"}
 	if !slices.Equal(got, want) {
@@ -75,12 +75,12 @@ func TestSurface_EmbeddableMembers(t *testing.T) {
 		typ  reflect.Type
 		want []string
 	}{
-		{reflect.TypeFor[*ginject.HTTP](), []string{"Path", "Prefix"}},
-		{reflect.TypeFor[*ginject.WS](), nil},
-		{reflect.TypeFor[*ginject.Guard](), []string{"BindGuard"}},
-		{reflect.TypeFor[*ginject.Interceptor](), []string{"BindInterceptor"}},
-		{reflect.TypeFor[*ginject.ExceptionFilter](), []string{"BindExceptionFilter"}},
-		{reflect.TypeFor[*ginject.Middleware](), []string{"BindMiddleware"}},
+		{reflect.TypeFor[*owlky.HTTP](), []string{"Path", "Prefix"}},
+		{reflect.TypeFor[*owlky.WS](), nil},
+		{reflect.TypeFor[*owlky.Guard](), []string{"BindGuard"}},
+		{reflect.TypeFor[*owlky.Interceptor](), []string{"BindInterceptor"}},
+		{reflect.TypeFor[*owlky.ExceptionFilter](), []string{"BindExceptionFilter"}},
+		{reflect.TypeFor[*owlky.Middleware](), []string{"BindMiddleware"}},
 	}
 	for _, c := range cases {
 		got := exportedMethods(c.typ)
@@ -116,28 +116,28 @@ func TestSurface_ModuleBuilderIsFunc(t *testing.T) {
 		}
 	}
 	if !isFunc || isVar {
-		t.Error(test.DiffMessage([2]bool{isFunc, isVar}, [2]bool{true, false}, "D3: ginject.ModuleBuilder is a func declaration, not a variable"))
+		t.Error(test.DiffMessage([2]bool{isFunc, isVar}, [2]bool{true, false}, "D3: owlky.ModuleBuilder is a func declaration, not a variable"))
 	}
-	typ := reflect.TypeOf(ginject.ModuleBuilder)
+	typ := reflect.TypeOf(owlky.ModuleBuilder)
 	if typ.Kind() != reflect.Func || typ.NumIn() != 0 || typ.NumOut() != 1 || typ.Out(0) != reflect.TypeFor[*core.ModuleBuilder]() {
 		t.Error(test.DiffMessage(typ.String(), "func() *core.ModuleBuilder", "D3: ModuleBuilder takes nothing and returns *core.ModuleBuilder"))
 	}
 }
 
 func TestSurface_ModuleBuilderChain(t *testing.T) {
-	b := ginject.ModuleBuilder()
+	b := owlky.ModuleBuilder()
 	m := b.Imports().Providers(greeter{Word: "x"}).Controllers(greetController{}).Build()
 	if m == nil {
 		t.Fatal(test.DiffMessage(m, "<module>", "B9: Build returns a module"))
 	}
-	if again := ginject.ModuleBuilder(); again == b {
+	if again := owlky.ModuleBuilder(); again == b {
 		t.Error(test.DiffMessage(again == b, false, "B9: every call returns a new builder"))
 	}
 }
 
 func TestSurface_FilterCatchesExceptionPointer(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(pointerCatchController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(pointerCatchController{}).Build())
 	w := serve(app, http.MethodGet, "/boom", nil, nil)
 	if w.Code != http.StatusTeapot {
 		t.Error(test.DiffMessage(w.Code, http.StatusTeapot, "duplicate 3: a filter with Catch(ctx, *exception.Exception) catches the panic"))
@@ -149,11 +149,11 @@ func TestSurface_BindLayersAcceptAnyShape(t *testing.T) {
 		var typ reflect.Type
 		switch name {
 		case "BindGuard":
-			typ = reflect.TypeFor[*ginject.Guard]()
+			typ = reflect.TypeFor[*owlky.Guard]()
 		case "BindInterceptor":
-			typ = reflect.TypeFor[*ginject.Interceptor]()
+			typ = reflect.TypeFor[*owlky.Interceptor]()
 		default:
-			typ = reflect.TypeFor[*ginject.ExceptionFilter]()
+			typ = reflect.TypeFor[*owlky.ExceptionFilter]()
 		}
 		m, _ := typ.MethodByName(name)
 		if m.Type.In(1) != reflect.TypeFor[any]() {
@@ -243,7 +243,7 @@ func TestSurface_PublisherFieldInjected(t *testing.T) {
 
 	serve(app, http.MethodGet, "/fields", nil, nil)
 	if controllerPublisher == nil {
-		t.Fatal(test.DiffMessage(controllerPublisher, "a publisher", "B10: a ginject.Publisher field receives the app's publisher"))
+		t.Fatal(test.DiffMessage(controllerPublisher, "a publisher", "B10: a owlky.Publisher field receives the app's publisher"))
 	}
 	if err := controllerPublisher.Publish("nobody.listens"); err != nil {
 		t.Error(test.DiffMessage(err, nil, "B10: the injected publisher publishes"))
@@ -252,8 +252,8 @@ func TestSurface_PublisherFieldInjected(t *testing.T) {
 
 func TestSurface_HandlerParameters(t *testing.T) {
 	seen = paramsSeen{}
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(paramsController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(paramsController{}).Build())
 
 	if w := serve(app, http.MethodGet, "/inspect/42?q=7", nil, map[string]string{"X-Probe": "p"}); w.Code != http.StatusOK {
 		t.Fatal(test.DiffMessage(w.Code, http.StatusOK, "B11: GET handler: "+w.Body.String()))
@@ -265,12 +265,12 @@ func TestSurface_HandlerParameters(t *testing.T) {
 		t.Error(test.DiffMessage([]string{seen.query, seen.header, seen.param}, []string{"7", "p", "42"}, "B11: Query, Header and Param are injected"))
 	}
 
-	w := serve(app, http.MethodPost, "/body", strings.NewReader(`{"name":"ginject"}`), map[string]string{"Content-Type": "application/json"})
+	w := serve(app, http.MethodPost, "/body", strings.NewReader(`{"name":"owlky"}`), map[string]string{"Content-Type": "application/json"})
 	if w.Code != http.StatusCreated {
 		t.Fatal(test.DiffMessage(w.Code, http.StatusCreated, "B11: Body handler: "+w.Body.String()))
 	}
-	if seen.body["name"] != "ginject" {
-		t.Error(test.DiffMessage(seen.body, ginject.Map{"name": "ginject"}, "B11: Body is injected"))
+	if seen.body["name"] != "owlky" {
+		t.Error(test.DiffMessage(seen.body, owlky.Map{"name": "owlky"}, "B11: Body is injected"))
 	}
 
 	var buf bytes.Buffer
@@ -297,9 +297,9 @@ func TestSurface_HandlerParameters(t *testing.T) {
 }
 
 func TestSurface_HandlerParametersWS(t *testing.T) {
-	app := ginject.New()
-	app.EnableWS(&ginject.WSOptions{Path: "/ws"})
-	app.Create(ginject.ModuleBuilder().Controllers(wsParamsGateway{}).Build())
+	app := owlky.New()
+	app.EnableWS(&owlky.WSOptions{Path: "/ws"})
+	app.Create(owlky.ModuleBuilder().Controllers(wsParamsGateway{}).Build())
 
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -335,12 +335,12 @@ func TestSurface_HandlerParametersWS(t *testing.T) {
 
 func TestSurface_ModuleFunc(t *testing.T) {
 	funcModuleCalls = 0
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Imports(greeterModule, funcModule, countedModule, countedModule).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Imports(greeterModule, funcModule, countedModule, countedModule).Build())
 
 	w := serve(app, http.MethodGet, "/greet", nil, nil)
 	if w.Code != http.StatusOK || w.Body.String() != "hi" {
-		t.Error(test.DiffMessage(w.Body.String(), "hi", "B9: a func() ginject.Module is imported and its parameters are resolved from global providers"))
+		t.Error(test.DiffMessage(w.Body.String(), "hi", "B9: a func() owlky.Module is imported and its parameters are resolved from global providers"))
 	}
 	if funcModuleCalls != 1 {
 		t.Error(test.DiffMessage(funcModuleCalls, 1, "B9: a module function is called once"))
@@ -348,13 +348,13 @@ func TestSurface_ModuleFunc(t *testing.T) {
 }
 
 func TestSurface_ModuleValue(t *testing.T) {
-	local := ginject.ModuleBuilder().Providers(greeter{Word: "value"}).Controllers(greetController{}).Build()
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Imports(local, cache.Register(nil)).Build())
+	local := owlky.ModuleBuilder().Providers(greeter{Word: "value"}).Controllers(greetController{}).Build()
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Imports(local, cache.Register(nil)).Build())
 
 	w := serve(app, http.MethodGet, "/greet", nil, nil)
 	if w.Body.String() != "value" {
-		t.Error(test.DiffMessage(w.Body.String(), "value", "B9: a ginject.Module value (and a Register result) is imported"))
+		t.Error(test.DiffMessage(w.Body.String(), "value", "B9: a owlky.Module value (and a Register result) is imported"))
 	}
 }
 
@@ -362,7 +362,7 @@ func TestSurface_InvalidModulePanics(t *testing.T) {
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
-		ginject.New().Create(ginject.ModuleBuilder().Imports("not a module").Build())
+		owlky.New().Create(owlky.ModuleBuilder().Imports("not a module").Build())
 	}()
 	if recovered == nil {
 		t.Fatal(test.DiffMessage("no panic", "a panic", "B9: an import that is not a module panics"))
@@ -376,8 +376,8 @@ func TestSurface_InvalidModulePanics(t *testing.T) {
 
 func TestSurface_ModuleNameResolved(t *testing.T) {
 	m := namedModule()
-	if m.Name != "ginject_test.namedModule" {
-		t.Error(test.DiffMessage(m.Name, "ginject_test.namedModule", "B9: Name is <package>.<var> through ginject.ModuleBuilder()"))
+	if m.Name != "owlky_test.namedModule" {
+		t.Error(test.DiffMessage(m.Name, "owlky_test.namedModule", "B9: Name is <package>.<var> through owlky.ModuleBuilder()"))
 	}
 }
 
@@ -386,10 +386,10 @@ func TestSurface_ConstantValues(t *testing.T) {
 		name      string
 		got, want int64
 	}{
-		{"VersioningQuery", int64(ginject.VersioningQuery), 1},
-		{"VersioningHeader", int64(ginject.VersioningHeader), 2},
-		{"VersioningCustom", int64(ginject.VersioningCustom), 3},
-		{"VersioningMediaType", int64(ginject.VersioningMediaType), 4},
+		{"VersioningQuery", int64(owlky.VersioningQuery), 1},
+		{"VersioningHeader", int64(owlky.VersioningHeader), 2},
+		{"VersioningCustom", int64(owlky.VersioningCustom), 3},
+		{"VersioningMediaType", int64(owlky.VersioningMediaType), 4},
 		{"StrategyFixedWindow", int64(throttler.StrategyFixedWindow), 0},
 		{"StrategySlidingWindow", int64(throttler.StrategySlidingWindow), 1},
 		{"StrategyTokenBucket", int64(throttler.StrategyTokenBucket), 2},
@@ -415,36 +415,36 @@ func TestSurface_ConstantValues(t *testing.T) {
 func TestSurface_WrongLayerShapeNamesTheRootTypes(t *testing.T) {
 	msg := func() (msg string) {
 		defer func() { msg = fmt.Sprint(recover()) }()
-		app := ginject.New()
-		app.Create(ginject.ModuleBuilder().Controllers(wrongShapeController{}).Build())
+		app := owlky.New()
+		app.Create(owlky.ModuleBuilder().Controllers(wrongShapeController{}).Build())
 		return ""
 	}()
-	if !strings.Contains(msg, "CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard") {
-		t.Error(test.DiffMessage(msg, "invalid guard: <type>.CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard", "B12: the message spells the type as users write it"))
+	if !strings.Contains(msg, "CanActivate must be func(owlky.HTTPContext) bool to be bound as a HTTP guard") {
+		t.Error(test.DiffMessage(msg, "invalid guard: <type>.CanActivate must be func(owlky.HTTPContext) bool to be bound as a HTTP guard", "B12: the message spells the type as users write it"))
 	}
 }
 
 func TestSurface_EveryWrongShapeMessage(t *testing.T) {
 	cases := []struct {
-		controller ginject.Controller
+		controller owlky.Controller
 		ws         bool
 		want       string
 	}{
-		{wrongShapeController{}, false, ".CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard"},
-		{wrongHTTPInterceptorController{}, false, ".Intercept must be func(ginject.HTTPContext, ginject.Aggregation) any to be bound as a HTTP interceptor"},
-		{wrongHTTPFilterController{}, false, ".Catch must be func(ginject.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter"},
-		{wrongWSGuardController{}, true, ".CanActivate must be func(ginject.WSContext) bool to be bound as a WS guard"},
-		{wrongWSInterceptorController{}, true, ".Intercept must be func(ginject.WSContext, ginject.Aggregation) any to be bound as a WS interceptor"},
-		{wrongWSFilterController{}, true, ".Catch must be func(ginject.WSContext, *exception.Exception) to be bound as a WS exception filter"},
+		{wrongShapeController{}, false, ".CanActivate must be func(owlky.HTTPContext) bool to be bound as a HTTP guard"},
+		{wrongHTTPInterceptorController{}, false, ".Intercept must be func(owlky.HTTPContext, owlky.Aggregation) any to be bound as a HTTP interceptor"},
+		{wrongHTTPFilterController{}, false, ".Catch must be func(owlky.HTTPContext, *exception.Exception) to be bound as a HTTP exception filter"},
+		{wrongWSGuardController{}, true, ".CanActivate must be func(owlky.WSContext) bool to be bound as a WS guard"},
+		{wrongWSInterceptorController{}, true, ".Intercept must be func(owlky.WSContext, owlky.Aggregation) any to be bound as a WS interceptor"},
+		{wrongWSFilterController{}, true, ".Catch must be func(owlky.WSContext, *exception.Exception) to be bound as a WS exception filter"},
 	}
 	for _, c := range cases {
 		msg := func() (msg string) {
 			defer func() { msg = fmt.Sprint(recover()) }()
-			app := ginject.New()
+			app := owlky.New()
 			if c.ws {
-				app.EnableWS(&ginject.WSOptions{Path: "/ws"})
+				app.EnableWS(&owlky.WSOptions{Path: "/ws"})
 			}
-			app.Create(ginject.ModuleBuilder().Controllers(c.controller).Build())
+			app.Create(owlky.ModuleBuilder().Controllers(c.controller).Build())
 			return ""
 		}()
 		if !strings.Contains(msg, c.want) {
@@ -454,9 +454,9 @@ func TestSurface_EveryWrongShapeMessage(t *testing.T) {
 }
 
 func TestSurface_PagesByRoute(t *testing.T) {
-	var _ = ginject.RenderOptions{IsReload: false}
+	var _ = owlky.RenderOptions{IsReload: false}
 
-	app := ginject.New()
+	app := owlky.New()
 	web := fstest.MapFS{
 		"layout.html":         {Data: []byte(`<main>{{template "content" .}}</main>`)},
 		"bookings/index.html": {Data: []byte(`<ul>{{range .Bookings}}<li>{{.}}</li>{{end}}</ul>`)},
@@ -465,10 +465,10 @@ func TestSurface_PagesByRoute(t *testing.T) {
 		"404.html":            {Data: []byte(`<h1>{{.Code}} {{.Message}}</h1>`)},
 		"public/robots.txt":   {Data: []byte("User-agent: *\n")},
 	}
-	if got := app.EnableRender(&ginject.RenderOptions{FS: web, Dir: "."}); got != app {
+	if got := app.EnableRender(&owlky.RenderOptions{FS: web, Dir: "."}); got != app {
 		t.Error(test.DiffMessage(got, app, "R3: EnableRender returns the app"))
 	}
-	app.Create(ginject.ModuleBuilder().Controllers(surfaceBookingPages{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(surfaceBookingPages{}).Build())
 
 	w := serve(app, http.MethodGet, "/bookings", nil, nil)
 	if want := "<main><ul><li>one</li><li>two</li></ul></main>"; w.Code != http.StatusOK || w.Body.String() != want {
@@ -506,23 +506,23 @@ func TestSurface_PagesByRoute(t *testing.T) {
 }
 
 func TestSurface_PageAndViewAreGone(t *testing.T) {
-	listing, err := os.ReadFile("api/ginject.txt")
+	listing, err := os.ReadFile("api/owlky.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(string(listing), "\n") {
 		for _, removed := range []string{"type Page =", "type View =", "common.Page", "common.View"} {
 			if strings.Contains(line, removed) {
-				t.Error(test.DiffMessage(line, "no such line", "P11: ginject.Page and ginject.View are removed from api/ginject.txt (make api)"))
+				t.Error(test.DiffMessage(line, "no such line", "P11: owlky.Page and owlky.View are removed from api/owlky.txt (make api)"))
 			}
 		}
 	}
 }
 
 func TestSurface_PathStyle(t *testing.T) {
-	style := ginject.PathStyle(ginject.PathStyleAsWritten)
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().
+	style := owlky.PathStyle(owlky.PathStyleAsWritten)
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().
 		PathStyle(style).
 		Imports(billingModule).
 		Controllers(tokenController{}).
@@ -544,8 +544,8 @@ func TestSurface_PathStyle(t *testing.T) {
 }
 
 func TestSurface_PathStyleKebabIsTheDefault(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(tokenController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(tokenController{}).Build())
 
 	if w := serve(app, http.MethodGet, "/payment-intents", nil, nil); w.Code != http.StatusOK {
 		t.Error(test.DiffMessage(w.Code, http.StatusOK, "B1: GET /payment-intents without a style"))
@@ -553,14 +553,14 @@ func TestSurface_PathStyleKebabIsTheDefault(t *testing.T) {
 }
 
 func TestSurface_PathStyleConstantsAreDistinct(t *testing.T) {
-	if ginject.PathStyleKebab == ginject.PathStyleAsWritten {
-		t.Error(test.DiffMessage(ginject.PathStyleKebab, "a different value", "the two styles differ"))
+	if owlky.PathStyleKebab == owlky.PathStyleAsWritten {
+		t.Error(test.DiffMessage(owlky.PathStyleKebab, "a different value", "the two styles differ"))
 	}
 }
 
 func TestSurface_HTTPControllerRoutes(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(helloController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(helloController{}).Build())
 
 	w := serve(app, http.MethodGet, "/hello", nil, nil)
 	if w.Code != http.StatusOK {
@@ -576,9 +576,9 @@ func TestSurface_HTTPControllerRoutes(t *testing.T) {
 
 func TestSurface_WSControllerEvents(t *testing.T) {
 	chatCalls.Store(0)
-	app := ginject.New()
-	app.EnableWS(&ginject.WSOptions{Path: "/ws"})
-	app.Create(ginject.ModuleBuilder().Controllers(chatGateway{}).Build())
+	app := owlky.New()
+	app.EnableWS(&owlky.WSOptions{Path: "/ws"})
+	app.Create(owlky.ModuleBuilder().Controllers(chatGateway{}).Build())
 
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -615,8 +615,8 @@ func TestSurface_WSControllerEvents(t *testing.T) {
 }
 
 func TestSurface_BindLayersThroughAliases(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(layersController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(layersController{}).Build())
 
 	plain := serve(app, http.MethodGet, "/plain?deny=true", nil, nil)
 	if plain.Code != http.StatusOK || plain.Body.String() != "plain" {
@@ -647,8 +647,8 @@ func TestSurface_BindLayersThroughAliases(t *testing.T) {
 }
 
 func TestSurface_BindInterceptorThroughAliasWrapsOneRoute(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(wrapController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(wrapController{}).Build())
 
 	if got := serve(app, http.MethodGet, "/wrapped", nil, nil).Body.String(); !strings.Contains(got, "wrapped") {
 		t.Error(test.DiffMessage(got, "a body with the wrapped key", "B8: the interceptor transforms the bound route"))
@@ -659,13 +659,13 @@ func TestSurface_BindInterceptorThroughAliasWrapsOneRoute(t *testing.T) {
 }
 
 func TestSurface_Retry(t *testing.T) {
-	if reflect.TypeFor[ginject.RetryOptions]() != reflect.TypeFor[core.RetryOptions]() {
-		t.Error(test.DiffMessage(reflect.TypeFor[ginject.RetryOptions](), reflect.TypeFor[core.RetryOptions](), "R: ginject.RetryOptions is an alias of core.RetryOptions"))
+	if reflect.TypeFor[owlky.RetryOptions]() != reflect.TypeFor[core.RetryOptions]() {
+		t.Error(test.DiffMessage(reflect.TypeFor[owlky.RetryOptions](), reflect.TypeFor[core.RetryOptions](), "R: owlky.RetryOptions is an alias of core.RetryOptions"))
 	}
 
 	var calls int
-	opts := &ginject.RetryOptions{InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, MaxAttempts: 3}
-	err := ginject.Retry(context.Background(), opts, func(context.Context) error {
+	opts := &owlky.RetryOptions{InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, MaxAttempts: 3}
+	err := owlky.Retry(context.Background(), opts, func(context.Context) error {
 		calls++
 		if calls < 2 {
 			return errors.New("transient")
@@ -673,19 +673,19 @@ func TestSurface_Retry(t *testing.T) {
 		return nil
 	})
 	if err != nil || calls != 2 {
-		t.Error(test.DiffMessage([]any{err, calls}, []any{nil, 2}, "R1: ginject.Retry retries until fn succeeds"))
+		t.Error(test.DiffMessage([]any{err, calls}, []any{nil, 2}, "R1: owlky.Retry retries until fn succeeds"))
 	}
 }
 
 func TestSurface_AsyncImports_ServesWhileFactoryBlocks(t *testing.T) {
 	release := make(chan struct{})
-	factory := func(context.Context) (ginject.Module, error) {
+	factory := func(context.Context) (owlky.Module, error) {
 		<-release
-		return ginject.ModuleBuilder().Build(), nil
+		return owlky.ModuleBuilder().Build(), nil
 	}
-	root := ginject.ModuleBuilder().AsyncImports(factory).Build()
+	root := owlky.ModuleBuilder().AsyncImports(factory).Build()
 
-	app := ginject.New()
+	app := owlky.New()
 	app.SetStartupTimeout(5 * time.Second)
 	created := make(chan struct{})
 	go func() {

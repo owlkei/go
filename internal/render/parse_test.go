@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestPageAssets_Tags(t *testing.T) {

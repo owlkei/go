@@ -43,19 +43,19 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/httphook"
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/test"
-	ctxlookalike "github.com/dangduoc08/ginject/internal/test/lookalike/ctx"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
-	"github.com/dangduoc08/ginject/internal/versioning"
-	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/httphook"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/test"
+	ctxlookalike "go.owlky.com/owlky/internal/test/lookalike/ctx"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlky.com/owlky/internal/versioning"
+	"go.owlky.com/owlky/log"
+	"go.owlky.com/owlky/middlewares/proxy"
 	"golang.org/x/net/websocket"
 )
 
@@ -1618,7 +1618,7 @@ func svApp(t *testing.T) *App {
 	return app
 }
 
-const freshProcessEnv = "GINJECT_FRESH_PROCESS"
+const freshProcessEnv = "OWLKY_FRESH_PROCESS"
 
 func freshProcess(t *testing.T, body func(t *testing.T)) {
 	t.Helper()
@@ -7099,7 +7099,7 @@ func srvMakeCert(t *testing.T) srvCerts {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "ginject test"},
+		Subject:               pkix.Name{CommonName: "owlky test"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,

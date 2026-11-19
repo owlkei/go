@@ -1,13 +1,13 @@
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
-var StockModule = ginject.ModuleBuilder().
+var StockModule = owlky.ModuleBuilder().
 	AsyncImports(NewWarehouseModule).
 	Controllers(StockController{}).
 	Build()
 
-var Module = ginject.ModuleBuilder().
+var Module = owlky.ModuleBuilder().
 	Imports(StockModule).
 	Controllers(HealthController{}).
 	Build()

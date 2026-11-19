@@ -12,8 +12,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/memorycache"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestCacheService_ForwardsToBackend(t *testing.T) {

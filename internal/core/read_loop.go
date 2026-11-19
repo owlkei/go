@@ -5,13 +5,13 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/memorybroker"
-	ptrn "github.com/dangduoc08/ginject/internal/pattern"
-	"github.com/dangduoc08/ginject/internal/wsevent"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/memorybroker"
+	ptrn "go.owlky.com/owlky/internal/pattern"
+	"go.owlky.com/owlky/internal/wsevent"
 	"golang.org/x/net/websocket"
 )
 

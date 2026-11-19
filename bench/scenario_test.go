@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
-func TestScenarios_Ginject(t *testing.T) { checkScenarios(t, "ginject", NewGinject()) }
+func TestScenarios_Owlky(t *testing.T) { checkScenarios(t, "owlky", NewOwlky()) }
 
 func TestScenarios_NetHTTP(t *testing.T) { checkScenarios(t, "net/http", NewNetHTTP()) }
 

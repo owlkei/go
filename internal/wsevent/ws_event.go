@@ -4,9 +4,9 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	ptrn "github.com/dangduoc08/ginject/internal/pattern"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/ctx"
+	ptrn "go.owlky.com/owlky/internal/pattern"
 )
 
 type WSEventItem struct {

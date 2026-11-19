@@ -1,8 +1,8 @@
 package cache
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/memorycache"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/memorycache"
 )
 
 type CacheOnInitFn = func()

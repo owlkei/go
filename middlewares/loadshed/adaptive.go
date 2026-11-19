@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/inspect"
+	"go.owlky.com/owlky/internal/inspect"
 )
 
 const (

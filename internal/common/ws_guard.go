@@ -4,8 +4,8 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 type WSCanActivate = func(*ctx.WSContext) bool
@@ -50,7 +50,7 @@ func InjectProvidersIntoWSGuards(g *Guard, ws *WS, cb func(int, reflect.Type, re
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid guard: %v.%s must be func(ginject.WSContext) bool to be bound as a WS guard",
+				"invalid guard: %v.%s must be func(owlky.WSContext) bool to be bound as a WS guard",
 				guarderType,
 				GuardMethodName,
 			)))

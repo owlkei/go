@@ -21,10 +21,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func TestNewLog_NilOptions(t *testing.T) {

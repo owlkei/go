@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestWrapLogger_ExactRule_MasksScalarLeaf(t *testing.T) {

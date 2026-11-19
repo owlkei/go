@@ -1,9 +1,9 @@
-package ginject
+package owlky
 
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject/internal/trace"
+	"go.owlky.com/owlky/internal/trace"
 )
 
 func TraceTransport(base http.RoundTripper) http.RoundTripper {

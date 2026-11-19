@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dangduoc08/ginject/internal/inspect"
+	"go.owlky.com/owlky/internal/inspect"
 )
 
 type Level uint8

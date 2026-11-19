@@ -1,17 +1,17 @@
 package shared
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
 type LogWSGuard struct {
-	ginject.Guard
+	owlky.Guard
 	log.Logger
 }
 
-func (instance LogWSGuard) CanActivate(c ginject.WSContext) bool {
+func (instance LogWSGuard) CanActivate(c owlky.WSContext) bool {
 
 	if c.Conn.Config().Location.Query().Get("error_ws_guard") == "true" {
 		panic(exception.InternalServerErrorException("LogWSGuard error triggered"))

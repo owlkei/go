@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/routing"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/routing"
 )
 
 type handlerTargets struct {

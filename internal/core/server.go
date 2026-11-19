@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/routing"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/routing"
 )
 
 const (
@@ -30,12 +30,12 @@ const (
 )
 
 var (
-	errNotCreated        = errors.New("ginject: Create must be called before serving")
-	errAlreadyServing    = errors.New("ginject: app is already serving")
-	errStopped           = errors.New("ginject: app is stopped")
-	errTLSConfigOnListen = errors.New("ginject: TLSConfig is set: use ListenTLS, or Serve with your listener")
-	errH2CWithTLS        = errors.New("ginject: IsH2C applies to connections without TLS")
-	errNoCertificate     = errors.New("ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates")
+	errNotCreated        = errors.New("owlky: Create must be called before serving")
+	errAlreadyServing    = errors.New("owlky: app is already serving")
+	errStopped           = errors.New("owlky: app is stopped")
+	errTLSConfigOnListen = errors.New("owlky: TLSConfig is set: use ListenTLS, or Serve with your listener")
+	errH2CWithTLS        = errors.New("owlky: IsH2C applies to connections without TLS")
+	errNoCertificate     = errors.New("owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates")
 )
 
 type ServerOptions struct {
@@ -86,7 +86,7 @@ func (app *App) ListenTLS(port int, certFile, keyFile string, opts *ServerOption
 		}
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return fmt.Errorf("ginject: load TLS certificate: %w", err)
+			return fmt.Errorf("owlky: load TLS certificate: %w", err)
 		}
 		if o.TLSConfig == nil {
 			o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -214,7 +214,7 @@ func (app *App) listenAndServe(port int, opts ServerOptions) error {
 	address := net.JoinHostPort("", strconv.Itoa(port))
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("ginject: listen on %s: %w", address, err)
+		return fmt.Errorf("owlky: listen on %s: %w", address, err)
 	}
 	defer func() { _ = l.Close() }()
 
@@ -264,7 +264,7 @@ func (app *App) serve(l net.Listener, opts ServerOptions) error {
 		deadline = app.beginShutdown(opts.ShutdownTimeout)
 		app.markStopping()
 		_ = drain(server, opts.ShutdownTimeout)
-		err = fmt.Errorf("ginject: serve: %w", serveErr)
+		err = fmt.Errorf("owlky: serve: %w", serveErr)
 	}
 
 	app.runShutdownHooks(deadline)
@@ -429,7 +429,7 @@ func drain(server *http.Server, timeout time.Duration) error {
 	}
 	_ = server.Close()
 
-	return fmt.Errorf("ginject: shutdown timed out after %v", timeout)
+	return fmt.Errorf("owlky: shutdown timed out after %v", timeout)
 }
 
 func (app *App) runShutdownHooks(deadline time.Time) {

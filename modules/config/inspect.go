@@ -4,7 +4,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/dangduoc08/ginject/internal/inspect"
+	"go.owlky.com/owlky/internal/inspect"
 )
 
 func init() {

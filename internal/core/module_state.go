@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/devtool"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/devtool"
+	"go.owlky.com/owlky/log"
 )
 
 type moduleStatus uint32

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/pattern"
+	"go.owlky.com/owlky/internal/pattern"
 )
 
 func BenchmarkNewPattern_Exact(b *testing.B) {

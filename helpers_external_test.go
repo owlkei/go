@@ -1,4 +1,4 @@
-package ginject_test
+package owlky_test
 
 import (
 	"io"
@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/log"
 	"golang.org/x/net/websocket"
 )
 
@@ -51,16 +51,16 @@ func assertNoMethods(t *testing.T, typ reflect.Type, rule string, forbidden ...s
 
 type pointerCatchFilter struct{}
 
-func (pointerCatchFilter) Catch(c ginject.HTTPContext, e *exception.Exception) {
-	c.Status(http.StatusTeapot).JSON(ginject.Map{"caught": true})
+func (pointerCatchFilter) Catch(c owlky.HTTPContext, e *exception.Exception) {
+	c.Status(http.StatusTeapot).JSON(owlky.Map{"caught": true})
 }
 
 type pointerCatchController struct {
-	ginject.HTTP
-	ginject.ExceptionFilter
+	owlky.HTTP
+	owlky.ExceptionFilter
 }
 
-func (instance pointerCatchController) NewController() ginject.Controller {
+func (instance pointerCatchController) NewController() owlky.Controller {
 	instance.BindExceptionFilter(pointerCatchFilter{}, instance.READ_boom)
 	return instance
 }
@@ -69,7 +69,7 @@ func (instance pointerCatchController) READ_boom() string {
 	panic(exception.BadRequestException("boom"))
 }
 
-const modulePath = "github.com/dangduoc08/ginject"
+const modulePath = "go.owlky.com/owlky"
 
 var movedPackages = map[string]bool{
 	"common":       true,
@@ -128,7 +128,7 @@ type loggerProvider struct {
 	Logger log.Logger
 }
 
-func (instance loggerProvider) NewProvider() ginject.Provider { return instance }
+func (instance loggerProvider) NewProvider() owlky.Provider { return instance }
 
 type loggerGuard struct {
 	Logger log.Logger
@@ -136,26 +136,26 @@ type loggerGuard struct {
 
 var guardLogger log.Logger
 
-func (instance loggerGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance loggerGuard) CanActivate(c owlky.HTTPContext) bool {
 	guardLogger = instance.Logger
 	return true
 }
 
 type injectedController struct {
-	ginject.HTTP
-	ginject.Guard
+	owlky.HTTP
+	owlky.Guard
 	Logger    log.Logger
-	Publisher ginject.Publisher
+	Publisher owlky.Publisher
 	Provider  loggerProvider
 }
 
 var (
 	controllerLogger    log.Logger
 	providerLogger      log.Logger
-	controllerPublisher ginject.Publisher
+	controllerPublisher owlky.Publisher
 )
 
-func (instance injectedController) NewController() ginject.Controller {
+func (instance injectedController) NewController() owlky.Controller {
 	instance.BindGuard(loggerGuard{}, instance.READ_fields)
 	return instance
 }
@@ -167,38 +167,38 @@ func (instance injectedController) READ_fields() string {
 	return "ok"
 }
 
-func injectedApp(t *testing.T) (ginject.App, log.Logger) {
+func injectedApp(t *testing.T) (owlky.App, log.Logger) {
 	t.Helper()
 	logger := log.NewLog(&log.LogOptions{Level: log.LevelError})
-	app := ginject.New()
+	app := owlky.New()
 	app.SetLogger(logger)
-	app.Create(ginject.ModuleBuilder().Providers(loggerProvider{}).Controllers(injectedController{}).Build())
+	app.Create(owlky.ModuleBuilder().Providers(loggerProvider{}).Controllers(injectedController{}).Build())
 	return app, logger
 }
 
 type paramsSeen struct {
 	hasContext, hasNext, hasRedirect, hasPublisher bool
 	query, header, param                           string
-	body                                           ginject.Body
-	form                                           ginject.Form
+	body                                           owlky.Body
+	form                                           owlky.Form
 	fileNames                                      []string
 }
 
 var seen paramsSeen
 
 type paramsController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance paramsController) NewController() ginject.Controller { return instance }
+func (instance paramsController) NewController() owlky.Controller { return instance }
 
 func (instance paramsController) READ_inspect_BY_id(
-	c ginject.HTTPContext,
-	query ginject.Query,
-	header ginject.Header,
-	param ginject.Param,
-	next ginject.Next,
-	publisher ginject.Publisher,
+	c owlky.HTTPContext,
+	query owlky.Query,
+	header owlky.Header,
+	param owlky.Param,
+	next owlky.Next,
+	publisher owlky.Publisher,
 ) string {
 	seen.hasContext = c != nil
 	seen.hasNext = next != nil
@@ -209,12 +209,12 @@ func (instance paramsController) READ_inspect_BY_id(
 	return "ok"
 }
 
-func (instance paramsController) CREATE_body(body ginject.Body) string {
+func (instance paramsController) CREATE_body(body owlky.Body) string {
 	seen.body = body
 	return "ok"
 }
 
-func (instance paramsController) CREATE_upload(form ginject.Form, file ginject.File) string {
+func (instance paramsController) CREATE_upload(form owlky.Form, file owlky.File) string {
 	seen.form = form
 	for _, headers := range file {
 		for _, h := range headers {
@@ -224,25 +224,25 @@ func (instance paramsController) CREATE_upload(form ginject.Form, file ginject.F
 	return "ok"
 }
 
-func (instance paramsController) READ_away(redirect ginject.Redirect) {
+func (instance paramsController) READ_away(redirect owlky.Redirect) {
 	seen.hasRedirect = redirect != nil
 	redirect("/elsewhere")
 }
 
 type wsSeen struct {
 	hasContext, hasPublisher, hasNext bool
-	payload                           ginject.WSPayload
+	payload                           owlky.WSPayload
 }
 
 var wsSeenCh = make(chan wsSeen, 4)
 
 type wsParamsGateway struct {
-	ginject.WS
+	owlky.WS
 }
 
-func (instance wsParamsGateway) NewController() ginject.Controller { return instance }
+func (instance wsParamsGateway) NewController() owlky.Controller { return instance }
 
-func (instance wsParamsGateway) SUBSCRIBE_probe(c ginject.WSContext, payload ginject.WSPayload, publisher ginject.Publisher, next ginject.Next) string {
+func (instance wsParamsGateway) SUBSCRIBE_probe(c owlky.WSContext, payload owlky.WSPayload, publisher owlky.Publisher, next owlky.Next) string {
 	wsSeenCh <- wsSeen{hasContext: c != nil, hasPublisher: publisher != nil, hasNext: next != nil, payload: payload}
 	return "ok"
 }
@@ -251,36 +251,36 @@ type greeter struct {
 	Word string
 }
 
-func (instance greeter) NewProvider() ginject.Provider { return instance }
+func (instance greeter) NewProvider() owlky.Provider { return instance }
 
 type greetController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Greeter greeter
 }
 
-func (instance greetController) NewController() ginject.Controller { return instance }
+func (instance greetController) NewController() owlky.Controller { return instance }
 
 func (instance greetController) READ_greet() string { return instance.Greeter.Word }
 
-var greeterModule = func() ginject.Module {
-	m := ginject.ModuleBuilder().Providers(greeter{Word: "hi"}).Build()
+var greeterModule = func() owlky.Module {
+	m := owlky.ModuleBuilder().Providers(greeter{Word: "hi"}).Build()
 	m.IsGlobal = true
 	return m
 }
 
-var funcModule = func(g greeter) ginject.Module {
-	return ginject.ModuleBuilder().Controllers(greetController{}).Build()
+var funcModule = func(g greeter) owlky.Module {
+	return owlky.ModuleBuilder().Controllers(greetController{}).Build()
 }
 
 var funcModuleCalls int
 
-var countedModule = func() ginject.Module {
+var countedModule = func() owlky.Module {
 	funcModuleCalls++
-	return ginject.ModuleBuilder().Build()
+	return owlky.ModuleBuilder().Build()
 }
 
-var namedModule = func() ginject.Module {
-	return ginject.ModuleBuilder().Build()
+var namedModule = func() owlky.Module {
+	return owlky.ModuleBuilder().Build()
 }
 
 type wrongGuard struct{}
@@ -289,14 +289,14 @@ func (wrongGuard) NewGuard() wrongGuard { return wrongGuard{} }
 
 func (wrongGuard) CanActivate(string) bool { return true }
 
-func (wrongGuard) NewController() ginject.Controller { return nil }
+func (wrongGuard) NewController() owlky.Controller { return nil }
 
 type wrongShapeController struct {
-	ginject.HTTP
-	ginject.Guard
+	owlky.HTTP
+	owlky.Guard
 }
 
-func (c wrongShapeController) NewController() ginject.Controller {
+func (c wrongShapeController) NewController() owlky.Controller {
 	c.BindGuard(wrongGuard{}, c.READ_x)
 	return c
 }
@@ -316,11 +316,11 @@ func (wrongFilter) NewExceptionFilter() wrongFilter { return wrongFilter{} }
 func (wrongFilter) Catch(string) {}
 
 type wrongHTTPInterceptorController struct {
-	ginject.HTTP
-	ginject.Interceptor
+	owlky.HTTP
+	owlky.Interceptor
 }
 
-func (c wrongHTTPInterceptorController) NewController() ginject.Controller {
+func (c wrongHTTPInterceptorController) NewController() owlky.Controller {
 	c.BindInterceptor(wrongInterceptor{}, c.READ_x)
 	return c
 }
@@ -328,11 +328,11 @@ func (c wrongHTTPInterceptorController) NewController() ginject.Controller {
 func (wrongHTTPInterceptorController) READ_x() string { return "x" }
 
 type wrongHTTPFilterController struct {
-	ginject.HTTP
-	ginject.ExceptionFilter
+	owlky.HTTP
+	owlky.ExceptionFilter
 }
 
-func (c wrongHTTPFilterController) NewController() ginject.Controller {
+func (c wrongHTTPFilterController) NewController() owlky.Controller {
 	c.BindExceptionFilter(wrongFilter{}, c.READ_x)
 	return c
 }
@@ -340,11 +340,11 @@ func (c wrongHTTPFilterController) NewController() ginject.Controller {
 func (wrongHTTPFilterController) READ_x() string { return "x" }
 
 type wrongWSGuardController struct {
-	ginject.WS
-	ginject.Guard
+	owlky.WS
+	owlky.Guard
 }
 
-func (c wrongWSGuardController) NewController() ginject.Controller {
+func (c wrongWSGuardController) NewController() owlky.Controller {
 	c.BindGuard(wrongGuard{}, c.SUBSCRIBE_x)
 	return c
 }
@@ -352,11 +352,11 @@ func (c wrongWSGuardController) NewController() ginject.Controller {
 func (wrongWSGuardController) SUBSCRIBE_x() string { return "x" }
 
 type wrongWSInterceptorController struct {
-	ginject.WS
-	ginject.Interceptor
+	owlky.WS
+	owlky.Interceptor
 }
 
-func (c wrongWSInterceptorController) NewController() ginject.Controller {
+func (c wrongWSInterceptorController) NewController() owlky.Controller {
 	c.BindInterceptor(wrongInterceptor{}, c.SUBSCRIBE_x)
 	return c
 }
@@ -364,11 +364,11 @@ func (c wrongWSInterceptorController) NewController() ginject.Controller {
 func (wrongWSInterceptorController) SUBSCRIBE_x() string { return "x" }
 
 type wrongWSFilterController struct {
-	ginject.WS
-	ginject.ExceptionFilter
+	owlky.WS
+	owlky.ExceptionFilter
 }
 
-func (c wrongWSFilterController) NewController() ginject.Controller {
+func (c wrongWSFilterController) NewController() owlky.Controller {
 	c.BindExceptionFilter(wrongFilter{}, c.SUBSCRIBE_x)
 	return c
 }
@@ -380,7 +380,7 @@ type surfaceBooking struct {
 	Errors map[string]string
 }
 
-func (surfaceBooking) Transform(f ginject.Form, _ ginject.ArgumentMetadata) any {
+func (surfaceBooking) Transform(f owlky.Form, _ owlky.ArgumentMetadata) any {
 	bound, _ := f.Bind(surfaceBooking{})
 	form := bound.(surfaceBooking)
 	form.Errors = map[string]string{}
@@ -391,16 +391,16 @@ func (surfaceBooking) Transform(f ginject.Form, _ ginject.ArgumentMetadata) any 
 }
 
 type surfaceBookingPages struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance surfaceBookingPages) NewController() ginject.Controller { return instance }
+func (instance surfaceBookingPages) NewController() owlky.Controller { return instance }
 
-func (instance surfaceBookingPages) RENDER_bookings() ginject.Map {
-	return ginject.Map{"Bookings": []string{"one", "two"}}
+func (instance surfaceBookingPages) RENDER_bookings() owlky.Map {
+	return owlky.Map{"Bookings": []string{"one", "two"}}
 }
 
-func (instance surfaceBookingPages) RENDER_bookings_BY_id(param ginject.Param) surfaceBooking {
+func (instance surfaceBookingPages) RENDER_bookings_BY_id(param owlky.Param) surfaceBooking {
 	if param.Get("id") != "1" {
 		panic(exception.NotFoundException("No booking has this number"))
 	}
@@ -411,7 +411,7 @@ func (instance surfaceBookingPages) RENDER_new_OF_bookings() surfaceBooking {
 	return surfaceBooking{Nights: "1"}
 }
 
-func (instance surfaceBookingPages) SUBMIT_new_OF_bookings(c ginject.HTTPContext, form surfaceBooking) surfaceBooking {
+func (instance surfaceBookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form surfaceBooking) surfaceBooking {
 	if len(form.Errors) == 0 {
 		c.Redirect("/bookings")
 	}
@@ -419,28 +419,28 @@ func (instance surfaceBookingPages) SUBMIT_new_OF_bookings(c ginject.HTTPContext
 }
 
 type tokenController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance tokenController) NewController() ginject.Controller {
+func (instance tokenController) NewController() owlky.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
 
-func (instance tokenController) CREATE_token() ginject.Map { return ginject.Map{"token": "t"} }
+func (instance tokenController) CREATE_token() owlky.Map { return owlky.Map{"token": "t"} }
 
 func (instance tokenController) READ_payment_intents() []string { return []string{"pi"} }
 
-var billingModule = ginject.ModuleBuilder().
-	PathStyle(ginject.PathStyleKebab).
+var billingModule = owlky.ModuleBuilder().
+	PathStyle(owlky.PathStyleKebab).
 	Controllers(billingController{}).
 	Build()
 
 type billingController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance billingController) NewController() ginject.Controller { return instance }
+func (instance billingController) NewController() owlky.Controller { return instance }
 
 func (instance billingController) READ_invoice_lines() string { return "lines" }
 
@@ -455,20 +455,20 @@ func serve(app http.Handler, method, target string, body io.Reader, headers map[
 }
 
 type helloController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance helloController) NewController() ginject.Controller { return instance }
+func (instance helloController) NewController() owlky.Controller { return instance }
 
 func (instance helloController) READ_hello() string { return "hello" }
 
 var chatCalls atomic.Int32
 
 type chatGateway struct {
-	ginject.WS
+	owlky.WS
 }
 
-func (instance chatGateway) NewController() ginject.Controller { return instance }
+func (instance chatGateway) NewController() owlky.Controller { return instance }
 
 func (instance chatGateway) SUBSCRIBE_chat_ANY() string {
 	chatCalls.Add(1)
@@ -502,23 +502,23 @@ var layerCalls = struct{ guard, interceptor, filter, middleware atomic.Int32 }{}
 
 type layerGuard struct{}
 
-func (instance layerGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance layerGuard) CanActivate(c owlky.HTTPContext) bool {
 	layerCalls.guard.Add(1)
 	return c.Query().Get("deny") != "true"
 }
 
 type layerInterceptor struct{}
 
-func (instance layerInterceptor) Intercept(c ginject.HTTPContext, a ginject.Aggregation) any {
+func (instance layerInterceptor) Intercept(c owlky.HTTPContext, a owlky.Aggregation) any {
 	layerCalls.interceptor.Add(1)
 	return a.Pipe(a.Transform(func(data any) any {
-		return ginject.Map{"wrapped": data}
+		return owlky.Map{"wrapped": data}
 	}))
 }
 
 type layerFilter struct{}
 
-func (instance layerFilter) Catch(c ginject.HTTPContext, e *exception.Exception) {
+func (instance layerFilter) Catch(c owlky.HTTPContext, e *exception.Exception) {
 	layerCalls.filter.Add(1)
 	c.Status(http.StatusTeapot)
 	c.Text("filtered")
@@ -526,21 +526,21 @@ func (instance layerFilter) Catch(c ginject.HTTPContext, e *exception.Exception)
 
 type layerMiddleware struct{}
 
-func (instance layerMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+func (instance layerMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
 	layerCalls.middleware.Add(1)
 	w.Header().Set("X-Layer", "on")
 	next()
 }
 
 type layersController struct {
-	ginject.HTTP
-	ginject.Guard
-	ginject.Interceptor
-	ginject.ExceptionFilter
-	ginject.Middleware
+	owlky.HTTP
+	owlky.Guard
+	owlky.Interceptor
+	owlky.ExceptionFilter
+	owlky.Middleware
 }
 
-func (instance layersController) NewController() ginject.Controller {
+func (instance layersController) NewController() owlky.Controller {
 	instance.BindGuard(layerGuard{}, instance.READ_bound)
 	instance.BindInterceptor(layerInterceptor{}, instance.READ_bound)
 	instance.BindExceptionFilter(layerFilter{}, instance.READ_bound)
@@ -555,11 +555,11 @@ func (instance layersController) READ_bound() string {
 func (instance layersController) READ_plain() string { return "plain" }
 
 type wrapController struct {
-	ginject.HTTP
-	ginject.Interceptor
+	owlky.HTTP
+	owlky.Interceptor
 }
 
-func (instance wrapController) NewController() ginject.Controller {
+func (instance wrapController) NewController() owlky.Controller {
 	instance.BindInterceptor(layerInterceptor{}, instance.READ_wrapped)
 	return instance
 }

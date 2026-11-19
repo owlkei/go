@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func lfFailFactory() (*Module, error) { return nil, errors.New("lf-factory-boom") }

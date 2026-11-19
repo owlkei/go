@@ -11,13 +11,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/memorycache"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
-	"github.com/dangduoc08/ginject/modules/cache"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlky.com/owlky/middlewares/proxy"
+	"go.owlky.com/owlky/modules/cache"
 )
 
 type Strategy int

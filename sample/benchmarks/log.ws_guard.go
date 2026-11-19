@@ -1,17 +1,17 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
 type LogModuleWSGuard struct {
-	ginject.Guard
+	owlky.Guard
 	log.Logger
 }
 
-func (instance LogModuleWSGuard) CanActivate(c ginject.WSContext) bool {
+func (instance LogModuleWSGuard) CanActivate(c owlky.WSContext) bool {
 	if c.Conn.Config().Location.Query().Get("error_module_ws_guard") == "true" {
 		panic(exception.InternalServerErrorException("LogModuleWSGuard error triggered"))
 	}

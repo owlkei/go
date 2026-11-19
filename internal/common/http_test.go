@@ -3,8 +3,8 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestGetPrefixes_NoHandlers(t *testing.T) {

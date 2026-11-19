@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 func BenchmarkInjectProvidersIntoHTTPGuards_ApplyAll(b *testing.B) {

@@ -3,7 +3,7 @@ package wsevent_test
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/internal/wsevent"
+	"go.owlky.com/owlky/internal/wsevent"
 )
 
 func newBenchWSEvent(exactPatterns, wildcardPatterns int) *wsevent.WSEvent {

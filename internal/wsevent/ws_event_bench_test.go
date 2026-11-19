@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/wsevent"
+	"go.owlky.com/owlky/internal/wsevent"
 )
 
 func BenchmarkWSEvent_Add(b *testing.B) {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/wsevent"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/wsevent"
 )
 
 type entryKey struct{}

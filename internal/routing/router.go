@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/ds"
-	"github.com/dangduoc08/ginject/internal/str"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/ds"
+	"go.owlky.com/owlky/internal/str"
 )
 
 const SERVE = "SERVE"

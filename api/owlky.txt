@@ -1,0 +1,385 @@
+pkg owlky, const PathStyleAsWritten common.PathStyle = 2
+pkg owlky, const PathStyleKebab common.PathStyle = 1
+pkg owlky, const VersioningCustom versioning.Type = 3
+pkg owlky, const VersioningHeader versioning.Type = 2
+pkg owlky, const VersioningMediaType versioning.Type = 4
+pkg owlky, const VersioningQuery versioning.Type = 1
+pkg owlky, func ModuleBuilder() *core.ModuleBuilder
+pkg owlky, func New() owlky.App
+pkg owlky, func Retry(context.Context, *core.RetryOptions, func(context.Context) error) error
+pkg owlky, func TraceTransport(http.RoundTripper) http.RoundTripper
+pkg owlky, type Aggregation = *aggregation.Aggregation
+pkg owlky, type App = *core.App
+pkg owlky, type ArgumentMetadata = common.ArgumentMetadata
+pkg owlky, type Body = ctx.Body
+pkg owlky, type Controller = core.Controller
+pkg owlky, type DataFile = *ctx.DataFile
+pkg owlky, type ExceptionFilter = common.ExceptionFilter
+pkg owlky, type FieldLevel = ctx.FieldLevel
+pkg owlky, type File = ctx.File
+pkg owlky, type Form = ctx.Form
+pkg owlky, type Guard = common.Guard
+pkg owlky, type HTTP = common.HTTP
+pkg owlky, type HTTPContext = *ctx.HTTPContext
+pkg owlky, type Header = ctx.Header
+pkg owlky, type Interceptor = common.Interceptor
+pkg owlky, type Map = ctx.Map
+pkg owlky, type Middleware = common.Middleware
+pkg owlky, type MiddlewareFn = common.MiddlewareFn
+pkg owlky, type Module = *core.Module
+pkg owlky, type Next = ctx.Next
+pkg owlky, type Param = ctx.Param
+pkg owlky, type PathStyle = common.PathStyle
+pkg owlky, type Provider = core.Provider
+pkg owlky, type Publisher = common.Publisher
+pkg owlky, type Query = ctx.Query
+pkg owlky, type Redirect = ctx.Redirect
+pkg owlky, type RenderOptions = core.RenderOptions
+pkg owlky, type RetryOptions = core.RetryOptions
+pkg owlky, type ServerOptions = core.ServerOptions
+pkg owlky, type VersioningOptions = versioning.Options
+pkg owlky, type VersioningType = versioning.Type
+pkg owlky, type WS = common.WS
+pkg owlky, type WSContext = *ctx.WSContext
+pkg owlky, type WSOptions = core.WSOptions
+pkg owlky, type WSPayload = ctx.WSPayload
+pkg owlky/exception, func BadGatewayException(string, ...any) exception.Exception
+pkg owlky/exception, func BadRequestException(string, ...any) exception.Exception
+pkg owlky/exception, func ConflictException(string, ...any) exception.Exception
+pkg owlky/exception, func ForbiddenException(string, ...any) exception.Exception
+pkg owlky/exception, func GatewayTimeoutException(string, ...any) exception.Exception
+pkg owlky/exception, func GoingAwayException(string, ...any) exception.Exception
+pkg owlky/exception, func GoneException(string, ...any) exception.Exception
+pkg owlky/exception, func HTTPVersionNotSupportedException(string, ...any) exception.Exception
+pkg owlky/exception, func InternalServerErrorException(string, ...any) exception.Exception
+pkg owlky/exception, func InvalidPayloadException(string, ...any) exception.Exception
+pkg owlky/exception, func MessageTooBigException(string, ...any) exception.Exception
+pkg owlky/exception, func MethodNotAllowedException(string, ...any) exception.Exception
+pkg owlky/exception, func MisdirectedRequestException(string, ...any) exception.Exception
+pkg owlky/exception, func NewException(string, int, ...any) exception.Exception
+pkg owlky/exception, func NotAcceptableException(string, ...any) exception.Exception
+pkg owlky/exception, func NotFoundException(string, ...any) exception.Exception
+pkg owlky/exception, func NotImplementedException(string, ...any) exception.Exception
+pkg owlky/exception, func NotSubscribedException(string, ...any) exception.Exception
+pkg owlky/exception, func PolicyViolationException(string, ...any) exception.Exception
+pkg owlky/exception, func PreconditionFailedException(string, ...any) exception.Exception
+pkg owlky/exception, func ProtocolErrorException(string, ...any) exception.Exception
+pkg owlky/exception, func RequestEntityTooLargeException(string, ...any) exception.Exception
+pkg owlky/exception, func RequestTimeoutException(string, ...any) exception.Exception
+pkg owlky/exception, func ServiceUnavailableException(string, ...any) exception.Exception
+pkg owlky/exception, func TeapotException(string, ...any) exception.Exception
+pkg owlky/exception, func TooManyRequestsException(string, ...any) exception.Exception
+pkg owlky/exception, func TopicNotFoundException(string, ...any) exception.Exception
+pkg owlky/exception, func UnauthorizedException(string, ...any) exception.Exception
+pkg owlky/exception, func UnprocessableEntityException(string, ...any) exception.Exception
+pkg owlky/exception, func UnsupportedDataException(string, ...any) exception.Exception
+pkg owlky/exception, func UnsupportedMediaTypeException(string, ...any) exception.Exception
+pkg owlky/exception, func WSInternalErrorException(string, ...any) exception.Exception
+pkg owlky/exception, method (exception.Exception) AppendJSON([]byte) []byte
+pkg owlky/exception, method (exception.Exception) Code() int
+pkg owlky/exception, method (exception.Exception) Error() string
+pkg owlky/exception, method (exception.Exception) MarshalJSON() ([]byte, error)
+pkg owlky/exception, method (exception.Exception) Message() string
+pkg owlky/exception, method (exception.Exception) StatusText() string
+pkg owlky/exception, method (exception.Exception) Unwrap() error
+pkg owlky/exception, type Exception struct
+pkg owlky/exception, type ExceptionOptions struct
+pkg owlky/exception, type ExceptionOptions struct, Cause error
+pkg owlky/exception, type ExceptionOptions struct, Description string
+pkg owlky/guards/throttler, const StrategyFixedWindow throttler.Strategy = 0
+pkg owlky/guards/throttler, const StrategySlidingWindow throttler.Strategy = 1
+pkg owlky/guards/throttler, const StrategyTokenBucket throttler.Strategy = 2
+pkg owlky/guards/throttler, method (throttler.Throttler) NewGuard() any
+pkg owlky/guards/throttler, type Strategy int
+pkg owlky/guards/throttler, type Throttler struct
+pkg owlky/guards/throttler, type Throttler struct, Backend cache.Cache
+pkg owlky/guards/throttler, type Throttler struct, KeyFunc func(*ctx.HTTPContext) string
+pkg owlky/guards/throttler, type Throttler struct, Limit int64
+pkg owlky/guards/throttler, type Throttler struct, Strategy throttler.Strategy
+pkg owlky/guards/throttler, type Throttler struct, TTL time.Duration
+pkg owlky/log, const FormatJSON log.Format = 12
+pkg owlky/log, const FormatPretty log.Format = 13
+pkg owlky/log, const FormatText log.Format = 11
+pkg owlky/log, const LevelDebug slog.Level = -4
+pkg owlky/log, const LevelError slog.Level = 8
+pkg owlky/log, const LevelFatal slog.Level = 12
+pkg owlky/log, const LevelInfo slog.Level = 0
+pkg owlky/log, const LevelWarn slog.Level = 4
+pkg owlky/log, func NewLog(*log.LogOptions) log.Logger
+pkg owlky/log, func WrapLogger(log.LogAdapter, []string) log.Logger
+pkg owlky/log, type Format int
+pkg owlky/log, type LogAdapter interface
+pkg owlky/log, type LogAdapter interface, Debug(string, ...any)
+pkg owlky/log, type LogAdapter interface, Error(string, ...any)
+pkg owlky/log, type LogAdapter interface, Fatal(string, ...any)
+pkg owlky/log, type LogAdapter interface, Info(string, ...any)
+pkg owlky/log, type LogAdapter interface, Warn(string, ...any)
+pkg owlky/log, type LogOptions struct
+pkg owlky/log, type LogOptions struct, Format log.Format
+pkg owlky/log, type LogOptions struct, IsAddSource bool
+pkg owlky/log, type LogOptions struct, Level slog.Level
+pkg owlky/log, type LogOptions struct, MaskFields []string
+pkg owlky/log, type Logger interface
+pkg owlky/log, type Logger interface, Debug(string, ...any)
+pkg owlky/log, type Logger interface, Error(string, ...any)
+pkg owlky/log, type Logger interface, Fatal(string, ...any)
+pkg owlky/log, type Logger interface, From(context.Context) log.Logger
+pkg owlky/log, type Logger interface, Info(string, ...any)
+pkg owlky/log, type Logger interface, Warn(string, ...any)
+pkg owlky/middlewares/compress, method (compress.Compress) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/compress, method (compress.Compress) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/compress, type Compress struct
+pkg owlky/middlewares/compress, type Compress struct, MinSize int
+pkg owlky/middlewares/cors, method (cors.CORS) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/cors, method (cors.CORS) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/cors, type CORS struct
+pkg owlky/middlewares/cors, type CORS struct, AllowHeaders []string
+pkg owlky/middlewares/cors, type CORS struct, AllowMethods []string
+pkg owlky/middlewares/cors, type CORS struct, AllowOrigins []string
+pkg owlky/middlewares/cors, type CORS struct, ExposeHeaders []string
+pkg owlky/middlewares/cors, type CORS struct, IsAllowCredentials bool
+pkg owlky/middlewares/cors, type CORS struct, IsAllowPrivateNetwork bool
+pkg owlky/middlewares/cors, type CORS struct, MaxAge time.Duration
+pkg owlky/middlewares/csrf, method (csrf.CSRF) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/csrf, method (csrf.CSRF) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/csrf, type CSRF struct
+pkg owlky/middlewares/csrf, type CSRF struct, TrustedOrigins []string
+pkg owlky/middlewares/helmet, const Disabled untyped string = "-"
+pkg owlky/middlewares/helmet, method (helmet.Helmet) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/helmet, method (helmet.Helmet) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/helmet, type Helmet struct
+pkg owlky/middlewares/helmet, type Helmet struct, ContentSecurityPolicy string
+pkg owlky/middlewares/helmet, type Helmet struct, CrossOriginEmbedderPolicy string
+pkg owlky/middlewares/helmet, type Helmet struct, CrossOriginOpenerPolicy string
+pkg owlky/middlewares/helmet, type Helmet struct, CrossOriginResourcePolicy string
+pkg owlky/middlewares/helmet, type Helmet struct, FrameOptions string
+pkg owlky/middlewares/helmet, type Helmet struct, PermissionsPolicy string
+pkg owlky/middlewares/helmet, type Helmet struct, ReferrerPolicy string
+pkg owlky/middlewares/helmet, type Helmet struct, StrictTransportSecurity string
+pkg owlky/middlewares/hostcheck, method (hostcheck.HostCheck) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/hostcheck, method (hostcheck.HostCheck) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/hostcheck, type HostCheck struct
+pkg owlky/middlewares/hostcheck, type HostCheck struct, Hosts []string
+pkg owlky/middlewares/httpsredirect, method (httpsredirect.HTTPSRedirect) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/httpsredirect, method (httpsredirect.HTTPSRedirect) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/httpsredirect, type HTTPSRedirect struct
+pkg owlky/middlewares/httpsredirect, type HTTPSRedirect struct, Host string
+pkg owlky/middlewares/httpsredirect, type HTTPSRedirect struct, Port int
+pkg owlky/middlewares/loadshed, method (loadshed.LoadShed) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/loadshed, method (loadshed.LoadShed) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/loadshed, type LoadShed struct
+pkg owlky/middlewares/loadshed, type LoadShed struct, MaxInFlight int
+pkg owlky/middlewares/loadshed, type LoadShed struct, MaxQueue int
+pkg owlky/middlewares/proxy, const HeaderForwarded proxy.Header = 1
+pkg owlky/middlewares/proxy, const HeaderXForwarded proxy.Header = 0
+pkg owlky/middlewares/proxy, func ClientIP(*http.Request) netip.Addr
+pkg owlky/middlewares/proxy, func Host(*http.Request) string
+pkg owlky/middlewares/proxy, func Scheme(*http.Request) string
+pkg owlky/middlewares/proxy, method (proxy.Proxy) NewMiddleware() common.MiddlewareFn
+pkg owlky/middlewares/proxy, method (proxy.Proxy) Use(*http.Request, http.ResponseWriter, ctx.Next)
+pkg owlky/middlewares/proxy, type Header int
+pkg owlky/middlewares/proxy, type Proxy struct
+pkg owlky/middlewares/proxy, type Proxy struct, Header proxy.Header
+pkg owlky/middlewares/proxy, type Proxy struct, IsHostForwarded bool
+pkg owlky/middlewares/proxy, type Proxy struct, TrustedHops int
+pkg owlky/middlewares/proxy, type Proxy struct, TrustedProxies []string
+pkg owlky/modules/cache, func NewMemoryCache(*cache.MemoryCacheOptions) cache.Cache
+pkg owlky/modules/cache, func Register(*cache.CacheModuleOptions) *core.Module
+pkg owlky/modules/cache, method (*cache.CacheService) Delete(context.Context, string) error
+pkg owlky/modules/cache, method (*cache.CacheService) Get(context.Context, string) ([]byte, bool)
+pkg owlky/modules/cache, method (*cache.CacheService) Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg owlky/modules/cache, method (*cache.CacheService) Keys(context.Context) []string
+pkg owlky/modules/cache, method (*cache.CacheService) Set(context.Context, string, []byte, time.Duration) error
+pkg owlky/modules/cache, method (*cache.CacheService) SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg owlky/modules/cache, method (*cache.CacheService) TTL(context.Context, string) (time.Duration, bool)
+pkg owlky/modules/cache, method (cache.CacheService) NewProvider() core.Provider
+pkg owlky/modules/cache, type Cache interface
+pkg owlky/modules/cache, type Cache interface, Delete(context.Context, string) error
+pkg owlky/modules/cache, type Cache interface, Get(context.Context, string) ([]byte, bool)
+pkg owlky/modules/cache, type Cache interface, Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg owlky/modules/cache, type Cache interface, Keys(context.Context) []string
+pkg owlky/modules/cache, type Cache interface, Set(context.Context, string, []byte, time.Duration) error
+pkg owlky/modules/cache, type Cache interface, SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg owlky/modules/cache, type Cache interface, TTL(context.Context, string) (time.Duration, bool)
+pkg owlky/modules/cache, type CacheModuleOptions struct
+pkg owlky/modules/cache, type CacheModuleOptions struct, Backend cache.Cache
+pkg owlky/modules/cache, type CacheModuleOptions struct, IsGlobal bool
+pkg owlky/modules/cache, type CacheModuleOptions struct, OnInit cache.CacheOnInitFn
+pkg owlky/modules/cache, type CacheOnInitFn = func()
+pkg owlky/modules/cache, type CacheService struct
+pkg owlky/modules/cache, type CacheService struct, Backend cache.Cache
+pkg owlky/modules/cache, type MemoryCacheOptions = memorycache.MemoryCacheOptions
+pkg owlky/modules/cache, var ErrEmptyKey error
+pkg owlky/modules/cache, var ErrEntryTooLarge error
+pkg owlky/modules/cache, var ErrNegativeTTL error
+pkg owlky/modules/cache, var ErrNotCounter error
+pkg owlky/modules/config, func Register(*config.ConfigModuleOptions) *core.Module
+pkg owlky/modules/config, method (*config.ConfigService) Get(string) any
+pkg owlky/modules/config, method (*config.ConfigService) Set(string, any)
+pkg owlky/modules/config, method (*config.ConfigService) Transform(any) (any, []ctx.FieldLevel)
+pkg owlky/modules/config, method (config.ConfigService) NewProvider() core.Provider
+pkg owlky/modules/config, type ConfigHookFn = func(config.ConfigService)
+pkg owlky/modules/config, type ConfigLoadFn = func() map[string]any
+pkg owlky/modules/config, type ConfigModuleOptions struct
+pkg owlky/modules/config, type ConfigModuleOptions struct, EnvFilePaths []string
+pkg owlky/modules/config, type ConfigModuleOptions struct, Hooks []config.ConfigHookFn
+pkg owlky/modules/config, type ConfigModuleOptions struct, IsExpandVariables bool
+pkg owlky/modules/config, type ConfigModuleOptions struct, IsGlobal bool
+pkg owlky/modules/config, type ConfigModuleOptions struct, IsIgnoreEnvFile bool
+pkg owlky/modules/config, type ConfigModuleOptions struct, IsOverride bool
+pkg owlky/modules/config, type ConfigModuleOptions struct, Loads []config.ConfigLoadFn
+pkg owlky/modules/config, type ConfigModuleOptions struct, OnInit config.ConfigOnInitFn
+pkg owlky/modules/config, type ConfigOnInitFn = func()
+pkg owlky/modules/config, type ConfigService struct
+pkg owlky/modules/config, type ConfigService struct, State *config.configState
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Pipe(...aggregation.Operator) any
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
+reach common.ArgumentMetadata, field ContextType string
+reach common.ArgumentMetadata, field ParamType string
+reach common.ExceptionFilter, method (*common.ExceptionFilter) BindExceptionFilter(any, ...any) *common.ExceptionFilter
+reach common.Guard, method (*common.Guard) BindGuard(any, ...any) *common.Guard
+reach common.HTTP, method (*common.HTTP) Path(string, ...any) *common.HTTP
+reach common.HTTP, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
+reach common.Interceptor, method (*common.Interceptor) BindInterceptor(any, ...any) *common.Interceptor
+reach common.Middleware, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
+reach common.MiddlewareFn, method (common.MiddlewareFn) Use(*http.Request, http.ResponseWriter, ctx.Next)
+reach common.PathStyle, type int
+reach common.Publisher, method (common.Publisher) Publish(string, ...any) error
+reach core.App, method (*core.App) BindGlobalExceptionFilters(...any) *core.App
+reach core.App, method (*core.App) BindGlobalGuards(...any) *core.App
+reach core.App, method (*core.App) BindGlobalInterceptors(...any) *core.App
+reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
+reach core.App, method (*core.App) Create(*core.Module)
+reach core.App, method (*core.App) EnableAccessLog() *core.App
+reach core.App, method (*core.App) EnableDevtool() *core.App
+reach core.App, method (*core.App) EnableRender(*core.RenderOptions) *core.App
+reach core.App, method (*core.App) EnableVersioning(*versioning.Options) *core.App
+reach core.App, method (*core.App) EnableWS(*core.WSOptions, ...common.MiddlewareFn) *core.App
+reach core.App, method (*core.App) Get(core.Provider) any
+reach core.App, method (*core.App) Listen(int, *core.ServerOptions) error
+reach core.App, method (*core.App) ListenTLS(int, string, string, *core.ServerOptions) error
+reach core.App, method (*core.App) Logger() log.Logger
+reach core.App, method (*core.App) Serve(net.Listener, *core.ServerOptions) error
+reach core.App, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
+reach core.App, method (*core.App) SetLogger(log.LogAdapter) *core.App
+reach core.App, method (*core.App) SetStartupTimeout(time.Duration) *core.App
+reach core.App, method (*core.App) Stop()
+reach core.Controller, method (core.Controller) NewController() core.Controller
+reach core.Module, field IsGlobal bool
+reach core.Module, field Name string
+reach core.Module, field OnInit func()
+reach core.Module, field OnReady func()
+reach core.Module, field OnShutdown func()
+reach core.Module, method (*core.Module) Prefix(string) *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) AsyncImports(...any) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Build() *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Controller) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) PathStyle(common.PathStyle) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
+reach core.Provider, method (core.Provider) NewProvider() core.Provider
+reach core.RenderOptions, field Dir string
+reach core.RenderOptions, field FS fs.FS
+reach core.RenderOptions, field IsReload bool
+reach core.RetryOptions, field InitialDelay time.Duration
+reach core.RetryOptions, field MaxAttempts int
+reach core.RetryOptions, field MaxDelay time.Duration
+reach core.ServerOptions, field IsH2C bool
+reach core.ServerOptions, field MaxRequestBodyBytes int64
+reach core.ServerOptions, field ShutdownTimeout time.Duration
+reach core.ServerOptions, field TLSConfig *tls.Config
+reach core.WSOptions, field Path string
+reach ctx.Body, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Body, method (ctx.Body) BindValue(any) any
+reach ctx.Body, method (ctx.Body) Del(string)
+reach ctx.Body, method (ctx.Body) Get(string) any
+reach ctx.Body, method (ctx.Body) Has(string) bool
+reach ctx.Body, method (ctx.Body) Set(string, any)
+reach ctx.Body, type map[string]any
+reach ctx.DataFile, field Dest string
+reach ctx.DataFile, field FileHeader *multipart.FileHeader embedded
+reach ctx.DataFile, field Filename string
+reach ctx.DataFile, field Index int
+reach ctx.DataFile, field Key string
+reach ctx.DataFile, field Size int64
+reach ctx.DataFile, field Total int
+reach ctx.DataFile, field Type string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Field() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Index() int
+reach ctx.FieldLevel, method (*ctx.FieldLevel) IsValue() bool
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Kind() reflect.Kind
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Namespace() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) NestedTag() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Tag() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Type() reflect.Type
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Value() any
+reach ctx.File, method (ctx.File) Bind(any) any
+reach ctx.File, type map[string][]*multipart.FileHeader
+reach ctx.Form, method (ctx.Form) Add(string, string)
+reach ctx.Form, method (ctx.Form) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Form, method (ctx.Form) BindValue(any) any
+reach ctx.Form, method (ctx.Form) Del(string)
+reach ctx.Form, method (ctx.Form) Get(string) string
+reach ctx.Form, method (ctx.Form) Has(string) bool
+reach ctx.Form, method (ctx.Form) Set(string, string)
+reach ctx.Form, type map[string][]string
+reach ctx.HTTPContext, field Request *http.Request embedded
+reach ctx.HTTPContext, field ResponseWriter http.ResponseWriter embedded
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Body() ctx.Body
+reach ctx.HTTPContext, method (*ctx.HTTPContext) File() ctx.File
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Form() ctx.Form
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Header() ctx.Header
+reach ctx.HTTPContext, method (*ctx.HTTPContext) ID() string
+reach ctx.HTTPContext, method (*ctx.HTTPContext) JSON(any, ...any)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) JSONP(any, ...any)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Param() ctx.Param
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Query() ctx.Query
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Redirect(string)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Text(string, ...any)
+reach ctx.Header, method (ctx.Header) Add(string, string)
+reach ctx.Header, method (ctx.Header) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Header, method (ctx.Header) BindValue(any) any
+reach ctx.Header, method (ctx.Header) Del(string)
+reach ctx.Header, method (ctx.Header) Get(string) string
+reach ctx.Header, method (ctx.Header) Has(string) bool
+reach ctx.Header, method (ctx.Header) Set(string, string)
+reach ctx.Header, type map[string][]string
+reach ctx.Map, type map[string]any
+reach ctx.Next, type = func()
+reach ctx.Param, method (ctx.Param) Add(string, string)
+reach ctx.Param, method (ctx.Param) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Param, method (ctx.Param) BindValue(any) any
+reach ctx.Param, method (ctx.Param) Del(string)
+reach ctx.Param, method (ctx.Param) Get(string) string
+reach ctx.Param, method (ctx.Param) Has(string) bool
+reach ctx.Param, method (ctx.Param) Set(string, string)
+reach ctx.Param, type map[string][]string
+reach ctx.Query, method (ctx.Query) Add(string, string)
+reach ctx.Query, method (ctx.Query) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Query, method (ctx.Query) BindValue(any) any
+reach ctx.Query, method (ctx.Query) Del(string)
+reach ctx.Query, method (ctx.Query) Get(string) string
+reach ctx.Query, method (ctx.Query) Has(string) bool
+reach ctx.Query, method (ctx.Query) Set(string, string)
+reach ctx.Query, type map[string][]string
+reach ctx.Redirect, type = func(string)
+reach ctx.WSContext, field Conn *websocket.Conn embedded
+reach ctx.WSContext, method (*ctx.WSContext) Context() context.Context
+reach ctx.WSContext, method (*ctx.WSContext) ID() string
+reach ctx.WSContext, method (*ctx.WSContext) Send(any)
+reach ctx.WSContext, method (*ctx.WSContext) SetContext(context.Context)
+reach ctx.WSContext, method (*ctx.WSContext) WSPayload() ctx.WSPayload
+reach ctx.WSPayload, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.WSPayload, method (ctx.WSPayload) BindValue(any) any
+reach ctx.WSPayload, type map[string]any
+reach memorycache.MemoryCacheOptions, field MaxBytes int64
+reach memorycache.MemoryCacheOptions, field MaxEntries int
+reach versioning.ExtractorHandler, type = func(*ctx.HTTPContext) string
+reach versioning.Options, field DefaultVersion string
+reach versioning.Options, field Extractor versioning.ExtractorHandler
+reach versioning.Options, field Key string
+reach versioning.Options, field Type versioning.Type
+reach versioning.Type, type int

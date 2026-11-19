@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/internal/color"
 )
 
 const (

@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/modules/cache"
-	"github.com/dangduoc08/ginject/sample/shared"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/modules/cache"
+	"go.owlky.com/owlky/sample/shared"
 )
 
 const (
@@ -22,7 +22,7 @@ type UserService struct {
 	Cache cache.CacheService
 }
 
-func (svc UserService) NewProvider() ginject.Provider {
+func (svc UserService) NewProvider() owlky.Provider {
 	return svc
 }
 

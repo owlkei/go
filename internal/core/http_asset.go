@@ -5,14 +5,14 @@ import (
 	stdHTTP "net/http"
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/routing"
-	"github.com/dangduoc08/ginject/internal/str"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/routing"
+	"go.owlky.com/owlky/internal/str"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 const (
-	assetRouteName = "ginject.assets"
+	assetRouteName = "owlky.assets"
 	assetRoute     = "/assets/*/"
 	assetPrefix    = "/assets/"
 	etagHeader     = "Etag"

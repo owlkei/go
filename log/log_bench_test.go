@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/logpipe"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/logpipe"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func BenchmarkLog_Info_Scalars_JSON(b *testing.B) {

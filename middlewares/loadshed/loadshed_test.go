@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/test"
 	"golang.org/x/net/websocket"
 )
 
@@ -282,7 +282,7 @@ func TestLoadShed_ReleasedAtWSHandshake(t *testing.T) {
 	app.SetLogger(silentLogger{})
 	shed := LoadShed{MaxInFlight: 1, MaxQueue: -1}
 	app.EnableWS(&core.WSOptions{Path: "/ws"}, shed)
-	app.Create(ginject.ModuleBuilder().Build())
+	app.Create(owlky.ModuleBuilder().Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
@@ -304,7 +304,7 @@ func TestLoadShed_RefusedWSHandshake(t *testing.T) {
 	app.EnableWS(&core.WSOptions{Path: "/ws"}, LoadShed{MaxInFlight: 1, MaxQueue: -1}, terminalMiddleware(func(w http.ResponseWriter, r *http.Request, next func()) {
 		panic(exception.ForbiddenException("no"))
 	}))
-	app.Create(ginject.ModuleBuilder().Build())
+	app.Create(owlky.ModuleBuilder().Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"

@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/str"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/str"
 )
 
 type Module struct {

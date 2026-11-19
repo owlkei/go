@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestStackSampler_FirstOfKeyHasStack(t *testing.T) {

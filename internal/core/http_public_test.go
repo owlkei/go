@@ -8,8 +8,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 func TestPublic_ServesAtRoot(t *testing.T) {

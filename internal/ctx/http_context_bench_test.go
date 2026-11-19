@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/aggregation"
+	"go.owlky.com/owlky/internal/aggregation"
 )
 
 func BenchmarkHTTPContext_Init(b *testing.B) {

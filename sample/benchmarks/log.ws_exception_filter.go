@@ -1,22 +1,22 @@
 package benchmarks
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
 type LogModuleWSExceptionFilter struct {
-	ginject.ExceptionFilter
+	owlky.ExceptionFilter
 	log.Logger
 }
 
-func (instance LogModuleWSExceptionFilter) Catch(c ginject.WSContext, ex *exception.Exception) {
+func (instance LogModuleWSExceptionFilter) Catch(c owlky.WSContext, ex *exception.Exception) {
 	if c.Conn.Config().Location.Query().Get("error_module_ws_ex") == "true" {
 		panic(exception.InternalServerErrorException("LogModuleWSExceptionFilter error triggered"))
 	}
 
-	c.Send(ginject.Map{
+	c.Send(owlky.Map{
 		"code":    ex.Code(),
 		"error":   ex.Error(),
 		"message": ex.Message(),

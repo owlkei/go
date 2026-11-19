@@ -3,7 +3,7 @@ package test
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/internal/color"
 )
 
 func DiffMessage(actual, expected any, desc string) string {

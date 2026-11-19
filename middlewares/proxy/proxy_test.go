@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestNewProxy_Panics_BothSet(t *testing.T) {
@@ -579,7 +579,7 @@ func TestProxy_InApp_HandlerReadsClient(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Proxy{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true})
-	app.Create(ginject.ModuleBuilder().Controllers(whoController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(whoController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/who", nil)
 	r.RemoteAddr = "10.0.0.7:5000"
@@ -606,7 +606,7 @@ func TestProxy_InApp_ResolutionDoesNotLeakToNextRequest(t *testing.T) {
 	app := core.New()
 	app.SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(Proxy{TrustedProxies: []string{"10.0.0.0/8"}})
-	app.Create(ginject.ModuleBuilder().Controllers(whoController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(whoController{}).Build())
 
 	first := httptest.NewRequest(http.MethodGet, "/who", nil)
 	first.RemoteAddr = "10.0.0.7:5000"

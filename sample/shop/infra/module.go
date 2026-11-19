@@ -1,7 +1,7 @@
 package infra
 
 import (
-	"github.com/dangduoc08/ginject/modules/cache"
+	"go.owlky.com/owlky/modules/cache"
 )
 
 var CacheModule = cache.Register(&cache.CacheModuleOptions{})

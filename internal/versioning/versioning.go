@@ -3,7 +3,7 @@ package versioning
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 type Type int

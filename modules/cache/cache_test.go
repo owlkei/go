@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/inspect"
-	"github.com/dangduoc08/ginject/internal/memorycache"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/inspect"
+	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestNewMemoryCache_NilUsesDefaults(t *testing.T) {

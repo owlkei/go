@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/log"
 )
 
 func BenchmarkAccessLog_Request_1Stage(b *testing.B) {

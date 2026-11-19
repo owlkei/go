@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestInjectProvidersIntoWSInterceptors_Empty(t *testing.T) {

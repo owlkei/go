@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func lfFast() *RetryOptions {
@@ -69,7 +69,7 @@ func TestRetry_StopsOnCancel(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || !errors.Is(err, last) {
 		t.Error(test.DiffMessage(err, "Is context.Canceled and Is the last error", "R3: errors.Is finds both"))
 	}
-	if want := "ginject: retry stopped after 2 attempts: "; !strings.HasPrefix(err.Error(), want) {
+	if want := "owlky: retry stopped after 2 attempts: "; !strings.HasPrefix(err.Error(), want) {
 		t.Error(test.DiffMessage(err.Error(), want+"…", "R3: message"))
 	}
 	if calls != 2 {
@@ -86,8 +86,8 @@ func TestRetry_CtxAlreadyDone(t *testing.T) {
 	if calls != 0 {
 		t.Error(test.DiffMessage(calls, 0, "R3: fn is not called when ctx is already done"))
 	}
-	if err == nil || !errors.Is(err, context.Canceled) || !strings.HasPrefix(err.Error(), "ginject: retry stopped after 0 attempts: ") {
-		t.Error(test.DiffMessage(err, "ginject: retry stopped after 0 attempts: context canceled", "R3"))
+	if err == nil || !errors.Is(err, context.Canceled) || !strings.HasPrefix(err.Error(), "owlky: retry stopped after 0 attempts: ") {
+		t.Error(test.DiffMessage(err, "owlky: retry stopped after 0 attempts: context canceled", "R3"))
 	}
 }
 
@@ -128,15 +128,15 @@ func TestRetry_MaxAttempts(t *testing.T) {
 	if calls != 3 {
 		t.Error(test.DiffMessage(calls, 3, "R4: it stops after MaxAttempts"))
 	}
-	if err == nil || !errors.Is(err, last) || err.Error() != "ginject: retry gave up after 3 attempts: lf-always" {
-		t.Error(test.DiffMessage(err, "ginject: retry gave up after 3 attempts: lf-always", "R4"))
+	if err == nil || !errors.Is(err, last) || err.Error() != "owlky: retry gave up after 3 attempts: lf-always" {
+		t.Error(test.DiffMessage(err, "owlky: retry gave up after 3 attempts: lf-always", "R4"))
 	}
 }
 
 func TestRetry_MaxAttemptsOneDoesNotWait(t *testing.T) {
 	err := Retry(context.Background(), &RetryOptions{InitialDelay: time.Hour, MaxAttempts: 1}, func(context.Context) error { return errors.New("x") })
 
-	if err == nil || !strings.HasPrefix(err.Error(), "ginject: retry gave up after 1 attempts: ") {
+	if err == nil || !strings.HasPrefix(err.Error(), "owlky: retry gave up after 1 attempts: ") {
 		t.Error(test.DiffMessage(err, "gave up after 1 attempts, without waiting", "R4: the last attempt does not wait"))
 	}
 }

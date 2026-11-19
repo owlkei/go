@@ -1,16 +1,16 @@
 package shared
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
 type LogHTTPInterceptor struct {
 	log.Logger
 }
 
-func (instance LogHTTPInterceptor) Intercept(c ginject.HTTPContext, aggregation ginject.Aggregation) any {
+func (instance LogHTTPInterceptor) Intercept(c owlky.HTTPContext, aggregation owlky.Aggregation) any {
 
 	if c.Query().Get("error_http_pre_intercept") == "true" {
 		panic(exception.InternalServerErrorException("LogHTTPInterceptor error triggered"))
@@ -23,7 +23,7 @@ func (instance LogHTTPInterceptor) Intercept(c ginject.HTTPContext, aggregation 
 				panic(exception.InternalServerErrorException("LogHTTPInterceptor error triggered"))
 			}
 
-			transformedData := ginject.Map{
+			transformedData := owlky.Map{
 				"data": data,
 			}
 			return transformedData

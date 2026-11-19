@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky/log"
 )
 
 const (

@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/color"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/internal/devtool"
-	"github.com/dangduoc08/ginject/internal/render"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/color"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/internal/devtool"
+	"go.owlky.com/owlky/internal/render"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 type RenderOptions struct {

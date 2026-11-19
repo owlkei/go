@@ -15,11 +15,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/internal/trace"
-	"github.com/dangduoc08/ginject/internal/versioning"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/versioning"
+	"go.owlky.com/owlky/middlewares/csrf"
 )
 
 func TestPage_RoutesLikeHTTP(t *testing.T) {

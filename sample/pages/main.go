@@ -1,4 +1,4 @@
-// Command pages is a small server-rendered booking site: Ginject page routes,
+// Command pages is a small server-rendered booking site: Owlky page routes,
 // html/template views and Owlky's framework-free HTML components.
 package main
 
@@ -8,9 +8,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
-	"github.com/dangduoc08/ginject/middlewares/helmet"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/csrf"
+	"go.owlky.com/owlky/middlewares/helmet"
 )
 
 //go:embed web
@@ -20,10 +20,10 @@ const defaultPort = 8080
 
 // newApp builds the application on the templates and assets of the web directory (RenderOptions.Dir
 // defaults to "web"). With reload, the same directory is read from disk and reloaded on change.
-func newApp(files fs.FS, reload bool) ginject.App {
-	app := ginject.New()
+func newApp(files fs.FS, reload bool) owlky.App {
+	app := owlky.New()
 	app.BindGlobalMiddlewares(helmet.Helmet{}, csrf.CSRF{})
-	app.EnableRender(&ginject.RenderOptions{FS: files, IsReload: reload})
+	app.EnableRender(&owlky.RenderOptions{FS: files, IsReload: reload})
 	app.Create(Module())
 	return app
 }

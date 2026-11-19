@@ -9,9 +9,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/internal/test"
-	"github.com/dangduoc08/ginject/middlewares/helmet"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/middlewares/helmet"
 )
 
 type discardWriter struct {
@@ -77,32 +77,32 @@ var pageFiles = fstest.MapFS{
 }
 
 type pageController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (c pageController) NewController() ginject.Controller { return c }
+func (c pageController) NewController() owlky.Controller { return c }
 
 func (c pageController) RENDER_bookings() map[string]any {
 	return map[string]any{"Rows": bookingRows()}
 }
 
 type jsonController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (c jsonController) NewController() ginject.Controller { return c }
+func (c jsonController) NewController() owlky.Controller { return c }
 
-func (c jsonController) READ_json() ginject.Map {
-	return ginject.Map{"rows": bookingRows()}
+func (c jsonController) READ_json() owlky.Map {
+	return owlky.Map{"rows": bookingRows()}
 }
 
-func newPageApp(render bool) ginject.App {
-	app := ginject.New().SetLogger(silentLogger{})
+func newPageApp(render bool) owlky.App {
+	app := owlky.New().SetLogger(silentLogger{})
 	app.BindGlobalMiddlewares(helmet.Helmet{})
-	builder := ginject.ModuleBuilder().Controllers(jsonController{})
+	builder := owlky.ModuleBuilder().Controllers(jsonController{})
 	if render {
-		app.EnableRender(&ginject.RenderOptions{FS: pageFiles, Dir: "."})
-		builder = ginject.ModuleBuilder().Controllers(jsonController{}, pageController{})
+		app.EnableRender(&owlky.RenderOptions{FS: pageFiles, Dir: "."})
+		builder = owlky.ModuleBuilder().Controllers(jsonController{}, pageController{})
 	}
 	app.Create(builder.Build())
 	return app

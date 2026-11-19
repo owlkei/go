@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestIsValidKey_Empty(t *testing.T) {

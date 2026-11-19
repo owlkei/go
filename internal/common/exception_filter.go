@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/color"
 )
 
 const ExceptionFilterMethodName = "Catch"

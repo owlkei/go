@@ -1,11 +1,11 @@
-package ginject
+package owlky
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestTraceTransport_DelegatesToTrace(t *testing.T) {

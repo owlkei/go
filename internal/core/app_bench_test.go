@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/trace"
+	"go.owlky.com/owlky/internal/trace"
 )
 
 func BenchmarkServeHTTP(b *testing.B) {

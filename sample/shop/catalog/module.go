@@ -1,12 +1,12 @@
 package catalog
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/sample/shop/accounts"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/sample/shop/accounts"
 )
 
-var Module = func() ginject.Module {
-	var module = ginject.ModuleBuilder().
+var Module = func() owlky.Module {
+	var module = owlky.ModuleBuilder().
 		Imports(accounts.Module).
 		Providers(StoreRepository{}, StoreService{}).
 		Controllers(StoreController{}).

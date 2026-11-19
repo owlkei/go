@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestIsModuleFactory(t *testing.T) {
@@ -238,7 +238,7 @@ func TestModuleBuilderChaining(t *testing.T) {
 }
 
 func TestPathStyle_InvalidValuePanics(t *testing.T) {
-	want := "invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten"
+	want := "invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten"
 	for _, style := range []common.PathStyle{0, 9, -1} {
 		text, panicked := createPanicText(func() { NewModuleBuilder().PathStyle(style) })
 		if !panicked || !strings.Contains(text, want) {
@@ -291,7 +291,7 @@ func TestModuleBuilder_IsAnExportedStruct(t *testing.T) {
 	}
 }
 
-const lfImportHint = ": an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)"
+const lfImportHint = ": an import is a owlky.Module or a module factory: func(deps...) owlky.Module, func(deps...) (owlky.Module, error) or func(ctx context.Context, deps...) (owlky.Module, error)"
 
 func lfImportLine(typ, list string) string {
 	return "can't import '" + typ + "' with " + list + lfImportHint

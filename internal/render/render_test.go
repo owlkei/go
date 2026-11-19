@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dangduoc08/ginject/internal/test"
+	"go.owlky.com/owlky/internal/test"
 )
 
 func TestRender_RendersPageInLayout(t *testing.T) {

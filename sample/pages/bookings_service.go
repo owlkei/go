@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 // Booking is one stored booking.
@@ -29,7 +29,7 @@ type BookingService struct {
 	Table *bookingTable
 }
 
-func (svc BookingService) NewProvider() ginject.Provider {
+func (svc BookingService) NewProvider() owlky.Provider {
 	svc.Table = &bookingTable{nextID: 1, byID: map[string]Booking{}}
 	return svc
 }
