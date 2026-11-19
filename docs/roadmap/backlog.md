@@ -232,7 +232,7 @@ Proposals the maintainer asked to keep for later (not decided):
 - **Built-in middleware order:** moved to "Security roadmap" below.
 - **One mode switch.** `OWLKY_ENV=development` turns on, together, the pretty log, template reload
   from disk and the devtools; unset means production. Replaces per-feature switches
-  (`IsReload`, the log format, the sample's `PAGES_DEV`).
+  (`IsReload`, the log format, the pages example's `PAGES_DEV`).
 - **Enable from the controllers.** A `owlky.WS` controller opens `/ws` without `EnableWS` (the
   render side cannot do the same: `//go:embed` must stay in the app). Weigh against "one obvious way".
 - **`Listen()` without arguments** reads `PORT` (default 3000), as PaaS platforms expect.

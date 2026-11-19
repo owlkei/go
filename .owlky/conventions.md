@@ -11,8 +11,7 @@ don't mass-rewrite the exceptions.
   don't add others. Explain "why" in the commit message, the README or `.owlky/`.
 - **File names** are snake case, one concern per file, the transport in front when a concept has an
   HTTP and a WS side: `internal/common/http_guard.go`, `internal/common/ws_guard.go`, `internal/core/ws_connmgr.go`,
-  `internal/core/read_loop.go`. The demo app uses dots (`sample/shared/log.http_guard.go`): that style stays
-  in `sample/`.
+  `internal/core/read_loop.go`. Examples follow the same rule (`examples/02-rest-api/book_input.go`).
 - **Where functions live in a package** (the maintainer's rule D-034, adopted on master 2026-11-16):
   - Exported API goes in files named after their topic: `trie.go`, `router.go`, `binding.go`.
   - An unexported helper (function, constant, variable or type) used by **two or more files** goes in
@@ -41,10 +40,10 @@ don't mass-rewrite the exceptions.
 ## Naming
 
 - **Receivers are one to three letters** from the type (`c`, `p`, `m`, `e`, `app`, `rb`): 683 of 737
-  methods outside `sample/`. `func (s *shard) evictOneLocked` (`internal/memorycache/memory_cache.go`).
+  methods outside the old `sample/` (roadmap 0011 replaced it with `examples/`). `func (s *shard) evictOneLocked` (`internal/memorycache/memory_cache.go`).
 - **`instance` is the receiver of user-facing configuration types** whose value the user writes:
   `func (instance CORS) NewMiddleware()` (`middlewares/cors/cors.go:100`), the `csrf` and `helmet`
-  middlewares, `log/log.go`, and every controller, provider, guard and filter in `sample/`. Use it
+  middlewares, `log/log.go`, and the README examples. Use it
   for types a user declares in their own app, and in examples.
 - **Exported option booleans start with `Is`:** `IsGlobal`, `IsAllowCredentials`,
   `IsAllowPrivateNetwork`, `IsExpandVariables`, `IsOverride`. Exceptions (`IsAddSource`,

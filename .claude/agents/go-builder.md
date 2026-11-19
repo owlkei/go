@@ -16,7 +16,7 @@ You implement an approved Owlky Go design. The tests already exist and are the s
   No extra features, options or abstractions. If the design is unclear or wrong, stop and report.
 - Follow `.owlky/conventions.md` and `CLAUDE.md`: framework conventions, the bootstrap panic format, no comments in Go code,
   static work done once (constructor or `sync.Once`), never per request.
-- **Every package you add or change code in has a `README.md`** (except `sample/**`): create it when
+- **Every package you add or change code in has a `README.md`** (except `examples/**`): create it when
   it is missing, following the steps of `.claude/commands/doc.md` (structure of
   `modules/config/README.md`, rules only from tests, benchmarks only from a real run), or update it for
   the new or changed API. Also fix the `CLAUDE.md` or

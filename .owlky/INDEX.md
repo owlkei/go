@@ -287,7 +287,7 @@ All `metadata-*.json` files contain structured data for AI parsing:
 ### 2026-11-18 Update (roadmap 0009)
 
 Design 0020: module factories with errors, `ctx` and a startup timeout; sibling scope and dependency
-order; `AsyncImports`, module states and the readiness gate; `owlky.Retry`; `sample/async`. Pages
+order; `AsyncImports`, module states and the readiness gate; `owlky.Retry`; `examples/04-async-modules`. Pages
 updated: modules-and-providers, startup-lifecycle-analysis, anti-patterns-gotchas § 13, package-reference,
 the lifecycle, concurrency and API metadata.
 

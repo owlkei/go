@@ -24,7 +24,7 @@
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#core-concepts">Concepts</a> ·
-  <a href="sample/">Examples</a> ·
+  <a href="examples/">Examples</a> ·
   <a href="#module-lifecycle">Lifecycle</a> ·
   <a href="https://owlky.com">Owlky UI</a>
 </p>
@@ -1539,7 +1539,7 @@ func main() {
   module has providers only (see [Refusals](#refusals)).
 - `HealthController` injects nothing from the database, so it is never gated.
 
-A complete app that you can run is in [`sample/async`](sample/async/README.md).
+A complete app that you can run is in [`examples/04-async-modules`](examples/04-async-modules/README.md).
 
 ### Timeline
 
@@ -1786,7 +1786,7 @@ in a controller that embeds `owlky.HTTP`, name a handler with one of the two pag
 API routes and page routes can share one controller.
 
 This booking site lists bookings, shows one, and takes new ones through a form. It is a shorter
-version of [`sample/pages`](sample/pages/README.md). The files:
+version of [`examples/03-pages`](examples/03-pages/README.md). The files:
 
 ```
 main.go
@@ -2360,7 +2360,7 @@ files are read from `FS` on each request. Point `FS` at the disk, as `main.go` d
 - **Idle:** no goroutine, timer or watcher, in production and with `IsReload`. Each public file is
   one route in memory.
 
-See [core › Pages](internal/core/README.md#pages) and the full [`sample/pages`](sample/pages/README.md),
+See [core › Pages](internal/core/README.md#pages) and the full [`examples/03-pages`](examples/03-pages/README.md),
 built with Owlky's framework-free HTML components.
 
 ---

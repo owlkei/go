@@ -84,7 +84,7 @@ func loadSurface(dir string) (*surface, error) {
 func isPublicPath(path, modulePath string) bool {
 	rel := strings.TrimPrefix(strings.TrimPrefix(path, modulePath), "/")
 	for _, element := range strings.Split(rel, "/") {
-		if element == "internal" || element == "sample" || element == "bench" {
+		if element == "internal" || element == "examples" || element == "bench" {
 			return false
 		}
 	}

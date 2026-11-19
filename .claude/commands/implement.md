@@ -59,7 +59,7 @@ record `go test -run='^$' -bench=. -benchmem ./<pkg>`.
 
 - `go vet`, `golangci-lint run` and `go test -race` on the touched packages, then `make check` once at the
   end (the Stop hook also runs the package checks).
-- **Every package you added or changed code in has a `README.md`** (except `sample/**`, the demo app):
+- **Every package you added or changed code in has a `README.md`** (except `examples/**`):
   if it has none, create it by following `/doc`'s steps for that package (structure of
   `modules/config/README.md`, rules only from tests, benchmarks only from a real run); if it has one,
   update it for the new or changed API.

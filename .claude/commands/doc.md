@@ -34,7 +34,7 @@ Create comprehensive documentation following the style reference in `modules/con
    - Skip unexported identifiers entirely — they don't belong in the README.
 
 4. **Cross-check real usage.**
-   Search the package's own `_test.go` files and, if the package is used there, `sample/`, for how each type and method is actually constructed and called. Base every example on these real call patterns so the README never shows an API call that wouldn't compile against the current code.
+   Search the package's own `_test.go` files and, if the package is used there, `examples/`, for how each type and method is actually constructed and called. Base every example on these real call patterns so the README never shows an API call that wouldn't compile against the current code.
 
 5. **Derive behavior rules from tests.**
    For every exported function/method that has coverage in a `_test.go` file (excluding `_bench_test.go`), read its test cases and pull out the concrete behavioral contract: edge cases handled (empty/nil input, not-found), special return values (e.g. `-1` or `""` for "no match"), ordering/uniqueness guarantees, and conditions that trigger a panic or error. Only state a rule if an actual test asserts it — never infer or invent one. Keep these for use in step 9.

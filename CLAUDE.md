@@ -13,12 +13,10 @@ make tidy          # go mod tidy
 # run a single test
 go test ./internal/routing/... -run TestRouter -v
 
-# run the sample app
-cd sample && go run main.go
-# run the server-rendered pages sample (http://localhost:8080/bookings; PAGES_DEV=1 from sample/pages reloads templates)
-go run ./sample/pages
-# run the AsyncImports sample (http://localhost:8081/stock/abc answers 503 until its warehouse module is ready)
-go run ./sample/async
+# vet and test every example (each examples/<NN-name> is its own module)
+make examples
+# run an example (01-hello, 02-rest-api, 03-pages, 04-async-modules, 05-production)
+cd examples/03-pages && go run .
 ```
 
 ## Knowledge base
@@ -98,7 +96,7 @@ own work on the current branch (no separate roadmap branch). Claude never pushes
   `/doc <package>` (README), `/kb [update|audit|readiness]` (this file + `.owlky/`), `/check-staged`,
   `/commit`.
 - Every package that work adds or changes code in gets a `README.md` if it has none (structure of
-  `modules/config/README.md`, written by `/doc`'s steps); `sample/**` is exempt.
+  `modules/config/README.md`, written by `/doc`'s steps); `examples/**` is exempt.
 - `make check` runs what CI runs (gofmt, `go vet`, `make api-check`, `golangci-lint` with `.golangci.yml`, `go test -race`);
   CI (`.github/workflows/ci.yml`) also runs `govulncheck` on every push, pull request and weekly.
   `make api-check` (`internal/apicheck`) compares the public API with `api/owlky.txt`; after an
@@ -135,9 +133,9 @@ Owlky Go is a NestJS-inspired dependency injection web framework for Go. The cor
 | `internal/render` | the `html/template` engine behind `EnableRender`: template sets, pooled buffers, the nonce, the asset table (design 0018) | no |
 | `internal/routing`, `pattern`, `wsevent`, `memorybroker`, `memorycache`, `aggregation`, `versioning`, `trace`, `accesslog`, `devtool` | the engine's other parts | no |
 | `internal/apicheck`, `color`, `crypto`, `ds`, `httphook`, `inspect`, `logpipe`, `num`, `slice`, `str`, `test`, `tracecontext` | tools and utilities | no |
-| `sample/`, `bench/` | the example apps (`sample/pages`: server-rendered HTML; `sample/async`: an `AsyncImports` module with `Retry`) and the framework benchmarks | no |
+| `examples/`, `bench/` | five example apps in learning order, each its own module with `replace go.owlky.com/owlky => ../..` (`make examples` vets and tests them; roadmap 0011), and the framework benchmarks | no |
 
-- Applications (and `sample/`, every README example) import only the root package plus `exception`,
+- Applications (and `examples/`, every README example) import only the root package plus `exception`,
   `log`, `middlewares/*`, `modules/*`, `guards/*`. `api/owlky.txt` is the exact public API; `make api-check` fails on any
   other importable package or an unreviewed change.
 - The public packages import the engine by its internal path (`internal/core`, `internal/ctx`…), never the
@@ -225,7 +223,7 @@ Two kinds, passed to `Imports(...)` or `AsyncImports(...)`: a **Module** (a `owl
 - `Imports` fails fast: a factory error, panic or `app.SetStartupTimeout(d)` deadline (default 30 s, one budget for `Create`, in `ctx`) stops `Create()`. `AsyncImports` never stops the app: entries build in the background (one goroutine each, `ctx` canceled at shutdown), modules that inject their providers are `pending` → `ready` | `failed` (one way); their routes stay registered behind a gate and answer `503` (`Retry-After` = seconds to the next `Retry` attempt, else 5; none when failed; `503.html` on pages), WS events reply `not ready: <topic>`. `OnShutdown` only for `ready` modules.
 - Refused: controllers in a module an async factory returns (entry fails); one entry in both lists; a `NewController` that uses injected providers (gated controllers run it twice: a probe at `Create()`, then for real); app-wide layers injecting async providers; an `Imports` factory needing an async module.
 - `owlky.Retry(ctx, *owlky.RetryOptions, fn)`: backoff with jitter until `ctx` is done or `MaxAttempts`; with an async factory's `ctx` it reports `ModuleRetry`, devtool `attempts` / `last_error`, `Retry-After`. Transient errors: retry without a limit; permanent ones (bad config): return the error.
-- Example app: `go run ./sample/async`.
+- Example app: `examples/04-async-modules`.
 
 ### Built-in Modules (`modules/`)
 

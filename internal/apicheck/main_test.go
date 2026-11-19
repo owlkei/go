@@ -90,12 +90,12 @@ func TestAPICheck_AllowedPrefixAndExactPass(t *testing.T) {
 
 func TestAPICheck_InternalSampleBenchAreNotPublic(t *testing.T) {
 	dir := writeFixture(t)
-	writeFile(t, dir, "sample/app/main.go", "package main\n\nfunc main() {}\n")
+	writeFile(t, dir, "examples/app/main.go", "package main\n\nfunc main() {}\n")
 	writeFile(t, dir, "bench/b/b.go", "package b\n")
 	generate(t, dir)
 	code, lines := check(dir)
 	if code != 0 || len(lines) != 0 {
-		t.Error(test.DiffMessage(lines, []string(nil), "B1: sample, bench and internal are not public"))
+		t.Error(test.DiffMessage(lines, []string(nil), "B1: examples, bench and internal are not public"))
 	}
 }
 

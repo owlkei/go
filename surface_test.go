@@ -162,15 +162,15 @@ func TestSurface_BindLayersAcceptAnyShape(t *testing.T) {
 	}
 }
 
-func TestSurface_SampleUsesPublicImportsOnly(t *testing.T) {
-	files := collectGoFiles(t, "sample", true)
+func TestSurface_ExamplesUsePublicImportsOnly(t *testing.T) {
+	files := collectGoFiles(t, "examples", true)
 	for _, file := range collectGoFiles(t, "bench", false) {
 		if !strings.HasSuffix(file, "_test.go") {
 			files = append(files, file)
 		}
 	}
 	if len(files) == 0 {
-		t.Fatal(test.DiffMessage(0, "some files", "B4: sample/ and bench/ have Go files to check"))
+		t.Fatal(test.DiffMessage(0, "some files", "B4: examples/ and bench/ have Go files to check"))
 	}
 	fset := token.NewFileSet()
 	var offenders []string
@@ -190,7 +190,7 @@ func TestSurface_SampleUsesPublicImportsOnly(t *testing.T) {
 		}
 	}
 	if len(offenders) != 0 {
-		t.Error(test.DiffMessage(strings.Join(offenders, "\n"), "no internal or moved-package import", "B4: sample/ and bench/ import public paths only"))
+		t.Error(test.DiffMessage(strings.Join(offenders, "\n"), "no internal or moved-package import", "B4: examples/ and bench/ import public paths only"))
 	}
 }
 

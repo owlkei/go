@@ -35,7 +35,7 @@ A difference prints one line per added (`+`) or removed (`-`) line:
 
 ## Public packages
 
-A package of the module is public when its path has no `internal`, `sample` or `bench` element. Every public package must be in the allow list, or the tool prints:
+A package of the module is public when its path has no `internal`, `examples` or `bench` element. Every public package must be in the allow list, or the tool prints:
 
 ```
 api: package <import path> is importable: move it under internal/ or add it to the allow list
@@ -70,7 +70,7 @@ A `reach` line lists an exported field or method of a type of the module that a 
 - A new method on a reached internal type is a change, also when the type is reached through another reached type.
 - A new exported function of an internal package, or a type no public line reaches, is not a change.
 - A public package outside the allow list fails with the message above; a package below an allowed `<dir>/*` prefix passes.
-- Packages under `internal/`, `sample/` and `bench/` are not public.
+- Packages under `internal/`, `examples/` and `bench/` are not public.
 
 ## Run time
 
