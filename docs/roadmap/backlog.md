@@ -36,7 +36,7 @@ Map: https://claude.ai/artifact/58h7inTZEi2qboPG41i1f1 (private to the owner).
   `owlky/go` and `owlky/ui` and change that one tag (no import changes for users). Nothing is published
   yet, so nobody depends on the interim location.
 - **Rename in this repository:** done by roadmap 0010 (module, package, API file, knowledge base,
-  agents `go-*`, every document). The planned mode switch is named `OWLKY_ENV` for now; its final
+  agents `go-*`, every document). The planned mode switch is named `OK_ENV` for now; its final
   name is decided with "Less configuration in `main`".
 - **Independence:** UI works with any backend, Owlky Go with any frontend or JSON only; they meet at the
   `data-ok-*` markup, never import each other. owlky.com is the one shared platform.
@@ -230,12 +230,73 @@ streaming. Needs its own design; today the README documents it as a known limit.
 
 Proposals the maintainer asked to keep for later (not decided):
 - **Built-in middleware order:** moved to "Security roadmap" below.
-- **One mode switch.** `OWLKY_ENV=development` turns on, together, the pretty log, template reload
+- **One mode switch.** `OK_ENV=development` turns on, together, the pretty log, template reload
   from disk and the devtools; unset means production. Replaces per-feature switches
   (`IsReload`, the log format, the pages example's `PAGES_DEV`).
 - **Enable from the controllers.** A `owlky.WS` controller opens `/ws` without `EnableWS` (the
   render side cannot do the same: `//go:embed` must stay in the app). Weigh against "one obvious way".
 - **`Listen()` without arguments** reads `PORT` (default 3000), as PaaS platforms expect.
+- **`AppOptions` from the environment (decided 2026-11-19).** Opt-in `owlky.OptionsFromEnv()` returns
+  an `AppOptions` filled from the environment and `.env` (every group non-nil, "off" when no variable
+  set it); every field that is plain data binds from a variable.
+  - **Names (decided 2026-11-19):** `OK_` (the same `ok` as Owlky UI's `--ok-*` and `data-ok-*`; the
+    docs say `OK_` is Owlky's), then the field path, each `.` written `__`, each field in upper snake
+    case: `HTTP.MaxBodyBytes` → `OK_HTTP__MAX_BODY_BYTES`, `Server.TLS.CertFile` →
+    `OK_SERVER__TLS__CERT_FILE`, `Origins` → `OK_ORIGINS`. Readers derive the name from `AppOptions`
+    without the docs, and it splits back one way only. Only letters, digits and `_`: a `.` or `-` can't
+    be exported in a shell, and `${OK_HTTP-MAX}` silently means "OK_HTTP or the text MAX". Never a
+    bare name (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` are Go's outbound proxy variables). `PORT` is the
+    one platform-convention exception, filling `Server.Port` when `OK_SERVER__PORT` is unset. Names
+    are generated from the struct; a test checks that no two fields share one.
+  - **Types** from the field, not the file (values are strings): `string`; integers; `bool` only
+    `true` / `false`; `time.Duration` with a unit (`15s`); `[]string` comma-separated; enums by their
+    documented lower-case name (`header`). Slices are `a,b,c`, each element parsed as the declared
+    Go element type (`[]int`, `[]time.Duration`, `[]netip.Prefix`…). **No silent errors (owner,
+    2026-11-19): anything wrong stops the app at `New`**: a value that doesn't convert, one bad element
+    of a list (`1,a,2`: the whole variable is refused, never half a list), a value of the right type but
+    wrong meaning (an origin without a scheme, a bad CIDR, a missing TLS file), and an unknown `OK_*`
+    variable (a typo would leave a setting unapplied), with the closest name ("did you mean
+    `OK_HOSTS`?"). The panic names the variable, the element, the expected type and the `.env` line,
+    never a secret's value. Version skew (a variable a newer release added) fails the same way, on
+    purpose. An empty value (`OK_ORIGINS=`) is an error too ("remove the variable to unset it").
+  - **Sizes (decided):** a type `owlky.ByteSize` (`int64` underneath, like `time.Duration`) for every size
+    field (`HTTP.MaxBodyBytes`, later WebSocket message sizes and upload limits), chosen by type, not by
+    a struct tag. It accepts a plain number of bytes and units with their standard meaning, as
+    Kubernetes does: `KB` / `MB` / `GB` = 1000ⁿ, `KiB` / `MiB` / `GiB` = 1024ⁿ; a lower-case `b` (bits)
+    is refused. Constants for code: `owlky.KB`, `owlky.MB`, `owlky.KiB`, `owlky.MiB`… (`10 * owlky.MiB`).
+    An exported addition, justified by the size fields across groups.
+  - **Sources and precedence (decided: code wins):** environment > `.env` fill the options first, then
+    code assigns after them, so code wins by statement order, explicit `false` / `0` / `""` included,
+    with no pointer fields:
+    ```go
+    opts := owlky.OptionsFromEnv()
+    opts.HTTP.Compress = false
+    opts.Render = &owlky.RenderOptions{FS: web}
+    app := owlky.New(opts)
+    ```
+    Without `OptionsFromEnv()` nothing is read. The real environment beats `.env`. `.env` only: standard syntax (Docker Compose, Kubernetes,
+    systemd and IDEs read the same file), no YAML / TOML / JSON (one more source and a parser; JSON
+    values for a structured field only if one ever needs it). `.env` is read by the same opt-in, from
+    the working directory, skipped when missing. The startup log names each value's source (`(code)`,
+    `(OK_HOSTS)`, `(.env:3)`), never a secret's value. Docs: `.env` in `.gitignore`, a committed
+    `.env.example`.
+  - **Code-only fields** (Go values, no variable): `Render.FS`, `Logger`, `TLS.Config`.
+  - **Injection:** only `OK_*` and `PORT` are read (never `HTTP_*`: httpoxy, where a CGI server turns a
+    request's `Proxy:` header into `HTTP_PROXY`); code wins; unknown `OK_*` stops the app; no value is
+    logged. `modules/config` reads every OS variable but applies none by itself (the app picks keys);
+    an allowlist option for it (read only declared keys) is a security-roadmap item.
+  - **Implementation:** reuse `modules/config`'s `.env` parser and typed binding through an internal
+    package used by both (the module still reads at `Create`; `AppOptions` at `New`, before any module),
+    so both read one `.env` with one syntax: `OK_*` for the framework, the rest for the app.
+- **Special environment variables (2026-11-19).** Today the framework reads no environment variable
+  and no `.env` file: `Listen(port)` takes the port, and `.env` is read only when the app imports
+  `config.Register(...)`, which still never feeds `Listen`. Proposal to weigh against "explicit
+  protection" (App options): read only variables that are platform conventions and change no behavior
+  silently, such as `PORT` (Heroku, Cloud Run, Fly.io, Railway set it, so a deploy needs no code
+  change); an explicit value in code wins over the variable; the startup log says where each value came
+  from (`port=8080 (PORT)`). A mode switch (`OK_ENV`) that turns features on or off is in tension
+  with "nothing runs unless configured": decide it with this item, after App options. Whether such
+  variables come from `.env` too (without `modules/config`) is part of the decision.
 
 ## Shared layout data for pages (SSR follow-up, discussed 2026-11-18)
 
@@ -274,6 +335,132 @@ Follow-ups found by the roadmap 0008 review (2026-11-18):
   (`READ_ANY_ANY_FILE`, `SERVE_x_ANY_ANY`). A name may still be `ANY` (`READ_ANY_html_FILE` → `/*.html`).
 
 Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
+
+## Accurate trace timings (found 2026-11-19)
+
+The access log and the trace show stage times that users read as the cost of their code, so they
+must be right. Measured on `examples/03-pages` and a two-middleware app:
+- **Cold first request.** The first request after start showed `helmet` at 23 to 34 µs; later ones 3 to
+  12 µs; its benchmark says 0.23 µs. Nothing tells the reader that the first request is cold: mark it
+  (for example `cold` on the first request of each route), or leave it out of any aggregate.
+- **Percentages of the wrong base.** They are shares of the measured stages, not of `total`
+  (12 % shown for 23 µs of 344 µs). Show them of `total`, with an `other` line for the untraced rest
+  (routing, injection, writing the response).
+- **What a stage's duration includes.** Check that a stage's time is its own work only: no trace
+  overhead (clock reads, span ID generation) and no time of the stages it wraps; a middleware's time
+  ends at `next()` and starts again after it returns, or the docs say what it covers.
+- **Benchmarks that match production.** `BenchmarkHelmet_*` reuses one warm `http.Header` map and
+  reports far less than a real request pays. Benchmarks of per-request code use fresh request state per
+  iteration (header maps, contexts), or say why not.
+- **A calibration test.** A stage that sleeps a known time (for example 2 ms) shows that time within a
+  tolerance in the trace, and the sum of stages plus `other` equals `total`.
+- **The clock.** Durations use the monotonic clock (`time.Since`), never wall-clock differences.
+
+Its own small roadmap or the first steps of App options (the trace display changes there anyway).
+
+## App options (discussed 2026-11-19, before the security roadmap)
+
+All configuration in one place, passed to `New`; code (layers) stays in `Bind…` methods; running takes no
+configuration. Comparable frameworks: Spring Security and Rails own their security chain's order, users
+configure it; ASP.NET Core and Django leave the order to users and pay for it in docs and bugs.
+
+```go
+app := owlky.New(&owlky.AppOptions{
+	Proxy:   &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+	Hosts:   []string{"shop.example.com"},
+	Origins: []string{"https://shop.example.com"}, // CORS, CSRF and the WebSocket Origin check
+	HTTP:    &owlky.HTTPOptions{MaxBodyBytes: 1 << 20, Compress: true, HTTPSRedirect: true},
+	Server: &owlky.ServerOptions{
+		ShutdownTimeout: 15 * time.Second,
+		TLS:             &owlky.TLSOptions{CertFile: "cert.pem", KeyFile: "key.pem"},
+	},
+	Render:         &owlky.RenderOptions{FS: web},
+	WS:             &owlky.WSOptions{Path: "ws", MaxConnectionsPerIP: 20},
+	Versioning:     &owlky.VersioningOptions{Type: owlky.VersioningHeader},
+	Logger:         log.NewLog(&log.LogOptions{Format: log.FormatJSON}),
+	AccessLog:      true,
+	StartupTimeout: 30 * time.Second,
+})
+app.BindGlobalGuards(throttler.Throttler{Limit: 100, TTL: time.Minute})
+app.BindGlobalMiddlewares(TenantMiddleware{}) // after the built-in stages, before routing
+app.Create(AppModule)
+app.Listen(443) // TLS comes from AppOptions.Server.TLS; ListenTLS is gone
+```
+
+Agreed with the owner (2026-11-19):
+- `owlky.New(opts *AppOptions)`, `nil` = safe defaults (D-032 naming: `XxxOptions`, never `Config`;
+  `AppOptions` because it configures `owlky.App`). Replaced: `SetLogger`, `SetStartupTimeout`,
+  `EnableAccessLog`, `EnableDevtool`, `EnableRender`, `EnableVersioning`, `EnableWS`, the `ServerOptions`
+  parameter of `Listen` / `Serve`, `ListenTLS`. `MaxRequestBodyBytes` moves to `HTTP.MaxBodyBytes` so it
+  also applies when `App` runs inside the user's own `http.Server`. `Server` (shutdown, TLS, H2C) only
+  applies when Owlky serves; ignored with a log line otherwise.
+- **No public built-in middlewares.** The eight (`loadshed`, `proxy`, `hostcheck`, `httpsredirect`,
+  `helmet`, `cors`, `csrf`, `compress`) move to `internal/` and become fixed-order stages built at `New`
+  from `AppOptions`: loadshed → proxy → hostcheck → httpsredirect → security headers → CORS → CSRF →
+  compress → user middlewares → routing. A disabled stage is not in the chain. Order dependence is the
+  framework's job, never the user's.
+- **User middlewares stay** (`BindGlobalMiddlewares`, controller `BindMiddleware`), same API, always
+  after the built-in stages; the docs rule: user middlewares must not depend on each other's order.
+  Behavior changes to list: a user middleware bound before `helmet` / `proxy` / `loadshed` used to skip
+  security headers, read the balancer's IP, or run under overload; now it never does.
+- **Stage shape (internal):** keep the existing middleware shape (`Use(r, w, next)`, reusing the tests);
+  `loadshed` and `compress` must wrap the handler anyway. Switching the check-only stages to a flat loop
+  of check functions is allowed only if a benchmark shows a gain (internal, so free to change).
+- **Port in the options (decided 2026-11-19):** `ServerOptions.Port`; `Listen()` takes no argument
+  (empty port: `PORT` when the environment is read, else 3000); `Serve(listener)` stays for a listener
+  of your own. `Create` (wire the app) and `Listen` (serve) stay separate: tests and embedding use
+  `Create` + `ServeHTTP` with no port opened, `Listen` returns serve errors as an `error`, and a
+  blocking `Create` would stop the code after it (NestJS splits `create()` and `listen()` too). No
+  one-line `owlky.Run(opts, module)`: a second way.
+- **Defaults (2026-11-19): every stage is off** unless configured, in both roadmaps. Safety comes from
+  the docs (a Configuration page that opens with a production checklist: one `AppOptions` block to
+  copy), `examples/05-production`, `llms.txt` / MCP returning that block, and later the CLI templates
+  (`owlky new`). One startup warning, no behavior change: `Warn` `SecurityCheck` when the app has
+  `SUBMIT_` routes without CSRF, or HTML pages without security headers, with the docs link; silenced
+  by turning the protection off explicitly. This changes the product principle "Safe defaults" in
+  CLAUDE.md to "Explicit protection: nothing runs unless configured; one `AppOptions` block; the CLI's
+  templates ship the production configuration" (edited when the roadmap starts). No dev/prod mode is
+  needed for these defaults.
+- **Tracing the built-in stages (decided 2026-11-19):** kept, as a new stage `trace.StagePreRoute`
+  (`"pre-route"`), named by role like the other stages (not `builtin`: origin, not role; not `ingress`,
+  `edge`, `gate` (the `AsyncImports` gate) or `security` (`loadshed`, `compress`)). It serves every
+  transport: what runs before the handler is found (HTTP method and path, the WebSocket handshake, a
+  WebSocket message before topic matching, a gRPC method later). `Name` = the stage (`loadshed`,
+  `proxy`, `hostcheck`, `httpsredirect`, `headers`, `cors`, `csrf`, `compress`; for WebSocket `origin`,
+  `connections`, `message-size`, `message-rate`), `Duration` (for `loadshed`, queue wait included),
+  `Code` = the refusal status or `0`. `StageMiddleware` stays for user middlewares only. Nothing is
+  emitted without a listener; a disabled stage emits nothing. The pretty trace shows:
+  ```text
+  ├── operation           GET /bookings
+  ├── pre-route
+  │   ├── headers         23.05µs  (7%)
+  │   └── csrf            422ns    (0%)
+  ├── handler
+  │   └── RENDER_bookings 22.5µs   (7%)
+  ├── render
+  │   └── bookings/index  142.51µs (41%)
+  ├── other               156.07µs (45%)
+  └── total               344.55µs
+  ```
+  Fixes found in today's output (`examples/03-pages`): percentages are of the measured stages, not of
+  `total` (Helmet showed 12 % for 23 µs of 344 µs); show them of `total` with an `other` line for the
+  untraced rest (routing, injection, writing); `operation` shows the path too. `helmet`: checked 2026-11-19. The
+  23 µs was a cold first request (33 µs again on a first request, then 3 to 12 µs whatever its position
+  in the chain), while `BenchmarkHelmet_*` says 0.23 µs and 0 allocations. The nonce is not the cause
+  (it is made at render time, `placeNonce`); the likely cost is about ten writes into a fresh
+  `http.Header` map on each real request, which the benchmark hides by reusing one warm map. For the
+  security roadmap: a benchmark on a fresh header map per iteration, then decide (for example sizing
+  the map once, or fewer headers on non-HTML answers).
+- **Shared vs transport-specific:** `Proxy`, `Hosts`, `Origins` and load apply to every transport
+  (HTTP, the WebSocket handshake, gRPC later); `HTTP`, `WS`, later `GRPC` hold the rest. SSE is an HTTP
+  feature, not a transport (with "`loadshed` and long-lived requests").
+- **Keeping `AppOptions` small:** the top level holds groups and a few shared fields; a feature adds a
+  group, not top-level fields; empty means safe; one docs section per group (Configuration page:
+  start here, who is the client, HTTP, Server, Pages, WebSocket, Versioning, Operations); godoc on
+  every field with its default; no field depends on another (conflicts panic at `New`).
+- **Two roadmaps:** first "App options" (move and merge, behavior unchanged: mostly mechanical, about
+  370 `New()` and 600 `Enable…` / `Set…` call sites, mostly tests); then the security roadmap shares
+  `Origins`, adds the WebSocket Origin check and the `SecurityCheck` warning, and fixes the sinks.
 
 ## Security roadmap (decided 2026-11-18: right after the SSR phase)
 
