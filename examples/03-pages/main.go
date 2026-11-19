@@ -29,7 +29,7 @@ func newApp(files fs.FS, reload bool) owlky.App {
 }
 
 func main() {
-	// PAGES_DEV=1 reads web/ from disk and reloads it on change. Run it from sample/pages.
+	// PAGES_DEV=1 reads web/ from disk and reloads it on change. Run it from this folder.
 	reload := os.Getenv("PAGES_DEV") == "1"
 
 	port := defaultPort

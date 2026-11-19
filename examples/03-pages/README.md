@@ -1,22 +1,30 @@
-# sample/pages
+# 03 · Pages
 
-A small booking site rendered on the server: Owlky Go page routes (`RENDER_`, `SUBMIT_`), `html/template` and
-[Owlky](https://github.com/dangduoc08/owlky)'s framework-free HTML components. It has no JavaScript of
-its own apart from one inline line that picks the light or dark theme.
+A small booking site rendered on the server: page routes (`RENDER_`, `SUBMIT_`), Go's `html/template`
+and [Owlky UI](https://owlky.com)'s HTML components. One Go binary serves finished pages: no JSON API
+and no client app to build. The only JavaScript is one inline line that picks the light or dark theme.
+
+## What you learn
+
+- A `RENDER_` route renders the template its path names and returns the template's data.
+- A `SUBMIT_` route posts to the same page. A form with errors renders again with `422`; a valid one
+  redirects with `303`.
+- A form pipe binds and validates the posted fields, like the JSON pipe of
+  [02 · REST API](../02-rest-api/README.md).
+- Layouts, partials, error pages, page CSS and files served as they are come from file names, not
+  configuration.
+- `helmet`, `csrf` and `html/template` escaping keep the pages safe by default.
 
 ## Run it
 
 ```sh
-go run ./sample/pages                 # http://localhost:8080/bookings
-PORT=3000 go run ./sample/pages       # another port
-cd sample/pages && PAGES_DEV=1 go run .   # read web/ from disk and reload templates on each change
+go run .                    # http://localhost:8080/bookings
+PORT=3000 go run .          # another port
+PAGES_DEV=1 go run .        # read web/ from disk and reload templates on each change
 ```
 
-`PAGES_DEV=1` reads `web/` relative to the working directory, so run it from `sample/pages`.
-
-```sh
-go test ./sample/pages                # TestPages_FormFlow drives the whole flow
-```
+`go test ./...` drives the whole flow: the list, the form, a refused post, a valid post and the
+redirect.
 
 ## Pages
 
@@ -59,3 +67,7 @@ go test ./sample/pages                # TestPages_FormFlow drives the whole flow
 | `web/` | Layout and its CSS, pages named by their routes, the field partial and the error pages; Owlky markup with its `data-ok-*` attributes |
 | `web/public/` | `robots.txt`, served at the root URL |
 | `web/assets/` | `owlky.min.css` and `owlky.js`, copied from Owlky's build; source and license in `OWLKY.md` |
+
+## Read next
+
+[04 · Async modules](../04-async-modules/README.md): start the app before its dependencies are ready.
