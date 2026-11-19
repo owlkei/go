@@ -27,13 +27,13 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/httpsredirect"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/httpsredirect"
+	"go.owlky.com/owlky/middlewares/proxy"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(
 		proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}},
@@ -41,7 +41,7 @@ func main() {
 	)
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -85,7 +85,7 @@ httpsredirect.HTTPSRedirect{Port: 8443}
 
 ### NewMiddleware
 ```go
-func (instance HTTPSRedirect) NewMiddleware() ginject.MiddlewareFn
+func (instance HTTPSRedirect) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates the options once; the framework calls it at `Create()`. It panics with
@@ -95,10 +95,10 @@ outside 0-65535.
 
 ### Use
 ```go
-func (instance HTTPSRedirect) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance HTTPSRedirect) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `HTTPSRedirect` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `HTTPSRedirect` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules

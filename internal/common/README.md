@@ -1,8 +1,8 @@
 # Common
 
-Internal package: applications use `ginject.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
+Internal package: applications use `owlky.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
 
-*Common is a part of `Ginject` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
+*Common is a part of `Owlky Go` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
 
 - [Common](#common)
   - [Key Features](#key-features)
@@ -57,11 +57,11 @@ A controller embeds `common.HTTP` for its routes and one embed per layer it bind
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/aggregation"
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky/internal/aggregation"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
+	"go.owlky.com/owlky/exception"
 )
 
 type RoleGuard struct {
@@ -283,7 +283,7 @@ name := common.ToWSEventName("/message/")
 
 ## `HTTP` Controller Embed
 
-`HTTP` makes a controller an HTTP controller. Its methods are `Prefix` and `Path` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `ginject.HTTP`.
+`HTTP` makes a controller an HTTP controller. Its methods are `Prefix` and `Path` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `owlky.HTTP`.
 
 | Function | Returns |
 |----------|---------|
@@ -346,7 +346,7 @@ Gives one or more handlers an exact path that replaces the path their names spel
 #### Usage
 
 ```go
-func (instance TokenController) NewController() ginject.Controller {
+func (instance TokenController) NewController() owlky.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
@@ -362,7 +362,7 @@ func (instance TokenController) NewController() ginject.Controller {
 
 ### PathStyle
 
-`type PathStyle int` decides how `ParseFuncNameToURL` joins the words of one resource. The root package re-exports it as `ginject.PathStyle`; `core`'s `ModuleBuilder.PathStyle` sets it per module.
+`type PathStyle int` decides how `ParseFuncNameToURL` joins the words of one resource. The root package re-exports it as `owlky.PathStyle`; `core`'s `ModuleBuilder.PathStyle` sets it per module.
 
 | Constant | Value | Joint | `READ_payment_intents` |
 |---|---|---|---|

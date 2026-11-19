@@ -1,7 +1,7 @@
 # 0019: Route DSL: kebab-case paths, `PathStyle`, exact paths, `ALL`
 
 Status: Approved (by delegation, 2026-11-18: roadmap 0008 › Decisions)
-Packages: root `ginject` (1 alias, 2 constants); `internal/common` (the parser, `PathStyle`, `(*HTTP).Path`);
+Packages: root `owlky` (1 alias, 2 constants); `internal/common` (the parser, `PathStyle`, `(*HTTP).Path`);
 `internal/core` (`ModuleBuilder.PathStyle`, the style of each controller, the `Create()` panics);
 `sample/`, `bench/` and the docs (migration).
 Roadmap: `docs/roadmap/0008-server-rendered-html.md`, steps 11 to 13 (and 18, 19 for the migration).
@@ -37,7 +37,7 @@ adds the ones marked "design".
 |---|---|
 | `instance.Path("/oauth2/token", instance.CREATE_token)` in `NewController()` | **Chosen.** The same shape as `Prefix(v, handlers...)` and `BindGuard(g, handlers...)`: a method of the embed, the handler passed as a method value, so a renamed handler fails to compile. `PathStyle` shapes paths from names, `Path` writes one by hand: the two names explain each other |
 | A struct tag | Impossible: Go has no tags on methods |
-| A comment directive (`//ginject:path /oauth2/token`) | Needs source parsing at run time or a generator; invisible to `go vet`; a second mechanism |
+| A comment directive (`//owlky:path /oauth2/token`) | Needs source parsing at run time or a generator; invisible to `go vet`; a second mechanism |
 | A map returned by a method (`Paths() map[string]string`) | Stringly typed handler names; a new controller method shape |
 | An escape inside the name (`READ_oauth2__token`) | The maintainer dropped `__` escapes as hard to read |
 
@@ -48,7 +48,7 @@ mountable (the ORM analogy: a column override keeps the table prefix).
 ## Public API
 
 ```go
-package ginject
+package owlky
 
 type PathStyle = common.PathStyle
 
@@ -79,22 +79,22 @@ func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder
 
 | Addition | Why users need it |
 |---|---|
-| `ginject.PathStyle` | The type of the builder's parameter; `<Type><Value>` constants need a named type (design 0017 › Naming rules) |
-| `ginject.PathStyleKebab` | The explicit setting of a reusable module that must keep `-` in every host. The zero value means "not set" and is not exported |
-| `ginject.PathStyleAsWritten` | APIs whose URLs keep `_` (`/payment_intents`) |
+| `owlky.PathStyle` | The type of the builder's parameter; `<Type><Value>` constants need a named type (design 0017 › Naming rules) |
+| `owlky.PathStyleKebab` | The explicit setting of a reusable module that must keep `-` in every host. The zero value means "not set" and is not exported |
+| `owlky.PathStyleAsWritten` | APIs whose URLs keep `_` (`/payment_intents`) |
 | `ModuleBuilder().PathStyle(style)` | Sets the style of a module and of what it imports |
 | `(*HTTP).Path(v, handlers...)` | The exact path of one route (or of several handlers that share a path under different methods) |
 
 Nothing else is exported. The words `ALL`, and `RENDER` / `SUBMIT` of design 0018 amendment 2, are text in
 method names, not identifiers.
 
-Exact lines `make api` adds to `api/ginject.txt` for this design (amendment 2 of design 0018 removes five
+Exact lines `make api` adds to `api/owlky.txt` for this design (amendment 2 of design 0018 removes five
 more lines; any other diff is a defect):
 
 ```
-+pkg ginject, const PathStyleAsWritten common.PathStyle = 2
-+pkg ginject, const PathStyleKebab common.PathStyle = 1
-+pkg ginject, type PathStyle = common.PathStyle
++pkg owlky, const PathStyleAsWritten common.PathStyle = 2
++pkg owlky, const PathStyleKebab common.PathStyle = 1
++pkg owlky, type PathStyle = common.PathStyle
 +reach common.HTTP, method (*common.HTTP) Path(string, ...any) *common.HTTP
 +reach common.PathStyle, type int
 +reach core.ModuleBuilder, method (*core.ModuleBuilder) PathStyle(common.PathStyle) *core.ModuleBuilder
@@ -103,19 +103,19 @@ more lines; any other diff is a defect):
 As an application writes it:
 
 ```go
-var AppModule = ginject.ModuleBuilder().
-	PathStyle(ginject.PathStyleAsWritten).
+var AppModule = owlky.ModuleBuilder().
+	PathStyle(owlky.PathStyleAsWritten).
 	Imports(BillingModule).
 	Controllers(TokenController{}).
 	Build().
 	Prefix("api")
 
-func (instance TokenController) NewController() ginject.Controller {
+func (instance TokenController) NewController() owlky.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
 
-func (instance TokenController) CREATE_token() ginject.Map  { return ginject.Map{} }
+func (instance TokenController) CREATE_token() owlky.Map  { return owlky.Map{} }
 func (instance TokenController) READ_payment_intents() []string { return nil }
 ```
 
@@ -181,9 +181,9 @@ does not apply to events (`_` is the segment separator there); the route conflic
 
 | # | Rule |
 |---|---|
-| B17a | `ModuleBuilder().PathStyle(style)` records the style and returns the builder. A value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics at the call: `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten`. Called twice on one builder, the last call wins |
+| B17a | `ModuleBuilder().PathStyle(style)` records the style and returns the builder. A value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics at the call: `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten`. Called twice on one builder, the last call wins |
 | B17b | The style of a **controller** is the explicit style of the first module that set one, in this order: the module that lists the controller, then each module that imports it (directly or through other modules) in the order `Create()` discovers them (depth-first, `Imports` order: the order in which module prefixes are stacked). No module set one → `PathStyleKebab` |
-| B17c | Root `PathStyle(PathStyleAsWritten)`, modules without a style: `READ_payment_intents` is `/payment_intents/` in the root's own controllers and in every imported module, static or dynamic (`Register(opts)` functions and `func() ginject.Module` values) |
+| B17c | Root `PathStyle(PathStyleAsWritten)`, modules without a style: `READ_payment_intents` is `/payment_intents/` in the root's own controllers and in every imported module, static or dynamic (`Register(opts)` functions and `func() owlky.Module` values) |
 | B17d | An imported module with `PathStyle(PathStyleKebab)` under an as-written root keeps `/payment-intents/`, and so do the modules **it** imports that set none (nearest explicit setting wins) |
 | B17e | Two parents: `A` (`PathStyleAsWritten`) and `B` (`PathStyleKebab`) both import `M` (no style), the root (no style) imports them. `Imports(A, B)` → `M`'s routes are as written; `Imports(B, A)` → kebab. `M`'s controller is still bound once, with both parents' prefixes as today |
 | B17f | The style applies to resource words only: not to `Prefix` (B11), `Path` (B22), parameters (B3), versions (B4) or WebSocket events |
@@ -332,7 +332,7 @@ before `Build()`.
 
 ### Migration list (step 18; grep at `9fe673b`)
 
-No handler of `sample/shop`, `sample/pages`, `sample/main.go` or `bench/ginject.go` has a multi-word
+No handler of `sample/shop`, `sample/pages`, `sample/main.go` or `bench/owlky.go` has a multi-word
 resource, so their URLs do not move. What changes:
 
 | File | What |
@@ -348,11 +348,11 @@ resource, so their URLs do not move. What changes:
 | `README.md` › WebSocket | `ALL` |
 | `internal/common/README.md` › Route DSL | Tokens table (`ALL`, `TokenAll`), both parser sections (signature, every rule above; the rows `READ_users_CREATE_x`, `READ_ANY_HTML_FILE…`, `SERVE_a_b_ANY`, `MODIFY_dm_events…`), `Path`, `PathStyle`, `AddHandlerToRouterMap` |
 | `internal/core/README.md` | `ModuleBuilder.PathStyle`; the `SERVE_ANY_OF_` mention; the panic list |
-| `.ginject/routing-system.md` | The examples `CREATE_COMMENT`, `CREATE_OF_COMMENTS`, `CREATE_OF_USERS_VERSION_3`, `DELETE_BY_ID_AND_VERSION`, `READ_ANY_FILE_HTML`, `READ_BY_USER_ID_OF_FRIENDS_BY_FRIEND_ID`, `READ_FILE`, `READ_FILE_ANY`, `READ_OF_COMMENTS`, `READ_OF_POSTS` are refused now: rewrite the page on the new rules |
-| `.ginject/metadata-api-index.json`, `INDEX.md`, `ai-guidance-quick-reference.md`, `websocket-system.md`, `anti-patterns-gotchas.md`, `package-reference.md`, `conventions.md` | `CREATE_OF_COMMENTS`, `SUBSCRIBE_chat_PERSON_ANY`; `ALL`; `PathStyle`, `Path`; the new `invalid route:` panics |
-| `CLAUDE.md` | "REST Route Convention" (kebab, `PathStyle`, `Path`, the upper-case rule), the WebSocket example, the `invalid route:` and `invalid module:` lines of the panic list, the naming line (`ginject.PathStyleKebab`) |
+| `.owlky/routing-system.md` | The examples `CREATE_COMMENT`, `CREATE_OF_COMMENTS`, `CREATE_OF_USERS_VERSION_3`, `DELETE_BY_ID_AND_VERSION`, `READ_ANY_FILE_HTML`, `READ_BY_USER_ID_OF_FRIENDS_BY_FRIEND_ID`, `READ_FILE`, `READ_FILE_ANY`, `READ_OF_COMMENTS`, `READ_OF_POSTS` are refused now: rewrite the page on the new rules |
+| `.owlky/metadata-api-index.json`, `INDEX.md`, `ai-guidance-quick-reference.md`, `websocket-system.md`, `anti-patterns-gotchas.md`, `package-reference.md`, `conventions.md` | `CREATE_OF_COMMENTS`, `SUBSCRIBE_chat_PERSON_ANY`; `ALL`; `PathStyle`, `Path`; the new `invalid route:` panics |
+| `CLAUDE.md` | "REST Route Convention" (kebab, `PathStyle`, `Path`, the upper-case rule), the WebSocket example, the `invalid route:` and `invalid module:` lines of the panic list, the naming line (`owlky.PathStyleKebab`) |
 | `docs/roadmap/backlog.md` | "Glob topic syntax": `ALL` is done |
-| `api/ginject.txt` | `make api` (the six lines above) |
+| `api/owlky.txt` | `make api` (the six lines above) |
 | Older designs (`0005`, `0007`, `0009`, `0014`, `0017`) | Not edited: they describe the code of their time |
 
 ## Test plan
@@ -376,7 +376,7 @@ and match the text. Core tests build modules, call `Create` and drive `app.Serve
 | B12 | `TestPathStyle_OldSpellingIs404` | `/user_profile` → 404 JSON |
 | B13 to B16 | `TestParseFuncNameToURL_MalformedPanics` | every name of the four rows, exact messages |
 | B17a | `TestPathStyle_InvalidValuePanics`, `TestPathStyle_LastCallWins` | `PathStyle(0)`, `PathStyle(9)` |
-| B17b to B17d | `TestPathStyle_DefaultKebab`, `TestPathStyle_RootAsWrittenReachesImports`, `TestPathStyle_ExplicitKebabWins`, `TestPathStyle_NearestSettingWins` | static module, `func() ginject.Module`, a three-level chain |
+| B17b to B17d | `TestPathStyle_DefaultKebab`, `TestPathStyle_RootAsWrittenReachesImports`, `TestPathStyle_ExplicitKebabWins`, `TestPathStyle_NearestSettingWins` | static module, `func() owlky.Module`, a three-level chain |
 | B17e | `TestPathStyle_TwoParentsFirstDiscoveredWins` | `Imports(A, B)` and `Imports(B, A)`; the route is registered once |
 | B17f | `TestPathStyle_OnlyResourceWords` | a parameter `user_id`, a version `v1_v1`, a WebSocket event under as written |
 | B17g | `TestTwoApps_PathStyleNotShared` | the same module values in two apps |

@@ -5,12 +5,12 @@ The numbers every later HTTP roadmap is measured against.
 - **Machine:** Intel Core i7-9750H (6 cores, 12 threads), 16 GB, macOS 26.7.3.
 - **Go:** 1.27.4. **Commit:** `764824a` (branch `roadmap/cleanup-and-baseline`).
 - **Rerun:** `make bench-compare` (Go benchmarks, `BENCH_COUNT=5` by default) and
-  `FRAMEWORKS="ginject nethttp gin echo chi fiber" DURATION=5s make load`.
+  `FRAMEWORKS="owlky nethttp gin echo chi fiber" DURATION=5s make load`.
 - **Scenarios** (`bench/scenario.go`, the same on every framework; a parity test checks status and
   body): `Static` (`GET /static`, text), `Param` (`GET /users/:id`, JSON), `Query` (`GET /search?q&page`,
   bound into a struct, JSON), `JSONBody` (`POST /users`, JSON body bound into a struct, 201), `Chain`
   (middleware + guard + interceptor around a JSON handler), `Exception` (the handler fails with 400
-through each framework's error mechanism: a panicked exception in Ginject, `echo.NewHTTPError` in
+through each framework's error mechanism: a panicked exception in Owlky Go, `echo.NewHTTPError` in
 Echo, `fiber.NewError` in Fiber, `AbortWithStatusJSON` in Gin; net/http and Chi have none, so they
 write the 400 directly),
   `NotFound` (unknown route, 404).
@@ -20,7 +20,7 @@ write the 400 directly),
 Median of 5 runs, `ServeHTTP` with a reused request and a discarding `ResponseWriter`, so network and
 request parsing are excluded.
 
-| Scenario | Ginject | net/http | Gin | Echo | Chi | Fiber | Ginject ÷ net/http |
+| Scenario | Owlky Go | net/http | Gin | Echo | Chi | Fiber | Owlky Go ÷ net/http |
 |---|---|---|---|---|---|---|---|
 | Static | 1,672 ns | 120 ns | 176 ns | 351 ns | 458 ns | 544 ns | 13.9× |
 | Param | 4,304 ns | 1,542 ns | 1,217 ns | 1,348 ns | 1,947 ns | 1,575 ns | 2.8× |
@@ -32,7 +32,7 @@ request parsing are excluded.
 
 Allocations per request:
 
-| Scenario | Ginject | net/http | Gin | Echo | Chi | Fiber |
+| Scenario | Owlky Go | net/http | Gin | Echo | Chi | Fiber |
 |---|---|---|---|---|---|---|
 | Static | 13 (304 B) | 1 | 1 | 3 | 3 | 1 ¹ |
 | Param | 27 (1.2 KB) | 9 | 9 | 10 | 12 | 9 |
@@ -46,7 +46,7 @@ Allocations per request:
    `Response.Reset`, so its numbers include about one allocation of harness work (its Static
    allocation is that one).
 2. Measured in a second run, after the scenario was made fair (see Scenarios); that run was slower
-   overall (Ginject Static 2,441 ns), so compare within the row.
+   overall (Owlky Go Static 2,441 ns), so compare within the row.
 
 Single runs vary by about ±15 % on this laptop (thermal throttling); compare medians, with
 `benchstat`, on the same machine.
@@ -57,7 +57,7 @@ Single runs vary by about ±15 % on this laptop (thermal throttling); compare me
 take a large share of the CPU and compress the differences). p99 on a laptop is noisy; treat it as
 an indication only.
 
-| Scenario | Connections | Ginject | net/http | Gin | Echo | Chi | Fiber |
+| Scenario | Connections | Owlky Go | net/http | Gin | Echo | Chi | Fiber |
 |---|---|---|---|---|---|---|---|
 | Static | 64 | 81.8k | 88.1k | 97.6k | 76.6k | 79.1k | 106.3k |
 | Param | 64 | 75.1k | 82.3k | 82.3k | 69.2k | 66.1k | 90.4k |
@@ -68,14 +68,14 @@ an indication only.
 | JSONBody | 256 | 77.8k | 90.7k | 81.6k | 67.3k | 83.4k | 91.1k |
 | Chain | 256 | 82.1k | 86.9k | 92.9k | 86.7k | 92.0k | 97.5k |
 
-Ginject p50 at 64 connections: 509 µs (Static) to 843 µs (JSONBody); every run returned only 2xx.
-Ginject is already in the range of Echo and Chi over the network; the 3-14× gap in framework cost
+Owlky Go p50 at 64 connections: 509 µs (Static) to 843 µs (JSONBody); every run returned only 2xx.
+Owlky Go is already in the range of Echo and Chi over the network; the 3-14× gap in framework cost
 shows up as the JSONBody gap here and will grow on machines where the network is not the
 bottleneck.
 
 ## Where the time goes
 
-CPU profile of all Ginject scenarios (`-cpuprofile`, cumulative share of samples) and allocation
+CPU profile of all Owlky Go scenarios (`-cpuprofile`, cumulative share of samples) and allocation
 profile (`-memprofilerate 1`, share of allocated objects). Each line names the roadmap that owns it.
 
 | # | Hot spot | Evidence | Package | Roadmap |

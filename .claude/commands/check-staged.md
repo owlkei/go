@@ -16,7 +16,7 @@ Never commit, push, or change what is staged.
    would apply an older, unrelated stash.
 3. **Verify** the tree that will be committed: `go build ./...`, `go vet ./...`, `golangci-lint run` and
    `go test -race` on the packages the diff touches. Failures are findings.
-4. **Review** `git diff --staged` with the checklist in `.claude/agents/ginject-reviewer.md` (correctness,
+4. **Review** `git diff --staged` with the checklist in `.claude/agents/go-reviewer.md` (correctness,
    concurrency, framework conventions, security, tests, docs). Also list every exported API that was
    added, removed or changed.
 5. **Restore**: if step 2 created a stash, `git stash pop`. If the pop fails, stop and tell the user their

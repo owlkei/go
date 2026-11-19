@@ -34,13 +34,13 @@ list: `hostcheck` does it before any guard or handler runs.
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/hostcheck"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/hostcheck"
+	"go.owlky.com/owlky/middlewares/proxy"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(
 		proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}},
@@ -48,7 +48,7 @@ func main() {
 	)
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -86,7 +86,7 @@ hostcheck.HostCheck{Hosts: []string{"example.com", "www.example.com"}}
 
 ### NewMiddleware
 ```go
-func (instance HostCheck) NewMiddleware() ginject.MiddlewareFn
+func (instance HostCheck) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates and compiles `Hosts` once; the framework calls it at `Create()`. It panics with
@@ -96,10 +96,10 @@ name, a `*.` pattern or an IP literal with an optional port (for example `*`, `*
 
 ### Use
 ```go
-func (instance HostCheck) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance HostCheck) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `HostCheck` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `HostCheck` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules

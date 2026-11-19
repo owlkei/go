@@ -1,8 +1,8 @@
 # Render
 
-Internal package: applications use `RENDER_` / `SUBMIT_` routes, `ginject.RenderOptions` and `App.EnableRender` instead.
+Internal package: applications use `RENDER_` / `SUBMIT_` routes, `owlky.RenderOptions` and `App.EnableRender` instead.
 
-*Render is a part of `Ginject` framework: it turns the `.html` files of an `fs.FS` into `html/template` sets at `Create()`, binds each page route to the template its path names, renders a page by route into a pooled buffer, picks the error page of a status, and holds the asset, public file and page CSS and JS tables and the template functions.*
+*Render is a part of `Owlky Go` framework: it turns the `.html` files of an `fs.FS` into `html/template` sets at `Create()`, binds each page route to the template its path names, renders a page by route into a pooled buffer, picks the error page of a status, and holds the asset, public file and page CSS and JS tables and the template functions.*
 
 - [Render](#render)
   - [Key Features](#key-features)
@@ -47,7 +47,7 @@ import (
 	"fmt"
 	"testing/fstest"
 
-	"github.com/dangduoc08/ginject/internal/render"
+	"go.owlky.com/owlky/internal/render"
 )
 
 func main() {

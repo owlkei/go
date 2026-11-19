@@ -39,3 +39,7 @@ Choices made while discussing, so designs don't reopen them.
 ## Log
 Dated lines written during the run: deviations from a design, escalations, blocked steps and why.
 ```
+
+The framework was called Ginject until roadmap 0010 (2026-11-19) renamed it Owlky Go
+(`go.owlky.com/owlky`). The old name was replaced in every document, history included; the original
+texts are in the git history.

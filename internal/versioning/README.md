@@ -1,6 +1,6 @@
 # Versioning
 
-Internal package: applications use `app.EnableVersioning(&ginject.VersioningOptions{…})` with `ginject.VersioningQuery`, `VersioningHeader`, `VersioningCustom` or `VersioningMediaType` instead.
+Internal package: applications use `app.EnableVersioning(&owlky.VersioningOptions{…})` with `owlky.VersioningQuery`, `VersioningHeader`, `VersioningCustom` or `VersioningMediaType` instead.
 
 *Package `versioning` reads the API version of a request from the query, a header, the `Accept` media type or a function of your own, so that the router can pick the route registered for that version.*
 
@@ -26,8 +26,8 @@ Enable versioning on the app, then name handlers with a `VERSION` token (`READ_V
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/versioning"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/versioning"
 )
 
 func main() {
@@ -169,7 +169,7 @@ Results depend on the machine. They were captured when this README was generated
 ```console
 goos: darwin
 goarch: amd64
-pkg: github.com/dangduoc08/ginject/internal/versioning
+pkg: go.owlky.com/owlky/internal/versioning
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkVersion_Query-12        	57787495	        20.96 ns/op	       0 B/op	       0 allocs/op
 BenchmarkVersion_Header-12       	22535310	        53.95 ns/op	       0 B/op	       0 allocs/op

@@ -60,17 +60,17 @@ Bind `loadshed` first, so a refused request costs as little as possible:
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/loadshed"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/loadshed"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(loadshed.LoadShed{})
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 
 	app.Listen(8080, nil)
@@ -87,13 +87,13 @@ Retry-After: 1
 {"code":503,"error":"Service Unavailable","message":"Server is busy"}
 ```
 
-Ginject calls `NewMiddleware` once at `Create()`. Two bindings of a `LoadShed` with the same
+Owlky Go calls `NewMiddleware` once at `Create()`. Two bindings of a `LoadShed` with the same
 values share one limiter.
 
 To limit WebSocket handshakes too, pass it to `EnableWS`:
 
 ```go
-app.EnableWS(&ginject.WSOptions{Path: "/ws"}, loadshed.LoadShed{})
+app.EnableWS(&owlky.WSOptions{Path: "/ws"}, loadshed.LoadShed{})
 ```
 
 The slot of a handshake is released when the handshake ends, not when the connection closes.
@@ -139,7 +139,7 @@ The wait and the `Retry-After` value are fixed.
 
 ### NewMiddleware
 ```go
-func (instance LoadShed) NewMiddleware() ginject.MiddlewareFn
+func (instance LoadShed) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates the options and reads the machine's bounds once; the framework calls it at `Create()`.
@@ -147,10 +147,10 @@ It panics with `invalid loadshed: ...` for an option out of range.
 
 ### Use
 ```go
-func (instance LoadShed) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance LoadShed) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `LoadShed` a `ginject.MiddlewareFn`. It builds a new limiter on every call, so use it in tests
+Makes `LoadShed` a `owlky.MiddlewareFn`. It builds a new limiter on every call, so use it in tests
 only; the framework always calls `NewMiddleware`. Called outside an app, it only calls the next
 layer.
 

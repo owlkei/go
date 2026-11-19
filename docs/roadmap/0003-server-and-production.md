@@ -4,7 +4,7 @@ Status: Done
 
 ## Goal
 Finish the HTTP core: the rest of `core` (request dispatch, the 404 path, the server, lifecycle and
-DI wiring) and the per-request logging and tracing get the deep dive, and Ginject gets the
+DI wiring) and the per-request logging and tracing get the deep dive, and Owlky Go gets the
 production defaults and options a real deployment needs: timeouts, limits, graceful shutdown, TLS,
 HTTP/2, panics that never leak internals. Measured against `docs/review/http-0002.md`.
 
@@ -18,7 +18,7 @@ HTTP/2, panics that never leak internals. Measured against `docs/review/http-000
 
 ## Steps
 Every package step is the deep dive of roadmap 0002: bugs (each proved by a failing test), hot /
-cold performance per `.ginject/conventions.md` › Performance, concurrency and security, tests,
+cold performance per `.owlky/conventions.md` › Performance, concurrency and security, tests,
 benchmarks (`b.Loop`, `b.ReportAllocs`, `-count 5` + `benchstat` before and after in the commit),
 README, the file rule.
 
@@ -28,7 +28,7 @@ README, the file rule.
 | 2 | Production server: `Listen` and its options (timeouts, header and body limits, keep-alive, `http.Server` access for advanced use), graceful shutdown (signals, drain timeout, `OnShutdown` order), TLS, HTTP/2 (automatic over TLS, h2c opt-in), a listener or `net.Listener` of the user's | tdd | docs/design/0008-server.md | 1 | deep dive done; the production checklist in the design holds, each item tested | done |
 | 3 | Lifecycle and DI wiring (cold): `Create`, modules, providers, `OnInit` / `OnReady` / `OnShutdown`, the package-level registries (a second `App` in one process answers 404), `EnableDevtool` without versioning, `SERVE_<x>_ANY` never matching `/<x>/...` | tdd | docs/design/0009-lifecycle.md | 1 | deep dive done; two `App`s in one process work independently | done |
 | 4 | Logging and tracing: `log`, `accesslog` (per-request work is hot), `trace`, `event` (the event bus every request checks) | tdd | docs/design/0010-observability.md | 1 | deep dive done; access log on costs a bounded, measured amount per request | done |
-| 5 | `core` README completed (server, lifecycle, production options), `.ginject/` updated (`/kb update core`) | light | - | 1-4 | README covers every exported API of `core` (HTTP side); KB matches the code | done |
+| 5 | `core` README completed (server, lifecycle, production options), `.owlky/` updated (`/kb update core`) | light | - | 1-4 | README covers every exported API of `core` (HTTP side); KB matches the code | done |
 | 6 | Measure: rerun `make bench-compare` and the load test, compare with 0002 and the baseline; production checklist results | light | - | 1-5 | `docs/review/http-0003.md` | done |
 
 ## Decisions
@@ -42,7 +42,7 @@ README, the file rule.
   straight to the HTTP layer's error response; an error from a guard onwards goes to the module
   exception filter, and an error in the module filter to the global exception filter. Middleware is
   an HTTP-layer concept only: WebSocket runs middlewares at the handshake, never per message. Step 1
-  writes this lifecycle into `.ginject/request-pipeline.md` as the spec and tests each arrow.
+  writes this lifecycle into `.owlky/request-pipeline.md` as the spec and tests each arrow.
 - **The HTTP layer's error response** (decided 2026-11-16): one fixed format, the default filter's
   JSON (`code`, `error`, `message`); **users cannot customize it** (no hook; a middleware that wants
   its own response writes it and returns without `next()`). Only exceptions reach the client with

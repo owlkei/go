@@ -290,8 +290,8 @@ per layer (`core/fn.go:593-621`, about 22 ns each and a shared cache line under 
 - Tests that read the aggregations from the request's `context.Context`
   (`common/http_interceptor_test.go`, `ws_interceptor_test.go`, core tests) are rewritten.
 - Docs: `CLAUDE.md` › Contracts (the lookup is by method name and signature, no longer "with
-  reflection"); `.ginject/request-pipeline.md` (interceptor state, catch chain, B8-B10);
-  `.ginject/routing-system.md` (B25); `.ginject/anti-patterns-gotchas.md` if it mentions the shared
+  reflection"); `.owlky/request-pipeline.md` (interceptor state, catch chain, B8-B10);
+  `.owlky/routing-system.md` (B25); `.owlky/anti-patterns-gotchas.md` if it mentions the shared
   instance.
 - User-visible changes: bugs 1-7; a layer bound to a non-handler now stops `Create()` (B10).
 

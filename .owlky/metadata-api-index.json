@@ -1,15 +1,15 @@
 {
   "format": "ai-metadata-v1",
-  "purpose": "Machine-readable API index for Ginject framework",
+  "purpose": "Machine-readable API index for Owlky Go framework",
   "public_surface": {
-    "source_of_truth": "api/ginject.txt (make api writes it, make api-check diffs it); design 0017",
+    "source_of_truth": "api/owlky.txt (make api writes it, make api-check diffs it); design 0017",
     "import_paths": [
-      "github.com/dangduoc08/ginject",
-      "github.com/dangduoc08/ginject/exception",
-      "github.com/dangduoc08/ginject/log",
-      "github.com/dangduoc08/ginject/middlewares/*",
-      "github.com/dangduoc08/ginject/modules/*",
-      "github.com/dangduoc08/ginject/guards/*"
+      "go.owlky.com/owlky",
+      "go.owlky.com/owlky/exception",
+      "go.owlky.com/owlky/log",
+      "go.owlky.com/owlky/middlewares/*",
+      "go.owlky.com/owlky/modules/*",
+      "go.owlky.com/owlky/guards/*"
     ],
     "root_functions": [
       "New() App",
@@ -194,13 +194,13 @@
           ]
         },
         "ModuleBuilder": {
-          "description": "Fluent API for building modules: core.NewModuleBuilder() (ginject.ModuleBuilder()) returns a new *core.ModuleBuilder",
+          "description": "Fluent API for building modules: core.NewModuleBuilder() (owlky.ModuleBuilder()) returns a new *core.ModuleBuilder",
           "methods": [
             "Imports(modules ...any) *ModuleBuilder - *Module values or module factories (func(deps...) *core.Module, func(deps...) (*core.Module, error), func(ctx, deps...) (*core.Module, error)); fail fast at Create",
             "AsyncImports(modules ...any) *ModuleBuilder - the same entries, built in the background; dependents pending (routes 503) until ready; one entry in both lists panics",
             "Providers(providers ...Provider) *ModuleBuilder",
             "Controllers(controllers ...Controller) *ModuleBuilder",
-            "PathStyle(style common.PathStyle) *ModuleBuilder - PathStyleKebab (default: READ_user_profile -> /user-profile) or PathStyleAsWritten (/user_profile); inherited by imports like Prefix, an explicit setting wins; another value panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten`",
+            "PathStyle(style common.PathStyle) *ModuleBuilder - PathStyleKebab (default: READ_user_profile -> /user-profile) or PathStyleAsWritten (/user_profile); inherited by imports like Prefix, an explicit setting wins; another value panics `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten`",
             "Build() *Module"
           ],
           "notes": "No Export or IsGlobal builder methods exist: set m.IsGlobal on the built module."
@@ -219,7 +219,7 @@
           ]
         },
         "RenderOptions": {
-          "description": "Argument of EnableRender (root alias ginject.RenderOptions)",
+          "description": "Argument of EnableRender (root alias owlky.RenderOptions)",
           "fields": {
             "FS": "fs.FS, required: holds Dir. In Dir: layout.html per directory, top-level partials/, root error pages <400-599>.html / 4xx.html / 5xx.html, assets/ served at /assets/*, public/ served at the root URL, X.css / X.js next to X.html (linked by {{pageAssets}}, served at /assets/_pages/...), every other .html is the template of the page route with that path (<path>.html or <path>/index.html) and stops Create without one",
             "Dir": "string: the directory of FS holding the files (default web, . for the root of FS)",
@@ -555,7 +555,7 @@
     "Code after next() runs before the next layer, not after the handler: post-handler work belongs in an interceptor's Pipe operators",
     "Configuration methods (BindGlobal*, Enable*, SetLogger) only before Create",
     "Providers are fields, never handler parameters",
-    "Pages are RENDER_ / SUBMIT_ routes: the route picks the template (<path>.html or <path>/index.html), the only or last result is the data; there is no ginject.Page or ginject.View. Template functions are fixed (nonce, asset, dict, pageAssets): no user FuncMap",
+    "Pages are RENDER_ / SUBMIT_ routes: the route picks the template (<path>.html or <path>/index.html), the only or last result is the data; there is no owlky.Page or owlky.View. Template functions are fixed (nonce, asset, dict, pageAssets): no user FuncMap",
     "Errors: a matched page route from its first guard on answers HTML (<code>.html, then <N>xx.html, then built-in), an API / SERVE / asset / public file route JSON; before any guard (middlewares, 404, 405, 410) HTML only when Accept contains text/html. A cause's text and a 500's own message never reach the client"
   ],
   "common_mistakes": [

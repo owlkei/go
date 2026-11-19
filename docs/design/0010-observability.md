@@ -426,9 +426,9 @@ None is proposed.
   and the `TimeFormat` tests go; `TestAccessLog_TotalEqualsSumOfStageDurations` becomes A3; the
   `event` tests go with the package; the `TestPrettyHandler_…` tests use the unexported handler.
 - **Docs:** new `log/README.md`, `accesslog/README.md`, `trace/README.md` (below); `core/README.md`
-  › Trace events; `.ginject/package-reference.md` (`event`, `log`, `trace`, `accesslog`),
-  `.ginject/architecture-core-concepts.md:505`, `.ginject/metadata-concurrency-model.json:40`,
-  `.ginject/metadata-api-index.json`; `internal/color/README.md` (the `Colored` type).
+  › Trace events; `.owlky/package-reference.md` (`event`, `log`, `trace`, `accesslog`),
+  `.owlky/architecture-core-concepts.md:505`, `.owlky/metadata-concurrency-model.json:40`,
+  `.owlky/metadata-api-index.json`; `internal/color/README.md` (the `Colored` type).
 
 ### README content
 - **`log/README.md`:** what it is; quick start (`app.SetLogger(log.NewLog(&log.LogOptions{…}))`);

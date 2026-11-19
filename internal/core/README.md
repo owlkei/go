@@ -1,8 +1,8 @@
 # Core
 
-Internal package: applications use `ginject.New()`, `ginject.ModuleBuilder()` and the root package's `App`, `Module`, `Controller`, `Provider`, `ServerOptions` and `WSOptions` instead.
+Internal package: applications use `owlky.New()`, `owlky.ModuleBuilder()` and the root package's `App`, `Module`, `Controller`, `Provider`, `ServerOptions` and `WSOptions` instead.
 
-*Package `core` is the dependency injection container and the server of `Ginject`: it builds the module tree, injects providers into controllers, plans every handler's arguments once at `Create()` and serves HTTP and WebSocket requests through the middleware, guard, interceptor, handler and exception filter pipeline.*
+*Package `core` is the dependency injection container and the server of `Owlky Go`: it builds the module tree, injects providers into controllers, plans every handler's arguments once at `Create()` and serves HTTP and WebSocket requests through the middleware, guard, interceptor, handler and exception filter pipeline.*
 
 - [Core](#core)
   - [Key Features](#key-features)
@@ -75,9 +75,9 @@ Internal package: applications use `ginject.New()`, `ginject.ModuleBuilder()` an
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 type GreetingService struct{}
@@ -238,13 +238,13 @@ func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder
 func (m *ModuleBuilder) Build() *Module
 ```
 
-`NewModuleBuilder()` starts a module (the root package's `ginject.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `AsyncImports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
+`NewModuleBuilder()` starts a module (the root package's `owlky.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `AsyncImports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
 
 #### Parameters
 - `Imports`, `AsyncImports`: `...any`, each a `*Module` or a module factory of one of the three shapes in [Module factories](#module-factories).
 - `Providers`: `...Provider`, provider values (see [Provider and Controller](#provider-and-controller)).
 - `Controllers`: `...Controller`, controller values.
-- `PathStyle`: `common.PathStyleKebab` or `common.PathStyleAsWritten` (`ginject.PathStyleKebab`, `ginject.PathStyleAsWritten`).
+- `PathStyle`: `common.PathStyleKebab` or `common.PathStyleAsWritten` (`owlky.PathStyleKebab`, `owlky.PathStyleAsWritten`).
 
 #### Returns
 - `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `AsyncImports`, `Providers`, `Controllers`, `PathStyle`: the same builder.
@@ -264,11 +264,11 @@ var AppModule = core.NewModuleBuilder().
 ```
 
 #### Rules
-- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: func(deps...) ginject.Module, func(deps...) (ginject.Module, error) or func(ctx context.Context, deps...) (ginject.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`). The check is by `reflect.Type`: a nil entry, a variadic func, `context.Context` anywhere but first, a `ctx` func without the error result and three results are refused.
+- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a owlky.Module or a module factory: func(deps...) owlky.Module, func(deps...) (owlky.Module, error) or func(ctx context.Context, deps...) (owlky.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`). The check is by `reflect.Type`: a nil entry, a variadic func, `context.Context` anywhere but first, a `ctx` func without the error result and three results are refused.
 - The same entry (the same `*Module`, or the same function) in both lists of one builder panics `invalid module: '<label>' is in both Imports and AsyncImports` at `Build()`; listed with `Imports` by one module and with `AsyncImports` by another, it panics `invalid module: '<label>' is imported with Imports by '<x>' and with AsyncImports by '<y>'` at `Create()`.
 - `Name` is `<package>.<variable>` of the variable the module is assigned to (a `var X = func() *core.Module {…}` or a `var X = factory()` included), else `<package>.<function>` of the function that calls `Build`. A module built as an argument of `Imports` gets its own factory's name, never the outer variable's.
 - Chained calls accumulate: `Providers(p1).Providers(p2)` lists both.
-- `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` at the call. Called twice, the last call wins.
+- `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten` at the call. Called twice, the last call wins.
 
 ### PathStyle
 
@@ -351,12 +351,12 @@ type RetryOptions struct {
 func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error
 ```
 
-`Retry` (the root package's `ginject.Retry`) calls `fn(ctx)` until it returns `nil`. The wait before attempt `n+1` is `min(MaxDelay, InitialDelay × 2^(n-1))`, then a uniform random time in `[d/2, d]`. Defaults: `InitialDelay` 500 ms, `MaxDelay` 30 s (zero or less means the default), `MaxAttempts` 0 (until `ctx` is done). It starts no goroutine (one `time.Timer`, stopped on return).
+`Retry` (the root package's `owlky.Retry`) calls `fn(ctx)` until it returns `nil`. The wait before attempt `n+1` is `min(MaxDelay, InitialDelay × 2^(n-1))`, then a uniform random time in `[d/2, d]`. Defaults: `InitialDelay` 500 ms, `MaxDelay` 30 s (zero or less means the default), `MaxAttempts` 0 (until `ctx` is done). It starts no goroutine (one `time.Timer`, stopped on return).
 
 #### Rules
 - A nil error returns `nil` at once; attempts count from 1.
-- `ctx` done before or during a wait, or after a failed attempt, returns `ginject: retry stopped after <n> attempts: …` wrapping `errors.Join(ctx.Err(), lastErr)`; `fn` is not called when `ctx` is already done (`n` = 0).
-- `MaxAttempts > 0` reached returns `ginject: retry gave up after <n> attempts: <lastErr>` without waiting.
+- `ctx` done before or during a wait, or after a failed attempt, returns `owlky: retry stopped after <n> attempts: …` wrapping `errors.Join(ctx.Err(), lastErr)`; `fn` is not called when `ctx` is already done (`n` = 0).
+- `MaxAttempts > 0` reached returns `owlky: retry gave up after <n> attempts: <lastErr>` without waiting.
 - `nil` options are the defaults; a nil `fn` panics `invalid retry: Retry needs a function`; a panic in `fn` is not recovered.
 - With the `ctx` of an `AsyncImports` factory, each failed attempt adds to the entry's `attempts`, stores `last_error`, sets the next attempt time for `Retry-After` and logs `Warn` `ModuleRetry` (`module`, `attempt`, `error`, `next`). With any other `ctx` it only retries.
 
@@ -563,14 +563,14 @@ The serving calls return an error, and never fall back to plain HTTP, when:
 
 | Case | Error |
 |---|---|
-| Called before `Create` | `ginject: Create must be called before serving` |
-| The app is already serving | `ginject: app is already serving` |
-| The app has stopped | `ginject: app is stopped` |
-| `Listen` with a `TLSConfig` | `ginject: TLSConfig is set: use ListenTLS, or Serve with your listener` |
-| `ListenTLS`, or `Serve` with a `TLSConfig`, with `IsH2C` | `ginject: IsH2C applies to connections without TLS` |
-| No certificate source, or only one of the file names | `ginject: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates` |
-| The certificate pair can't be loaded | `ginject: load TLS certificate: <err>` |
-| The port can't be bound (in use, out of range) | `ginject: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
+| Called before `Create` | `owlky: Create must be called before serving` |
+| The app is already serving | `owlky: app is already serving` |
+| The app has stopped | `owlky: app is stopped` |
+| `Listen` with a `TLSConfig` | `owlky: TLSConfig is set: use ListenTLS, or Serve with your listener` |
+| `ListenTLS`, or `Serve` with a `TLSConfig`, with `IsH2C` | `owlky: IsH2C applies to connections without TLS` |
+| No certificate source, or only one of the file names | `owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates` |
+| The certificate pair can't be loaded | `owlky: load TLS certificate: <err>` |
+| The port can't be bound (in use, out of range) | `owlky: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
 
 In these cases nothing is logged, no hook runs, a listener passed to `Serve` is left open, and the port stays free. After a bind error the app can be served again.
 
@@ -595,9 +595,9 @@ A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `Shut
 3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
 4. The app waits for the `AsyncImports` goroutines until `ShutdownTimeout` has passed since shutdown began; one still running is logged `ModuleShutdownTimeout` and abandoned. Then the modules' `OnShutdown` hooks run, only for `ready` modules, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
 5. The access log stops, a pending count of suppressed panic stacks is logged, and the log's stdout pipeline is flushed for at most 2 seconds: the lines of the last requests and of the hooks are written when the serving call returns. Lines logged after that are synchronous.
-6. The serving call returns `nil`, `ginject: shutdown timed out after <timeout>` when step 3 timed out, or `ginject: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
+6. The serving call returns `nil`, `owlky: shutdown timed out after <timeout>` when step 3 timed out, or `owlky: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
 
-After that the app is stopped: a new serving call returns `ginject: app is stopped`, while `ServeHTTP` still answers.
+After that the app is stopped: a new serving call returns `owlky: app is stopped`, while `ServeHTTP` still answers.
 
 `Stop()` is safe from any goroutine and any number of times. On a serving app it runs the shutdown above and returns when the hooks have finished. On an app that is not serving, it runs the hooks once and marks the app stopped. The hooks run once per app: every later call waits until the hooks have finished, from any goroutine, and only a call made from inside an `OnShutdown` hook returns at once. Called from a request handler, `Stop()` waits for that same request, so call it as `go app.Stop()` there.
 
@@ -642,7 +642,7 @@ server := &http.Server{Addr: ":8080", Handler: app, ReadHeaderTimeout: 10 * time
 
 Caveats:
 
-- No listener, timeouts or signal handling come from Ginject: set them on your server.
+- No listener, timeouts or signal handling come from Owlky Go: set them on your server.
 - The body cap is 10 MiB.
 - No graceful shutdown: call `server.Shutdown`, then `app.Stop()` to run the `OnShutdown` hooks and flush the log. Log lines are asynchronous from `Create` on, so call `app.Stop()` before the process exits.
 
@@ -839,9 +839,9 @@ package main
 import (
 	"embed"
 
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 //go:embed web

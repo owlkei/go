@@ -307,23 +307,23 @@ Topic: "users.created"
 
 ### 5.1 Handler Method Naming
 
-**WS Controllers embed `common.WS`** (`ginject.WS`); every exported method whose name starts with
+**WS Controllers embed `common.WS`** (`owlky.WS`); every exported method whose name starts with
 `SUBSCRIBE_` is an event handler (`common.ParseWSFuncNameToEvent`, `internal/common/fn.go`):
 
 ```go
 type ChatController struct {
-    ginject.WS
+    owlky.WS
 }
 
-func (c ChatController) SUBSCRIBE_message_created(payload ginject.WSPayload) string { // "message.created"
+func (c ChatController) SUBSCRIBE_message_created(payload owlky.WSPayload) string { // "message.created"
     return "event received"
 }
 
-func (c ChatController) SUBSCRIBE_chat_ANY(payload ginject.WSPayload) ginject.WSPayload { // "chat.*"
+func (c ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky.WSPayload { // "chat.*"
     return payload
 }
 
-func (c ChatController) SUBSCRIBE_chat_ALL(payload ginject.WSPayload) ginject.WSPayload { // "chat.**"
+func (c ChatController) SUBSCRIBE_chat_ALL(payload owlky.WSPayload) owlky.WSPayload { // "chat.**"
     return payload
 }
 ```
@@ -429,7 +429,7 @@ type MessagePipeable struct {
 }
 
 func (m MessagePipeable) Transform(raw any, metadata ArgumentMetadata) any {
-    payload := raw.(ginject.WSPayload)
+    payload := raw.(owlky.WSPayload)
     // Validate, transform
     return transformedData
 }

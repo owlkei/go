@@ -1,6 +1,6 @@
 # Config Module
 
-*Config module is a part of `Ginject` framework. It merges the process environment, `.env` files and any configuration you load yourself into one read-only-by-default service, and never prints a value.*
+*Config module is a part of `Owlky Go` framework. It merges the process environment, `.env` files and any configuration you load yourself into one read-only-by-default service, and never prints a value.*
 
 - [Config Module](#config-module)
   - [Key Features](#key-features)
@@ -46,7 +46,7 @@
 First you need create a `.env` file in the root of your project:
 
 ```dosini
-USERNAME=ginject # Support comments
+USERNAME=owlky # Support comments
 PASSWORD=123$%^
 ```
 
@@ -60,25 +60,25 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/config"
 )
 
 type DBProvider struct {
 	ConfigService config.ConfigService
 }
 
-func (dbProvider DBProvider) NewProvider() ginject.Provider {
+func (dbProvider DBProvider) NewProvider() owlky.Provider {
 	fmt.Println("USERNAME:", dbProvider.ConfigService.Get(("USERNAME")))
 	fmt.Println("PASSWORD:", dbProvider.ConfigService.Get(("PASSWORD")))
 	return dbProvider
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{}),
 			).
@@ -95,7 +95,7 @@ go run main.go
 
 There are logs print out on console:
 ```console
-USERNAME: ginject
+USERNAME: owlky
 PASSWORD: 123$%^
 ```
 
@@ -420,7 +420,7 @@ Every failure happens in `Register`, at startup, as a panic `invalid config: <de
 ## Imports, AsyncImports and module factories
 
 `Register` is not a module factory: you call it, it reads every source at once, and it returns a
-module. Ginject never calls it.
+module. Owlky Go never calls it.
 
 - **Import it with `Imports`.** The work is done before `Create()` starts, so there is nothing to
   wait for, and a bad `.env` file stops the boot as it should. In `AsyncImports`, the module would
@@ -430,12 +430,12 @@ module. Ginject never calls it.
   anywhere in the tree. This works for factories in `AsyncImports` too.
 
 ```go
-func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
 	url, _ := configService.Get("DATABASE_URL").(string)
 	return newDatabaseModule(ctx, url)
 }
 
-var AppModule = ginject.ModuleBuilder().
+var AppModule = owlky.ModuleBuilder().
 	Imports(
 		NewDatabaseModule,
 		config.Register(&config.ConfigModuleOptions{}),
@@ -443,7 +443,7 @@ var AppModule = ginject.ModuleBuilder().
 	Build()
 ```
 
-See the main README › Module lifecycle for factory signatures, `AsyncImports` and `ginject.Retry`.
+See the main README › Module lifecycle for factory signatures, `AsyncImports` and `owlky.Retry`.
 
 ## `ConfigService`
 
@@ -514,7 +514,7 @@ Binds configuration values to the `bind:"NAME"` fields of a struct and returns t
 
 - Description: Transformed configuration data
 
-- 2nd value: `[]ginject.FieldLevel`
+- 2nd value: `[]owlky.FieldLevel`
 
 - Description: Field validation levels
 

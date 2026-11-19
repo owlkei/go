@@ -10,10 +10,10 @@
 ```go
 type UserService struct{}
 
-func (instance UserService) NewProvider() ginject.Provider { return instance }
+func (instance UserService) NewProvider() owlky.Provider { return instance }
 
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 	UserService *UserService
 }
 
@@ -27,7 +27,7 @@ func (instance UserController) READ_users(us UserService) string { return "" }
 **RIGHT**:
 ```go
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 	UserService UserService
 }
 
@@ -58,11 +58,11 @@ func (c UserController) READ() {
 **RIGHT**:
 ```go
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 	UserService UserService
 }
 
-func (instance UserController) READ_users_BY_id(param ginject.Param) string {
+func (instance UserController) READ_users_BY_id(param owlky.Param) string {
 	return instance.UserService.GetUser(param.Get("id"))
 }
 ```
@@ -85,9 +85,9 @@ Providers are value types injected by value, so a cycle (`ServiceA` with a `Serv
 
 **WRONG**:
 ```go
-var lastCtx ginject.HTTPContext
+var lastCtx owlky.HTTPContext
 
-func (c UserController) READ(httpCtx ginject.HTTPContext) {
+func (c UserController) READ(httpCtx owlky.HTTPContext) {
     lastCtx = httpCtx  // WRONG! Retain pooled object
     return "ok"
 }
@@ -104,7 +104,7 @@ func (c UserController) READ(httpCtx ginject.HTTPContext) {
 
 **RIGHT**:
 ```go
-func (c UserController) READ(httpCtx ginject.HTTPContext) {
+func (c UserController) READ(httpCtx owlky.HTTPContext) {
     // Use httpCtx only within request
     return httpCtx.ID()  // Use locally
     // After function returns, httpCtx released to pool
@@ -121,7 +121,7 @@ trace scope (`internal/tracecontext`) stays readable after the request ended.
 
 **WRONG**:
 ```go
-func (c UserController) READ(httpCtx ginject.HTTPContext) {
+func (c UserController) READ(httpCtx owlky.HTTPContext) {
     // Handler runs AFTER guard
     // If guard saw certain context state, don't change it
     httpCtx.Request.Header.Set("X-User-ID", "123")  // WRONG!
@@ -137,14 +137,14 @@ func (c UserController) READ(httpCtx ginject.HTTPContext) {
 **RIGHT**:
 ```go
 // Use middleware to set headers (before guard)
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next owlky.Next) {
     // Runs BEFORE guard
     r.Header.Set("X-User-ID", "123")
     next()
 })
 
 // Guard sees modified request
-func (c UserController) READ(httpCtx ginject.HTTPContext) {
+func (c UserController) READ(httpCtx owlky.HTTPContext) {
     // Use context
 }
 ```
@@ -160,7 +160,7 @@ func (c UserController) READ(httpCtx ginject.HTTPContext) {
 A guard that returns `false` hands `exception.ForbiddenException("Access denied")` (403) to the route's exception filters. A guard may also panic an exception: the panic goes to the same filters, so `panic(exception.UnauthorizedException("not logged in"))` answers 401.
 
 ```go
-func (instance AuthGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance AuthGuard) CanActivate(c owlky.HTTPContext) bool {
 	if c.Request.Header.Get("Authorization") == "" {
 		panic(exception.UnauthorizedException("not logged in"))
 	}
@@ -176,7 +176,7 @@ func (instance AuthGuard) CanActivate(c ginject.HTTPContext) bool {
 
 **WRONG**:
 ```go
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next owlky.Next) {
     // Process request
     next()
     
@@ -192,7 +192,7 @@ app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginj
 
 **RIGHT**:
 ```go
-app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next owlky.Next) {
     // Pre-processing
     startTime := time.Now()
     
@@ -211,7 +211,7 @@ app.BindGlobalMiddlewares(func(r *http.Request, w http.ResponseWriter, next ginj
 Design 0019 changed the route DSL; names that used to register a path now stop `Create()` or move:
 
 - **Multi-word resources are kebab-case**: `READ_user_profile` is `GET /user-profile`, not
-  `/user_profile` (that is a 404). Keep `_` only with `ModuleBuilder().PathStyle(ginject.PathStyleAsWritten)`.
+  `/user_profile` (that is a 404). Keep `_` only with `ModuleBuilder().PathStyle(owlky.PathStyleAsWritten)`.
 - **Upper-case words are route words only**: `READ_orgs_FB`, `READ_logo_PNG_FILE`,
   `SUBSCRIBE_chat_PERSON_ANY` panic `invalid route: <W> in <Name> is upper case but not a route word…`.
   Write `READ_orgs_fb` / `READ_orgsFB`, `READ_logo_png_FILE`, `SUBSCRIBE_chat_person_ANY`.
@@ -219,7 +219,7 @@ Design 0019 changed the route DSL; names that used to register a path now stop `
   `READ_files_BY_name_ANY_x` (routing-system.md §1.6).
 - **A path no name can spell** goes through `instance.Path("/oauth2/token", instance.CREATE_token)`,
   never an escape inside the name (`__` is not an escape: `BY_user__id` is the parameter `user__id`).
-- **Pages are `RENDER_` / `SUBMIT_`**, not a `ginject.Page` embed returning `ginject.View` (both
+- **Pages are `RENDER_` / `SUBMIT_`**, not a `owlky.Page` embed returning `owlky.View` (both
   removed). A guard bound to `RENDER_x` only does not cover `SUBMIT_x`.
 
 ---
@@ -277,7 +277,7 @@ func (c ChatController) ON_MESSAGE(conn *websocket.Conn) {
 
 **RIGHT**:
 ```go
-func (c ChatController) ON_MESSAGE(publisher ginject.Publisher) {
+func (c ChatController) ON_MESSAGE(publisher owlky.Publisher) {
     publisher.Publish("topic", data)  // Safe, thread-safe
 }
 ```
@@ -315,10 +315,10 @@ publisher.Publish("event", data)
 
 **WRONG**:
 ```go
-var MyModule = func() ginject.Module {
+var MyModule = func() owlky.Module {
     var counter = 0  // MUTABLE STATE!
     
-    return ginject.ModuleBuilder().
+    return owlky.ModuleBuilder().
         Providers(
             CounterService{counter: &counter},  // Shared mutable
         ).
@@ -336,8 +336,8 @@ var MyModule = func() ginject.Module {
 **RIGHT**:
 ```go
 // Option 1: Create new module each time
-func NewMyModule() ginject.Module {
-    return ginject.ModuleBuilder().
+func NewMyModule() owlky.Module {
+    return owlky.ModuleBuilder().
         Providers(
             CounterService{counter: 0},
         ).
@@ -345,8 +345,8 @@ func NewMyModule() ginject.Module {
 }
 
 // Option 2: Make counter immutable
-var MyModule = func() ginject.Module {
-    return ginject.ModuleBuilder().
+var MyModule = func() owlky.Module {
+    return owlky.ModuleBuilder().
         Providers(
             CounterService{counter: 0},  // Immutable
         ).
@@ -367,7 +367,7 @@ type CounterService struct {
 	count *atomic.Int64
 }
 
-func (instance CounterService) NewProvider() ginject.Provider {
+func (instance CounterService) NewProvider() owlky.Provider {
 	instance.count = new(atomic.Int64)
 	return instance
 }
@@ -401,10 +401,10 @@ c.BindExceptionFilter(authFilter, c.READ)
 
 **RIGHT**: one filter that handles every code it cares about, and `panic(ex)` for the rest:
 ```go
-func (instance APIFilter) Catch(c ginject.HTTPContext, ex *exception.Exception) {
+func (instance APIFilter) Catch(c owlky.HTTPContext, ex *exception.Exception) {
 	switch ex.Code() {
 	case http.StatusUnauthorized, http.StatusBadRequest:
-		c.Status(ex.Code()).JSON(ginject.Map{"error": ex.Message()})
+		c.Status(ex.Code()).JSON(owlky.Map{"error": ex.Message()})
 	default:
 		panic(ex)
 	}
@@ -451,12 +451,12 @@ An exception costs about 1.6 µs per request; any other panic value (a string, a
 
 - A pipe parameter must be a value type: `func (c X) READ(dto *SearchDTO)` panics at `Create()` (`pipe '*…SearchDTO' … must not be a pointer`).
 - `Transform` must return the parameter's type (or one assignable to it): `return &dto` or `return nil` answers a 500 exception (`pipe …: Transform returned …, want …`) and the handler is not called.
-- A type from another package that prints like a framework type (your own `ginject.HTTPContext`) is not injected: `Create()` panics.
+- A type from another package that prints like a framework type (your own `owlky.HTTPContext`) is not injected: `Create()` panics.
 
 ### 7.5 GOTCHA: Forgetting `From` Inside a Request
 
 ```go
-func (instance UserController) READ_me(c ginject.HTTPContext) any {
+func (instance UserController) READ_me(c owlky.HTTPContext) any {
 	instance.Logger.Info("ReadMe")                  // no trace_id, no request: can't be tied to the request
 	instance.Logger.From(c.Context()).Info("ReadMe") // carries trace_id and request
 	return "ok"
@@ -471,9 +471,9 @@ about 6 ns; a line through it costs what a plain line does (`log/README.md` › 
 
 ### 8.1 GOTCHA: State Shared Between Tests Outside the Framework
 
-Every `ginject.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module factory.
+Every `owlky.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module factory.
 
-**Rule**: A new `ginject.New()` per test; build modules that hold resources per test when the tests must not share them
+**Rule**: A new `owlky.New()` per test; build modules that hold resources per test when the tests must not share them
 
 ---
 
@@ -588,14 +588,14 @@ c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
 
 **WRONG** (generating an upload handler without checking the cap):
 ```go
-func (c UploadController) CREATE(body ginject.Body) any {
+func (c UploadController) CREATE(body owlky.Body) any {
     // Assumes any size body reaches here — it doesn't.
 }
 ```
 
-**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless the serving call sets `ServerOptions.MaxRequestBodyBytes` (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `ginject.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
+**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless the serving call sets `ServerOptions.MaxRequestBodyBytes` (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `owlky.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
 
-**RIGHT**: Raise the cap for the whole app with `app.Listen(port, &ginject.ServerOptions{MaxRequestBodyBytes: 50 << 20})`; there is no per-route cap.
+**RIGHT**: Raise the cap for the whole app with `app.Listen(port, &owlky.ServerOptions{MaxRequestBodyBytes: 50 << 20})`; there is no per-route cap.
 
 **Rule**: Any handler that accepts uploads must account for the app-wide cap and the 413 it produces; don't assume an unlimited body size.
 
@@ -650,9 +650,9 @@ Each is documented once in the package README named; generated code must respect
   `Del` or a new slice, never `h[k][0] = …` (`internal/core/README.md` › Response writer).
 - **`c.Redirect` takes any URL**: validate a URL from the request (local paths only) before
   redirecting (`internal/ctx/README.md` › Redirect).
-- **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `ginject.Map` or a
+- **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `owlky.Map` or a
   struct, never as a format argument or the format string (`internal/ctx/README.md` › JSON).
-- **`ginject.TraceTransport` sends `traceparent` to every host**, and an incoming valid `traceparent`
+- **`owlky.TraceTransport` sends `traceparent` to every host**, and an incoming valid `traceparent`
   sets the trace ID and flags: never authorize by a trace ID (`internal/trace/README.md` › Security).
 - **`proxy` hops mode (`TrustedHops`) doesn't check the peer**: only when the app is unreachable
   except through the proxies (`middlewares/proxy/README.md` › Security).
@@ -670,17 +670,17 @@ Guide: `README.md` › Module lifecycle. Rules: `internal/core/README.md` › Mo
 The module is `ready`, its routes open, and requests reach a client that isn't connected; nothing shows
 in the log or the devtool and nothing is canceled at shutdown.
 
-**RIGHT**: connect in a module factory (`func(ctx, deps...) (ginject.Module, error)`). In `Imports` the
+**RIGHT**: connect in a module factory (`func(ctx, deps...) (owlky.Module, error)`). In `Imports` the
 app waits (startup timeout); in `AsyncImports` it serves at once and gates the routes that need it.
 
 ### 13.2 GOTCHA: Retrying Permanent Errors, or Returning Transient Ones
 
-**WRONG**: `ginject.Retry` around a bad URL (it never recovers and fills the log), or returning a
+**WRONG**: `owlky.Retry` around a bad URL (it never recovers and fills the log), or returning a
 `connection refused` from an async factory (the module is `failed` for good: the framework calls a
 factory once).
 
 **RIGHT**: return configuration errors at once; retry only the connect step, without an attempt limit:
-`ginject.Retry(ctx, nil, func(ctx context.Context) error { return db.PingContext(ctx) })`.
+`owlky.Retry(ctx, nil, func(ctx context.Context) error { return db.PingContext(ctx) })`.
 
 ### 13.3 GOTCHA: Controllers in an Async Factory's Module
 

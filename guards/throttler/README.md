@@ -43,7 +43,7 @@ libraries understand (RFC 6585 § 4).
 
 ## Usage
 
-Bind a `Throttler` value as a guard. Ginject calls `NewGuard` once at `Create()`, so every request
+Bind a `Throttler` value as a guard. Owlky Go calls `NewGuard` once at `Create()`, so every request
 to the bound handlers shares one budget per client:
 
 ```go
@@ -52,16 +52,16 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/guards/throttler"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/guards/throttler"
 )
 
 type LoginController struct {
-	ginject.HTTP
-	ginject.Guard
+	owlky.HTTP
+	owlky.Guard
 }
 
-func (instance LoginController) NewController() ginject.Controller {
+func (instance LoginController) NewController() owlky.Controller {
 	instance.BindGuard(throttler.Throttler{
 		Limit: 10,
 		TTL:   time.Minute,
@@ -74,9 +74,9 @@ func (instance LoginController) CREATE_login() string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Controllers(LoginController{}).
 			Build(),
 	)
@@ -153,7 +153,7 @@ throttler.Throttler{Strategy: throttler.StrategyTokenBucket}
 
 ### KeyFunc
 
-Type: `func(ginject.HTTPContext) string`
+Type: `func(owlky.HTTPContext) string`
 
 Default: the client IP (see [How the client is identified](#how-the-client-is-identified))
 
@@ -166,7 +166,7 @@ whatever the client sends.
 
 ```go
 throttler.Throttler{
-	KeyFunc: func(c ginject.HTTPContext) string {
+	KeyFunc: func(c owlky.HTTPContext) string {
 		if user := c.Request.Header.Get("X-User-ID"); user != "" {
 			return "user:" + user
 		}
@@ -206,8 +206,8 @@ throttler.Throttler{
 
 ### NewGuard
 
-Applies the defaults and returns the compiled guard. Ginject calls it for you when you bind a
-`Throttler`; call it yourself only to use the guard outside Ginject's binding.
+Applies the defaults and returns the compiled guard. Owlky Go calls it for you when you bind a
+`Throttler`; call it yourself only to use the guard outside Owlky Go's binding.
 
 **Signature**
 
@@ -217,7 +217,7 @@ func (instance Throttler) NewGuard() any
 
 **Returns**
 
-- 1st value: `any`: the compiled guard, a value with `CanActivate(ginject.HTTPContext) bool`
+- 1st value: `any`: the compiled guard, a value with `CanActivate(owlky.HTTPContext) bool`
 
 **Rules**
 

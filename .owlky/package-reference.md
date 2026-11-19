@@ -8,12 +8,12 @@
 
 ## Public surface (design 0017)
 
-`api/ginject.txt` is the exact public API (`make api` writes it, `make api-check` diffs it in `make check`
+`api/owlky.txt` is the exact public API (`make api` writes it, `make api-check` diffs it in `make check`
 and CI). An application imports only these paths; every other package is under `internal/`:
 
 | Import path | Holds |
 |---|---|
-| `github.com/dangduoc08/ginject` | `New`, `ModuleBuilder`, `TraceTransport`; aliases `App`, `Module`, `Controller`, `Provider`, `ServerOptions`, `WSOptions`, `RenderOptions`, `HTTP`, `WS`, `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher`, `HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel`, `DataFile`, `Aggregation`, `VersioningOptions`, `VersioningType`, `PathStyle`; constants `VersioningQuery`, `VersioningHeader`, `VersioningCustom`, `VersioningMediaType`, `PathStyleKebab`, `PathStyleAsWritten` |
+| `go.owlky.com/owlky` | `New`, `ModuleBuilder`, `TraceTransport`; aliases `App`, `Module`, `Controller`, `Provider`, `ServerOptions`, `WSOptions`, `RenderOptions`, `HTTP`, `WS`, `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher`, `HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel`, `DataFile`, `Aggregation`, `VersioningOptions`, `VersioningType`, `PathStyle`; constants `VersioningQuery`, `VersioningHeader`, `VersioningCustom`, `VersioningMediaType`, `PathStyleKebab`, `PathStyleAsWritten` |
 | `…/exception` | `Exception` (`Code`, `Message`, `StatusText`, `Error`, `Unwrap`, `AppendJSON`, `MarshalJSON`), `ExceptionOptions`, `NewException`, the 31 `<Status>Exception` constructors |
 | `…/log` | `NewLog`, `WrapLogger`, `LogOptions{Level, Format, IsAddSource, MaskFields}`, `Logger`, `LogAdapter`, `Format`, `LevelDebug`…`LevelFatal`, `FormatText`/`FormatJSON`/`FormatPretty` |
 | `…/middlewares/{compress,cors,csrf,helmet,hostcheck,httpsredirect,loadshed,proxy}` | One option struct each (`NewMiddleware`, `Use`); `helmet.Disabled`; `proxy.Header`, `HeaderXForwarded`, `HeaderForwarded`, `ClientIP`, `Host`, `Scheme` |
@@ -24,13 +24,13 @@ and CI). An application imports only these paths; every other package is under `
 - Root aliases point at internal types: `HTTPContext = *ctx.HTTPContext`, `Aggregation = *aggregation.Aggregation`,
   `App = *core.App`, `Module = *core.Module`, `DataFile = *ctx.DataFile` are pointer aliases; the rest are plain.
   `reflect` still prints the internal names (`*ctx.HTTPContext`), so injection panics show them; the six
-  layer-shape panics spell the types as users write them (`func(ginject.HTTPContext) bool`).
+  layer-shape panics spell the types as users write them (`func(owlky.HTTPContext) bool`).
 - Hook rule (D3): what the framework needs from a user-visible type is a package function of its internal
   package (`ctx.HTTPReset(c)`, `aggregation.SetMainData(a, d)`), never an exported method or field, because
   members stay reachable through an alias.
 - Public packages (`exception`, `log`, `middlewares/*`, `modules/*`, `guards/*`) import the engine by its
   internal path, never the root package (D6: `core`'s tests import `middlewares/proxy`).
-- Runtime errors read `ginject: …` (was `core:` / `ctx:`) and `cache: …` (was `memorycache:`).
+- Runtime errors read `owlky: …` (was `core:` / `ctx:`) and `cache: …` (was `memorycache:`).
 - The sections below are per package; the engine packages are documented by their internal name.
 
 ---
@@ -118,7 +118,7 @@ type Module struct {
 
 ### ModuleBuilder
 
-The root package exports the constructor `ginject.ModuleBuilder()` (`core.NewModuleBuilder()`); it returns `*core.ModuleBuilder`, which has no root alias:
+The root package exports the constructor `owlky.ModuleBuilder()` (`core.NewModuleBuilder()`); it returns `*core.ModuleBuilder`, which has no root alias:
 
 ```go
 func ModuleBuilder() *core.ModuleBuilder
@@ -130,7 +130,7 @@ func ModuleBuilder() *core.ModuleBuilder
 | `AsyncImports` | `AsyncImports(modules ...any) *ModuleBuilder` | Same entries, built in the background; the modules that inject their providers are `pending` and their routes answer `503` until ready (README › Module lifecycle). One entry in both lists panics |
 | `Providers` | `Providers(providers ...Provider) *ModuleBuilder` | |
 | `Controllers` | `Controllers(controllers ...Controller) *ModuleBuilder` | |
-| `PathStyle` | `PathStyle(style common.PathStyle) *ModuleBuilder` | `ginject.PathStyleKebab` (default, `READ_user_profile` → `/user-profile`) or `ginject.PathStyleAsWritten` (`/user_profile`); inherited by imports like `Prefix`, an explicit setting wins; another value panics `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten` |
+| `PathStyle` | `PathStyle(style common.PathStyle) *ModuleBuilder` | `owlky.PathStyleKebab` (default, `READ_user_profile` → `/user-profile`) or `owlky.PathStyleAsWritten` (`/user_profile`); inherited by imports like `Prefix`, an explicit setting wins; another value panics `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten` |
 | `Build` | `Build() *Module` | |
 
 **There is no `Export(...string)` method and no `IsGlobal(bool)` builder method — both are fabrications from an earlier bad doc pass.** `IsGlobal` is a public **field** set directly on the built `*Module` (`module.IsGlobal = true`), not chained on the builder.
@@ -138,13 +138,13 @@ func ModuleBuilder() *core.ModuleBuilder
 ### Retry
 
 ```go
-type RetryOptions struct { InitialDelay, MaxDelay time.Duration; MaxAttempts int }  // root alias ginject.RetryOptions
-func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error  // ginject.Retry
+type RetryOptions struct { InitialDelay, MaxDelay time.Duration; MaxAttempts int }  // root alias owlky.RetryOptions
+func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error  // owlky.Retry
 ```
 
 Backoff with jitter (`InitialDelay` 500 ms doubling up to `MaxDelay` 30 s, each wait random in `[d/2, d]`)
-until `fn` returns `nil`, `ctx` is done (`ginject: retry stopped after <n> attempts: …`) or `MaxAttempts`
-is reached (`ginject: retry gave up after <n> attempts: …`); a nil `fn` panics `invalid retry: Retry needs a function`.
+until `fn` returns `nil`, `ctx` is done (`owlky: retry stopped after <n> attempts: …`) or `MaxAttempts`
+is reached (`owlky: retry gave up after <n> attempts: …`); a nil `fn` panics `invalid retry: Retry needs a function`.
 With an `AsyncImports` factory's `ctx` it reports attempts (`ModuleRetry`, devtool, `Retry-After`).
 
 ### Provider / Controller
@@ -242,9 +242,9 @@ type WSContext struct {
 
 Applications write them with the root aliases.
 
-**HTTP-specific**: `ginject.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `ginject.Body`, `ginject.Query`, `ginject.Header`, `ginject.Param`, `ginject.Form`, `ginject.File`, `ginject.Next`, `ginject.Redirect`, `ginject.Publisher`
+**HTTP-specific**: `owlky.HTTPContext`, `*http.Request`, `http.ResponseWriter`, `owlky.Body`, `owlky.Query`, `owlky.Header`, `owlky.Param`, `owlky.Form`, `owlky.File`, `owlky.Next`, `owlky.Redirect`, `owlky.Publisher`
 
-**WebSocket-specific**: `ginject.WSContext`, `*websocket.Conn`, `ginject.WSPayload`, `ginject.Next`, `ginject.Publisher`
+**WebSocket-specific**: `owlky.WSContext`, `*websocket.Conn`, `owlky.WSPayload`, `owlky.Next`, `owlky.Publisher`
 
 ---
 
@@ -268,7 +268,7 @@ Applications write them with the root aliases.
 A bare func literal does **not** satisfy any of these — you must bind a struct value with the matching method. Example:
 ```go
 type AuthGuard struct{}
-func (g AuthGuard) CanActivate(httpCtx ginject.HTTPContext) bool { return isAuthorized(httpCtx) }
+func (g AuthGuard) CanActivate(httpCtx owlky.HTTPContext) bool { return isAuthorized(httpCtx) }
 // c.BindGuard(AuthGuard{}, c.READ_BY_ID)
 ```
 
@@ -354,7 +354,7 @@ func NewRouter() *Router
 
 There is no `Group` (removed in design 0002). `Add`, `For` and `AddInjectableHandler` panic with
 `"invalid route: <route>: <reason>"` for a partial parameter segment (`/files/{name}.json`, `/a/{}`)
-or more than 64 segments. Matching rules: `.ginject/routing-system.md` §2.
+or more than 64 segments. Matching rules: `.owlky/routing-system.md` §2.
 
 ### RouterItem
 
@@ -525,8 +525,8 @@ broker.Publish("users.created", userData)
 // Cleanup
 broker.Unsubscribe(sub)
 
-// Alternative (preferred): inject ginject.Publisher into a handler
-func (instance UserController) SUBSCRIBE_users_created(pub ginject.Publisher) string {
+// Alternative (preferred): inject owlky.Publisher into a handler
+func (instance UserController) SUBSCRIBE_users_created(pub owlky.Publisher) string {
     pub.Publish("users.profile.updated", profileData)
     return "ok"
 }
@@ -726,7 +726,7 @@ type Cache interface {
 
 **There is no package-level `NewCacheModule()` function** — use `cache.Register(opts)`. No LFU eviction anywhere (see `memorycache` package below for the real CLOCK eviction).
 
-Ginject has no HTTP client or persistence module: outbound calls use `net/http` with `ginject.TraceTransport` (see `internal/trace/README.md`).
+Owlky Go has no HTTP client or persistence module: outbound calls use `net/http` with `owlky.TraceTransport` (see `internal/trace/README.md`).
 
 ---
 
@@ -769,7 +769,7 @@ type Throttler struct {
     Limit    int64                        // default 100
     TTL      time.Duration                // default time.Minute
     Strategy Strategy                     // StrategyFixedWindow (default 0) | StrategySlidingWindow | StrategyTokenBucket; unknown panics
-    KeyFunc  func(ginject.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
+    KeyFunc  func(owlky.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
     Backend  cache.Cache                  // default: one memorycache per guard, MaxEntries 32,768 (CLOCK eviction)
 }
 func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, inspect.Snapshotter)
@@ -806,7 +806,7 @@ func Scheme(r *http.Request) string       // "https" or "http"
 func Host(r *http.Request) string
 ```
 
-Exactly one of `TrustedProxies` / `TrustedHops` (else panic `invalid proxy: set TrustedProxies or TrustedHops[, not both]`). Without `proxy` bound, nothing in Ginject reads `X-Forwarded-*`, `Forwarded` or `X-Real-IP`: the client is `r.RemoteAddr`, the scheme `r.TLS != nil`, the host `r.Host`. Trusted-proxies mode: entries right to left, client = first untrusted, at most 16 entries of 512 bytes, invalid entry ends the walk. Scheme and host are read only when the client came from a header entry. `X-Forwarded-Proto`: the last value only (last line, after its last comma), whatever the counts; `Forwarded`: `proto` of the client's element or the nearest one to its right. The host (`X-Forwarded-Host` last value, or `host=`) is read only with `IsHostForwarded` (security review M2, design 0014 Revision 2026-11-17); no count rule. Snapshot field `hostForwarded`. The result is written into the request's `tracecontext.Scope` (`ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet`); the request is never changed. Bind it first.
+Exactly one of `TrustedProxies` / `TrustedHops` (else panic `invalid proxy: set TrustedProxies or TrustedHops[, not both]`). Without `proxy` bound, nothing in Owlky Go reads `X-Forwarded-*`, `Forwarded` or `X-Real-IP`: the client is `r.RemoteAddr`, the scheme `r.TLS != nil`, the host `r.Host`. Trusted-proxies mode: entries right to left, client = first untrusted, at most 16 entries of 512 bytes, invalid entry ends the walk. Scheme and host are read only when the client came from a header entry. `X-Forwarded-Proto`: the last value only (last line, after its last comma), whatever the counts; `Forwarded`: `proto` of the client's element or the nearest one to its right. The host (`X-Forwarded-Host` last value, or `host=`) is read only with `IsHostForwarded` (security review M2, design 0014 Revision 2026-11-17); no count rule. Snapshot field `hostForwarded`. The result is written into the request's `tracecontext.Scope` (`ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet`); the request is never changed. Bind it first.
 
 ### `middlewares/hostcheck`, `middlewares/httpsredirect`
 
@@ -853,7 +853,7 @@ type Helmet struct {
 }
 ```
 
-Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **The eight string fields above are the only options; the always-sent headers can't be configured.** On pages rendered by Ginject that call `{{nonce}}`, the CSP carries `'nonce-<N>'` in `script-src` / `style-src` (inserted after `default-src` when absent) and in `script-src-elem` / `style-src-elem` when present; directives with `'unsafe-inline'` or `'none'` are untouched; no new field (design 0018 R30-R35). Snapshot adds `nonce_directives`.
+Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **The eight string fields above are the only options; the always-sent headers can't be configured.** On pages rendered by Owlky Go that call `{{nonce}}`, the CSP carries `'nonce-<N>'` in `script-src` / `style-src` (inserted after `default-src` when absent) and in `script-src-elem` / `style-src-elem` when present; directives with `'unsafe-inline'` or `'none'` are untouched; no new field (design 0018 R30-R35). Snapshot adds `nonce_directives`.
 
 ### `middlewares/compress`
 
@@ -883,13 +883,13 @@ Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `htt
 - `internal/render` — the template engine behind `EnableRender` (design 0018): `New(fsys, isReload) *Engine`, `Load`, `Bind(route) (string, error)`, `CheckBindings`, `Render(route, data) (*Buffer, error)`, `RenderError(code, data)`, `ErrorTemplate(code)`, `Release`, `Assets`, `AssetHashes`, `Public`, `PublicFiles`, `PageAssets`, `PageAsset`, `Files`, `IsReload`, `Snapshot`, `Counters`, `NonceDraws`; `Buffer{Bytes, Len, Nonce}`, `FileError{File, Err}`, `ErrNoTemplate`, `ErrTwoTemplates`, `ErrReservedDir`, `ErrErrorPageName`, `ErrPageTooLarge`, `ErrNoErrorPage`. Pooled buffers (256 KiB retention, 8 MiB limit), the nonce placeholder overwritten in place. Not for users.
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning, request schemas and `kind: "page"` for page routes; `Render` (`render`: `is_reload`, `pages` (with `route` and `assets`), `partials`, `error_templates`, `assets`, `public`, `renders`, `failures`) with `EnableRender`; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
 - `accesslog` — `NewAccessLog(cfg *AccessLogOptions) *AccessLog` (`AccessLogOptions{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
-- `versioning` (`internal/versioning`) — `Options{Type, Key, DefaultVersion, Extractor}`, `type Type int` (`TypeQuery`, `TypeHeader`, `TypeCustom`, `TypeMediaType` = 1–4), hooks `TypeString(o) string` / `Version(o, c *ctx.HTTPContext) string`; users write `app.EnableVersioning(&ginject.VersioningOptions{Type: ginject.VersioningHeader, …})`.
+- `versioning` (`internal/versioning`) — `Options{Type, Key, DefaultVersion, Extractor}`, `type Type int` (`TypeQuery`, `TypeHeader`, `TypeCustom`, `TypeMediaType` = 1–4), hooks `TypeString(o) string` / `Version(o, c *ctx.HTTPContext) string`; users write `app.EnableVersioning(&owlky.VersioningOptions{Type: owlky.VersioningHeader, …})`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
 - `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`, `CSP{Value, Parts}` + `CSPWriter{SetCSP}` (helmet's nonce form, design 0018): the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.
 - `internal/inspect` — besides `CacheStateOf` / `ConfigStateOf`: `Field`, `Snapshot`, `Snapshotter`; every compiled middleware of design 0014 implements `Snapshotter` (effective options + counters, snake_case keys, built only when called). All random bytes from `crypto/rand`, through a `sync.Pool` of 512-byte sources (504-byte refills, no mutex, design 0013); one 18-byte read per new trace (tail + request ID), 8 bytes for a continued trace or a message under a connection.
 - `internal/logpipe` — the output pipeline of the built-in logger (design 0012): `Level` (`Debug`…`Fatal`), `Sink` (`Write`, `StartAsync`, `StopAsync`, `Flush`, `Snapshot`: an `inspect.Snapshotter` named `logpipe`; async writes are woken 1 ms after a burst's first record or at 16 KiB, design 0016), `New`, `Stdout`, `SetStdout` (tests), `FlushTimeout` (2 s), `AccessLine` (the access log's line handed to the built-in logger).
 - `internal/crypto` — `UUID()` only (`crypto/rand`); `RandomHex` / `AppendRandomHex` are gone.
-- `internal/apicheck` — the API guard (design 0017 step 3), a `main` package: `make api` writes `api/ginject.txt` (sorted `pkg` lines of every public package plus `reach` lines for members of module types those lines mention), `make api-check` diffs it and fails on a public package outside its allow list. Runs in `make check` and the CI `lint` job.
+- `internal/apicheck` — the API guard (design 0017 step 3), a `main` package: `make api` writes `api/owlky.txt` (sorted `pkg` lines of every public package plus `reach` lines for members of module types those lines mention), `make api-check` diffs it and fails on a public package outside its allow list. Runs in `make check` and the CI `lint` job.
 - `internal/*` — everything else: the engine (`core`, `common`, `ctx`, `routing`, `pattern`, `wsevent`, `memorybroker`, `memorycache`, `aggregation`, `versioning`, `trace`, `accesslog`, `devtool`, moved there by design 0017) and private utilities (color, ds, str, crypto, num, slice, test, tracecontext, logpipe, httphook, inspect, apicheck). Not importable from outside the module.
 
 **There is no `data/` package or directory anywhere in this repository** — an earlier doc listed one; it never existed.

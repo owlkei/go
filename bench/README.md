@@ -1,8 +1,8 @@
 # Bench
 
-*`bench` measures Ginject's HTTP request cycle and compares it with `net/http`'s `ServeMux`, Gin,
+*`bench` measures Owlky Go's HTTP request cycle and compares it with `net/http`'s `ServeMux`, Gin,
 Echo, Chi and Fiber on the same scenarios. It is a separate Go module, so the other frameworks
-never become dependencies of Ginject.*
+never become dependencies of Owlky Go.*
 
 - [Bench](#bench)
   - [Scenarios](#scenarios)
@@ -34,7 +34,7 @@ Run the targets from the repository root.
 ### Go benchmarks
 
 ```sh
-make bench                      # Ginject only, 5 runs
+make bench                      # Owlky Go only, 5 runs
 make bench-compare              # all six frameworks, 5 runs
 make bench-compare BENCH_COUNT=10
 ```
@@ -49,12 +49,12 @@ release binary (`go build -trimpath -ldflags="-s -w"`), serves one framework at 
 
 ```sh
 make load
-FRAMEWORKS="ginject nethttp gin echo chi fiber" LOGS="on off" PROCS="1 2 all" DURATION=5s CONNECTIONS=64 make load
+FRAMEWORKS="owlky nethttp gin echo chi fiber" LOGS="on off" PROCS="1 2 all" DURATION=5s CONNECTIONS=64 make load
 ```
 
 | Variable | Default | Effect |
 |---|---|---|
-| `FRAMEWORKS` | `ginject` | the servers to measure: `ginject`, `nethttp`, `gin`, `echo`, `chi`, `fiber` |
+| `FRAMEWORKS` | `owlky` | the servers to measure: `owlky`, `nethttp`, `gin`, `echo`, `chi`, `fiber` |
 | `LOGS` | `on` | `on` turns the framework's request logger on, `off` turns it off; `nethttp` has no logger and runs once, as `none` |
 | `PROCS` | `all` | the `GOMAXPROCS` values of the server; `all` leaves it unset (every core) |
 | `DURATION` | `10s` | how long `wrk` runs per scenario |
@@ -65,14 +65,14 @@ FRAMEWORKS="ginject nethttp gin echo chi fiber" LOGS="on off" PROCS="1 2 all" DU
 
 It prints a Markdown table with requests per second, p50, p99, the count of non-2xx responses, the
 requests `wrk` completed, the log lines written during the run, and the server's CPU time per
-request. Ginject is served through `App.Listen`, its production path; the others through
+request. Owlky Go is served through `App.Listen`, its production path; the others through
 `http.ListenAndServe` or Fiber's `Listen`.
 
 With the log on, each framework writes one line per request to stdout, which goes to a file on disk:
 
 | Framework | Request logger |
 |---|---|
-| Ginject | the built-in logger in JSON with the access log (`EnableAccessLog`) |
+| Owlky Go | the built-in logger in JSON with the access log (`EnableAccessLog`) |
 | Gin | `gin.LoggerWithConfig` with a JSON formatter |
 | Echo | `middleware.RequestLoggerWithConfig` writing through `slog`'s JSON handler |
 | Chi | `middleware.Logger` (text lines: Chi has no JSON logger) |
@@ -89,14 +89,14 @@ each run: the server prints it to stderr when it receives `SIGUSR1`.
   parsing or the network.
 - **Fiber** runs on fasthttp's `RequestCtx`, so each iteration also calls `RequestCtx.Init` and
   `Response.Reset`, about one allocation of harness work.
-- **Recovery** is on everywhere: Ginject recovers by default, the others use their recovery
+- **Recovery** is on everywhere: Owlky Go recovers by default, the others use their recovery
   middleware.
 - **Errors** use each framework's own mechanism; `net/http` and Chi have none and write the `400`
   directly.
 - **The load test** runs the client and the server on one machine, so absolute numbers are a floor;
   comparisons between frameworks on the same run are fair.
 - **Logging:** the benchmarks run every framework without a request logger. The load test compares
-  frameworks with their loggers on, and Ginject with its log off against net/http, which has no
+  frameworks with their loggers on, and Owlky Go with its log off against net/http, which has no
   logger. The log lines column shows that a logger wrote every line: one that drops lines would
   otherwise look cheap.
 - **Reference points:** net/http with no logger is the floor, the fastest a framework on net/http

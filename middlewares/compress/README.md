@@ -30,17 +30,17 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/compress"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/compress"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(compress.Compress{})
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -70,7 +70,7 @@ Level, types and the writer count are fixed.
 
 ### NewMiddleware
 ```go
-func (instance Compress) NewMiddleware() ginject.MiddlewareFn
+func (instance Compress) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates the options once; the framework calls it at `Create()`. It panics with
@@ -78,10 +78,10 @@ Validates the options once; the framework calls it at `Create()`. It panics with
 
 ### Use
 ```go
-func (instance Compress) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance Compress) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `Compress` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `Compress` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`. Called outside an app, it only calls the
 next layer.
 

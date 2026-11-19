@@ -30,7 +30,7 @@
 - One rule for every field: `""` is the default, `helmet.Disabled` turns the header off, any other value is sent as written
 - `Permissions-Policy` denies powerful browser features by default
 - Every header value is built once at startup; no allocation per request
-- Pages rendered by Ginject that call `{{nonce}}` get a per-response nonce in `script-src` and `style-src`, with no option to set
+- Pages rendered by Owlky Go that call `{{nonce}}` get a per-response nonce in `script-src` and `style-src`, with no option to set
 
 ## Usage
 
@@ -38,12 +38,12 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/helmet"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/helmet"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(helmet.Helmet{
 		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:",
@@ -51,7 +51,7 @@ func main() {
 	})
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -77,7 +77,7 @@ func main() {
 `X-Download-Options` is no longer sent: only Internet Explorer read it.
 
 The default CSP allows scripts, styles, images and fonts from your own origin only. An inline
-`<style>` or `<script>` runs when it carries `nonce="{{nonce}}"` in a page that Ginject renders
+`<style>` or `<script>` runs when it carries `nonce="{{nonce}}"` in a page that Owlky Go renders
 (see [Nonce](#nonce)); other inline code, or assets on a CDN, need your own policy. Serve your assets
 (Owlky's CSS and JavaScript included) from your own origin and the default works as is.
 `upgrade-insecure-requests` makes the browser load `http:` subresources over HTTPS; when you test
@@ -184,7 +184,7 @@ helmet.Helmet{StrictTransportSecurity: "max-age=63072000; includeSubDomains; pre
 
 ### NewMiddleware
 ```go
-func (instance Helmet) NewMiddleware() ginject.MiddlewareFn
+func (instance Helmet) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Builds every header value once; the framework calls it at `Create()`. It panics with
@@ -192,15 +192,15 @@ Builds every header value once; the framework calls it at `Create()`. It panics 
 
 ### Use
 ```go
-func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `Helmet` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `Helmet` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Nonce
 
-`helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Ginject
+`helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Owlky Go
 (`EnableRender`: a `RENDER_` or `SUBMIT_` route, or an HTML error page) that calls `{{nonce}}`, the
 response's `Content-Security-Policy` carries `'nonce-<N>'`, where `<N>` is the same 32-character
 value the page writes. Every other response (API routes, assets, public files, pages without

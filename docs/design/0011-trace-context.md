@@ -10,7 +10,7 @@ are taken as given. Design 0012 (log pipeline, steps 4-6) reads the scope throug
 
 ## Goal
 Every HTTP request, WebSocket connection and WebSocket message gets IDs in the W3C Trace Context
-format, and the `context.Context` Ginject hands out carries them: a middleware, a guard, a handler
+format, and the `context.Context` Owlky Go hands out carries them: a middleware, a guard, a handler
 or a service called with `c.Context()` reads the same scope, and a goroutine that keeps the context
 after the request still reads its own IDs. An incoming `traceparent` continues the caller's trace,
 the response and `modules/httpclient` carry ours, and every `trace.Tracer` event says which span it
@@ -48,7 +48,7 @@ type Event struct {
 
 | Exported name | Why users (or listeners) need it |
 |---|---|
-| `ctx.Context.Context()` | roadmap decision: every Ginject context exposes a `context.Context`. `*HTTPContext` already has it (promoted from `*http.Request`), `*WSContext` already declares it: no new method, only the interface line |
+| `ctx.Context.Context()` | roadmap decision: every Owlky Go context exposes a `context.Context`. `*HTTPContext` already has it (promoted from `*http.Request`), `*WSContext` already declares it: no new method, only the interface line |
 | `trace.Event.TraceID` | groups the events of one trace; the access log prints it |
 | `trace.Event.SpanID`, `ParentID` | roadmap step 3; three plain strings instead of new types (Q3) |
 
@@ -245,7 +245,7 @@ deleted: their one caller was `ctx/context.go`, and a `math/rand` function in a 
 
 - **C1** `Send()` on a builder whose `Context(ctx)` carries a scope sets the request header
   `Traceparent: <Scope.Traceparent()>`: the trace ID, and our request (or message) ID as the
-  parent. The receiving Ginject service therefore logs our request ID as its `upstream`.
+  parent. The receiving Owlky Go service therefore logs our request ID as its `upstream`.
 - **C2** A `traceparent` header set by the caller (`SetHeader`, `Header`, `Headers`) wins: nothing
   is overwritten. No scope in the context, or no `Context(ctx)`: no header. Every retry carries
   the same value. `OnBeforeRequest` hooks run after it is set and may delete it.
@@ -267,7 +267,7 @@ deleted: their one caller was `ctx/context.go`, and a `math/rand` function in a 
 The logger reads the scope with these and nothing else:
 
 ```go
-import "github.com/dangduoc08/ginject/internal/tracecontext"
+import "go.owlky.com/owlky/internal/tracecontext"
 
 func tracecontext.ScopeOf(c context.Context) *tracecontext.Scope
 func (s *tracecontext.Scope) AppendArgs(dst []any) []any
@@ -388,7 +388,7 @@ allocations only while a listener exists). Recorded for step 8 if the numbers as
   UUID; `X-Request-Id` keeps its 16-hex shape; responses gain `Traceparent`; code that called
   `SetID()` or implemented `ctx.Context` no longer compiles.
 - **Docs (step 7):** READMEs of `internal/tracecontext` (new), `internal/crypto`, `ctx`, `trace`,
-  `accesslog`, `core`, `modules/httpclient`; `.ginject/request-pipeline.md`,
+  `accesslog`, `core`, `modules/httpclient`; `.owlky/request-pipeline.md`,
   `websocket-system.md`, `package-reference.md`; `CLAUDE.md` needs no change.
 
 ## Test plan
@@ -467,7 +467,7 @@ Internal test packages, one function per behavior.
 
 1. **Q1 Flags of a trace we start.** `03` (sampled + random) or `02` (random only). With `02`, a
    downstream service using OpenTelemetry's default parent-based sampler records nothing for
-   traces Ginject starts; with `03` it records all of them. Recommendation: `03`. Ginject has no
+   traces Owlky Go starts; with `03` it records all of them. Recommendation: `03`. Owlky Go has no
    sampler, its logs do carry every request, and "my trace is missing downstream" is the worse
    surprise.
 2. **Q2 The request copy.** Putting the scope where middleware can read it (`r.Context()`) needs
@@ -480,7 +480,7 @@ Internal test packages, one function per behavior.
    method that the only listener today (the access log) doesn't read. Recommendation: strings.
 4. **Q4 `tracestate`.** W3C asks participants to pass it on. Doing so means keeping up to 512
    client-controlled bytes per request and forwarding them to other hosts. Recommendation: not
-   now; Ginject adds no vendor state, and the trace ID alone keeps the trace joined.
+   now; Owlky Go adds no vendor state, and the trace ID alone keeps the trace joined.
 5. **Q5 One message ID per topic of a frame** (W6), because the read loop builds one context and
    one `complete` event per topic. One ID per frame would need a second level (frame → dispatch).
    Recommendation: per dispatch now; revisit with the WebSocket roadmap.
@@ -506,7 +506,7 @@ Internal test packages, one function per behavior.
 
 Approved by the user: every open question answered as recommended.
 
-- Q1 traces Ginject starts carry flags `03`.
+- Q1 traces Owlky Go starts carry flags `03`.
 - Q2 the request is always copied with the scope (`r.WithContext`), so middleware and `*http.Request`
   code see the IDs; the cost (about +250 ns, +1 alloc per request) is accepted.
 - Q3 span IDs on events are strings.

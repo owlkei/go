@@ -48,7 +48,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/memorycache"
+	"go.owlky.com/owlky/internal/memorycache"
 )
 
 func main() {

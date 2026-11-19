@@ -11,7 +11,7 @@ the previous agent reported only when the next one needs it.
 
 Small changes (a bug fix, a private helper, no public API) don't need this flow: use `/implement`.
 
-## 1. Design: `ginject-architect`
+## 1. Design: `go-architect`
 
 Ask it to design the feature (`$ARGUMENTS` without the flag). It writes
 `docs/design/NNNN-<slug>.md` (Status: Proposed).
@@ -41,7 +41,7 @@ Show the user the design file path, its public API, the behavior rules and its o
 **Stop and wait.** Apply the changes they ask for (yourself, or through the architect for larger
 ones). When they approve, set `Status: Approved` in the file.
 
-## 3. Red: `ginject-tester`
+## 3. Red: `go-tester`
 
 Ask it to write the tests for the approved design. Then check it yourself:
 
@@ -51,7 +51,7 @@ Ask it to write the tests for the approved design. Then check it yourself:
 
 Record the test files' state: `git ls-files -m -o --exclude-standard -- '*_test.go' | sort | xargs shasum > "$TMPDIR/feature-tests.sha"`.
 
-## 4. Green: `ginject-builder`
+## 4. Green: `go-builder`
 
 Ask it to implement the design until the tests pass. Then check:
 
@@ -61,11 +61,11 @@ Ask it to implement the design until the tests pass. Then check:
 - `make check` passes.
 
 If the builder stops on a wrong test or an unclear design, or the checks still fail after a second
-attempt, send its report to `ginject-architect`: it decides whether the design or the tests must
+attempt, send its report to `go-architect`: it decides whether the design or the tests must
 change. Apply its decision without stopping to ask (changed tests go through step 3 again) and note
 every deviation from the approved design in the design file and in your final report.
 
-## 5. Review: `ginject-reviewer`
+## 5. Review: `go-reviewer`
 
 Ask it to review the working tree against the design. Fix critical findings through the builder (test
 changes through the tester), then run `make check` again.

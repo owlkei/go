@@ -1,6 +1,6 @@
-# AI Agent Quick Reference: Ginject Decision Trees
+# AI Agent Quick Reference: Owlky Go Decision Trees
 
-**Purpose**: Rapid decision-making for common AI code generation scenarios in Ginject.
+**Purpose**: Rapid decision-making for common AI code generation scenarios in Owlky Go.
 
 ---
 
@@ -10,23 +10,23 @@
 Feature Request
   │
   ├─ "I need an HTTP endpoint"
-  │   ├─ Embed ginject.HTTP in controller
+  │   ├─ Embed owlky.HTTP in controller
   │   ├─ Create method: READ/CREATE/UPDATE/MODIFY/DELETE_BY_params
   │   ├─ Add parameters to method signature (built-in types and pipes, internal/core/README.md › Handler injection)
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Providers go in exported controller fields (injected at Create())
   │
   ├─ "I need a server-rendered HTML page"
-  │   ├─ app.EnableRender(&ginject.RenderOptions{FS: web}) before Create
-  │   ├─ Embed ginject.HTTP; RENDER_<route> = GET page, SUBMIT_<route> = its form POST (same words)
+  │   ├─ app.EnableRender(&owlky.RenderOptions{FS: web}) before Create
+  │   ├─ Embed owlky.HTTP; RENDER_<route> = GET page, SUBMIT_<route> = its form POST (same words)
   │   ├─ The route picks the template: web/<path>.html or web/<path>/index.html ({id} for parameters)
   │   ├─ Return the template's data (any type); SUBMIT_ re-renders with 422 or c.Redirect → 303
-  │   └─ No ginject.Page / ginject.View: they don't exist
+  │   └─ No owlky.Page / owlky.View: they don't exist
   │
   ├─ "I need WebSocket support"
-  │   ├─ Embed ginject.WS in controller
+  │   ├─ Embed owlky.WS in controller
   │   ├─ Create method: SUBSCRIBE_<topic> (e.g. SUBSCRIBE_chat_ANY → chat.*, SUBSCRIBE_chat_ALL → chat.**)
-  │   ├─ Inject ginject.WSContext, *websocket.Conn, ginject.Publisher
+  │   ├─ Inject owlky.WSContext, *websocket.Conn, owlky.Publisher
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Use publisher.Publish() for fanout
   │
@@ -69,7 +69,7 @@ Feature Request
   │   └─ Logger is available everywhere
   │
   └─ "I need to send events (WebSocket)"
-      ├─ Inject ginject.Publisher into handler
+      ├─ Inject owlky.Publisher into handler
       ├─ Call publisher.Publish(topic, data)
       ├─ All WS clients subscribed to topic receive message
       └─ Use topic patterns for selective delivery
@@ -136,33 +136,33 @@ I need access to...
   │   └─ http.ResponseWriter (HTTP only)
   │
   ├─ "Full request context with helpers"
-  │   ├─ HTTP: ginject.HTTPContext
-  │   └─ WS: ginject.WSContext
+  │   ├─ HTTP: owlky.HTTPContext
+  │   └─ WS: owlky.WSContext
   │
   ├─ "Request body (parsed JSON/form)"
-  │   └─ ginject.Body (HTTP only)
+  │   └─ owlky.Body (HTTP only)
   │
   ├─ "Query parameters"
-  │   └─ ginject.Query (HTTP only)
+  │   └─ owlky.Query (HTTP only)
   │
   ├─ "Path parameters (:id, :name, etc.)"
-  │   └─ ginject.Param (HTTP only)
+  │   └─ owlky.Param (HTTP only)
   │
   ├─ "HTTP headers"
-  │   └─ ginject.Header (HTTP only)
+  │   └─ owlky.Header (HTTP only)
   │
   ├─ "File uploads"
-  │   └─ ginject.File (HTTP only)
+  │   └─ owlky.File (HTTP only)
   │
   ├─ "WebSocket connection"
   │   └─ *websocket.Conn (WS only)
   │
   ├─ "Incoming WebSocket message"
-  │   └─ ginject.WSPayload (WS only)
+  │   └─ owlky.WSPayload (WS only)
   │
   ├─ "Send response/message"
   │   ├─ HTTP: httpCtx.JSON() or Text() method
-  │   └─ WS: ginject.Publisher for fanout
+  │   └─ WS: owlky.Publisher for fanout
   │
   ├─ "Custom service/provider"
   │   └─ Register as Provider, inject by type
@@ -172,13 +172,13 @@ I need access to...
   │   └─ log.Logger (globally available)
   │
   ├─ "Event publisher"
-  │   └─ ginject.Publisher (for WS fanout)
+  │   └─ owlky.Publisher (for WS fanout)
   │
   ├─ "Call next middleware"
-  │   └─ ginject.Next (function injected in middleware)
+  │   └─ owlky.Next (function injected in middleware)
   │
   └─ "Redirect response"
-      └─ ginject.Redirect (function injected in handler)
+      └─ owlky.Redirect (function injected in handler)
 ```
 
 ---
@@ -278,7 +278,7 @@ Architecture Question
   │
   └─ "How do I test this application?"
       ├─ Create new app instance per test
-      ├─ Modules may be shared: every ginject.New() has its own routes, providers and layers
+      ├─ Modules may be shared: every owlky.New() has its own routes, providers and layers
       ├─ Mock providers via dependency injection
       ├─ Use httptest.Server for HTTP testing
       ├─ For WS: use real websocket connection or mock interface
@@ -342,8 +342,8 @@ Pattern Question
   │   └─ NO - csrf.CSRF uses Sec-Fetch-Site and Origin; its only option is TrustedOrigins
   │
   └─ "Should I assume request bodies are unlimited or add app.SetMaxBodySize(...)?"
-      └─ NO - 10 MiB cap by default; change it with app.Listen(port, &ginject.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)
-          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from ginject.Body()
+      └─ NO - 10 MiB cap by default; change it with app.Listen(port, &owlky.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)
+          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from owlky.Body()
 ```
 
 ---

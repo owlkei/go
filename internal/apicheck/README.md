@@ -1,6 +1,6 @@
 # API Check
 
-*API check is an internal tool of the `Ginject` repository. It lists the public API of the module in `api/ginject.txt` and fails when the code no longer matches that list, so every change to the surface users import is visible in review.*
+*API check is an internal tool of the `Owlky Go` repository. It lists the public API of the module in `api/owlky.txt` and fails when the code no longer matches that list, so every change to the surface users import is visible in review.*
 
 - [API Check](#api-check)
   - [Key Features](#key-features)
@@ -19,18 +19,18 @@
 ## Usage
 
 ```sh
-make api        # go run ./internal/apicheck -write: writes api/ginject.txt
+make api        # go run ./internal/apicheck -write: writes api/owlky.txt
 make api-check  # go run ./internal/apicheck: compares, prints the difference, exits 1 on any
 ```
 
-`make check` and the CI `lint` job run `make api-check` right after `go vet`. After an intended API change, run `make api` and commit `api/ginject.txt` with the change.
+`make check` and the CI `lint` job run `make api-check` right after `go vet`. After an intended API change, run `make api` and commit `api/owlky.txt` with the change.
 
 A difference prints one line per added (`+`) or removed (`-`) line:
 
 ```
-+ pkg ginject/log, func Foo()
-- pkg ginject/log, func Info(string)
-+ pkg ginject/log, func Info(string, int)
++ pkg owlky/log, func Foo()
+- pkg owlky/log, func Info(string)
++ pkg owlky/log, func Info(string, int)
 ```
 
 ## Public packages
@@ -45,17 +45,17 @@ The list holds the root (`.`), `exception`, `log`, and every package below `midd
 
 ## Line format
 
-The file is sorted, one line per name. A package is named by the last element of the module path plus its relative path (`ginject`, `ginject/log`). Types print with their package name, and parameter names are dropped.
+The file is sorted, one line per name. A package is named by the last element of the module path plus its relative path (`owlky`, `owlky/log`). Types print with their package name, and parameter names are dropped.
 
 | Line | Example |
 |---|---|
-| Constant | `pkg ginject/x, const Version untyped int = 2` |
-| Variable | `pkg ginject/x, var Default *x.Options` |
-| Function | `pkg ginject/log, func Info(string)` |
-| Type | `pkg ginject, type HTTPContext = *ctx.HTTPContext` (alias), `type Options struct`, `type Format int` |
-| Struct field | `pkg ginject/ctx, type HTTPContext struct, Request *http.Request embedded` |
-| Interface method | `pkg ginject/x, type Logger interface, Info(string, ...any)` |
-| Method | `pkg ginject/x, method (*x.T) Do() error` |
+| Constant | `pkg owlky/x, const Version untyped int = 2` |
+| Variable | `pkg owlky/x, var Default *x.Options` |
+| Function | `pkg owlky/log, func Info(string)` |
+| Type | `pkg owlky, type HTTPContext = *ctx.HTTPContext` (alias), `type Options struct`, `type Format int` |
+| Struct field | `pkg owlky/ctx, type HTTPContext struct, Request *http.Request embedded` |
+| Interface method | `pkg owlky/x, type Logger interface, Info(string, ...any)` |
+| Method | `pkg owlky/x, method (*x.T) Do() error` |
 | Reached field | `reach ctx.Ctx, field Request *http.Request` |
 | Reached method | `reach ctx.Ctx, method (*ctx.Ctx) Status(int) *ctx.Result` |
 

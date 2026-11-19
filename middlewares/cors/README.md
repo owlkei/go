@@ -37,12 +37,12 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/cors"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/cors"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(cors.CORS{
 		AllowOrigins:       []string{"https://app.example.com", "https://*.example.com"},
@@ -52,7 +52,7 @@ func main() {
 	})
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -155,7 +155,7 @@ call your app on a private network (a device, an intranet service).
 
 ### NewMiddleware
 ```go
-func (instance CORS) NewMiddleware() ginject.MiddlewareFn
+func (instance CORS) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates and compiles the options once; the framework calls it at `Create()`. It panics with
@@ -167,10 +167,10 @@ token.
 
 ### Use
 ```go
-func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `CORS` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `CORS` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules

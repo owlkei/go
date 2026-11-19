@@ -358,10 +358,10 @@ owned by the caller (one per pooled context). `Versioning` is read-only after `E
   `ToJSON`, `Group` and `Remove` tests are deleted), `versioning/versioning_test.go`.
 - Docs: `README.md` in `internal/ds`, `routing`, `versioning` (pattern syntax, precedence table,
   limits, reserved characters, "not safe to register while serving", performance notes O1-O5 and H1,
-  benchmark table). `.ginject/routing-system.md` §2-4 describes regexp matching, `:id` syntax,
+  benchmark table). `.owlky/routing-system.md` §2-4 describes regexp matching, `:id` syntax,
   conflict detection between parameter routes and a `param["*"]` capture that do not exist: rewrite
   from this design. `CLAUDE.md` › Bootstrap-time Error Convention: add `"invalid route: ..."`
-  (`routing/router.go`). `.ginject/package-reference.md`, `metadata-performance.json`.
+  (`routing/router.go`). `.owlky/package-reference.md`, `metadata-performance.json`.
 - Found while reading, owned by other designs: `ctx/http_param.go:15` indexes `ParamValues` without
   a length check (0003; R5 makes it safe); `core/module.go:347` registers routes from a map
   iteration (roadmap 0003; T10 removes the visible effect); `PatternToMethodRouteVersion` returns

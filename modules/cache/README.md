@@ -1,6 +1,6 @@
 # Cache Module
 
-*Cache module is a part of the `Ginject` framework. It gives every provider and controller a shared key-value cache with expiry and an atomic counter, backed by a bounded in-memory store by default and by any backend you write.*
+*Cache module is a part of the `Owlky Go` framework. It gives every provider and controller a shared key-value cache with expiry and an atomic counter, backed by a bounded in-memory store by default and by any backend you write.*
 
 - [Cache Module](#cache-module)
   - [Key Features](#key-features)
@@ -44,16 +44,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/cache"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/cache"
 )
 
 type VisitController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Cache cache.CacheService
 }
 
-func (instance VisitController) NewController() ginject.Controller {
+func (instance VisitController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -66,9 +66,9 @@ func (instance VisitController) READ_visits() map[string]int64 {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(cache.Register(nil)).
 			Controllers(VisitController{}).
 			Build(),
@@ -382,24 +382,24 @@ default memory cache belongs in `Imports`.
 A backend that connects to a server (Redis, Memcached) should connect in a module factory that
 returns `Register`'s module. List that factory in `Imports` to stop the boot when the server is
 down, or in `AsyncImports` to serve at once: the routes that inject `CacheService` answer `503`
-until the factory returns. Retry transient errors with `ginject.Retry` and the factory's `ctx`;
+until the factory returns. Retry transient errors with `owlky.Retry` and the factory's `ctx`;
 return a bad address at once.
 
 ```go
-func NewCacheModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+func NewCacheModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
 	addr, _ := configService.Get("REDIS_ADDR").(string)
 	backend, err := newRedisBackend(addr)
 	if err != nil {
 		return nil, err
 	}
-	err = ginject.Retry(ctx, nil, backend.Ping)
+	err = owlky.Retry(ctx, nil, backend.Ping)
 	if err != nil {
 		return nil, err
 	}
 	return cache.Register(&cache.CacheModuleOptions{IsGlobal: true, Backend: backend}), nil
 }
 
-var CacheModule = ginject.ModuleBuilder().
+var CacheModule = owlky.ModuleBuilder().
 	AsyncImports(NewCacheModule).
 	Controllers(VisitController{}).
 	Build()

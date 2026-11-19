@@ -12,7 +12,7 @@ from here.
    auth, and drives the next roadmaps.
 4. Authentication and authorization (sessions for SSR, tokens for REST, roles and permissions as
    guards).
-5. Storage: adapters over existing databases (SQLite, Postgres), not an engine of our own; Ginject
+5. Storage: adapters over existing databases (SQLite, Postgres), not an engine of our own; Owlky Go
    adds connections, transactions, migrations, pool bounds, the circuit breaker, trace and devtools.
 6. HTTP client (timeouts, bounded retries, circuit breaker).
 7. 0.x release once the court booking app runs for real.
@@ -20,9 +20,9 @@ from here.
 
 ## Rebrand to Owlky Go (decided 2026-11-19, before the security roadmap)
 
-Ginject and Owlky become one brand, Owlky, with independent products: **Owlky UI** (the component
+Ginject (this framework's old name) and Owlky become one brand, Owlky, with independent products: **Owlky UI** (the component
 library) and **Owlky Go** (this framework; "Server" was dropped: it reads like VPS hosting); later Owlky CLI, Devtools, SDK and Studio. "Ginject"
-reads as a plugin of Gin, and one brand shares owlky.com, accounts, MCP and the devtools platform.
+read as a plugin of Gin, and one brand shares owlky.com, accounts, MCP and the devtools platform.
 Map: https://claude.ai/artifact/58h7inTZEi2qboPG41i1f1 (private to the owner).
 
 - **Import path:** `go.owlky.com/owlky`, package `owlky` (`owlky.New()`, `owlky.Module`); a vanity path:
@@ -35,11 +35,10 @@ Map: https://claude.ai/artifact/58h7inTZEi2qboPG41i1f1 (private to the owner).
   `dangduoc08/ui`) and the `go-import` tag points there; once the org name is free, move them to
   `owlky/go` and `owlky/ui` and change that one tag (no import changes for users). Nothing is published
   yet, so nobody depends on the interim location.
-- **Rename in this repository:** `go.mod` and every import; package `ginject` → `owlky`; `api/ginject.txt`;
-  `.ginject/`; the `ginject-*` agents and skills; CLAUDE.md, every README and sample; log and panic
-  texts that say Ginject; planned env names (`GINJECT_ENV` → `OWLKY_ENV`). Its own roadmap, mostly
-  mechanical, guarded by `make check`.
-- **Independence:** UI works with any backend, Server with any frontend or JSON only; they meet at the
+- **Rename in this repository:** done by roadmap 0010 (module, package, API file, knowledge base,
+  agents `go-*`, every document). The planned mode switch is named `OWLKY_ENV` for now; its final
+  name is decided with "Less configuration in `main`".
+- **Independence:** UI works with any backend, Owlky Go with any frontend or JSON only; they meet at the
   `data-ok-*` markup, never import each other. owlky.com is the one shared platform.
 - **Devtools:** the collector stays here (`internal/devtool`, `EnableDevtool`); the interface lives at
   `owlky.com/devtools` (built with Owlky UI, source next to the website). The browser fetches the
@@ -49,11 +48,11 @@ Map: https://claude.ai/artifact/58h7inTZEi2qboPG41i1f1 (private to the owner).
 
 ## Own WebSocket implementation (after HTTP is production ready)
 
-Decided 2026-11-16: Ginject replaces `golang.org/x/net/websocket` (its last dependency; its own
+Decided 2026-11-16: Owlky Go replaces `golang.org/x/net/websocket` (its last dependency; its own
 documentation points to other packages) with an implementation of its own, once the HTTP roadmaps
 (0003 to 0005) are done. It becomes part of the WebSocket roadmap (0006).
 
-- **Why:** no dependency left in `go.mod`; hot-path control by the rules of `.ginject/conventions.md`
+- **Why:** no dependency left in `go.mod`; hot-path control by the rules of `.owlky/conventions.md`
   (buffer reuse, low allocations); backpressure, limits, trace and devtools hooks at the frame
   level; ownership of every line.
 - **Scope, phase 1 (RFC 6455):** the handshake through `http.Hijacker`; framing (masking, 7 / 16 /
@@ -76,7 +75,7 @@ connection scope.
 
 ## Public API surface (after roadmap 0005)
 
-Decided 2026-11-16 (Product principles in `CLAUDE.md`): Ginject exports about 607 functions, types and
+Decided 2026-11-16 (Product principles in `CLAUDE.md`): Owlky Go exports about 607 functions, types and
 methods outside `sample/` and `bench/`, most of them framework internals (`common.Construct`,
 `BuildHTTPInterceptMiddleware`, the `common.InsertedRoutes` global, `routing` internals,
 `ctx.BinderOf`, the devtool builder). A dedicated roadmap, after 0005 and before WebSocket: review
@@ -88,16 +87,16 @@ one job, and rewrite the docs around the resulting surface.
 
 ## MCP (with the devtools platform)
 
-Decided 2026-11-16: Ginject gets MCP support when development of the devtools platform starts, in
+Decided 2026-11-16: Owlky Go gets MCP support when development of the devtools platform starts, in
 three forms:
 
-1. **A developer MCP:** tools AI coding agents query to write correct Ginject code (concepts, the
+1. **A developer MCP:** tools AI coding agents query to write correct Owlky Go code (concepts, the
    route DSL, injectable types, examples, scaffolding of modules / controllers / guards, a handler
    signature check, explanations of bootstrap panics). Lives outside the framework's code.
 2. **A runtime MCP module** (for example `modules/mcp`, `app.EnableMCP()`): an app's routes exposed as
    MCP tools, with input schemas from the DTOs (the devtool snapshot already computes them), the
    Streamable HTTP transport, auth through guards, nothing exposed unless chosen, rate limits.
-   Implemented by Ginject itself (JSON-RPC over HTTP), to keep `go.mod` free of dependencies.
+   Implemented by Owlky Go itself (JSON-RPC over HTTP), to keep `go.mod` free of dependencies.
 3. **A devtools MCP:** AI agents read a running app through the devtools platform (routes, DI graph,
    traces of failed requests).
 
@@ -148,7 +147,7 @@ interceptor, not a middleware.
 
 ## Real app phase: court booking SaaS (after the 0.x alpha)
 
-Decided 2026-11-17: a real app built with Ginject + Owlky (no devtools needed yet), to validate the
+Decided 2026-11-17: a real app built with Owlky Go + Owlky (no devtools needed yet), to validate the
 framework from the user's side before 1.0. Idea: booking for pickleball / badminton / mini football
 courts (SaaS for court owners). Keep it small: one court type, one payment gateway, one 1 vCPU VPS.
 
@@ -164,11 +163,11 @@ courts (SaaS for court owners). Keep it small: one court type, one payment gatew
 
 ## Server-rendered HTML controllers (before the first release)
 
-Priority: one of the two focuses of Ginject (CLAUDE.md › Product principles). Planned right after
+Priority: one of the two focuses of Owlky Go (CLAUDE.md › Product principles). Planned right after
 the public API review (which must design the render route kind), before the 0.x alpha; the court
 booking app (real app phase) is built with it.
 
-Decided 2026-11-17: Ginject renders HTML pages on the server, so an app built with Owlky's
+Decided 2026-11-17: Owlky Go renders HTML pages on the server, so an app built with Owlky's
 framework-free HTML version needs no separate JSON API plus a React client (cheaper on small
 machines: no client bundle, no second app). Details are discussed when the roadmap starts. Known
 points to cover:
@@ -231,10 +230,10 @@ streaming. Needs its own design; today the README documents it as a known limit.
 
 Proposals the maintainer asked to keep for later (not decided):
 - **Built-in middleware order:** moved to "Security roadmap" below.
-- **One mode switch.** `GINJECT_ENV=development` turns on, together, the pretty log, template reload
+- **One mode switch.** `OWLKY_ENV=development` turns on, together, the pretty log, template reload
   from disk and the devtools; unset means production. Replaces per-feature switches
   (`IsReload`, the log format, the sample's `PAGES_DEV`).
-- **Enable from the controllers.** A `ginject.WS` controller opens `/ws` without `EnableWS` (the
+- **Enable from the controllers.** A `owlky.WS` controller opens `/ws` without `EnableWS` (the
   render side cannot do the same: `//go:embed` must stay in the app). Weigh against "one obvious way".
 - **`Listen()` without arguments** reads `PORT` (default 3000), as PaaS platforms expect.
 
@@ -242,27 +241,27 @@ Proposals the maintainer asked to keep for later (not decided):
 
 Layouts don't repeat HTML, but every page handler must still put the data its header and sidebar need
 (current user, active menu item) into its `View.Data`. Proposal: `RenderOptions.Layout func(c
-ginject.HTTPContext) any`, called once per render; the layout receives `.Layout` and `.Page` and places
+owlky.HTTPContext) any`, called once per render; the layout receives `.Layout` and `.Page` and places
 the page with `{{template "content" .Page}}`; `error.html` gets the same `.Layout`. Changes design
 0018's rule that page and layout share `.`. Belongs with the authentication roadmap (the current user).
 
-## Ginject CLI and editor tools (decided 2026-11-18)
+## Owlky Go CLI and editor tools (decided 2026-11-18)
 
-Ginject gets a command-line tool. Commands discussed so far:
-- **`ginject routes [packages]`**: the route table of an app (method, path, page or API, handler,
+Owlky Go gets a command-line tool. Commands discussed so far:
+- **`owlky routes [packages]`**: the route table of an app (method, path, page or API, handler,
   file and line, WebSocket events), computed with the runtime's own parser (`ParseFuncNameToURL`,
   `ParseWSFuncNameToEvent`), never a re-implementation. `--json` for tools; usable in CI to catch
   route conflicts or diff routes between branches.
-- **`ginject routes -w`** (optional, `go:generate`): writes a `// GET /path` comment above each
+- **`owlky routes -w`** (optional, `go:generate`): writes a `// GET /path` comment above each
   handler, with `-check` for CI. Only if routes in the source are wanted; the editor tool below is
   preferred because it never goes stale.
 - **VS Code extension**: a CodeLens or inlay hint above each handler with its method and path,
-  updated as the name is typed, fed by `ginject routes --json`. `gopls` has no custom CodeLens, so
+  updated as the name is typed, fed by `owlky routes --json`. `gopls` has no custom CodeLens, so
   an extension is the only way. JetBrains later, if needed.
-- **`ginject new`**: scaffolds a project (module, controller, provider; for SSR the `web/`
+- **`owlky new`**: scaffolds a project (module, controller, provider; for SSR the `web/`
   directory with `layout.html`, `error.html` and one page with its controller). The runtime never
   creates files (design 0018 amendment 1).
-- Later: the local devtools binary (`ginject devtools`) discussed for the devtools platform.
+- Later: the local devtools binary (`owlky devtools`) discussed for the devtools platform.
 
 ## Route DSL changes
 
@@ -356,14 +355,14 @@ Also in scope:
   middlewares after them. Today a wrong order (`proxy` after `hostcheck`) runs silently wrong. To decide
   together with the SSR auto-binding above.
 - **REST review again** after the API review (0007) and the SSR changes (R24 client text, `Vary: Accept`,
-  the asset and public routes): `ginject-security` audit as in roadmap 0005, report in `docs/review/`.
+  the asset and public routes): `go-security` audit as in roadmap 0005, report in `docs/review/`.
 - Found 2026-11-18 (pages by route, step 17): a file in `public/` whose name holds `{` or `*` becomes a
   route parameter or a wildcard, so a file name can widen what the public route matches. Refuse such
   names at `Create()` (or escape them) in the security roadmap.
-- **Injection review (raised by the maintainer, 2026-11-18).** Ginject has no database layer yet, so
+- **Injection review (raised by the maintainer, 2026-11-18).** Owlky Go has no database layer yet, so
   SQL injection is a rule for the storage roadmap: its API takes parameters only (placeholders through
   `database/sql`), never a query built by string concatenation, and offers no raw-string escape helper;
-  `gosec` (G201/G202, already used by `ginject-security` audits) runs in CI. No input-sanitizing
+  `gosec` (G201/G202, already used by `go-security` audits) runs in CI. No input-sanitizing
   "anti-injection" middleware: escaping belongs at the sink (SQL parameters, `html/template`, headers).
   Review every other sink in this roadmap: HTML (`html/template`, `template.HTML` in data), headers and
   redirects (CR/LF, open redirect), logs (control characters: escaped in all formats, verify Text),
@@ -380,7 +379,7 @@ Taken by roadmap 0008 (step 20, 2026-11-18: after its review, before its `make c
 
 ### Plan
 
-The rule is in `.ginject/conventions.md` › Tests › Files. Move every test into the `_test.go` of the
+The rule is in `.owlky/conventions.md` › Tests › Files. Move every test into the `_test.go` of the
 code file that implements it (`internal/core`: 14 `create_*_test.go` → `app_test.go` /
 `container_test.go`; `http_page_*_test.go` → `http_page_test.go`; `http_page_error_test.go` and
 `http_error_page_test.go` → `http_error_test.go`; root `surface_*_test.go` → `surface_test.go`; the same
@@ -396,8 +395,8 @@ count of tests and benchmarks per package is the same before and after (`go test
 ## Startup and dependency lifecycle (discussed 2026-11-18, first part of the storage roadmap)
 
 Verified on `402b10f`..HEAD (`internal/core/container.go` `callModuleFunc`, `scanGlobals`): a module
-factory (`func(deps...) ginject.Module`, passed to `Imports`) gets its parameters only from global
-providers (plus `log.Logger` and `ginject.Publisher`). A global from a static module is found whatever its
+factory (`func(deps...) owlky.Module`, passed to `Imports`) gets its parameters only from global
+providers (plus `log.Logger` and `owlky.Publisher`). A global from a static module is found whatever its
 position or depth; a provider of a non-global sibling module panics `can't resolve argument`; a global
 provided by a module that another factory returns is found only if that factory ran first (order of
 `Imports`). Factories and `OnInit` run sequentially with no deadline: a dependency that never answers
@@ -405,11 +404,11 @@ provided by a module that another factory returns is found only if that factory 
 
 Agreed with the owner (design with the storage roadmap):
 
-1. **Names:** **Module** (`ModuleBuilder()…Build()`) and **Module factory** (`func(deps...) ginject.Module`).
+1. **Names:** **Module** (`ModuleBuilder()…Build()`) and **Module factory** (`func(deps...) owlky.Module`).
    **Global** is a property of either (`IsGlobal`) and **async** is how it is imported (`AsyncImports`,
    item 5): neither is a kind. `Register…` is only a function name a module author picks. Rename the
    internal `isDynamicModule` / `dynamicModules` / `callModuleFunc`; one wording in README, CLAUDE.md and
-   `.ginject/`.
+   `.owlky/`.
 2. **Factory scope:** a factory resolves providers from its siblings in the same `Imports`, not only
    globals.
 3. **No order dependency:** factories run in dependency order, whatever their position in `Imports`; a
@@ -460,7 +459,7 @@ Agreed with the owner (design with the storage roadmap):
      `publish`;
    - **docs:** this lifecycle gets a detailed section in the README (a timeline of `Create()`, the
      background and shutdown; the states; what runs when; the two refusals above; the difference from
-     NestJS), with runnable examples, plus `.ginject/` and CLAUDE.md.
+     NestJS), with runnable examples, plus `.owlky/` and CLAUDE.md.
 6. **Readiness propagates through the module graph** (imports and injected providers): a module is ready
    only when every async module it depends on is ready, and a failure propagates (`sql` failed → `user`
    → `booking` not ready; a `booking` that only needs `redis` works). Per module first; per controller
@@ -473,7 +472,7 @@ Agreed with the owner (design with the storage roadmap):
 
 Nice to have, later (with the health check and the circuit breaker):
 
-- **Health check:** `app.EnableHealth(nil | &ginject.HealthOptions{…})`; `/health/live` always `200`
+- **Health check:** `app.EnableHealth(nil | &owlky.HealthOptions{…})`; `/health/live` always `200`
   (never checks a dependency); `/health/ready` `200` when the static modules are up, `503` while draining
   after SIGTERM; a minimal body (`status`, `degraded`), per-module detail opt-in, never error text (R24);
   answered before the middlewares and guards except `proxy` (goes into the security roadmap as a

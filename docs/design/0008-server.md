@@ -53,7 +53,7 @@ Exported additions and why users need each:
 | `(*App).Serve` | a listener the user made: a loopback or Unix socket address, systemd socket activation, a test's `127.0.0.1:0` |
 
 `H2C` keeps the name of the Decision although new option booleans start with `Is`
-(`.ginject/conventions.md`); it is an acronym, not an adjective.
+(`.owlky/conventions.md`); it is an acronym, not an adjective.
 
 Changed (**breaking**): `Listen(port int) error` → `Listen(port int, opts *ServerOptions) error`.
 `Stop()` now also stops a running server (G6).
@@ -89,9 +89,9 @@ func (app *App) newServer(opts ServerOptions, isTLS bool) *http.Server
   the cap of design 0007 B1 for every request served by this app from the moment the call starts
   serving. `ServeHTTP` used without a serving call keeps 10 MiB.
 - **O4** `Listen` with a non-nil `TLSConfig` returns
-  `ginject: TLSConfig is set: use ListenTLS, or Serve with your listener` and does not bind (it would
+  `owlky: TLSConfig is set: use ListenTLS, or Serve with your listener` and does not bind (it would
   otherwise serve plaintext by accident).
-- **O5** `ListenTLS` with `H2C: true` returns `ginject: IsH2C applies to connections without TLS` and does
+- **O5** `ListenTLS` with `H2C: true` returns `owlky: IsH2C applies to connections without TLS` and does
   not bind. `Serve` with both `TLSConfig` and `H2C` returns the same error.
 - **O6** The options struct is read once, when the call starts; changing it later has no effect.
   A `TLSConfig` is cloned (`Clone()`), never modified.
@@ -100,13 +100,13 @@ func (app *App) newServer(opts ServerOptions, isTLS bool) *http.Server
 - **S1** `Listen(port, opts)` listens on TCP `:<port>` (every interface) and serves HTTP/1.1.
   `ListenTLS` does the same with TLS. `Serve(l, opts)` serves on `l`: with TLS when
   `opts.TLSConfig` is set, plain otherwise. All three block until the server has stopped.
-- **S2** A serving call before `Create` returns `ginject: Create must be called before serving` (no
-  panic). A second serving call while the app is serving returns `ginject: app is already serving`.
-  A serving call after the app has stopped returns `ginject: app is stopped`. In all three, a listener
+- **S2** A serving call before `Create` returns `owlky: Create must be called before serving` (no
+  panic). A second serving call while the app is serving returns `owlky: app is already serving`.
+  A serving call after the app has stopped returns `owlky: app is stopped`. In all three, a listener
   passed to `Serve` is left open and nothing is logged.
 - **S3** The address is bound before anything is logged about it: a bind failure (port in use, port
   out of range, no permission) is returned as `net.Listen`'s error, wrapped as
-  `ginject: listen on :<port>: <err>`; no startup line, no banner, no hook runs, and the app can be
+  `owlky: listen on :<port>: <err>`; no startup line, no banner, no hook runs, and the app can be
   served again.
 - **S4** After a successful bind the app logs, through its logger: one `InstanceLoader` line per
   named module, one `RouteExplorer` line per route (sorted), one `WebSocketEvent` line per event (as
@@ -115,9 +115,9 @@ func (app *App) newServer(opts ServerOptions, isTLS bool) *http.Server
   bound one (`Listen(0, nil)` logs the port the system chose). The colored access-URL banner is
   printed only when stdout is a terminal.
 - **S5** `ListenTLS(port, certFile, keyFile, opts)`: with both file names, the pair is loaded before
-  binding; a load error is returned as `ginject: load TLS certificate: <err>`. With both empty,
+  binding; a load error is returned as `owlky: load TLS certificate: <err>`. With both empty,
   `opts.TLSConfig` must supply certificates (`Certificates`, `GetCertificate` or
-  `GetConfigForClient`); otherwise the error is `ginject: ListenTLS needs certFile and keyFile, or a
+  `GetConfigForClient`); otherwise the error is `owlky: ListenTLS needs certFile and keyFile, or a
   TLSConfig with certificates`. Exactly one empty name is the same error. `Serve` with a `TLSConfig`
   that supplies no certificate returns the same error.
 - **S6** The server's own error output (`http.Server.ErrorLog`) goes to the app's logger:
@@ -171,7 +171,7 @@ dependency is added**: `golang.org/x/net/http2/h2c` is not needed.
   hooks run only after the last running request has returned, or after G4.
 - **G4** When `ShutdownTimeout` passes with requests still running, their connections are closed
   (`http.Server.Close`; each request's `Context()` is cancelled), the hooks run, and the serving
-  call returns `ginject: shutdown timed out after <timeout>` (no count of requests: counting them would
+  call returns `owlky: shutdown timed out after <timeout>` (no count of requests: counting them would
   cost two atomic operations on every request).
 - **G5** After the first signal the app stops intercepting `SIGINT` and `SIGTERM`: a second signal
   terminates the process the default way, even during the drain or inside a hook.
@@ -185,7 +185,7 @@ dependency is added**: `golang.org/x/net/http2/h2c` is not needed.
   remaining hooks still run. Hooks have no timeout of their own (G5 is the way out).
 - **G8** Return value: `nil` after a shutdown that drained in time (signal or `Stop`); G4's error
   after a timeout; when the server stops by itself (the listener fails), the hooks run and the
-  error is returned as `ginject: serve: <err>`.
+  error is returned as `owlky: serve: <err>`.
 - **G9** After a serving call has returned from a shutdown the app is stopped: it cannot serve again
   (S2). `ServeHTTP` still answers (the user's own server may still be draining).
 - **G10** WebSocket connections are hijacked, so `net/http` neither waits for them nor closes them;
@@ -277,7 +277,7 @@ per connection).
   h2c), "Timeouts and limits" (the table of T1 and T2's recipe), "Deploying" (run behind a proxy
   or with `ListenTLS`; Kubernetes: add a `preStop` sleep so the endpoint is removed before SIGTERM;
   set the proxy's idle timeout below 75 s) and "Advanced: your own server" (A1).
-  `.ginject/startup-lifecycle-analysis.md` and `.ginject/package-reference.md` in step 5.
+  `.owlky/startup-lifecycle-analysis.md` and `.owlky/package-reference.md` in step 5.
 
 ## Test plan
 Internal tests in `core/server_test.go`. Servers run on `127.0.0.1:0` through `Serve` (or `Listen`

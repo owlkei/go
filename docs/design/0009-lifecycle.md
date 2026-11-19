@@ -258,7 +258,7 @@ slower by more than its noise, and they no longer need to reset package state be
   `fn.go` (`Construct` removed; `ParseFuncNameToURL` for V1), the seven `InjectProvidersInto…` methods.
 - `devtool/devtool_builder.go`: D1. `log/log.go`, `log/log_mask.go`: G3, G5 (design 0010 reviews the
   rest of `log`).
-- Callers of the logger API: `sample/main.go`, `bench/ginject.go`, the root `README.md`, package
+- Callers of the logger API: `sample/main.go`, `bench/owlky.go`, the root `README.md`, package
   READMEs that show `UseLogger`. Built-in modules need no change (they set `IsGlobal` and `OnInit`
   on the module they build).
 - Tests: the 62 calls of `resetModuleGlobals()` disappear; tests that read `Module`'s removed fields
@@ -266,8 +266,8 @@ slower by more than its noise, and they no longer need to reset package state be
 - Docs: `core/README.md` (Create, hooks and their order, two apps in one process, `SetLogger` /
   `Logger`, the misuse panics), `common/README.md` (`SERVE_x_ANY`, removed registries and
   `Construct`), `log` README (written in step 4), `CLAUDE.md` (the `invalid app:` category, `SERVE`),
-  `.ginject/modules-and-providers.md`, `.ginject/startup-lifecycle-analysis.md`,
-  `.ginject/routing-system.md` in step 5.
+  `.owlky/modules-and-providers.md`, `.owlky/startup-lifecycle-analysis.md`,
+  `.owlky/routing-system.md` in step 5.
 - README content for "Two apps in one process": each `core.New()` is independent; share a module
   value freely; a resource created outside the framework (a cache backend built in a package-level
   `Register` call) is shared because the user created it once.

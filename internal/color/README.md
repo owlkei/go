@@ -11,7 +11,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Ginject module can import it.
+The package is internal: only code in the Owlky Go module can import it.
 
 ## Usage
 
@@ -21,7 +21,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/internal/color"
+	"go.owlky.com/owlky/internal/color"
 )
 
 func main() {

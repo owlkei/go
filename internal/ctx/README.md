@@ -1,8 +1,8 @@
 # Ctx
 
-Internal package: applications use `ginject.HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel` and `DataFile` instead.
+Internal package: applications use `owlky.HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel` and `DataFile` instead.
 
-*Package `ctx` holds the per-request context of `Ginject`: it reads the request (query, body, form, files, route parameters, headers), binds it into structs and writes the response, for HTTP and WebSocket.*
+*Package `ctx` holds the per-request context of `Owlky Go`: it reads the request (query, body, form, files, route parameters, headers), binds it into structs and writes the response, for HTTP and WebSocket.*
 
 - [Ctx](#ctx)
   - [Key Features](#key-features)
@@ -60,9 +60,9 @@ Handlers receive the context or the request data types through injection:
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
-	"github.com/dangduoc08/ginject/internal/ctx"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/ctx"
 )
 
 type SearchDTO struct {
@@ -153,7 +153,7 @@ defer ctx.HTTPReset(c)
 
 ### Framework hooks
 
-What `core` needs from a context and a handler must not touch is a package-level function, not a method: a method would stay reachable through the root alias `ginject.HTTPContext`, a function of an `internal/` package is not. Each one is a leaf the compiler inlines, so it costs what the field access it replaces cost.
+What `core` needs from a context and a handler must not touch is a package-level function, not a method: a method would stay reachable through the root alias `owlky.HTTPContext`, a function of an `internal/` package is not. Each one is a leaf the compiler inlines, so it costs what the field access it replaces cost.
 
 | Function | Does |
 |----------|------|
@@ -449,7 +449,7 @@ dto, fls := b.Struct(map[string]any{"name": "joe"})
 #### Rules
 - Concurrent calls for one type all return the one stored `*Binder`.
 - Self-referential types (`Children []Node`, `Next *Node`) build without recursing forever and bind to any depth the data holds.
-- `ErrBindTarget.Error()` is `ginject: bind target must be a struct`.
+- `ErrBindTarget.Error()` is `owlky: bind target must be a struct`.
 
 ### Binder methods
 
@@ -541,7 +541,7 @@ An uploaded file bound by `File.Bind`.
 | `Redirect` | `func(string)`. |
 | `RequestID` | `"X-Request-Id"`, the response header name `core` writes the ID under (next to `Traceparent`). |
 | `TagBind` | `"bind"`. |
-| `ErrBindTarget` | `errors.New("ginject: bind target must be a struct")`. |
+| `ErrBindTarget` | `errors.New("owlky: bind target must be a struct")`. |
 
 ## Performance notes
 

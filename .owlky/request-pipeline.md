@@ -146,7 +146,7 @@ template in `HTTPLayer.Template`) runs the same boxes. The differences:
 - Trace scope (design 0011, `internal/tracecontext`): the request ID is always ours; one valid
   `traceparent` continues the trace ID, anything else is ignored silently. Middleware, guards,
   interceptors, filters and the handler read the same `*Scope` (`r.Context()` / `c.Context()`).
-  Outbound calls continue the trace through `ginject.TraceTransport(base)` on an `http.Client` and a request
+  Outbound calls continue the trace through `owlky.TraceTransport(base)` on an `http.Client` and a request
   built with `c.Context()`: it sends the scope's own `traceparent` (design 0013).
 - `HTTP.handleRequest` (`internal/core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
   while middlewares run (a panic there is the HTTP layer's) and the route's filter list from the
@@ -181,7 +181,7 @@ Bind calls must pass a **struct value implementing `Use`** — the framework res
 ```go
 type LogMiddleware struct{}
 
-func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
     next()
 }
 ```
@@ -206,8 +206,8 @@ app.BindGlobalMiddlewares(LogMiddleware{})
 **Module-Scoped** (applies to this module's routes):
 ```go
 type UserController struct {
-    ginject.HTTP
-    ginject.Middleware
+    owlky.HTTP
+    owlky.Middleware
 }
 
 func (c UserController) NewController() Controller {
@@ -292,13 +292,13 @@ A guard is a value — bind a struct implementing `CanActivate`, not a bare func
 ```go
 type AuthGuard struct{}
 
-func (g AuthGuard) CanActivate(httpCtx ginject.HTTPContext) bool {
+func (g AuthGuard) CanActivate(httpCtx owlky.HTTPContext) bool {
     return isAuthorized(httpCtx)
 }
 
 type UserController struct {
-    ginject.HTTP
-    ginject.Guard
+    owlky.HTTP
+    owlky.Guard
 }
 
 func (c UserController) NewController() Controller {
@@ -367,7 +367,7 @@ An interceptor is a value — bind a struct implementing `Intercept`, not a bare
 ```go
 type TimestampInterceptor struct{}
 
-func (i TimestampInterceptor) Intercept(httpCtx ginject.HTTPContext, agg ginject.Aggregation) any {
+func (i TimestampInterceptor) Intercept(httpCtx owlky.HTTPContext, agg owlky.Aggregation) any {
     return agg.Pipe(
         agg.Transform(func(data any) any {
             return map[string]any{"data": data, "timestamp": time.Now()}
@@ -376,8 +376,8 @@ func (i TimestampInterceptor) Intercept(httpCtx ginject.HTTPContext, agg ginject
 }
 
 type UserController struct {
-    ginject.HTTP
-    ginject.Interceptor
+    owlky.HTTP
+    owlky.Interceptor
 }
 
 func (c UserController) NewController() Controller {
@@ -462,7 +462,7 @@ An exception filter is `any` — bind a struct implementing `Catch(*ctx.HTTPCont
 ```go
 type UserErrorFilter struct{}
 
-func (f UserErrorFilter) Catch(httpCtx ginject.HTTPContext, ex *exception.Exception) {
+func (f UserErrorFilter) Catch(httpCtx owlky.HTTPContext, ex *exception.Exception) {
     httpCtx.Status(ex.Code())
     httpCtx.JSON(map[string]any{
         "error": ex.Message(),
@@ -470,8 +470,8 @@ func (f UserErrorFilter) Catch(httpCtx ginject.HTTPContext, ex *exception.Except
 }
 
 type UserController struct {
-    ginject.HTTP
-    ginject.ExceptionFilter
+    owlky.HTTP
+    owlky.ExceptionFilter
 }
 
 func (c UserController) NewController() Controller {

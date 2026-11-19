@@ -25,7 +25,7 @@ the table and **wait**. On approval set `Status: Approved` and continue with `de
 
 ## `design <roadmap>`: one architect pass, one approval
 
-Run `ginject-architect` **once** for all the steps that need a design (split into two or three calls
+Run `go-architect` **once** for all the steps that need a design (split into two or three calls
 only when the steps share no code). Give it the roadmap file and its Decisions section, so it does not
 reopen them. Model: the rules of `/feature` step 1, applied to the whole batch (`fable` if any step is
 complex or the weekly reset is near, else `opus`; fall back to `opus`).
@@ -44,9 +44,9 @@ Before the first step:
 
 Set `Running`. Take steps in dependency order; for each, set `doing`, then:
 
-- **`tdd`:** `ginject-tester` (red), then `ginject-builder` (green), with the checks of `/feature`
+- **`tdd`:** `go-tester` (red), then `go-builder` (green), with the checks of `/feature`
   steps 3 and 4 (only test files changed; tests untouched by the builder).
-- **`light`:** do it yourself in the main session, tests included, or with one `ginject-builder` call
+- **`light`:** do it yourself in the main session, tests included, or with one `go-builder` call
   when it needs a lot of reading.
 
 A step is `done` when its "Done when" holds and the touched packages pass `go vet`, `golangci-lint`
@@ -55,7 +55,7 @@ and `go test -race`. Update its state in the file right away.
 **You coordinate failures; you never stop to ask.**
 
 - A failing builder gets one more attempt with the failure output. After that, call
-  `ginject-architect` with both reports: it decides whether the design, the tests or the code is wrong.
+  `go-architect` with both reports: it decides whether the design, the tests or the code is wrong.
   Apply its decision (a revised design, tests redone through the tester, or code through the builder)
   and write one Log line: what changed against the approved design and why.
 - A step that still cannot be finished is `blocked` with its reason in the Log. Continue with every
@@ -63,7 +63,7 @@ and `go test -race`. Update its state in the file right away.
 
 When every step is `done` or `blocked`:
 
-1. `ginject-reviewer` **once**, over the whole working tree against the roadmap and its designs. Fix
+1. `go-reviewer` **once**, over the whole working tree against the roadmap and its designs. Fix
    critical and high findings (code through the builder or yourself, tests through the tester).
 2. `make check`.
 3. Set `Done` (or leave `Running` if steps are blocked) and report: steps and states, deviations from

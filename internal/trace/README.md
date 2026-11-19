@@ -1,6 +1,6 @@
 # Trace
 
-Internal package: applications use `ginject.TraceTransport` and `log.Logger.From(ctx)` instead.
+Internal package: applications use `owlky.TraceTransport` and `log.Logger.From(ctx)` instead.
 
 *Package `trace` holds the trace events the framework emits for each request and WebSocket message, and the `Tracer` that delivers them to listeners such as the access log.*
 
@@ -28,7 +28,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/dangduoc08/ginject/internal/trace"
+	"go.owlky.com/owlky/internal/trace"
 )
 
 func main() {
@@ -154,7 +154,7 @@ defer stop()
 
 A service that calls another service over HTTP continues the incoming request's trace by wrapping its
 `http.RoundTripper` with `Transport`. Any service that reads W3C Trace Context then joins your trace.
-A Ginject service you call logs the same `trace_id`, and its `upstream` is your request ID. To
+An Owlky Go service you call logs the same `trace_id`, and its `upstream` is your request ID. To
 search the logs of a whole chain, see [Find the logs of a request](../../log/README.md#find-the-logs-of-a-request).
 
 `Transport` is not related to the `TransportHTTP` and `TransportWS` values of `Event.Transport`:
@@ -195,7 +195,7 @@ func (instance UserController) READ_profile(c *ctx.HTTPContext) any {
 }
 ```
 
-Build the request with the context Ginject gives you (`c.Context()` of an HTTP or WebSocket context,
+Build the request with the context Owlky Go gives you (`c.Context()` of an HTTP or WebSocket context,
 or any context derived from it with `context.WithTimeout`, `WithCancel` or `WithValue`). The context
 keeps working after the request ended, for example in a goroutine you started from the handler.
 
@@ -229,7 +229,7 @@ keeps working after the request ended, for example in a goroutine you started fr
   Treat the trace ID as a correlation hint, never as proof of where a request came from, and
   don't let it decide authorization, billing or sampling quotas. Your request ID is always your
   own.
-- The value is built only from IDs that Ginject generated or validated (lower-case hex), so it can't
+- The value is built only from IDs that Owlky Go generated or validated (lower-case hex), so it can't
   inject a header.
 
 ## Performance notes

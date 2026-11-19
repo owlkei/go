@@ -40,7 +40,7 @@ Decision). Observed, not changed here: the WS read loop still uses `common.Norma
 non-exception panic in a WS handler still sends its text to the client (roadmap 0005).
 
 ## Request lifecycle (the spec)
-Step 5 copies this section to `.ginject/request-pipeline.md` as written.
+Step 5 copies this section to `.owlky/request-pipeline.md` as written.
 
 ```
 request
@@ -385,7 +385,7 @@ design 0004).
   test (events of interceptors that no longer run), `common`'s tests of the removed functions.
 - Docs: `core/README.md` (ServeHTTP, a new "Errors in middleware" section, performance notes and
   benchmarks), `common/README.md` (removed helpers), `exception/README.md` (H1), `ctx/README.md`
-  (H3), `.ginject/request-pipeline.md` (the spec above, step 5), `CLAUDE.md` › Request Pipeline (the
+  (H3), `.owlky/request-pipeline.md` (the spec above, step 5), `CLAUDE.md` › Request Pipeline (the
   order line), root `README.md` where it shows `Cannot GET`.
 - README "Errors in middleware" (content): a middleware's error never reaches exception filters; an
   exception answers with its code and message, anything else with a fixed 500 and a log line; to

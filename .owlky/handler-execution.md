@@ -220,13 +220,13 @@ func (c UserController) READ(us UserService) {}
 
 // WRONG: field type differs from the provider type
 type UserController struct {
-    ginject.HTTP
+    owlky.HTTP
     UserService *UserService // provider is UserService: unresolved
 }
 
 // RIGHT: same type, as a field
 type UserController struct {
-    ginject.HTTP
+    owlky.HTTP
     UserService UserService
 }
 ```

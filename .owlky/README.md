@@ -1,4 +1,4 @@
-# Ginject AI Knowledge Base
+# Owlky Go AI Knowledge Base
 
 **Comprehensive, machine-optimized framework documentation for AI code generation agents.**
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory (`.ginject/`) contains complete AI-friendly documentation of the Ginject framework, optimized for machine understanding and code generation.
+This directory (`.owlky/`) contains complete AI-friendly documentation of the Owlky Go framework, optimized for machine understanding and code generation.
 
 **Key Characteristics**:
 - ✅ **Complete Coverage**: 20+ packages, 100+ public APIs, all core concepts
@@ -32,7 +32,7 @@ This directory (`.ginject/`) contains complete AI-friendly documentation of the 
 
 | File | Purpose | Read If |
 |------|---------|---------|
-| **architecture-core-concepts.md** | Foundation concepts | Want to understand how Ginject works |
+| **architecture-core-concepts.md** | Foundation concepts | Want to understand how Owlky Go works |
 | **startup-lifecycle-analysis.md** | Startup sequence and race conditions | Debugging startup issues or async initialization |
 | **request-pipeline.md** | Request lifecycle and pipeline | Implementing middleware, guards, or filters |
 | **handler-execution.md** | Handler invocation and DI | Need to understand parameter injection |
@@ -75,7 +75,7 @@ This directory (`.ginject/`) contains complete AI-friendly documentation of the 
 ### Concurrency
 - HTTP: Each request is independent (thread-safe)
 - WebSocket: Each connection is single-threaded (2 goroutines: read + write)
-- App state: read-only after app.Create(); every `ginject.New()` is independent
+- App state: read-only after app.Create(); every `owlky.New()` is independent
 
 ### Performance
 - A static route through `ServeHTTP` is about 0.6 µs and 6 allocations (`internal/core/README.md` › Benchmarks)
@@ -199,11 +199,11 @@ app.Create(module)
 **Example**:
 ```go
 type UserController struct {
-    ginject.HTTP
+    owlky.HTTP
     UserService UserService
 }
 
-func (instance UserController) READ_users_BY_id(param ginject.Param) string {
+func (instance UserController) READ_users_BY_id(param owlky.Param) string {
     return instance.UserService.GetUser(param.Get("id"))
 }
 ```
@@ -288,7 +288,7 @@ Measured numbers: `internal/core/README.md` › Benchmarks.
 - Global memorybroker thread-safe (single RWMutex, no sharding)
 
 **App State**:
-- Each `ginject.New()` has its own (no package-level registry)
+- Each `owlky.New()` has its own (no package-level registry)
 - Read-only after app.Create()
 
 ---
@@ -357,11 +357,11 @@ Reference: request-pipeline.md#3-guard-layer (authorization)
 ## Maintenance & Updates
 
 **Last Updated**: 2026-11-16 (roadmap 0003: server, lifecycle, per-app container, `trace.Tracer`; see INDEX.md › Version & Updates)  
-**Coverage**: Ginject pre-v1.0  
+**Coverage**: Owlky Go pre-v1.0  
 **Source**: Complete source code analysis (direct reads of `.go` files, not a separate roadmap doc — `ARCHITECTURE_REVIEW_AND_ROADMAP.md` referenced by earlier versions of this doc does not exist in this repository)
 
 **To Update This Knowledge Base**:
-1. Verify against current source code in /Users/tadangduoc/Projects/ginject
+1. Verify against current source code in /Users/tadangduoc/Projects/owlky
 2. Update affected markdown files
 3. Update corresponding metadata-*.json
 4. Update this README with new files
@@ -391,11 +391,11 @@ Reference: request-pipeline.md#3-guard-layer (authorization)
 
 ## License & Attribution
 
-This knowledge base is derived from the Ginject framework source code.
+This knowledge base is derived from the Owlky Go framework source code.
 
-**Framework**: Ginject (NestJS-inspired dependency injection web framework for Go)  
+**Framework**: Owlky Go (NestJS-inspired dependency injection web framework for Go)  
 **Author**: dangduoc08  
-**Repository**: https://github.com/dangduoc08/ginject  
+**Repository**: https://github.com/dangduoc08/go  
 **Documentation**: AI-Optimized (July 2026)
 
 ---
@@ -409,5 +409,5 @@ This knowledge base is derived from the Ginject framework source code.
 
 ---
 
-**This is your guide to building with Ginject. Trust it, use it, refer to it.**
+**This is your guide to building with Owlky Go. Trust it, use it, refer to it.**
 

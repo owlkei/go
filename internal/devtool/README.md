@@ -22,8 +22,8 @@ You don't call this package yourself: `core` builds the snapshot at `Create()` w
 package main
 
 import (
-	"github.com/dangduoc08/ginject/internal/common"
-	"github.com/dangduoc08/ginject/internal/core"
+	"go.owlky.com/owlky/internal/common"
+	"go.owlky.com/owlky/internal/core"
 )
 
 type UserController struct {
@@ -126,7 +126,7 @@ module, in discovery order:
 | `State` (`state`) | `string` | `pending`, `ready` or `failed` |
 | `IsAsync` (`is_async`) | `bool` | An `AsyncImports` entry, a module of its unit, or a module not ready at `Create` |
 | `WaitingFor` (`waiting_for`) | `[]string` | While pending: the entries it waits for, or `can't resolve <T>` items |
-| `Attempts` (`attempts`) | `int` | Failed `ginject.Retry` attempts of the entry |
+| `Attempts` (`attempts`) | `int` | Failed `owlky.Retry` attempts of the entry |
 | `LastError` (`last_error`) | `string` | The last attempt's error, or the cause once failed |
 | `ReadyAfterMs` (`ready_after_ms`) | `int64` | Milliseconds from the start of `Create` to ready |
 

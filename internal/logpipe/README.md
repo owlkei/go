@@ -25,7 +25,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Ginject module can import it. `log` encodes records and
+The package is internal: only code in the Owlky Go module can import it. `log` encodes records and
 writes them here; `core` switches the stdout sink to asynchronous while an app serves and flushes it
 at shutdown; `accesslog` passes its line to the built-in logger as an `AccessLine`.
 
@@ -45,7 +45,7 @@ package main
 import (
 	"os"
 
-	"github.com/dangduoc08/ginject/internal/logpipe"
+	"go.owlky.com/owlky/internal/logpipe"
 )
 
 func report(dropped [4]uint64) []byte {

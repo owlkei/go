@@ -2,7 +2,7 @@
 
 Status: Approved
 Packages: `exception`, `aggregation` (roadmap 0002, step 4). Depends on design 0003
-(`ctx.JSONAppender`). `bench/ginject.go` and `core` compile unchanged.
+(`ctx.JSONAppender`). `bench/owlky.go` and `core` compile unchanged.
 
 ## Goal
 Raising an exception and writing its body stop allocating: the constructors build no error object,
@@ -187,8 +187,8 @@ No `unsafe`, no `sync.Pool`, no inlining restructure. Not taken: pooling `Aggreg
   are gone; code that only uses `Pipe(Transform / Tap / Filter …)` is unaffected. Code that called
   `Transform` without piping the result (it ran anyway, in call order) must pipe it. `json.Marshal`
   of an exception gives the body instead of `{}`. `errors.Unwrap(ex)` is `nil` without a cause.
-- **Docs:** new `exception/README.md` and `aggregation/README.md`; `.ginject/package-reference.md`
-  (lines 544-562: operator types; the exception section), `.ginject/request-pipeline.md`
+- **Docs:** new `exception/README.md` and `aggregation/README.md`; `.owlky/package-reference.md`
+  (lines 544-562: operator types; the exception section), `.owlky/request-pipeline.md`
   (interceptor operators run in `Pipe` order).
 
 ## Test plan

@@ -1,6 +1,6 @@
 # Trace context
 
-*Package `tracecontext` gives every HTTP request, WebSocket connection and WebSocket message its IDs in the W3C Trace Context format, and carries them in the `context.Context` Ginject hands out.*
+*Package `tracecontext` gives every HTTP request, WebSocket connection and WebSocket message its IDs in the W3C Trace Context format, and carries them in the `context.Context` Owlky Go hands out.*
 
 - [Trace context](#trace-context)
   - [Key Features](#key-features)
@@ -34,7 +34,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Ginject module can import it. Users read the IDs through
+The package is internal: only code in the Owlky Go module can import it. Users read the IDs through
 `c.ID()`, the `X-Request-Id` and `Traceparent` response headers, the access log and (from design
 0012) the scoped logger.
 
@@ -56,7 +56,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dangduoc08/ginject/internal/tracecontext"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func main() {
@@ -449,7 +449,7 @@ Results depend on the machine. They were captured when this README was generated
 ```console
 goos: darwin
 goarch: amd64
-pkg: github.com/dangduoc08/ginject/internal/tracecontext
+pkg: go.owlky.com/owlky/internal/tracecontext
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkNewSpanID-12                             	25177364	        41.13 ns/op	       0 B/op	       0 allocs/op
 BenchmarkNewSpanID_Parallel-12                    	24549900	        43.85 ns/op	       0 B/op	       0 allocs/op

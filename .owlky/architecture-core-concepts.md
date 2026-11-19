@@ -1,4 +1,4 @@
-# Ginject Core Concepts & Architecture
+# Owlky Go Core Concepts & Architecture
 
 **Optimization**: This document is structured for AI parsing — explicit rules, decision trees, state machines. Minimal prose.
 
@@ -230,7 +230,7 @@ type HTTPContext struct {
 
 Hook rule (design 0017 D3): what `core` needs from a context and users must not touch is a package
 function of `internal/ctx` (`ctx.HTTPReset(c)`), never a method or exported field, which would stay
-reachable through the root alias `ginject.HTTPContext`. The same holds for `aggregation`
+reachable through the root alias `owlky.HTTPContext`. The same holds for `aggregation`
 (`aggregation.SetMainData(a, d)`, `Aggregate(a)`, `Name`, `InterceptorData`, `IsMainHandlerCalled`)
 and the `common` embeds (`common.HTTPRouterMap(h)`, `common.AddHandlerToRouterMap(h, …)`,
 `common.InjectProvidersIntoHTTPGuards(g, …)`).
@@ -363,7 +363,7 @@ HTTP response written (or WS message sent)
 **Filter Interface**:
 ```go
 any // bound as any, matched by its method:
-// Catch(ginject.HTTPContext, *exception.Exception)
+// Catch(owlky.HTTPContext, *exception.Exception)
 ```
 
 **Execution Order**:

@@ -1,4 +1,4 @@
-# Ginject AI Knowledge Base — Update Summary
+# Owlky Go AI Knowledge Base — Update Summary
 
 **Last Updated**: 2026-09-25  
 **Status**: ✅ CURRENT — re-verified against source after a major correction pass  
@@ -10,7 +10,7 @@
 
 ## What Was Created
 
-A complete, machine-optimized knowledge base for the Ginject framework that enables future AI coding agents (Claude Code, Cursor, Copilot, etc.) to understand and generate code without extensive prompt engineering.
+A complete, machine-optimized knowledge base for the Owlky Go framework that enables future AI coding agents (Claude Code, Cursor, Copilot, etc.) to understand and generate code without extensive prompt engineering.
 
 ### Documentation by Category
 
@@ -192,16 +192,16 @@ Verify: Guard MUST return bool, never panic
 **Step 3: Reference APIs**
 ```
 Read: package-reference.md → common package → guard shape
-Check: CanActivate(ginject.HTTPContext) bool signature
+Check: CanActivate(owlky.HTTPContext) bool signature
 ```
 
 **Step 4: Generate Code**
 ```go
 type JWTGuard struct {
-    ginject.Guard
+    owlky.Guard
 }
 
-func (g JWTGuard) CanActivate(httpCtx ginject.HTTPContext) bool {
+func (g JWTGuard) CanActivate(httpCtx owlky.HTTPContext) bool {
     token := httpCtx.Request.Header.Get("Authorization")
     // Validate JWT...
     return isValid
@@ -219,8 +219,8 @@ Create controller, call BindGuard(guard, handler1, handler2)
 ## File Structure in Repository
 
 ```
-ginject/
-├── .ginject/                           ← This knowledge base
+owlky/
+├── .owlky/                           ← This knowledge base
 │   ├── README.md                       ← Start here (overview)
 │   ├── INDEX.md                        ← Navigation hub
 │   ├── ai-guidance-quick-reference.md  ← Decision trees for AI
@@ -245,7 +245,7 @@ ginject/
 └── ... (source code)
 ```
 
-Note: `ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILDING_WITH_GINJECT.md` do not exist in this repository (verified 2026-09-25) despite being referenced by earlier versions of this file — do not point anyone to them.
+Note: `ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILDING_WITH_OWLKY.md` do not exist in this repository (verified 2026-09-25) despite being referenced by earlier versions of this file — do not point anyone to them.
 
 ---
 
@@ -285,22 +285,22 @@ Note: `ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILD
 
 ### For Immediate Use
 ```
-1. Refer to .ginject/README.md (overview)
-2. Use .ginject/INDEX.md (navigation)
-3. Follow .ginject/ai-guidance-quick-reference.md (decision trees)
+1. Refer to .owlky/README.md (overview)
+2. Use .owlky/INDEX.md (navigation)
+3. Follow .owlky/ai-guidance-quick-reference.md (decision trees)
 ```
 
 ### For Framework Development
 ```
-1. Read .ginject/architecture-core-concepts.md (foundation)
+1. Read .owlky/architecture-core-concepts.md (foundation)
 2. Deep-dive into specific topics (routing, WebSocket, DI)
-3. Reference .ginject/package-reference.md (exact APIs)
-4. Check .ginject/anti-patterns-gotchas.md (what breaks)
+3. Reference .owlky/package-reference.md (exact APIs)
+4. Check .owlky/anti-patterns-gotchas.md (what breaks)
 ```
 
 ### For AI Code Generation
 ```
-1. Load .ginject/ai-guidance-quick-reference.md (decision trees)
+1. Load .owlky/ai-guidance-quick-reference.md (decision trees)
 2. Use metadata-*.json for structured data
 3. Verify against anti-patterns-gotchas.md
 4. Reference package-reference.md for exact APIs
@@ -319,7 +319,7 @@ Note: `ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILD
 ## Impact & Value
 
 ### Immediate Value
-- ✅ AI agents can generate Ginject code without extensive prompting
+- ✅ AI agents can generate Owlky Go code without extensive prompting
 - ✅ Developers get comprehensive reference material
 - ✅ Code reviewers have explicit rules to verify against
 - ✅ Performance engineers understand bottlenecks
@@ -375,10 +375,10 @@ Content Breakdown:
 ✅ All documentation complete and committed
 
 ### For Developers
-→ Read `.ginject/README.md` to get started
+→ Read `.owlky/README.md` to get started
 
 ### For AI Agents
-→ Load `.ginject/ai-guidance-quick-reference.md` for decision trees
+→ Load `.owlky/ai-guidance-quick-reference.md` for decision trees
 
 ### For Framework Evolution
 → Update metadata files when APIs change
@@ -389,15 +389,15 @@ Content Breakdown:
 
 ## Conclusion
 
-**This knowledge base transforms Ginject from a framework that requires deep source code study into one that can be understood and used effectively by AI agents with minimal context.**
+**This knowledge base transforms Owlky Go from a framework that requires deep source code study into one that can be understood and used effectively by AI agents with minimal context.**
 
-Every AI coding agent that encounters Ginject can now:
+Every AI coding agent that encounters Owlky Go can now:
 1. Quickly understand the framework (read INDEX.md + architecture-core-concepts.md)
 2. Implement features correctly (use decision trees)
 3. Avoid common mistakes (check anti-patterns)
 4. Generate safe, idiomatic code (reference APIs and metadata)
 
-**Ginject is now AI-ready.**
+**Owlky Go is now AI-ready.**
 
 ---
 

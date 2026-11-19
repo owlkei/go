@@ -1,6 +1,6 @@
 # Code conventions
 
-How Ginject code is written today, measured from the repository (2026-11-16). Each rule cites a
+How Owlky Go code is written today, measured from the repository (2026-11-16). Each rule cites a
 real example. "Majority" rules say how strong the habit is; follow the majority in new code and
 don't mass-rewrite the exceptions.
 
@@ -8,7 +8,7 @@ don't mass-rewrite the exceptions.
 
 - **No comments in Go code**, tests and benchmarks included (commit `5babd36` stripped them with
   an AST pass). One block survives at `internal/core/app.go:213` (the init order of `App.Create`); leave it,
-  don't add others. Explain "why" in the commit message, the README or `.ginject/`.
+  don't add others. Explain "why" in the commit message, the README or `.owlky/`.
 - **File names** are snake case, one concern per file, the transport in front when a concept has an
   HTTP and a WS side: `internal/common/http_guard.go`, `internal/common/ws_guard.go`, `internal/core/ws_connmgr.go`,
   `internal/core/read_loop.go`. The demo app uses dots (`sample/shared/log.http_guard.go`): that style stays
@@ -85,7 +85,7 @@ don't mass-rewrite the exceptions.
   (`internal/memorycache/memory_cache.go`), the `memorybroker` errors. Callers compare them with `==` or
   `errors.Is`.
 - **Wrap with `%w`** and the package prefix when adding context:
-  `fmt.Errorf("ginject: listen on %s: %w", address, err)` (`internal/core/server.go`).
+  `fmt.Errorf("owlky: listen on %s: %w", address, err)` (`internal/core/server.go`).
 - Known inconsistency: a few `core` errors have no prefix (`"root not found: %s"`). Follow the rule in new code.
 
 ## Concurrency

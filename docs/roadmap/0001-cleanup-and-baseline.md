@@ -28,7 +28,7 @@ These numbers are the baseline every later roadmap (0002-0004) is measured again
 - gRPC and protobuf leave; nothing else about devtools changes, so step 1 needs no design.
 - Go: the latest release, 1.27.4. Users need Go 1.27 or newer.
 - The comparison module in `bench/` has its own `go.mod`, so other frameworks never become
-  dependencies of Ginject.
+  dependencies of Owlky Go.
 - Measurements run on the user's machine; the report states the machine, the Go version and the
   commit, and every number is the median of `-count 5`.
 - This roadmap changes no framework behavior except removing gRPC.
@@ -36,7 +36,7 @@ These numbers are the baseline every later roadmap (0002-0004) is measured again
 ## Next
 The rest of the HTTP work, one roadmap each, written after the previous one is merged so its designs
 build on the refactored code. Every package step is the same deep dive: bugs (each proved by a failing
-test), hot / cold performance per `.ginject/conventions.md`, concurrency and security, tests, benchmarks
+test), hot / cold performance per `.owlky/conventions.md`, concurrency and security, tests, benchmarks
 rewritten (`b.Loop`, `b.ReportAllocs`, `-count 5` + `benchstat`), README. Each roadmap ends by
 rerunning this baseline.
 
@@ -50,13 +50,13 @@ rerunning this baseline.
   `cache` + `memorycache` + `httpclient`; `storage` (known data-loss risks in transactions and
   compaction); then a security audit of the HTTP side, `/kb update`, and the final HTTP report.
 - **0005 WebSocket**: `core/ws*.go`, `read_loop.go`, `write_loop.go`, `wsevent`, `memorybroker`,
-  `pattern`, and Ginject's own WebSocket implementation replacing `golang.org/x/net/websocket`
+  `pattern`, and Owlky Go's own WebSocket implementation replacing `golang.org/x/net/websocket`
   (decided 2026-11-16, `docs/roadmap/backlog.md`).
 
 ## Log
 - 2026-11-16: run started on `roadmap/cleanup-and-baseline` from `9121a5f`. Files already modified
-  before the run (`.claude/agents/ginject-builder.md`, `ginject-reviewer.md`,
-  `.claude/commands/refactor.md`, `.ginject/conventions.md`, `CLAUDE.md`, `docs/design/README.md`:
+  before the run (`.claude/agents/go-builder.md`, `go-reviewer.md`,
+  `.claude/commands/refactor.md`, `.owlky/conventions.md`, `CLAUDE.md`, `docs/design/README.md`:
   the hot / cold path rules) are left for the user to commit; this roadmap file is committed by the run.
 - Step 1: the `make protoc` line in `CLAUDE.md` was removed in the working tree; it is part of the
   user's uncommitted `CLAUDE.md` changes. Found, not fixed (out of scope, for 0003): the snapshot
@@ -70,13 +70,13 @@ rerunning this baseline.
   returns the expected status and body. It drives `App.ServeHTTP` with a reused request and a
   discarding `ResponseWriter`, so only the framework's own work is measured.
 - Step 6 before step 5, so the load test server can serve every framework. Each framework uses its
-  idiomatic recovery middleware (Ginject recovers by default). Fiber is measured on fasthttp's
+  idiomatic recovery middleware (Owlky Go recovers by default). Fiber is measured on fasthttp's
   `RequestCtx` directly; its `Static` number includes `RequestCtx.Init`.
 - Step 5: the load test uses `wrk` (installed locally) against `bench/cmd/server`, which serves any of
-  the six frameworks; Ginject runs through `App.Listen`, its production path. Allocations per
+  the six frameworks; Owlky Go runs through `App.Listen`, its production path. Allocations per
   request come from step 4's benchmark (the load test can't see them). Client and server share the
   machine, so absolute numbers are a floor; comparisons between frameworks are fair.
-- Review (`ginject-reviewer`, all commits of the run): no correctness, concurrency or security issue.
+- Review (`go-reviewer`, all commits of the run): no correctness, concurrency or security issue.
   Fixed: the Exception scenario now uses each framework's error mechanism (Echo `NewHTTPError`,
   Fiber `NewError`, Gin `AbortWithStatusJSON`) and its row was re-measured; the report's JSON hot spot
   named a `bytes.Clone` that doesn't exist (the copy is inside `encoding/json.Marshal`); `load.sh`

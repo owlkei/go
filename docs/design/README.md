@@ -1,6 +1,6 @@
 # Design docs
 
-One file per feature or API change, written by the `ginject-architect` agent and approved by the
+One file per feature or API change, written by the `go-architect` agent and approved by the
 maintainer before any test or code is written (`/feature`).
 
 - **Name:** `NNNN-<slug>.md`, numbered in order (`0001-rate-limit-guard.md`).
@@ -39,7 +39,7 @@ Goroutines, shared state, how each is protected, lock order, how goroutines stop
 Limits, validation, secrets, anything an attacker controls.
 
 ## Impact
-Callers that change, compatibility, docs to update (README, CLAUDE.md, .ginject/).
+Callers that change, compatibility, docs to update (README, CLAUDE.md, .owlky/).
 
 ## Test plan
 For each rule: the test name and the case (happy path, zero/nil, boundaries, invalid,

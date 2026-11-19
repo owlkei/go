@@ -50,7 +50,7 @@ Logic must not change on any code path; skip a change that would and note it.
 
 ## Optimize mode
 
-Follow `.ginject/conventions.md` › Performance. First classify the target: **hot** (per request or
+Follow `.owlky/conventions.md` › Performance. First classify the target: **hot** (per request or
 message, or client-triggerable) or **cold**. Race, deadlock and security fixes are always applied.
 
 - **Cold code:** type A fixes only (obvious waste); readability wins every tie.

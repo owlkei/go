@@ -29,19 +29,19 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/csrf"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(csrf.CSRF{
 		TrustedOrigins: []string{"https://app.example.com"},
 	})
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -87,7 +87,7 @@ csrf.CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.examp
 
 ### NewMiddleware
 ```go
-func (instance CSRF) NewMiddleware() ginject.MiddlewareFn
+func (instance CSRF) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Kiểm tra và biên dịch các option một lần; framework gọi nó khi `Create()`. Nó panic với
@@ -96,10 +96,10 @@ Kiểm tra và biên dịch các option một lần; framework gọi nó khi `Cr
 
 ### Use
 ```go
-func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Giúp `CSRF` là một `ginject.MiddlewareFn`. Nó biên dịch option ở mỗi lần gọi, nên chỉ dùng trong
+Giúp `CSRF` là một `owlky.MiddlewareFn`. Nó biên dịch option ở mỗi lần gọi, nên chỉ dùng trong
 test; framework luôn gọi `NewMiddleware`.
 
 ## Quy Tắc

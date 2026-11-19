@@ -45,7 +45,7 @@ the throttler, `hostcheck`, `httpsredirect` and `helmet` all see the proxy, not 
 gives a new identity (a rate limit bypass) or a fake one in your logs. `proxy` reads those headers
 only from a peer you list, and only the entries your proxies wrote.
 
-Without `proxy` bound, nothing in Ginject reads a forwarding header: the client is `r.RemoteAddr`.
+Without `proxy` bound, nothing in Owlky Go reads a forwarding header: the client is `r.RemoteAddr`.
 
 ## Usage
 
@@ -55,31 +55,31 @@ Bind `proxy` first, before every middleware that reads the client:
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/proxy"
 )
 
 type WhoController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance WhoController) NewController() ginject.Controller {
+func (instance WhoController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance WhoController) READ_who(c ginject.HTTPContext) string {
+func (instance WhoController) READ_who(c owlky.HTTPContext) string {
 	return proxy.ClientIP(c.Request).String() + " " + proxy.Scheme(c.Request) + " " + proxy.Host(c.Request)
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(proxy.Proxy{
 		TrustedProxies: []string{"10.0.0.0/8"},
 	})
 
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Controllers(WhoController{}).
 			Build(),
 	)
@@ -216,7 +216,7 @@ port.
 
 ### NewMiddleware
 ```go
-func (instance Proxy) NewMiddleware() ginject.MiddlewareFn
+func (instance Proxy) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates the options and compiles them once. The framework calls it for you at `Create()`. It
@@ -226,10 +226,10 @@ entries, and for `TrustedHops` outside 1-16.
 
 ### Use
 ```go
-func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `Proxy` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `Proxy` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Configure your proxy

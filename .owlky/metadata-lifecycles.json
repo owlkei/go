@@ -1,6 +1,6 @@
 {
   "format": "ai-metadata-v1",
-  "title": "Ginject Lifecycle State Machines",
+  "title": "Owlky Go Lifecycle State Machines",
   "purpose": "Document exact state transitions for app, requests, and connections",
   "application_lifecycle": {
     "source": "internal/core/app.go (New, Create), internal/core/container.go (wire), internal/core/server.go (Listen, ListenTLS, Serve, Stop); user contract in internal/core/README.md",
@@ -69,7 +69,7 @@
         "to": "RUNNING",
         "action": "app.Listen(port, opts) / app.ListenTLS(port, certFile, keyFile, opts) / app.Serve(listener, opts)",
         "effects": [
-          "errors returned before binding: 'ginject: Create must be called before serving', 'ginject: app is already serving', 'ginject: app is stopped', TLS / IsH2C option conflicts, 'ginject: listen on :<port>: <err>'",
+          "errors returned before binding: 'owlky: Create must be called before serving', 'owlky: app is already serving', 'owlky: app is stopped', TLS / IsH2C option conflicts, 'owlky: listen on :<port>: <err>'",
           "startup log: InstanceLoader, RouteExplorer, WebSocketEvent, ServerListening",
           "the call blocks until the server stopped"
         ]
@@ -87,7 +87,7 @@
           "waits for the AsyncImports goroutines until ShutdownTimeout since shutdown began; ModuleShutdownTimeout for each one abandoned",
           "runShutdownHooks once per app (app.shutdownOnce): OnShutdown of ready modules only, in the reverse of the order they became ready; a panicking hook is logged as OnShutdownPanic and the others run",
           "access log stopped after the hooks, suppressed panic stacks reported, stdout log pipeline flushed (at most 2 s) and synchronous again",
-          "returns nil, 'ginject: shutdown timed out after <timeout>' or 'ginject: serve: <err>'",
+          "returns nil, 'owlky: shutdown timed out after <timeout>' or 'owlky: serve: <err>'",
           "WebSocket connections are not drained"
         ]
       },
@@ -97,7 +97,7 @@
         "action": "app.Stop() on an app that is not serving",
         "effects": [
           "OnShutdown hooks run once",
-          "later serving calls return 'ginject: app is stopped'; ServeHTTP still answers"
+          "later serving calls return 'owlky: app is stopped'; ServeHTTP still answers"
         ]
       }
     ],
@@ -159,7 +159,7 @@
         "stage": "handleRequest() in internal/core/http.go",
         "action": "global middleware -> module middleware -> global guard -> module guard -> global pre-interceptor -> module pre-interceptor -> handler plan (pipes, then the handler) -> module post-interceptor -> global post-interceptor",
         "effects": [
-          "spec: .ginject/request-pipeline.md section 1",
+          "spec: .owlky/request-pipeline.md section 1",
           "a middleware without next(), a guard returning false (403 to the filters) or an interceptor without Pipe stops the chain",
           "error in a middleware: the HTTP layer's fixed error response, no filter",
           "error from a guard onwards: module filters (bound last first), global filters, built-in filter",
@@ -427,6 +427,6 @@
       "ws": "error reply code 503 'not ready: <topic>'",
       "layers": "global middlewares run first; no module layer, filter or handler"
     },
-    "retry": "ginject.Retry(ctx, *RetryOptions, fn): backoff InitialDelay 500 ms doubling to MaxDelay 30 s with jitter [d/2, d], MaxAttempts 0 = until ctx done; with an AsyncImports factory's ctx it reports attempts (ModuleRetry, devtool attempts / last_error, Retry-After)"
+    "retry": "owlky.Retry(ctx, *RetryOptions, fn): backoff InitialDelay 500 ms doubling to MaxDelay 30 s with jitter [d/2, d], MaxAttempts 0 = until ctx done; with an AsyncImports factory's ctx it reports attempts (ModuleRetry, devtool attempts / last_error, Retry-After)"
   }
 }

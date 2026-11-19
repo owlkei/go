@@ -1,8 +1,12 @@
-# Ginject
+# Owlky Go
 
-Ginject is a dependency injection web framework for Go, inspired by NestJS. You build REST APIs,
+Owlky Go is a dependency injection web framework for Go, inspired by NestJS. You build REST APIs,
 server-rendered HTML pages and WebSocket servers from modules, controllers and providers, and
-Ginject wires them together.
+Owlky Go wires them together.
+
+Owlky Go is part of [Owlky](https://owlky.com). It works on its own, and it pairs with **Owlky UI**,
+the component library: page routes render Owlky UI's HTML markup, and its stylesheet and scripts are
+served from your app's own origin.
 
 - **No routing code.** A method named `READ_users_BY_id` answers `GET /users/{id}`. You declare
   routes and WebSocket events by naming methods.
@@ -10,12 +14,12 @@ Ginject wires them together.
   parameters by parameter type. There are no struct tags and no code generation.
 - **Mistakes stop the boot.** A missing provider, a parameter that can't be injected or two
   handlers for one route make `Create()` panic, before the server takes a request.
-- **Fast at run time.** Ginject does its reflection once, at `Create()`. A request runs a plan
+- **Fast at run time.** Owlky Go does its reflection once, at `Create()`. A request runs a plan
   that was built at startup.
 - **Safe defaults.** The server has timeouts, a request body limit and graceful shutdown. Only
   exceptions reach the client: any other panic answers a fixed `500` and is logged.
 
-- [Ginject](#ginject)
+- [Owlky Go](#owlky-go)
   - [Features](#features)
   - [Installation](#installation)
   - [Quick start](#quick-start)
@@ -88,10 +92,19 @@ Ginject wires them together.
 
 ## Installation
 
-Ginject needs Go 1.27.4 or later.
+Owlky Go needs Go 1.27.4 or later.
 
 ```bash
-go get github.com/dangduoc08/ginject
+go get go.owlky.com/owlky
+```
+
+Until `go.owlky.com` serves the module, `go get` can't find it. Clone the repository next to your
+project and point the import path at it:
+
+```bash
+git clone https://github.com/dangduoc08/go ../owlky-go
+go mod edit -require=go.owlky.com/owlky@v0.0.0 -replace=go.owlky.com/owlky=../owlky-go
+go mod tidy
 ```
 
 ---
@@ -103,11 +116,11 @@ Create `main.go`:
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type GreetingService struct{}
 
-func (instance GreetingService) NewProvider() ginject.Provider {
+func (instance GreetingService) NewProvider() owlky.Provider {
 	return instance
 }
 
@@ -116,11 +129,11 @@ func (instance GreetingService) Greet(name string) string {
 }
 
 type HelloController struct {
-	ginject.HTTP
+	owlky.HTTP
 	GreetingService GreetingService
 }
 
-func (instance HelloController) NewController() ginject.Controller {
+func (instance HelloController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -128,14 +141,14 @@ func (instance HelloController) READ_hello() string {
 	return "hello"
 }
 
-func (instance HelloController) READ_hello_BY_name(param ginject.Param) ginject.Map {
-	return ginject.Map{"greeting": instance.GreetingService.Greet(param.Get("name"))}
+func (instance HelloController) READ_hello_BY_name(param owlky.Param) owlky.Map {
+	return owlky.Map{"greeting": instance.GreetingService.Greet(param.Get("name"))}
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Controllers(HelloController{}).
 			Providers(GreetingService{}).
 			Build(),
@@ -158,7 +171,7 @@ Run it with `go run .`, then call it:
 
 ### Application
 
-`ginject.New()` creates an application. Configure it, wire it once with `Create`, then serve it:
+`owlky.New()` creates an application. Configure it, wire it once with `Create`, then serve it:
 
 1. **Configure.** Call the configuration methods below. Each one returns the app, so calls chain.
    They must run before `Create`: after it they panic with
@@ -167,7 +180,7 @@ Run it with `go run .`, then call it:
    controllers, and plans every handler. Call it once per app.
 3. **Serve.** `app.Listen(port, nil)` blocks until the server stops. `ListenTLS` serves HTTPS and
    HTTP/2, and `Serve` serves on a `net.Listener` you made. Pass `nil` options for the safe
-   defaults, or a `*ginject.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`,
+   defaults, or a `*owlky.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`,
    `IsH2C`).
 
 | Method | Effect |
@@ -178,9 +191,9 @@ Run it with `go run .`, then call it:
 | `BindGlobalGuards(...)` | Guards for every HTTP route and WebSocket event. |
 | `BindGlobalInterceptors(...)` | Interceptors for every HTTP route and WebSocket event. |
 | `BindGlobalExceptionFilters(...)` | Exception filters for every HTTP route and WebSocket event. |
-| `EnableVersioning(*ginject.VersioningOptions)` | Routes per API version. See [Versioning](#versioning). |
-| `EnableWS(*ginject.WSOptions, ...)` | The WebSocket server. See [WebSocket](#websocket). |
-| `EnableRender(*ginject.RenderOptions)` | Server-rendered HTML pages. See [Pages](#pages). |
+| `EnableVersioning(*owlky.VersioningOptions)` | Routes per API version. See [Versioning](#versioning). |
+| `EnableWS(*owlky.WSOptions, ...)` | The WebSocket server. See [WebSocket](#websocket). |
+| `EnableRender(*owlky.RenderOptions)` | Server-rendered HTML pages. See [Pages](#pages). |
 | `EnableAccessLog()` | One access log line per request. |
 | `EnableDevtool()` | A snapshot of the routes and layers for development tools. |
 
@@ -196,14 +209,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 type HealthController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance HealthController) NewController() ginject.Controller {
+func (instance HealthController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -212,8 +225,8 @@ func (instance HealthController) READ_health() string {
 }
 
 func TestHealth(t *testing.T) {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(HealthController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(HealthController{}).Build())
 
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
@@ -224,22 +237,22 @@ func TestHealth(t *testing.T) {
 }
 ```
 
-Each `ginject.New()` is independent: two apps in one process have their own providers, routes,
+Each `owlky.New()` is independent: two apps in one process have their own providers, routes,
 layers and logger.
 
 ### Module
 
 A module groups controllers and providers, and imports other modules. Build one with
-`ginject.ModuleBuilder()`:
+`owlky.ModuleBuilder()`:
 
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type UserService struct{}
 
-func (instance UserService) NewProvider() ginject.Provider {
+func (instance UserService) NewProvider() owlky.Provider {
 	return instance
 }
 
@@ -248,11 +261,11 @@ func (instance UserService) FindAll() []string {
 }
 
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 	UserService UserService
 }
 
-func (instance UserController) NewController() ginject.Controller {
+func (instance UserController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -260,18 +273,18 @@ func (instance UserController) READ_users() []string {
 	return instance.UserService.FindAll()
 }
 
-var UserModule = ginject.ModuleBuilder().
+var UserModule = owlky.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}).
 	Build()
 
-var AppModule = ginject.ModuleBuilder().
+var AppModule = owlky.ModuleBuilder().
 	Imports(UserModule).
 	Build().
 	Prefix("api")
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(AppModule)
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -284,13 +297,13 @@ func main() {
 - **Prefix:** `Prefix("api")` adds a path prefix to every route of the module and of the modules
   it imports. A prefix on an importing module goes in front: a child with `Prefix("v1")` imported
   by a root with `Prefix("api")` serves `/api/v1/…`.
-- **Path style:** `ModuleBuilder().PathStyle(ginject.PathStyleAsWritten)` keeps `_` in the URLs of
+- **Path style:** `ModuleBuilder().PathStyle(owlky.PathStyleAsWritten)` keeps `_` in the URLs of
   the module and of the modules it imports, instead of `-`. See
   [Routes from method names](#routes-from-method-names).
 - **Global modules:** set `IsGlobal = true` on a module to make its providers visible to every
   module, without an import. The root module's providers are always global.
-- **Module factories:** `Imports` also takes a function that returns a `ginject.Module`, and
-  optionally an error. Ginject calls it once per app and injects its arguments, so a module can
+- **Module factories:** `Imports` also takes a function that returns a `owlky.Module`, and
+  optionally an error. Owlky Go calls it once per app and injects its arguments, so a module can
   depend on configuration or connect to a database first. `config.Register(…)` and
   `cache.Register(…)` are not factories: you call them, and they return a module.
 - **Async imports:** `AsyncImports` takes the same entries as `Imports`, but builds them in the
@@ -306,21 +319,21 @@ The details, with the timeline of `Create()` and of the background, are in
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/config"
 )
 
 type Database struct {
 	URL string
 }
 
-func (instance Database) NewProvider() ginject.Provider {
+func (instance Database) NewProvider() owlky.Provider {
 	return instance
 }
 
-func NewDatabaseModule(configService config.ConfigService) ginject.Module {
+func NewDatabaseModule(configService config.ConfigService) owlky.Module {
 	url, _ := configService.Get("DATABASE_URL").(string)
-	module := ginject.ModuleBuilder().
+	module := owlky.ModuleBuilder().
 		Providers(Database{URL: url}).
 		Build()
 	module.IsGlobal = true
@@ -331,11 +344,11 @@ func NewDatabaseModule(configService config.ConfigService) ginject.Module {
 }
 
 type StatusController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Database Database
 }
 
-func (instance StatusController) NewController() ginject.Controller {
+func (instance StatusController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -344,9 +357,9 @@ func (instance StatusController) READ_status() bool {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
 				NewDatabaseModule,
@@ -366,19 +379,19 @@ supplies stops `Create()` with `dependency injection: can't resolve argument of 
 
 ### Provider
 
-A provider is a struct with a `NewProvider() ginject.Provider` method. It holds your business logic:
+A provider is a struct with a `NewProvider() owlky.Provider` method. It holds your business logic:
 services, repositories, clients.
 
-- Ginject constructs each provider type once per app. It first injects the provider's exported
+- Owlky Go constructs each provider type once per app. It first injects the provider's exported
   fields, then calls `NewProvider`, and keeps what `NewProvider` returns.
-- Fields are matched by type: declare a field of a provider's type and Ginject fills it. A field
+- Fields are matched by type: declare a field of a provider's type and Owlky Go fills it. A field
   whose type no visible provider has stops `Create()` with
   `dependency injection: can't resolve dependency '<type>' of the provider…`.
 - A provider is visible to its own module, to the modules that import it, and to every module
   when its module is global.
 - Providers are injected by value. Put state that must be shared, such as a connection pool,
   behind a pointer.
-- A field of type `log.Logger` gets the app's logger, and a field of type `ginject.Publisher`
+- A field of type `log.Logger` gets the app's logger, and a field of type `owlky.Publisher`
   the app's WebSocket publisher.
 
 Never call `NewProvider` yourself: the instance it returns has no injected fields. To read a
@@ -386,10 +399,10 @@ provider from outside the module tree, use `app.Get(UserService{}).(UserService)
 
 ### Controller
 
-A controller is a struct with a `NewController() ginject.Controller` method. Embed `ginject.HTTP` for
-HTTP routes and HTML pages (see [Pages](#pages)) or `ginject.WS` for WebSocket events, plus one
+A controller is a struct with a `NewController() owlky.Controller` method. Embed `owlky.HTTP` for
+HTTP routes and HTML pages (see [Pages](#pages)) or `owlky.WS` for WebSocket events, plus one
 embed per kind of layer you bind:
-`ginject.Middleware`, `ginject.Guard`, `ginject.Interceptor` and `ginject.ExceptionFilter`.
+`owlky.Middleware`, `owlky.Guard`, `owlky.Interceptor` and `owlky.ExceptionFilter`.
 
 Bind layers in `NewController`. Pass method values to bind a layer to some handlers only, or none
 to bind it to every handler of the controller:
@@ -400,29 +413,29 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 type AdminGuard struct{}
 
-func (instance AdminGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance AdminGuard) CanActivate(c owlky.HTTPContext) bool {
 	return c.Header().Get("X-Role") == "admin"
 }
 
 type NoStoreMiddleware struct{}
 
-func (instance NoStoreMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+func (instance NoStoreMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
 	w.Header().Set("Cache-Control", "no-store")
 	next()
 }
 
 type ProductController struct {
-	ginject.HTTP
-	ginject.Guard
-	ginject.Middleware
+	owlky.HTTP
+	owlky.Guard
+	owlky.Middleware
 }
 
-func (instance ProductController) NewController() ginject.Controller {
+func (instance ProductController) NewController() owlky.Controller {
 	instance.Prefix("catalog")
 	instance.BindMiddleware(NoStoreMiddleware{})
 	instance.BindGuard(AdminGuard{}, instance.CREATE_products, instance.DELETE_products_BY_id)
@@ -437,13 +450,13 @@ func (instance ProductController) CREATE_products() string {
 	return "created"
 }
 
-func (instance ProductController) DELETE_products_BY_id(param ginject.Param) string {
+func (instance ProductController) DELETE_products_BY_id(param owlky.Param) string {
 	return "deleted " + param.Get("id")
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(ProductController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(ProductController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -530,13 +543,13 @@ A long chain of `OF` makes long names. Put the shared part of the path in the co
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type CommentController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance CommentController) NewController() ginject.Controller {
+func (instance CommentController) NewController() owlky.Controller {
 	instance.Prefix("users/{user_id}/posts/{post_id}")
 	return instance
 }
@@ -545,8 +558,8 @@ func (instance CommentController) READ_comments() []string {
 	return []string{"first"}
 }
 
-func (instance CommentController) READ_comments_BY_comment_id(param ginject.Param) ginject.Map {
-	return ginject.Map{
+func (instance CommentController) READ_comments_BY_comment_id(param owlky.Param) owlky.Map {
+	return owlky.Map{
 		"user":    param.Get("user_id"),
 		"post":    param.Get("post_id"),
 		"comment": param.Get("comment_id"),
@@ -554,8 +567,8 @@ func (instance CommentController) READ_comments_BY_comment_id(param ginject.Para
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(CommentController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(CommentController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -575,13 +588,13 @@ reusable module's URLs never change with the app that imports it:
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type BillingController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance BillingController) NewController() ginject.Controller {
+func (instance BillingController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -590,10 +603,10 @@ func (instance BillingController) READ_payment_intents() []string {
 }
 
 type StatusController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance StatusController) NewController() ginject.Controller {
+func (instance StatusController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -601,19 +614,19 @@ func (instance StatusController) READ_health_checks() string {
 	return "ok"
 }
 
-var StatusModule = ginject.ModuleBuilder().
-	PathStyle(ginject.PathStyleKebab).
+var StatusModule = owlky.ModuleBuilder().
+	PathStyle(owlky.PathStyleKebab).
 	Controllers(StatusController{}).
 	Build()
 
-var AppModule = ginject.ModuleBuilder().
-	PathStyle(ginject.PathStyleAsWritten).
+var AppModule = owlky.ModuleBuilder().
+	PathStyle(owlky.PathStyleAsWritten).
 	Imports(StatusModule).
 	Controllers(BillingController{}).
 	Build()
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(AppModule)
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -625,8 +638,8 @@ func main() {
 
 | Style | `READ_payment_intents` | Default |
 |---|---|---|
-| `ginject.PathStyleKebab` | `GET /payment-intents` | yes |
-| `ginject.PathStyleAsWritten` | `GET /payment_intents` | no |
+| `owlky.PathStyleKebab` | `GET /payment-intents` | yes |
+| `owlky.PathStyleAsWritten` | `GET /payment_intents` | no |
 
 - The style applies to the words of a resource only. Prefixes, exact paths, parameter names,
   versions and WebSocket events never change.
@@ -634,7 +647,7 @@ func main() {
 - A module imported by two modules with different styles gets the first one found, in the order
   that module prefixes are stacked.
 - Any other value stops the call:
-  `invalid module: PathStyle needs ginject.PathStyleKebab or ginject.PathStyleAsWritten`.
+  `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten`.
 
 #### Write a path by hand with `Path`
 
@@ -643,24 +656,24 @@ When no name can spell a path (`/oauth2/token`), give the handler an exact path 
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type TokenController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance TokenController) NewController() ginject.Controller {
+func (instance TokenController) NewController() owlky.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
 
-func (instance TokenController) CREATE_token() ginject.Map {
-	return ginject.Map{"access_token": "t0k3n"}
+func (instance TokenController) CREATE_token() owlky.Map {
+	return owlky.Map{"access_token": "t0k3n"}
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(TokenController{}).Build().Prefix("api"))
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(TokenController{}).Build().Prefix("api"))
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -697,7 +710,7 @@ Write `READ_orgsFB` or `READ_orgs_fb` instead of `READ_orgs_FB`. Digits are not 
 
 ### Handler parameters
 
-Declare the parameters a handler needs. Ginject passes them by type, in any order:
+Declare the parameters a handler needs. Owlky Go passes them by type, in any order:
 
 ```go
 package main
@@ -705,24 +718,24 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 type OrderController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance OrderController) NewController() ginject.Controller {
+func (instance OrderController) NewController() owlky.Controller {
 	return instance
 }
 
 func (instance OrderController) READ_orders_BY_id(
-	c ginject.HTTPContext,
-	param ginject.Param,
-	query ginject.Query,
-	header ginject.Header,
-) ginject.Map {
-	return ginject.Map{
+	c owlky.HTTPContext,
+	param owlky.Param,
+	query owlky.Query,
+	header owlky.Header,
+) owlky.Map {
+	return owlky.Map{
 		"id":       param.Get("id"),
 		"expand":   query.Get("expand"),
 		"language": header.Get("Accept-Language"),
@@ -730,14 +743,14 @@ func (instance OrderController) READ_orders_BY_id(
 	}
 }
 
-func (instance OrderController) CREATE_orders(body ginject.Body, w http.ResponseWriter) ginject.Map {
+func (instance OrderController) CREATE_orders(body owlky.Body, w http.ResponseWriter) owlky.Map {
 	w.Header().Set("Location", "/orders/1")
-	return ginject.Map{"item": body.Get("item")}
+	return owlky.Map{"item": body.Get("item")}
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(OrderController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(OrderController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -746,21 +759,21 @@ func main() {
 
 | Parameter type | HTTP | WebSocket | Value |
 |---|---|---|---|
-| `ginject.HTTPContext` | yes | no | The request's context: request data, status and response helpers. |
+| `owlky.HTTPContext` | yes | no | The request's context: request data, status and response helpers. |
 | `*http.Request`, `http.ResponseWriter` | yes | no | The request and the response writer. |
-| `ginject.Param` | yes | no | Path parameters. |
-| `ginject.Query` | yes | no | Query string values. |
-| `ginject.Header` | yes | no | Request headers. |
-| `ginject.Body` | yes | no | The JSON body, as a `map[string]any`. Malformed JSON answers `400`. |
-| `ginject.Form`, `ginject.File` | yes | no | Form values and uploaded files of a urlencoded or multipart request. |
-| `ginject.Redirect` | yes | no | `c.Redirect`: sends a redirect. |
-| `ginject.WSContext` | no | yes | The message's context. |
-| `ginject.WSPayload` | no | yes | The message's `message` object. |
-| `ginject.Next` | yes | yes | Continues the pipeline. |
-| `ginject.Publisher` | yes | yes | Publishes to WebSocket subscribers. |
+| `owlky.Param` | yes | no | Path parameters. |
+| `owlky.Query` | yes | no | Query string values. |
+| `owlky.Header` | yes | no | Request headers. |
+| `owlky.Body` | yes | no | The JSON body, as a `map[string]any`. Malformed JSON answers `400`. |
+| `owlky.Form`, `owlky.File` | yes | no | Form values and uploaded files of a urlencoded or multipart request. |
+| `owlky.Redirect` | yes | no | `c.Redirect`: sends a redirect. |
+| `owlky.WSContext` | no | yes | The message's context. |
+| `owlky.WSPayload` | no | yes | The message's `message` object. |
+| `owlky.Next` | yes | yes | Continues the pipeline. |
+| `owlky.Publisher` | yes | yes | Publishes to WebSocket subscribers. |
 | A pipe | yes | yes | What its `Transform` returns. See [Pipes](#pipes). |
 
-These types live in the root `ginject` package. An application imports it, plus `exception`,
+These types live in the root `owlky` package. An application imports it, plus `exception`,
 `log`, `middlewares/*`, `modules/*` and `guards/*`; the engine's other packages are internal.
 
 Any other parameter type stops `Create()`:
@@ -783,7 +796,7 @@ A handler returns nothing, one value, or a status code and a value:
 
 The status is `200`, or `201` for `POST`, unless a layer or the handler sets another one. A page
 route (`RENDER_`, `SUBMIT_`) renders its result into its template instead: see [Pages](#pages). To
-write the response yourself, take `ginject.HTTPContext` and call `c.Status(code).JSON(data)`,
+write the response yourself, take `owlky.HTTPContext` and call `c.Status(code).JSON(data)`,
 `c.Text(…)` or `c.Redirect(url)`, and return nothing.
 
 ```go
@@ -792,28 +805,28 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject"
+	"go.owlky.com/owlky"
 )
 
 type JobController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance JobController) NewController() ginject.Controller {
+func (instance JobController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance JobController) CREATE_jobs() (int, ginject.Map) {
-	return http.StatusAccepted, ginject.Map{"status": "queued"}
+func (instance JobController) CREATE_jobs() (int, owlky.Map) {
+	return http.StatusAccepted, owlky.Map{"status": "queued"}
 }
 
-func (instance JobController) READ_jobs_BY_id(c ginject.HTTPContext) {
-	c.Status(http.StatusOK).JSON(ginject.Map{"id": c.Param().Get("id")})
+func (instance JobController) READ_jobs_BY_id(c owlky.HTTPContext) {
+	c.Status(http.StatusOK).JSON(owlky.Map{"id": c.Param().Get("id")})
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(JobController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(JobController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -852,7 +865,7 @@ The complete rules are in [core › Request lifecycle](internal/core/README.md#r
 
 ### Middleware
 
-A middleware is a struct with a `Use(*http.Request, http.ResponseWriter, ginject.Next)` method. Call
+A middleware is a struct with a `Use(*http.Request, http.ResponseWriter, owlky.Next)` method. Call
 `next()` to continue, or write a response and return to stop the request:
 
 ```go
@@ -861,22 +874,22 @@ package main
 import (
 	"net/http"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/log"
 )
 
 type RequestLogMiddleware struct {
 	Logger log.Logger
 }
 
-func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
 	instance.Logger.From(r.Context()).Info("Request", "method", r.Method, "path", r.URL.Path)
 	next()
 }
 
 type APIKeyMiddleware struct{}
 
-func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, next ginject.Next) {
+func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
 	if r.Header.Get("X-Api-Key") == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -887,11 +900,11 @@ func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, nex
 }
 
 type ReportController struct {
-	ginject.HTTP
-	ginject.Middleware
+	owlky.HTTP
+	owlky.Middleware
 }
 
-func (instance ReportController) NewController() ginject.Controller {
+func (instance ReportController) NewController() owlky.Controller {
 	instance.BindMiddleware(APIKeyMiddleware{}, instance.READ_reports)
 	return instance
 }
@@ -901,9 +914,9 @@ func (instance ReportController) READ_reports() []string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.BindGlobalMiddlewares(RequestLogMiddleware{})
-	app.Create(ginject.ModuleBuilder().Controllers(ReportController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(ReportController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -921,14 +934,14 @@ func main() {
 ### Guard
 
 A guard decides whether a request may reach its handler. Write
-`CanActivate(ginject.HTTPContext) bool` for HTTP routes, or `CanActivate(ginject.WSContext) bool` for
+`CanActivate(owlky.HTTPContext) bool` for HTTP routes, or `CanActivate(owlky.WSContext) bool` for
 WebSocket events. A guard that returns `false` answers `403` with
 `{"code":403,"error":"Forbidden","message":"Access denied"}`.
 
-Ginject reads the signature of `CanActivate` to know the guard's transport: a global HTTP guard
+Owlky Go reads the signature of `CanActivate` to know the guard's transport: a global HTTP guard
 runs only for HTTP routes, and a WebSocket guard only for WebSocket events.
 
-A guard can have an optional `NewGuard` constructor. Ginject injects providers into the guard's
+A guard can have an optional `NewGuard` constructor. Owlky Go injects providers into the guard's
 exported fields, calls `NewGuard` once at `Create()`, and runs the instance it returns. A guard
 can't have unexported fields: they stop `Create()`.
 
@@ -936,8 +949,8 @@ can't have unexported fields: they stop `Create()`.
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/config"
 )
 
 type TokenGuard struct {
@@ -950,16 +963,16 @@ func (instance TokenGuard) NewGuard() TokenGuard {
 	return instance
 }
 
-func (instance TokenGuard) CanActivate(c ginject.HTTPContext) bool {
+func (instance TokenGuard) CanActivate(c owlky.HTTPContext) bool {
 	return instance.Token != "" && c.Header().Get("Authorization") == "Bearer "+instance.Token
 }
 
 type AccountController struct {
-	ginject.HTTP
-	ginject.Guard
+	owlky.HTTP
+	owlky.Guard
 }
 
-func (instance AccountController) NewController() ginject.Controller {
+func (instance AccountController) NewController() owlky.Controller {
 	instance.BindGuard(TokenGuard{})
 	return instance
 }
@@ -969,9 +982,9 @@ func (instance AccountController) READ_account() string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(config.Register(&config.ConfigModuleOptions{IsGlobal: true})).
 			Controllers(AccountController{}).
 			Build(),
@@ -990,8 +1003,8 @@ shape of the input, use a [pipe](#pipes).
 ### Interceptor
 
 An interceptor runs code before and after the handler. Write
-`Intercept(ginject.HTTPContext, ginject.Aggregation) any`, or the same method with
-`ginject.WSContext` for WebSocket events.
+`Intercept(owlky.HTTPContext, owlky.Aggregation) any`, or the same method with
+`owlky.WSContext` for WebSocket events.
 
 - Return `a.Pipe(operators…)` to run the handler and pass its result through the operators.
 - Return any other value to skip the handler: that value is the response.
@@ -1005,23 +1018,23 @@ An interceptor runs code before and after the handler. Write
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type EnvelopeInterceptor struct{}
 
-func (instance EnvelopeInterceptor) Intercept(c ginject.HTTPContext, a ginject.Aggregation) any {
+func (instance EnvelopeInterceptor) Intercept(c owlky.HTTPContext, a owlky.Aggregation) any {
 	return a.Pipe(
 		a.Transform(func(data any) any {
-			return ginject.Map{"data": data, "request": c.ID()}
+			return owlky.Map{"data": data, "request": c.ID()}
 		}),
 	)
 }
 
 type TagController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance TagController) NewController() ginject.Controller {
+func (instance TagController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -1030,9 +1043,9 @@ func (instance TagController) READ_tags() []string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.BindGlobalInterceptors(EnvelopeInterceptor{})
-	app.Create(ginject.ModuleBuilder().Controllers(TagController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(TagController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1040,7 +1053,7 @@ func main() {
 ```
 
 `GET /tags` answers `{"data":["go","web"],"request":"<request ID>"}`. Bind an interceptor to one
-controller with `instance.BindInterceptor(EnvelopeInterceptor{})` (embed `ginject.Interceptor`).
+controller with `instance.BindInterceptor(EnvelopeInterceptor{})` (embed `owlky.Interceptor`).
 The optional constructor is `NewInterceptor`.
 
 ### Exception filter
@@ -1049,21 +1062,21 @@ Panic with an exception anywhere from a guard onwards, and an exception filter t
 response. Without a filter of your own, the built-in filter answers with the exception's code
 and `{"code":<int>,"error":<string>,"message":<string>}`.
 
-To change the response, write `Catch(ginject.HTTPContext, *exception.Exception)`, or the same method
-with `ginject.WSContext` for WebSocket events:
+To change the response, write `Catch(owlky.HTTPContext, *exception.Exception)`, or the same method
+with `owlky.WSContext` for WebSocket events:
 
 ```go
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 type ProblemFilter struct{}
 
-func (instance ProblemFilter) Catch(c ginject.HTTPContext, ex *exception.Exception) {
-	c.Status(ex.Code()).JSON(ginject.Map{
+func (instance ProblemFilter) Catch(c owlky.HTTPContext, ex *exception.Exception) {
+	c.Status(ex.Code()).JSON(owlky.Map{
 		"status": ex.Code(),
 		"title":  ex.StatusText(),
 		"detail": ex.Message(),
@@ -1071,16 +1084,16 @@ func (instance ProblemFilter) Catch(c ginject.HTTPContext, ex *exception.Excepti
 }
 
 type BookController struct {
-	ginject.HTTP
-	ginject.ExceptionFilter
+	owlky.HTTP
+	owlky.ExceptionFilter
 }
 
-func (instance BookController) NewController() ginject.Controller {
+func (instance BookController) NewController() owlky.Controller {
 	instance.BindExceptionFilter(ProblemFilter{})
 	return instance
 }
 
-func (instance BookController) READ_books_BY_id(param ginject.Param) string {
+func (instance BookController) READ_books_BY_id(param owlky.Param) string {
 	if param.Get("id") != "1" {
 		panic(exception.NotFoundException("Book not found"))
 	}
@@ -1088,8 +1101,8 @@ func (instance BookController) READ_books_BY_id(param ginject.Param) string {
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(BookController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(BookController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1112,20 +1125,20 @@ Bind a filter to every route with `app.BindGlobalExceptionFilters(ProblemFilter{
 ### Pipes
 
 A pipe binds and validates one handler parameter. It is a value type with a `Transform` method
-that takes a source and a `ginject.ArgumentMetadata`, and returns a value of the pipe's own type.
-Declare the pipe as a handler parameter: Ginject calls `Transform` before the handler and passes
+that takes a source and a `owlky.ArgumentMetadata`, and returns a value of the pipe's own type.
+Declare the pipe as a handler parameter: Owlky Go calls `Transform` before the handler and passes
 its result.
 
 | Source | `Transform` method |
 |---|---|
-| The JSON body | `Transform(ginject.Body, ginject.ArgumentMetadata) any` |
-| The query string | `Transform(ginject.Query, ginject.ArgumentMetadata) any` |
-| The path parameters | `Transform(ginject.Param, ginject.ArgumentMetadata) any` |
-| The request headers | `Transform(ginject.Header, ginject.ArgumentMetadata) any` |
-| The form values | `Transform(ginject.Form, ginject.ArgumentMetadata) any` |
-| The uploaded files | `Transform(ginject.File, ginject.ArgumentMetadata) any` |
-| The request's context | `Transform(ginject.HTTPContext, ginject.ArgumentMetadata) any` |
-| A WebSocket message | `Transform(ginject.WSPayload, ginject.ArgumentMetadata) any` |
+| The JSON body | `Transform(owlky.Body, owlky.ArgumentMetadata) any` |
+| The query string | `Transform(owlky.Query, owlky.ArgumentMetadata) any` |
+| The path parameters | `Transform(owlky.Param, owlky.ArgumentMetadata) any` |
+| The request headers | `Transform(owlky.Header, owlky.ArgumentMetadata) any` |
+| The form values | `Transform(owlky.Form, owlky.ArgumentMetadata) any` |
+| The uploaded files | `Transform(owlky.File, owlky.ArgumentMetadata) any` |
+| The request's context | `Transform(owlky.HTTPContext, owlky.ArgumentMetadata) any` |
+| A WebSocket message | `Transform(owlky.WSPayload, owlky.ArgumentMetadata) any` |
 
 `ArgumentMetadata` tells the pipe where it runs: `ContextType` is `http` or `ws`, and `ParamType`
 is the source (`body`, `query`, `param`, `header`, `form`, `file`, `context` or `wsPayload`).
@@ -1138,8 +1151,8 @@ package main
 import (
 	"strings"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 type CreateUserBody struct {
@@ -1147,7 +1160,7 @@ type CreateUserBody struct {
 	Email string `bind:"email"`
 }
 
-func (instance CreateUserBody) Transform(body ginject.Body, _ ginject.ArgumentMetadata) any {
+func (instance CreateUserBody) Transform(body owlky.Body, _ owlky.ArgumentMetadata) any {
 	user := body.BindValue(instance).(CreateUserBody)
 	if user.Name == "" || !strings.Contains(user.Email, "@") {
 		panic(exception.BadRequestException("A name and a valid email are required"))
@@ -1156,20 +1169,20 @@ func (instance CreateUserBody) Transform(body ginject.Body, _ ginject.ArgumentMe
 }
 
 type SignupController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance SignupController) NewController() ginject.Controller {
+func (instance SignupController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance SignupController) CREATE_users(user CreateUserBody) ginject.Map {
-	return ginject.Map{"name": user.Name, "email": user.Email}
+func (instance SignupController) CREATE_users(user CreateUserBody) owlky.Map {
+	return owlky.Map{"name": user.Name, "email": user.Email}
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(SignupController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(SignupController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1193,7 +1206,7 @@ See [core › Pipes](internal/core/README.md#pipes) and [ctx › Binding](intern
 
 ## Module lifecycle
 
-This section explains how Ginject builds modules, in which order, and what happens when a module
+This section explains how Owlky Go builds modules, in which order, and what happens when a module
 needs a slow or unreliable dependency such as a database. Read it before you write a module that
 connects to something.
 
@@ -1201,35 +1214,35 @@ connects to something.
 
 `Imports` and `AsyncImports` take two kinds of entries:
 
-- **Module:** a value built with `ginject.ModuleBuilder()…Build()`. Its providers and controllers
+- **Module:** a value built with `owlky.ModuleBuilder()…Build()`. Its providers and controllers
   are known before `Create()`.
-- **Module factory:** a function that returns a module. Ginject calls it during `Create()` (or in
+- **Module factory:** a function that returns a module. Owlky Go calls it during `Create()` (or in
   the background, with `AsyncImports`) and injects its parameters. Use a factory when the module
   needs configuration, or must connect to something before it can provide anything.
 
 There is no third kind. **Global** is a property of a module: set `IsGlobal = true` on the module,
 whether you built it yourself or a factory returned it. **`Register`** is only a function name:
 `config.Register(opts)` and `cache.Register(opts)` are functions you call, and they return a
-module. Ginject never calls them.
+module. Owlky Go never calls them.
 
 ### Factory signatures
 
 A factory has one of these three shapes:
 
 ```go
-func(deps...) ginject.Module
-func(deps...) (ginject.Module, error)
-func(ctx context.Context, deps...) (ginject.Module, error)
+func(deps...) owlky.Module
+func(deps...) (owlky.Module, error)
+func(ctx context.Context, deps...) (owlky.Module, error)
 ```
 
 - **`deps`:** any number of parameters. Each one is a provider type, `log.Logger` or
-  `ginject.Publisher`.
-- **`ctx`:** only as the first parameter, and only with the `(ginject.Module, error)` result. Its
+  `owlky.Publisher`.
+- **`ctx`:** only as the first parameter, and only with the `(owlky.Module, error)` result. Its
   deadline is the startup timeout in `Imports`. In `AsyncImports` it has no deadline and is
   canceled at shutdown.
 - **Anything else stops `Build()`.** A nil entry, a variadic function, `ctx` in second place or a
   `ctx` factory without an error result panic with every bad entry listed:
-  `invalid module: can't import '<type>' with Imports: an import is a ginject.Module or a module factory: …`.
+  `invalid module: can't import '<type>' with Imports: an import is a owlky.Module or a module factory: …`.
 - **Called once per app.** The same function listed by two modules is one factory, called once.
   Two closures of one function literal count as one factory too.
 - **A failed factory stops `Create()`** when it is in `Imports`. The message names the factory:
@@ -1244,11 +1257,11 @@ A factory listed by module `P` resolves each argument from, in this order:
 1. The providers of the other entries of `P`'s `Imports` and `AsyncImports`: its siblings, and what
    they import.
 2. The global providers: the root module's, and those of every `IsGlobal` module.
-3. `log.Logger` and `ginject.Publisher`.
+3. `log.Logger` and `owlky.Publisher`.
 
 `P`'s own providers are not in scope: `P` is built after its imports.
 
-**Order doesn't matter.** Ginject calls the factories in dependency order, whatever their position
+**Order doesn't matter.** Owlky Go calls the factories in dependency order, whatever their position
 in the list. A factory can come before the sibling it needs, and a factory can need what another
 factory returns. When nothing can be called anymore, `Create()` stops:
 
@@ -1266,19 +1279,19 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/config"
 )
 
 type Database struct {
 	DB *sql.DB
 }
 
-func (instance Database) NewProvider() ginject.Provider {
+func (instance Database) NewProvider() owlky.Provider {
 	return instance
 }
 
-func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
 	url, _ := configService.Get("DATABASE_URL").(string)
 	// Import a driver, such as github.com/jackc/pgx/v5/stdlib, to register "pgx".
 	db, err := sql.Open("pgx", url)
@@ -1290,7 +1303,7 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 		return nil, err
 	}
 
-	module := ginject.ModuleBuilder().
+	module := owlky.ModuleBuilder().
 		Providers(Database{DB: db}).
 		Build()
 	module.OnShutdown = func() {
@@ -1300,15 +1313,15 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 }
 
 type StatusController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Database Database
 }
 
-func (instance StatusController) NewController() ginject.Controller {
+func (instance StatusController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance StatusController) READ_status(c ginject.HTTPContext) string {
+func (instance StatusController) READ_status(c owlky.HTTPContext) string {
 	if err := instance.Database.DB.PingContext(c.Context()); err != nil {
 		return "down"
 	}
@@ -1316,10 +1329,10 @@ func (instance StatusController) READ_status(c ginject.HTTPContext) string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.SetStartupTimeout(10 * time.Second)
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(
 				NewDatabaseModule,
 				config.Register(&config.ConfigModuleOptions{IsIgnoreEnvFile: true}),
@@ -1345,7 +1358,7 @@ default is 30 seconds.
 - **One budget.** The timeout counts from the start of `Create()`, for all factories together.
 - **The deadline is in `ctx`.** A `ctx` factory gets a context with that deadline. The context is
   canceled when `Create()` returns: don't keep it for later work.
-- **A factory that ignores `ctx` is abandoned.** Ginject calls every factory of `Imports` on a
+- **A factory that ignores `ctx` is abandoned.** Owlky Go calls every factory of `Imports` on a
   helper goroutine and stops waiting at the deadline, whatever the factory's shape. `Create()` then
   panics with `module factory '<name>' did not return within the startup timeout (10s)`.
 - **Factories only.** `OnInit` and `NewProvider` are not covered: they take no `ctx`. Do slow work,
@@ -1378,20 +1391,20 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/modules/config"
 )
 
 type Database struct {
 	DB *sql.DB
 }
 
-func (instance Database) NewProvider() ginject.Provider {
+func (instance Database) NewProvider() owlky.Provider {
 	return instance
 }
 
-func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (ginject.Module, error) {
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
 	url, _ := configService.Get("DATABASE_URL").(string)
 	// Import a driver, such as github.com/jackc/pgx/v5/stdlib, to register "pgx".
 	db, err := sql.Open("pgx", url)
@@ -1399,7 +1412,7 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 		return nil, err
 	}
 
-	err = ginject.Retry(ctx, nil, func(ctx context.Context) error {
+	err = owlky.Retry(ctx, nil, func(ctx context.Context) error {
 		return db.PingContext(ctx)
 	})
 	if err != nil {
@@ -1407,7 +1420,7 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 		return nil, err
 	}
 
-	module := ginject.ModuleBuilder().
+	module := owlky.ModuleBuilder().
 		Providers(Database{DB: db}).
 		Build()
 	module.OnShutdown = func() {
@@ -1417,28 +1430,28 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 }
 
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Database Database
 }
 
-func (instance UserController) NewController() ginject.Controller {
+func (instance UserController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance UserController) READ_users_count(c ginject.HTTPContext) ginject.Map {
+func (instance UserController) READ_users_count(c owlky.HTTPContext) owlky.Map {
 	var count int
 	err := instance.Database.DB.QueryRowContext(c.Context(), "SELECT count(*) FROM users").Scan(&count)
 	if err != nil {
 		panic(exception.ServiceUnavailableException("Service Unavailable", exception.ExceptionOptions{Cause: err}))
 	}
-	return ginject.Map{"count": count}
+	return owlky.Map{"count": count}
 }
 
 type HealthController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance HealthController) NewController() ginject.Controller {
+func (instance HealthController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -1446,12 +1459,12 @@ func (instance HealthController) READ_health() string {
 	return "ok"
 }
 
-var UserModule = ginject.ModuleBuilder().
+var UserModule = owlky.ModuleBuilder().
 	AsyncImports(NewDatabaseModule).
 	Controllers(UserController{}).
 	Build()
 
-var AppModule = ginject.ModuleBuilder().
+var AppModule = owlky.ModuleBuilder().
 	Imports(
 		config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
 		UserModule,
@@ -1460,7 +1473,7 @@ var AppModule = ginject.ModuleBuilder().
 	Build()
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(AppModule)
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -1506,7 +1519,7 @@ shutdown (SIGINT, SIGTERM, app.Stop())
   └─ OnShutdown of the ready modules, in the reverse of the order they became ready
 ```
 
-- Ginject wires one module at a time. Factories run in parallel, but a slow `OnInit` or
+- Owlky Go wires one module at a time. Factories run in parallel, but a slow `OnInit` or
   `NewProvider` delays the other background modules: connect in the factory.
 - A factory that returns after the cancel has its module dropped. Close what it opened when `ctx`
   is done.
@@ -1593,7 +1606,7 @@ These mistakes stop the boot, or fail the module, with a message that names it:
 - **One entry in both lists.** `Build()` panics with `invalid module: '<name>' is in both Imports and AsyncImports`,
   and `Create()` with `invalid module: '<name>' is imported with Imports by '<a>' and with AsyncImports by '<b>'`
   when two modules disagree.
-- **`NewController` must not use injected providers.** In an app with `AsyncImports`, Ginject may
+- **`NewController` must not use injected providers.** In an app with `AsyncImports`, Owlky Go may
   call `NewController` twice: once at `Create()` on a throwaway instance, to register and check the
   routes, and once to build the controller. This is always the case for the controllers of a module
   that is not ready at `Create()`, and can happen for other controllers that bind layers. In the
@@ -1610,11 +1623,11 @@ These mistakes stop the boot, or fail the module, with a message that names it:
 
 ### Retry
 
-`ginject.Retry(ctx, opts, fn)` calls `fn` until it returns `nil`, waiting longer after each failure.
+`owlky.Retry(ctx, opts, fn)` calls `fn` until it returns `nil`, waiting longer after each failure.
 Use it inside a factory:
 
 ```go
-err := ginject.Retry(ctx, &ginject.RetryOptions{InitialDelay: time.Second}, func(ctx context.Context) error {
+err := owlky.Retry(ctx, &owlky.RetryOptions{InitialDelay: time.Second}, func(ctx context.Context) error {
 	return db.PingContext(ctx)
 })
 ```
@@ -1629,12 +1642,12 @@ err := ginject.Retry(ctx, &ginject.RetryOptions{InitialDelay: time.Second}, func
   `MaxDelay`, then a random time between half of it and all of it. The jitter keeps many instances
   from reconnecting at the same moment.
 - **It stops with `ctx`.** When `ctx` is done, `Retry` returns
-  `ginject: retry stopped after <n> attempts: …`. `errors.Is` finds both `ctx.Err()` and the last
+  `owlky: retry stopped after <n> attempts: …`. `errors.Is` finds both `ctx.Err()` and the last
   error. `fn` is not called when `ctx` is already done.
-- **It gives up after `MaxAttempts`.** It returns `ginject: retry gave up after <n> attempts: <last error>`.
+- **It gives up after `MaxAttempts`.** It returns `owlky: retry gave up after <n> attempts: <last error>`.
 - **`nil` options** mean the defaults. A nil `fn` panics `invalid retry: Retry needs a function`.
   A panic in `fn` is not recovered.
-- **It reports to the module.** With the `ctx` that Ginject gave an `AsyncImports` factory, each
+- **It reports to the module.** With the `ctx` that Owlky Go gave an `AsyncImports` factory, each
   failed attempt logs `ModuleRetry`, counts in the devtool's `attempts` and `last_error`, and sets
   the `Retry-After` that clients get. With any other `ctx`, `Retry` only retries.
 
@@ -1657,7 +1670,7 @@ once, and only `PingContext` is retried.
 
 ### Don't retry in a goroutine of your own
 
-Ginject calls a factory once. Two shortcuts look tempting, and both lose what the framework gives
+Owlky Go calls a factory once. Two shortcuts look tempting, and both lose what the framework gives
 you:
 
 - **Returning an error and retrying later yourself.** The error makes the module `failed`, and
@@ -1667,11 +1680,11 @@ you:
   no `503` with `Retry-After`, no state in the log or the devtool, no cancel at shutdown, and
   `OnShutdown` can run while the goroutine still connects.
 
-Retry inside the factory with `ginject.Retry` and the factory's `ctx`.
+Retry inside the factory with `owlky.Retry` and the factory's `ctx`.
 
 ### After a module is ready
 
-A `ready` module stays ready. When its database goes down later, Ginject doesn't unwire the module
+A `ready` module stays ready. When its database goes down later, Owlky Go doesn't unwire the module
 or close its routes: run-time failures are the business code's job. Let the driver's pool
 reconnect, and answer the failed request with an exception, as `READ_users_count` does with
 `exception.ServiceUnavailableException`.
@@ -1679,19 +1692,19 @@ reconnect, and answer the failed request with an exception, as `READ_users_count
 ### Compared with NestJS forRootAsync
 
 NestJS's `forRootAsync` awaits its `useFactory` during the bootstrap: the app doesn't listen until
-every async module has resolved, and a factory that rejects stops the bootstrap. A Ginject factory
+every async module has resolved, and a factory that rejects stops the bootstrap. An Owlky Go factory
 in `Imports` behaves the same way, with a deadline.
 
 `AsyncImports` is different. The app listens at once, only the routes that need the module answer
 `503` until it is ready, and a failure leaves the rest of the app running. In NestJS, "async"
-describes how the module's author configures the module. In Ginject, it describes how the app
+describes how the module's author configures the module. In Owlky Go, it describes how the app
 imports it.
 
 ---
 
 ## Pages
 
-Ginject also serves finished HTML pages, rendered on the server with Go's `html/template`. A page
+Owlky Go also serves finished HTML pages, rendered on the server with Go's `html/template`. A page
 is a route like any other: it uses the same route words, modules, guards, interceptors, pipes and
 filters as an API route, and the route picks the template. One binary carries its templates and
 assets, and nothing extra runs while the server is idle.
@@ -1711,8 +1724,8 @@ assets, and nothing extra runs while the server is idle.
 
 ### Render a page
 
-Turn on rendering with `app.EnableRender(&ginject.RenderOptions{FS: web})` before `Create`. Then,
-in a controller that embeds `ginject.HTTP`, name a handler with one of the two page operations:
+Turn on rendering with `app.EnableRender(&owlky.RenderOptions{FS: web})` before `Create`. Then,
+in a controller that embeds `owlky.HTTP`, name a handler with one of the two page operations:
 
 - **`RENDER_<route>`** answers `GET` (and `HEAD`) on the path that `READ_<route>` would have. It
   renders the template of that path, and the handler's result is the template's data.
@@ -1751,10 +1764,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
-	"github.com/dangduoc08/ginject/middlewares/helmet"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/middlewares/csrf"
+	"go.owlky.com/owlky/middlewares/helmet"
 )
 
 //go:embed web
@@ -1775,7 +1788,7 @@ type BookingService struct {
 	Table *BookingTable
 }
 
-func (instance BookingService) NewProvider() ginject.Provider {
+func (instance BookingService) NewProvider() owlky.Provider {
 	instance.Table = &BookingTable{}
 	return instance
 }
@@ -1808,7 +1821,7 @@ type BookingForm struct {
 	Errors map[string]string
 }
 
-func (instance BookingForm) Transform(form ginject.Form, _ ginject.ArgumentMetadata) any {
+func (instance BookingForm) Transform(form owlky.Form, _ owlky.ArgumentMetadata) any {
 	bound, fields := form.Bind(instance)
 	dto := bound.(BookingForm)
 	dto.Errors = map[string]string{}
@@ -1821,19 +1834,19 @@ func (instance BookingForm) Transform(form ginject.Form, _ ginject.ArgumentMetad
 }
 
 type BookingPages struct {
-	ginject.HTTP
+	owlky.HTTP
 	Bookings BookingService
 }
 
-func (instance BookingPages) NewController() ginject.Controller {
+func (instance BookingPages) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance BookingPages) RENDER_bookings() ginject.Map {
-	return ginject.Map{"Bookings": instance.Bookings.All()}
+func (instance BookingPages) RENDER_bookings() owlky.Map {
+	return owlky.Map{"Bookings": instance.Bookings.All()}
 }
 
-func (instance BookingPages) RENDER_bookings_BY_id(param ginject.Param) Booking {
+func (instance BookingPages) RENDER_bookings_BY_id(param owlky.Param) Booking {
 	booking, ok := instance.Bookings.Find(param.Get("id"))
 	if !ok {
 		panic(exception.NotFoundException("No booking has this number"))
@@ -1845,7 +1858,7 @@ func (instance BookingPages) RENDER_new_OF_bookings() BookingForm {
 	return BookingForm{Nights: "1"}
 }
 
-func (instance BookingPages) SUBMIT_new_OF_bookings(c ginject.HTTPContext, form BookingForm) BookingForm {
+func (instance BookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form BookingForm) BookingForm {
 	if len(form.Errors) == 0 {
 		instance.Bookings.Add(form.Guest, form.Nights)
 		c.Redirect("/bookings")
@@ -1854,12 +1867,12 @@ func (instance BookingPages) SUBMIT_new_OF_bookings(c ginject.HTTPContext, form 
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.BindGlobalMiddlewares(helmet.Helmet{}, csrf.CSRF{})
 	// The web directory of the embedded files; PAGES_DEV=1 reads it from disk and reloads it.
-	app.EnableRender(&ginject.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"})
+	app.EnableRender(&owlky.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"})
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Controllers(BookingPages{}).
 			Providers(BookingService{}).
 			Build(),
@@ -1984,10 +1997,10 @@ Run it with `go run .`, then open the pages in a browser:
 ### File conventions
 
 `RenderOptions.FS` holds the templates and the assets, usually the app's `embed.FS`
-(`//go:embed web`). Ginject reads the directory `RenderOptions.Dir` inside it: `web` when `Dir` is empty,
+(`//go:embed web`). Owlky Go reads the directory `RenderOptions.Dir` inside it: `web` when `Dir` is empty,
 the root of `FS` with `Dir: "."`. A `FS` without that directory stops `EnableRender` with
 `invalid render: RenderOptions.FS has no "web" directory: embed it with //go:embed web, or set Dir`.
-With `IsReload` on an `embed.FS`, Ginject reads the same directory from disk instead (relative to the
+With `IsReload` on an `embed.FS`, Owlky Go reads the same directory from disk instead (relative to the
 working directory), so edits show without a rebuild; `Create()` logs a `Warn` `RenderReloadOn`, and a
 missing directory on disk stops it. Where a file is decides what it is:
 
@@ -2021,7 +2034,7 @@ the file or directory name, with the route's parameter name:
   `{{block "title" .}}…{{end}}` with its own `{{define "title"}}…{{end}}`. Layouts don't nest, and
   a page without a layout is rendered alone.
 - **Data:** the handler's only or last result is `.` in the page and in its layout, of any type: a
-  `ginject.Map`, a struct, a slice or `nil`. A handler with no result renders with `nil`. A partial
+  `owlky.Map`, a struct, a slice or `nil`. A handler with no result renders with `nil`. A partial
   gets what the caller passes.
 
 `Create()` reads and parses every layout, page, partial and error page once, and binds each page
@@ -2051,7 +2064,7 @@ data instead, such as `{{.Date.Format "2 Jan 2006"}}`.
 | A `RENDER_` handler returns | `200` |
 | A `SUBMIT_` handler returns without a redirect | `422`: the form is shown again with its errors |
 | The handler calls `c.Status(code)`, or returns `(int, data)` | That code |
-| The handler calls `c.Redirect(url)`, or the `ginject.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
+| The handler calls `c.Redirect(url)`, or the `owlky.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
 | The handler set a 3xx status with `c.Status` before the redirect | That status |
 
 - A page answers with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and
@@ -2100,14 +2113,14 @@ Where an error happened decides its format:
 | Before any guard: a refusal of a middleware (`csrf` `403`, `hostcheck` `421`, `loadshed` `503`, your own), and no route (`404`, `405` with its `Allow` header, `410`) | HTML when a value of the request's `Accept` header contains `text/html`, else JSON. The response carries `Vary: Accept` |
 
 - Browsers send `Accept: text/html,…`, so they get HTML. `*/*` alone, `application/xhtml+xml` alone,
-  or no `Accept` header gets JSON. Ginject doesn't read q-values.
+  or no `Accept` header gets JSON. Owlky Go doesn't read q-values.
 - An HTML error with the code `C` renders the first file that exists at the root of `Dir`:
   `<C>.html`, then `4xx.html` or `5xx.html`, then a built-in page. It is rendered in the root
   `layout.html`, with `Content-Type: text/html; charset=utf-8` and the error's status. Headers that
   layers set, such as `Retry-After` and `Allow`, are kept.
 - The built-in page is a complete HTML document with the code, the status text and the message,
   and no style, script or external resource, so it passes any CSP.
-- When the chosen file or its layout fails to render, Ginject sends the built-in page with the same
+- When the chosen file or its layout fails to render, Owlky Go sends the built-in page with the same
   code and logs `RenderFailed`. It doesn't try the next file. An error page is never empty and
   never half a page.
 - Your exception filters run first on a page route, and can answer by themselves.
@@ -2149,12 +2162,12 @@ See [Exceptions](#exceptions) and [core › Error response](internal/core/README
 
 ### Forms
 
-A form is a pipe whose `Transform` takes `ginject.Form`, as `BookingForm` above:
+A form is a pipe whose `Transform` takes `owlky.Form`, as `BookingForm` above:
 
 1. The page's form posts to its own URL: `<form method="post" action="/bookings/new">` reaches
    `SUBMIT_new_OF_bookings`.
 2. `form.Bind(instance)` copies the fields by their `bind` tags (`application/x-www-form-urlencoded`
-   and `multipart/form-data`, the same as on an API route) and returns one `ginject.FieldLevel` per
+   and `multipart/form-data`, the same as on an API route) and returns one `owlky.FieldLevel` per
    field.
 3. `Transform` checks the fields and keeps its messages in an exported field of the DTO, such as
    `Errors map[string]string`.
@@ -2163,7 +2176,7 @@ A form is a pipe whose `Transform` takes `ginject.Form`, as `BookingForm` above:
 5. When the form is valid, the handler saves it and calls `c.Redirect`, which answers `303`. The
    browser loads the next page with `GET`, so a reload never posts the form twice.
 
-- A pipe's fields are exported. Ginject injects providers into them, and an unexported field stops
+- A pipe's fields are exported. Owlky Go injects providers into them, and an unexported field stops
   `Create()`: `dependency injection: can't set value to unexported 'nights' field of the main.BookingForm pipe`.
   Keep computed values out of the pipe, or compute them again where you need them.
 - A malformed form body (`400`) or one over `ServerOptions.MaxRequestBodyBytes` (`413`) answers the
@@ -2198,8 +2211,8 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-<N>'; styl
 
 ### Assets
 
-When `Dir` has an `assets` directory, Ginject serves it at `GET /assets/*` with a built-in route.
-Link a file with `{{asset "app.css"}}`: Ginject hashes every asset once at `Create()`, so the URL
+When `Dir` has an `assets` directory, Owlky Go serves it at `GET /assets/*` with a built-in route.
+Link a file with `{{asset "app.css"}}`: Owlky Go hashes every asset once at `Create()`, so the URL
 changes when the file does.
 
 | Request | `Cache-Control` |
@@ -2215,7 +2228,7 @@ changes when the file does.
   `.well-known`) answers `404` as JSON. Templates are not reachable through this route.
 - Global middlewares and global guards run for the asset route. A route of your own at `/assets/*`
   stops `Create()` with `route conflict:`. Without an `assets` directory and without page CSS or
-  JS, Ginject adds no route.
+  JS, Owlky Go adds no route.
 - `assets/_pages` is reserved for page CSS and JS: a file or directory with that name stops
   `Create()`.
 
@@ -2233,7 +2246,7 @@ below `public`: `public/robots.txt` answers `/robots.txt`.
   `route conflict: public/robots.txt method is conflicted with READ_robots_txt_FILE method`.
 - A segment that starts with `.` is never served, except `.well-known`. `//go:embed web` leaves
   out names that start with `.` or `_`. To ship `.well-known`, write `//go:embed all:web`, which
-  also embeds every other dotfile under `web` in the binary. Ginject never serves those.
+  also embeds every other dotfile under `web` in the binary. Owlky Go never serves those.
 - The list of files is fixed at `Create()`. With `IsReload`, a file is read on each request, with
   no `ETag`, and a file added later answers `404` until the restart.
 - Errors are JSON. Global middlewares and global guards run for these routes, which appear in the
@@ -2303,36 +2316,36 @@ built with Owlky's framework-free HTML components.
 
 ## WebSocket
 
-Turn on the WebSocket server with `app.EnableWS(&ginject.WSOptions{Path: "ws"})` before `Create`. An
-empty `Path` serves `/ws`. Then write a controller that embeds `ginject.WS`, with one
+Turn on the WebSocket server with `app.EnableWS(&owlky.WSOptions{Path: "ws"})` before `Create`. An
+empty `Path` serves `/ws`. Then write a controller that embeds `owlky.WS`, with one
 `SUBSCRIBE_…` method per event:
 
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type ChatMessage struct {
 	Text string `bind:"text"`
 }
 
 type ChatController struct {
-	ginject.WS
+	owlky.WS
 }
 
-func (instance ChatController) NewController() ginject.Controller {
+func (instance ChatController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance ChatController) SUBSCRIBE_chat_ANY(payload ginject.WSPayload) ginject.Map {
+func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky.Map {
 	message := payload.BindValue(ChatMessage{}).(ChatMessage)
-	return ginject.Map{"received": message.Text}
+	return owlky.Map{"received": message.Text}
 }
 
 func main() {
-	app := ginject.New()
-	app.EnableWS(&ginject.WSOptions{Path: "ws"})
-	app.Create(ginject.ModuleBuilder().Controllers(ChatController{}).Build())
+	app := owlky.New()
+	app.EnableWS(&owlky.WSOptions{Path: "ws"})
+	app.Create(owlky.ModuleBuilder().Controllers(ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2381,45 +2394,45 @@ Clients and the server exchange JSON objects with the fields `type`, `id`, `topi
 
 ### Publish from the server
 
-Ask for a `ginject.Publisher` in any handler, HTTP or WebSocket, to send a message to every
+Ask for a `owlky.Publisher` in any handler, HTTP or WebSocket, to send a message to every
 subscriber of a topic:
 
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type NewsController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance NewsController) NewController() ginject.Controller {
+func (instance NewsController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance NewsController) CREATE_news(body ginject.Body, publisher ginject.Publisher) string {
-	if err := publisher.Publish("chat.news", ginject.Map{"headline": body.Get("headline")}); err != nil {
+func (instance NewsController) CREATE_news(body owlky.Body, publisher owlky.Publisher) string {
+	if err := publisher.Publish("chat.news", owlky.Map{"headline": body.Get("headline")}); err != nil {
 		panic(err)
 	}
 	return "sent"
 }
 
 type ChatController struct {
-	ginject.WS
+	owlky.WS
 }
 
-func (instance ChatController) NewController() ginject.Controller {
+func (instance ChatController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance ChatController) SUBSCRIBE_chat_ANY(payload ginject.WSPayload) ginject.WSPayload {
+func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky.WSPayload {
 	return payload
 }
 
 func main() {
-	app := ginject.New()
-	app.EnableWS(&ginject.WSOptions{Path: "ws"})
-	app.Create(ginject.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
+	app := owlky.New()
+	app.EnableWS(&owlky.WSOptions{Path: "ws"})
+	app.Create(owlky.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2433,10 +2446,10 @@ subscribed to `chat.news`.
 ### Layers on WebSocket
 
 - Guards, interceptors and exception filters work on WebSocket events: write their methods with
-  `ginject.WSContext` and bind them in the controller or globally.
+  `owlky.WSContext` and bind them in the controller or globally.
 - Middlewares bound with `BindGlobalMiddlewares` don't run on WebSocket connections. Pass the
   middlewares the handshake needs to `EnableWS`, after the config:
-  `app.EnableWS(&ginject.WSOptions{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+  `app.EnableWS(&owlky.WSOptions{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
   They run once per connection, at the handshake, and a middleware that doesn't call `next()`
   refuses the connection.
 
@@ -2450,13 +2463,13 @@ Versioning lets one path answer differently per API version. Enable it before `C
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance UserController) NewController() ginject.Controller {
+func (instance UserController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -2464,8 +2477,8 @@ func (instance UserController) READ_users_VERSION_1() []string {
 	return []string{"alice"}
 }
 
-func (instance UserController) READ_users_VERSION_2() ginject.Map {
-	return ginject.Map{"users": []string{"alice"}, "total": 1}
+func (instance UserController) READ_users_VERSION_2() owlky.Map {
+	return owlky.Map{"users": []string{"alice"}, "total": 1}
 }
 
 func (instance UserController) READ_health_VERSION_NEUTRAL() string {
@@ -2473,13 +2486,13 @@ func (instance UserController) READ_health_VERSION_NEUTRAL() string {
 }
 
 func main() {
-	app := ginject.New()
-	app.EnableVersioning(&ginject.VersioningOptions{
-		Type:           ginject.VersioningHeader,
+	app := owlky.New()
+	app.EnableVersioning(&owlky.VersioningOptions{
+		Type:           owlky.VersioningHeader,
 		Key:            "X-Api-Version",
 		DefaultVersion: "1",
 	})
-	app.Create(ginject.ModuleBuilder().Controllers(UserController{}).Build())
+	app.Create(owlky.ModuleBuilder().Controllers(UserController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2491,10 +2504,10 @@ func main() {
 
 | `Type` | Where the version is read | Example with the default `Key` (`v`) |
 |---|---|---|
-| `ginject.VersioningQuery` | A query parameter | `GET /users?v=2` |
-| `ginject.VersioningHeader` | A request header | `v: 2` |
-| `ginject.VersioningMediaType` | A parameter of the `Accept` header | `Accept: application/json;v=2` |
-| `ginject.VersioningCustom` | Your `Extractor` function, `func(ginject.HTTPContext) string` | |
+| `owlky.VersioningQuery` | A query parameter | `GET /users?v=2` |
+| `owlky.VersioningHeader` | A request header | `v: 2` |
+| `owlky.VersioningMediaType` | A parameter of the `Accept` header | `Accept: application/json;v=2` |
+| `owlky.VersioningCustom` | Your `Extractor` function, `func(owlky.HTTPContext) string` | |
 
 - `DefaultVersion` is the version of a request that carries none.
 - `VERSION_NEUTRAL` marks a route that answers for every version, and for requests without one.
@@ -2514,24 +2527,24 @@ A `SERVE_…` handler returns the directory to serve. `SERVE_ANY_OF_assets` serv
 ```go
 package main
 
-import "github.com/dangduoc08/ginject"
+import "go.owlky.com/owlky"
 
 type AssetController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance AssetController) NewController() ginject.Controller {
+func (instance AssetController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance AssetController) SERVE_ANY_OF_assets(c ginject.HTTPContext) string {
+func (instance AssetController) SERVE_ANY_OF_assets(c owlky.HTTPContext) string {
 	c.ResponseWriter.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	return "public/assets"
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(AssetController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(AssetController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2569,8 +2582,8 @@ binding, variable expansion and validation hooks. It never prints a value. See t
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/config"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/config"
 )
 
 type DatabaseService struct {
@@ -2578,17 +2591,17 @@ type DatabaseService struct {
 	Host          string
 }
 
-func (instance DatabaseService) NewProvider() ginject.Provider {
+func (instance DatabaseService) NewProvider() owlky.Provider {
 	instance.Host, _ = instance.ConfigService.Get("DB_HOST").(string)
 	return instance
 }
 
 type InfoController struct {
-	ginject.HTTP
+	owlky.HTTP
 	DatabaseService DatabaseService
 }
 
-func (instance InfoController) NewController() ginject.Controller {
+func (instance InfoController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -2597,9 +2610,9 @@ func (instance InfoController) READ_info() string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{
 					IsGlobal:          true,
@@ -2642,20 +2655,20 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/modules/cache"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/modules/cache"
 )
 
 type ProfileController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Cache cache.CacheService
 }
 
-func (instance ProfileController) NewController() ginject.Controller {
+func (instance ProfileController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance ProfileController) READ_profiles_BY_id(c ginject.HTTPContext) string {
+func (instance ProfileController) READ_profiles_BY_id(c owlky.HTTPContext) string {
 	key := "profile:" + c.Param().Get("id")
 	if data, ok := instance.Cache.Get(c.Context(), key); ok {
 		return string(data)
@@ -2667,9 +2680,9 @@ func (instance ProfileController) READ_profiles_BY_id(c ginject.HTTPContext) str
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Imports(cache.Register(&cache.CacheModuleOptions{IsGlobal: true})).
 			Controllers(ProfileController{}).
 			Build(),
@@ -2690,8 +2703,8 @@ func main() {
 
 ### Outbound HTTP calls
 
-Ginject ships no HTTP client module. Call other services with `net/http`, and wrap the transport
-with `ginject.TraceTransport` so the outgoing request continues the incoming request's trace
+Owlky Go ships no HTTP client module. Call other services with `net/http`, and wrap the transport
+with `owlky.TraceTransport` so the outgoing request continues the incoming request's trace
 (`Traceparent`). See the [trace documentation](internal/trace/README.md#outbound-calls).
 
 ```go
@@ -2701,23 +2714,23 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
-	"github.com/dangduoc08/ginject/log"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/log"
 )
 
-var client = &http.Client{Transport: ginject.TraceTransport(nil), Timeout: 10 * time.Second}
+var client = &http.Client{Transport: owlky.TraceTransport(nil), Timeout: 10 * time.Second}
 
 type AccountController struct {
-	ginject.HTTP
+	owlky.HTTP
 	Logger log.Logger
 }
 
-func (instance AccountController) NewController() ginject.Controller {
+func (instance AccountController) NewController() owlky.Controller {
 	return instance
 }
 
-func (instance AccountController) READ_profile(c ginject.HTTPContext) int {
+func (instance AccountController) READ_profile(c owlky.HTTPContext) int {
 	req, err := http.NewRequestWithContext(c.Context(), http.MethodGet, "https://accounts.example.com/me", nil)
 	if err != nil {
 		panic(err)
@@ -2732,8 +2745,8 @@ func (instance AccountController) READ_profile(c ginject.HTTPContext) int {
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(AccountController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(AccountController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2817,24 +2830,24 @@ package main
 import (
 	"time"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/guards/throttler"
-	"github.com/dangduoc08/ginject/log"
-	"github.com/dangduoc08/ginject/middlewares/compress"
-	"github.com/dangduoc08/ginject/middlewares/cors"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
-	"github.com/dangduoc08/ginject/middlewares/helmet"
-	"github.com/dangduoc08/ginject/middlewares/hostcheck"
-	"github.com/dangduoc08/ginject/middlewares/httpsredirect"
-	"github.com/dangduoc08/ginject/middlewares/loadshed"
-	"github.com/dangduoc08/ginject/middlewares/proxy"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/guards/throttler"
+	"go.owlky.com/owlky/log"
+	"go.owlky.com/owlky/middlewares/compress"
+	"go.owlky.com/owlky/middlewares/cors"
+	"go.owlky.com/owlky/middlewares/csrf"
+	"go.owlky.com/owlky/middlewares/helmet"
+	"go.owlky.com/owlky/middlewares/hostcheck"
+	"go.owlky.com/owlky/middlewares/httpsredirect"
+	"go.owlky.com/owlky/middlewares/loadshed"
+	"go.owlky.com/owlky/middlewares/proxy"
 )
 
 type HelloController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance HelloController) NewController() ginject.Controller {
+func (instance HelloController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -2843,7 +2856,7 @@ func (instance HelloController) READ_hello() string {
 }
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.SetLogger(log.NewLog(&log.LogOptions{
 		Format:     log.FormatJSON,
@@ -2868,7 +2881,7 @@ func main() {
 	app.BindGlobalGuards(throttler.Throttler{Limit: 300, TTL: time.Minute})
 
 	app.Create(
-		ginject.ModuleBuilder().
+		owlky.ModuleBuilder().
 			Controllers(HelloController{}).
 			Build(),
 	)
@@ -2887,7 +2900,7 @@ with `"ip":"198.51.100.20"`. The same request over plain HTTP answers
 ### WebSocket
 Middlewares bound with `BindGlobalMiddlewares` don't run on the WebSocket handshake. Pass the ones
 the handshake needs to `EnableWS`, in the same order, for example
-`app.EnableWS(&ginject.WSOptions{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
+`app.EnableWS(&owlky.WSOptions{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
 `cors` then refuses a handshake from an origin you didn't list.
 
 ### Security notes
@@ -2895,13 +2908,13 @@ the handshake needs to `EnableWS`, in the same order, for example
   ([ctx › Redirect](internal/ctx/README.md#redirect)).
 - `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
   instead ([ctx › JSON](internal/ctx/README.md#json)).
-- `ginject.TraceTransport` sends your trace ID and request ID to every host you call
+- `owlky.TraceTransport` sends your trace ID and request ID to every host you call
   ([trace › Outbound calls](internal/trace/README.md#outbound-calls)).
 - Change response headers with `Header().Set`, `Add` or `Del`, never by writing into a value slice
   in place ([core › Response writer](internal/core/README.md#response-writer)).
 - A guard bound to a `RENDER_` handler doesn't cover its `SUBMIT_`: bind it to both, or to the
   controller ([Pages › Forms](#forms)).
-- Bind `csrf.CSRF{}` on every app with `SUBMIT_` routes or cookies: Ginject doesn't add it for you.
+- Bind `csrf.CSRF{}` on every app with `SUBMIT_` routes or cookies: Owlky Go doesn't add it for you.
 - Files in `public/` are sent as they are, at the root URL, with no escaping and no nonce: never
   write user content there ([Pages › Public files](#public-files)).
 - Page CSS and JS URLs show your template tree and are served without the page's guards
@@ -2920,15 +2933,15 @@ package main
 import (
 	"database/sql"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 type InvoiceController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance InvoiceController) NewController() ginject.Controller {
+func (instance InvoiceController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -2940,8 +2953,8 @@ func (instance InvoiceController) READ_invoices() string {
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(InvoiceController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(InvoiceController{}).Build())
 	if err := app.Listen(3000, nil); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2994,7 +3007,7 @@ WebSocket events also have constructors with WebSocket close codes, such as
 
 ## Package reference
 
-An application imports `github.com/dangduoc08/ginject`, plus the packages it uses among
+An application imports `go.owlky.com/owlky`, plus the packages it uses among
 [`exception`](exception/README.md), [`log`](log/README.md), `middlewares/*`, `modules/*` and
 `guards/*`. Every other package of the module is under `internal/` and can't be imported.
 
@@ -3048,7 +3061,7 @@ Without handlers, a layer applies to every handler of the controller.
 Guards, interceptors and exception filters are any value with the right method
 (`CanActivate`, `Intercept` or `Catch`). `Create()` checks each method's shape and stops on a
 wrong one, for example
-`invalid guard: main.TokenGuard.CanActivate must be func(ginject.HTTPContext) bool to be bound as a HTTP guard`.
+`invalid guard: main.TokenGuard.CanActivate must be func(owlky.HTTPContext) bool to be bound as a HTTP guard`.
 
 ### Contexts and request data
 

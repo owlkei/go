@@ -30,19 +30,19 @@
 package main
 
 import (
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/middlewares/csrf"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/middlewares/csrf"
 )
 
 func main() {
-	app := ginject.New()
+	app := owlky.New()
 
 	app.BindGlobalMiddlewares(csrf.CSRF{
 		TrustedOrigins: []string{"https://app.example.com"},
 	})
 
 	app.Create(
-		ginject.ModuleBuilder().Build(),
+		owlky.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -69,7 +69,7 @@ requests. Non-browser clients send neither.
 
 ## Forms on rendered pages
 
-A page that Ginject renders (`EnableRender`, a `RENDER_` route) needs nothing more for its forms: no
+A page that Owlky Go renders (`EnableRender`, a `RENDER_` route) needs nothing more for its forms: no
 token, no hidden field and no template function. The form posts to its own URL, which the
 `SUBMIT_` route of the same words answers (`<form method="post" action="/bookings/new">` reaches
 `SUBMIT_new_OF_bookings`). Browsers send `Sec-Fetch-Site` with the form post, and `csrf` refuses it
@@ -106,7 +106,7 @@ csrf.CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.examp
 
 ### NewMiddleware
 ```go
-func (instance CSRF) NewMiddleware() ginject.MiddlewareFn
+func (instance CSRF) NewMiddleware() owlky.MiddlewareFn
 ```
 
 Validates and compiles the options once; the framework calls it at `Create()`. It panics with
@@ -116,10 +116,10 @@ origins.
 
 ### Use
 ```go
-func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next ginject.Next)
+func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
 ```
 
-Makes `CSRF` a `ginject.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `CSRF` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules

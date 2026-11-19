@@ -14,7 +14,7 @@ Create comprehensive documentation following the style reference in `modules/con
 ## Steps
 
 1. **Resolve the target package directory.**
-   $ARGUMENTS may be a directory path, an import path, or a bare package name (e.g. `cache`, `modules/cache`, `github.com/dangduoc08/ginject/modules/cache`). Resolve it to exactly one directory under the repo. If it matches more than one directory, ask the user to disambiguate instead of guessing.
+   $ARGUMENTS may be a directory path, an import path, or a bare package name (e.g. `cache`, `modules/cache`, `go.owlky.com/owlky/modules/cache`). Resolve it to exactly one directory under the repo. If it matches more than one directory, ask the user to disambiguate instead of guessing.
 
 2. **Read the style reference.**
    Read `modules/config/README.md` in full before writing anything — every README produced by this command follows its structure and level of detail:

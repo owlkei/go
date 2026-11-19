@@ -17,7 +17,7 @@ the framework's own cost per request drops sharply and allocations follow; the r
 
 ## Steps
 Every package step is the deep dive of roadmap 0001's Next section: bugs (each proved by a failing
-test), hot / cold performance per `.ginject/conventions.md` › Performance, concurrency and security,
+test), hot / cold performance per `.owlky/conventions.md` › Performance, concurrency and security,
 tests, benchmarks rewritten (`b.Loop`, `b.ReportAllocs`, `-count 5` + `benchstat` before and after in
 the commit), README.
 
@@ -94,7 +94,7 @@ the commit), README.
 - Step 7: done, `docs/review/http-0002.md`. Static 1,672 → 793 ns (goal under 1 µs: met);
   allocations halved only on Exception (−70 %; others −26 to −39 %); every scenario 48-65 % faster.
   The load test ran on a thermally throttled laptop, so it is reported relative to net/http.
-- Review (`ginject-reviewer`, all commits of the run): no high-severity regression. Fixed: string
+- Review (`go-reviewer`, all commits of the run): no high-severity regression. Fixed: string
   binding still saturated some out-of-range numbers (decision 0001 Q3); routes differing only in
   parameter names registered silently and the served one changed per start (pre-existing); a nil
   `*Exception` passed to `JSON` leaked runtime text; a literal `$` route segment became an unnamed

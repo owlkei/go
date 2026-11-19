@@ -1,6 +1,6 @@
 # Exception
 
-*Exception is a part of `Ginject` framework: it defines the error value that guards, handlers and filters raise, with an HTTP or WebSocket code, a client message and an error text, and writes it as the standard JSON error body.*
+*Exception is a part of `Owlky Go` framework: it defines the error value that guards, handlers and filters raise, with an HTTP or WebSocket code, a client message and an error text, and writes it as the standard JSON error body.*
 
 - [Exception](#exception)
   - [Key Features](#key-features)
@@ -40,17 +40,17 @@ package main
 import (
 	"errors"
 
-	"github.com/dangduoc08/ginject"
-	"github.com/dangduoc08/ginject/exception"
+	"go.owlky.com/owlky"
+	"go.owlky.com/owlky/exception"
 )
 
 var errNoRows = errors.New("no rows")
 
 type UserController struct {
-	ginject.HTTP
+	owlky.HTTP
 }
 
-func (instance UserController) NewController() ginject.Controller {
+func (instance UserController) NewController() owlky.Controller {
 	return instance
 }
 
@@ -62,8 +62,8 @@ func (instance UserController) READ() string {
 }
 
 func main() {
-	app := ginject.New()
-	app.Create(ginject.ModuleBuilder().Controllers(UserController{}).Build())
+	app := owlky.New()
+	app.Create(owlky.ModuleBuilder().Controllers(UserController{}).Build())
 	app.Listen(3000, nil)
 }
 ```
