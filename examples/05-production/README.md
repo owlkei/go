@@ -16,6 +16,8 @@ shuts down without dropping requests.
 - **Server options.** `MaxRequestBodyBytes` refuses a body over 16 KiB with `413`.
   `ShutdownTimeout` gives running requests 10 seconds to finish after `SIGINT` or `SIGTERM`.
 - **An access log.** `app.EnableAccessLog()` writes one line per request.
+- **Bounded memory.** Anyone can post, so the inbox keeps the newest 500 notes: a flood of posts can't
+  fill a small server's memory.
 - **What Owlky Go already does for you.** Server timeouts, a fixed `500` for any panic that is not an
   exception, and graceful shutdown are on by default. You only set what differs.
 

@@ -8,7 +8,6 @@ import (
 	"go.owlky.com/owlky"
 )
 
-// Booking is one stored booking.
 type Booking struct {
 	ID     string
 	Guest  string
@@ -29,14 +28,14 @@ type BookingService struct {
 	Table *bookingTable
 }
 
-func (svc BookingService) NewProvider() owlky.Provider {
-	svc.Table = &bookingTable{nextID: 1, byID: map[string]Booking{}}
-	return svc
+func (s BookingService) NewProvider() owlky.Provider {
+	s.Table = &bookingTable{nextID: 1, byID: map[string]Booking{}}
+	return s
 }
 
 // All returns the bookings, oldest first.
-func (svc BookingService) All() []Booking {
-	t := svc.Table
+func (s BookingService) All() []Booking {
+	t := s.Table
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -47,9 +46,8 @@ func (svc BookingService) All() []Booking {
 	return out
 }
 
-// Find returns the booking with the id.
-func (svc BookingService) Find(id string) (Booking, bool) {
-	t := svc.Table
+func (s BookingService) Find(id string) (Booking, bool) {
+	t := s.Table
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -58,11 +56,11 @@ func (svc BookingService) Find(id string) (Booking, bool) {
 }
 
 // Add stores a form that BookingForm.Transform accepted and returns the new booking.
-func (svc BookingService) Add(form BookingForm) Booking {
+func (s BookingService) Add(form BookingForm) Booking {
 	date, _ := time.Parse(time.DateOnly, form.Date)
 	nights, _ := strconv.Atoi(form.Nights)
 
-	t := svc.Table
+	t := s.Table
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

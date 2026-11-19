@@ -14,7 +14,8 @@ func get(app http.Handler, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
-// waitFor calls path until it answers want, for at most five seconds.
+// waitFor calls path until it answers want, for at most five seconds. The app switches the route
+// on by itself in the background, so a test can only watch for it.
 func waitFor(t *testing.T, app http.Handler, path string, want int) *httptest.ResponseRecorder {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

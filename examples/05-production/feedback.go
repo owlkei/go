@@ -17,6 +17,8 @@ type Note struct {
 	Received time.Time `json:"received"`
 }
 
+const maxNotes = 500
+
 type Inbox struct {
 	Box *box
 }
@@ -26,22 +28,27 @@ type box struct {
 	notes []Note
 }
 
-func (i Inbox) NewProvider() owlky.Provider {
-	return i
+func (ib Inbox) NewProvider() owlky.Provider {
+	return ib
 }
 
-func (i Inbox) Add(message string) Note {
-	i.Box.mu.Lock()
-	defer i.Box.mu.Unlock()
+func (ib Inbox) Add(message string) Note {
+	ib.Box.mu.Lock()
+	defer ib.Box.mu.Unlock()
 	note := Note{Message: message, Received: time.Now().UTC()}
-	i.Box.notes = append(i.Box.notes, note)
+	ib.Box.notes = append(ib.Box.notes, note)
+	// Anyone can post, so the inbox keeps the newest notes only: memory stays bounded however
+	// many arrive.
+	if len(ib.Box.notes) > maxNotes {
+		ib.Box.notes = slices.Delete(ib.Box.notes, 0, len(ib.Box.notes)-maxNotes)
+	}
 	return note
 }
 
-func (i Inbox) All() []Note {
-	i.Box.mu.Lock()
-	defer i.Box.mu.Unlock()
-	return slices.Clone(i.Box.notes)
+func (ib Inbox) All() []Note {
+	ib.Box.mu.Lock()
+	defer ib.Box.mu.Unlock()
+	return slices.Clone(ib.Box.notes)
 }
 
 type NoteInput struct {

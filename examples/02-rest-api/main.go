@@ -10,7 +10,7 @@ import (
 
 func newApp() owlky.App {
 	app := owlky.New()
-	app.Create(owlky.ModuleBuilder().Imports(NewBooksModule()).Build())
+	app.Create(NewBooksModule())
 	return app
 }
 

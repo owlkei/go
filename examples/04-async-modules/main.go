@@ -5,8 +5,6 @@ package main
 
 import (
 	"log"
-	"os"
-	"strconv"
 
 	"go.owlky.com/owlky"
 )
@@ -26,15 +24,7 @@ func newApp() owlky.App {
 }
 
 func main() {
-	port := 8081
-	if v := os.Getenv("PORT"); v != "" {
-		p, err := strconv.Atoi(v)
-		if err != nil {
-			log.Fatalf("PORT must be a number, got %q", v)
-		}
-		port = p
-	}
-	if err := newApp().Listen(port, nil); err != nil {
+	if err := newApp().Listen(3000, nil); err != nil {
 		log.Fatal(err)
 	}
 }

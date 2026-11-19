@@ -1,6 +1,6 @@
 # 0011: Examples
 
-Status: Running
+Status: Done
 
 ## Goal
 A developer new to Owlky Go learns it from `examples/`: five small projects in learning order, each one
@@ -21,10 +21,10 @@ the start of a real app. The old kitchen-sink `sample/` is gone.
 | 2 | `01-hello`: one controller, two routes, a parameter (the Quick start) | light | - | 1 | README and test; `go run .` answers the README's `curl` calls | done |
 | 3 | `02-rest-api`: CRUD of one resource with a module, a provider, a pipe that validates, exceptions (404, 422), JSON | light | - | 1 | test covers every route and error | done |
 | 4 | `03-pages`: move `sample/pages` (`RENDER_`, `SUBMIT_`, layout, a form with field errors, Owlky UI markup) | light | - | 1 | its tests pass in the new module | done |
-| 5 | `04-async-modules`: move `sample/async` (`AsyncImports`, `Retry`, 503 until ready) | light | - | 1 | its behavior is tested in the new module | todo |
-| 6 | `05-production`: `helmet`, `csrf`, `cors`, `loadshed`, `throttler`, access log, graceful shutdown, one logging layer | light | - | 1 | test checks the security headers, a refused request and a clean shutdown | todo |
-| 7 | Remove `sample/` (`main.go`, `shop`, `shared`, `benchmarks`, `confs`, `data`, `pages`, `async`); update every link to it | light | - | 2-6 | no reference to `sample/` left | todo |
-| 8 | Docs: README "Examples" section in learning order, quick links, CLAUDE.md, `.owlky/`; one review of every example against the "No AI slop" list (Decisions), findings fixed; `make check`, push, CI green | light | - | 7 | the review finds nothing left; CI green on `main` | todo |
+| 5 | `04-async-modules`: move `sample/async` (`AsyncImports`, `Retry`, 503 until ready) | light | - | 1 | its behavior is tested in the new module | done |
+| 6 | `05-production`: `helmet`, `csrf`, `cors`, `loadshed`, `throttler`, access log, graceful shutdown, one logging layer | light | - | 1 | test checks the security headers, a refused request and a clean shutdown | done |
+| 7 | Remove `sample/` (`main.go`, `shop`, `shared`, `benchmarks`, `confs`, `data`, `pages`, `async`); update every link to it | light | - | 2-6 | no reference to `sample/` left | done |
+| 8 | Docs: README "Examples" section in learning order, quick links, CLAUDE.md, `.owlky/`; one review of every example against the "No AI slop" list (Decisions), findings fixed; `make check`, push, CI green | light | - | 7 | the review finds nothing left; CI green on `main` | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -58,3 +58,6 @@ Approved by the owner on 2026-11-19, to run before the security roadmap. Agreed 
 - 2026-11-19: step 3: providers can't have unexported fields, so the catalog's shared state is an exported pointer set by `NewCatalog()`, and `NewBooksModule()` builds a fresh catalog per app (each test gets its own). `golangci-lint` is clean in every example (run by hand; the root lint skips nested modules).
 - 2026-11-19: step 4 landed as two commits: the move (`2b418cb`) and the module files and README (`ff565e5`).
 - 2026-11-19: `TestLoadShed_ArrivalAtFreedSlotMayTakeIt` failed once in a pre-commit hook under load (passes 30 of 30 alone): another timing-sensitive test for the backlog list.
+- 2026-11-19: step 5: the old `sample/async` had no test; `04-async-modules` has two (a late warehouse: 503 with `Retry-After`, then 200; a bad URL: 503 without it) and a stock list instead of `len(sku) * 10`. Step 6: `05-production` runs its tests on a real listener (the body limit and the shutdown live in the serving call). Step 7: `surface_test.go` (B4) and `internal/apicheck` now look at `examples/`.
+- 2026-11-19: step 8: the review found 4 must-fix, 7 should-fix and 4 nits, all fixed (the pages README's JavaScript claim, a file named `helpers_test.go`, a 130-line test split in two with the history check and the hash recomputation dropped, a comment on why the async tests poll, the warehouse's dead field and bare errors, `NewBookingsModule`, clearer names, `log.Fatal` and port 3000 in every example, comment and README cleanups, a capped inbox). Receivers stay short in examples (Go style; `instance` stays in README snippets), `.owlky/conventions.md` says so. `make check` green (L12 570 s).
+

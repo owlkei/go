@@ -28,7 +28,7 @@ app starts.
 ## Run it
 
 ```sh
-go run .                                  # http://localhost:8081, the warehouse is up after 5 s
+go run .                                  # http://localhost:3000, the warehouse is up after 5 s
 WAREHOUSE_DELAY=20s go run .              # a slower warehouse
 WAREHOUSE_URL=ftp://warehouse go run .    # a bad URL: the module fails at once
 ```
@@ -36,9 +36,9 @@ WAREHOUSE_URL=ftp://warehouse go run .    # a bad URL: the module fails at once
 Call it while it starts:
 
 ```sh
-curl -i localhost:8081/health            # 200 ok from the first request
-curl -i localhost:8081/stock/green-tea   # 503 with Retry-After, then 200 {"quantity":30,"sku":"green-tea"}
-curl -i localhost:8081/stock/kettle      # 404 once the warehouse is up
+curl -i localhost:3000/health            # 200 ok from the first request
+curl -i localhost:3000/stock/green-tea   # 503 with Retry-After, then 200 {"quantity":30,"sku":"green-tea"}
+curl -i localhost:3000/stock/kettle      # 404 once the warehouse is up
 ```
 
 `go test ./...` checks both paths: a warehouse that comes up late, and a bad URL that fails for good.

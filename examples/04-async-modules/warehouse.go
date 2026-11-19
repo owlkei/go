@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"time"
@@ -10,29 +11,28 @@ import (
 	"go.owlky.com/owlky"
 )
 
-const defaultWarehouseURL = "http://warehouse.local"
+var errConnectionRefused = errors.New("connection refused")
 
-var errWarehouseStarting = errors.New("warehouse: connection refused")
-
+// warehouseClient stands in for a real client: it refuses connections until readyAt, then answers
+// from a fixed stock list.
 type warehouseClient struct {
 	url     string
 	readyAt time.Time
+	stock   map[string]int
 }
 
-func (client *warehouseClient) ping(ctx context.Context) error {
+func (wc *warehouseClient) ping(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if time.Now().Before(client.readyAt) {
-		return errWarehouseStarting
+	if time.Now().Before(wc.readyAt) {
+		return fmt.Errorf("warehouse %s: %w", wc.url, errConnectionRefused)
 	}
 	return nil
 }
 
-var shelves = map[string]int{"green-tea": 30, "black-tea": 12, "teapot": 4}
-
-func (client *warehouseClient) quantity(sku string) (int, bool) {
-	n, ok := shelves[sku]
+func (wc *warehouseClient) quantity(sku string) (int, bool) {
+	n, ok := wc.stock[sku]
 	return n, ok
 }
 
@@ -57,9 +57,9 @@ func NewWarehouseModule(ctx context.Context) (owlky.Module, error) {
 		return nil, err
 	}
 
-	err = owlky.Retry(ctx, &owlky.RetryOptions{InitialDelay: time.Second, MaxDelay: 10 * time.Second}, client.ping)
-	if err != nil {
-		return nil, err
+	backoff := &owlky.RetryOptions{InitialDelay: time.Second, MaxDelay: 10 * time.Second}
+	if err := owlky.Retry(ctx, backoff, client.ping); err != nil {
+		return nil, fmt.Errorf("connect to the warehouse: %w", err)
 	}
 
 	return owlky.ModuleBuilder().
@@ -69,20 +69,26 @@ func NewWarehouseModule(ctx context.Context) (owlky.Module, error) {
 
 func newWarehouseClient(rawURL, rawDelay string) (*warehouseClient, error) {
 	if rawURL == "" {
-		rawURL = defaultWarehouseURL
+		rawURL = "http://warehouse.local"
 	}
 	parsed, err := url.Parse(rawURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return nil, errors.New("warehouse: WAREHOUSE_URL must be an http or https URL")
+	if err != nil {
+		return nil, fmt.Errorf("WAREHOUSE_URL %q: %w", rawURL, err)
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, fmt.Errorf("WAREHOUSE_URL %q: want an http or https URL", rawURL)
 	}
 
 	delay := 5 * time.Second
 	if rawDelay != "" {
-		delay, err = time.ParseDuration(rawDelay)
-		if err != nil {
-			return nil, errors.New("warehouse: WAREHOUSE_DELAY must be a duration such as 5s")
+		if delay, err = time.ParseDuration(rawDelay); err != nil {
+			return nil, fmt.Errorf("WAREHOUSE_DELAY %q: %w", rawDelay, err)
 		}
 	}
 
-	return &warehouseClient{url: parsed.String(), readyAt: time.Now().Add(delay)}, nil
+	return &warehouseClient{
+		url:     parsed.String(),
+		readyAt: time.Now().Add(delay),
+		stock:   map[string]int{"green-tea": 30, "black-tea": 12, "teapot": 4},
+	}, nil
 }

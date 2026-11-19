@@ -74,6 +74,7 @@ served from your app's own origin.
   - [Features](#features)
   - [Installation](#installation)
   - [Quick start](#quick-start)
+  - [Examples](#examples)
   - [Core concepts](#core-concepts)
     - [Application](#application)
     - [Module](#module)
@@ -215,6 +216,21 @@ Run it with `go run .`, then call it:
 - `GET http://localhost:3000/hello` answers `hello` as `text/plain`.
 - `GET http://localhost:3000/hello/joe` answers `{"greeting":"hello joe"}` as `application/json`.
 - `GET http://localhost:3000/missing` answers `404` with `{"code":404,"error":"Not Found","message":"Not Found"}`.
+
+---
+
+## Examples
+
+Five small apps in [`examples/`](examples/), in the order to read them. Each one is its own Go module
+with a README and tests: copy a folder out of the repository and it is the start of your project.
+
+| Example | You learn |
+|---|---|
+| [01 · Hello](examples/01-hello/README.md) | A controller and routes from method names, in under 40 lines |
+| [02 · REST API](examples/02-rest-api/README.md) | Modules, a shared service, a validating pipe, `404` and `422` |
+| [03 · Pages](examples/03-pages/README.md) | Server-rendered pages and forms with Owlky UI's HTML components |
+| [04 · Async modules](examples/04-async-modules/README.md) | Start before a dependency is ready; `503` until it is, `Retry` with backoff |
+| [05 · Production](examples/05-production/README.md) | Load shedding, security headers, CORS, rate limits, body limits, graceful shutdown |
 
 ---
 
