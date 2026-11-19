@@ -38,6 +38,9 @@ jobs:
       - name: Test
         run: go test ./... -cover -race
 
+      - name: Examples
+        run: make examples
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

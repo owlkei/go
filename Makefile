@@ -20,6 +20,15 @@ tidy: ## Go mod tidy
 test: ## Run tests
 	go test ./... -cover -race
 
+EXAMPLES := $(patsubst %/go.mod,%,$(wildcard examples/*/go.mod))
+
+.PHONY: examples
+examples: ## Vet and test every example (each one is its own module)
+	@for dir in $(EXAMPLES); do \
+		echo "== $$dir"; \
+		(cd $$dir && go vet ./... && go test -race ./...) || exit 1; \
+	done
+
 .PHONY: lint
 lint: ## Run linter
 	golangci-lint run
@@ -43,6 +52,7 @@ check: ## Everything CI runs: format, vet, API, lint, tests
 	$(MAKE) api-check
 	golangci-lint run
 	go test ./... -cover -race
+	$(MAKE) examples
 	go test ./internal/core -run '^TestTrace_(NoListenerGeneratesOneID|ListenerGeneratesOneIDPerStage)$$' -count 1
 	go test ./middlewares/loadshed -run '^TestAdaptive_(Stable|NoRefusalBelowCapacity|RecoversWhenHandlerSlows|Steering|LongHeld)_' -count 1 -p 1 -timeout 30m
 
