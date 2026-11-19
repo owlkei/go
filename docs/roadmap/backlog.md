@@ -18,6 +18,35 @@ from here.
 7. 0.x release once the court booking app runs for real.
 8. After the release: WebSocket (0006), devtools and MCP.
 
+## Rebrand to Owlky Go (decided 2026-11-19, before the security roadmap)
+
+Ginject and Owlky become one brand, Owlky, with independent products: **Owlky UI** (the component
+library) and **Owlky Go** (this framework; "Server" was dropped: it reads like VPS hosting); later Owlky CLI, Devtools, SDK and Studio. "Ginject"
+reads as a plugin of Gin, and one brand shares owlky.com, accounts, MCP and the devtools platform.
+Map: https://claude.ai/artifact/58h7inTZEi2qboPG41i1f1 (private to the owner).
+
+- **Import path:** `go.owlky.com/owlky`, package `owlky` (`owlky.New()`, `owlky.Module`); a vanity path:
+  `go.owlky.com/*?go-get=1` answers `<meta name="go-import" content="go.owlky.com/owlky git
+  https://github.com/<owner>/go">` (a DNS record `go` to the website's host, a small middleware in
+  the Next.js site, browsers redirected to the Owlky Go docs). Needed before publishing; until then a
+  `replace` in `go.mod` works.
+- **Repositories:** the GitHub org `owlky` was deleted and its name is blocked for 90 days (from about
+  2026-11-19). Until then the repositories stay on the owner's account (`dangduoc08/go`,
+  `dangduoc08/ui`) and the `go-import` tag points there; once the org name is free, move them to
+  `owlky/go` and `owlky/ui` and change that one tag (no import changes for users). Nothing is published
+  yet, so nobody depends on the interim location.
+- **Rename in this repository:** `go.mod` and every import; package `ginject` → `owlky`; `api/ginject.txt`;
+  `.ginject/`; the `ginject-*` agents and skills; CLAUDE.md, every README and sample; log and panic
+  texts that say Ginject; planned env names (`GINJECT_ENV` → `OWLKY_ENV`). Its own roadmap, mostly
+  mechanical, guarded by `make check`.
+- **Independence:** UI works with any backend, Server with any frontend or JSON only; they meet at the
+  `data-ok-*` markup, never import each other. owlky.com is the one shared platform.
+- **Devtools:** the collector stays here (`internal/devtool`, `EnableDevtool`); the interface lives at
+  `owlky.com/devtools` (built with Owlky UI, source next to the website). The browser fetches the
+  snapshot from the local app directly (CORS + `Access-Control-Allow-Private-Network` for the owlky.com
+  origin only, a pairing token printed at start, off in production); only the paid tier sends it to
+  owlky.com.
+
 ## Own WebSocket implementation (after HTTP is production ready)
 
 Decided 2026-11-16: Ginject replaces `golang.org/x/net/websocket` (its last dependency; its own
