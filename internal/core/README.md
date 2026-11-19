@@ -574,7 +574,7 @@ The serving calls return an error, and never fall back to plain HTTP, when:
 
 In these cases nothing is logged, no hook runs, a listener passed to `Serve` is left open, and the port stays free. After a bind error the app can be served again.
 
-Once the address is bound, the app logs through its logger: one `InstanceLoader` line per named module that is ready then, one `RouteExplorer` line per route (sorted), one `WebSocketEvent` line per event, then `ServerListening` with `address` (the bound address: `Listen(0, nil)` logs the port the system chose), `tls` and `protocols`. The colored access-URL banner is printed only when stdout is a terminal. Errors of the server itself (a failed TLS handshake, for example) are logged as `Logger.Warn("HTTPServer", "message", <line>)`.
+Once the address is bound, the app logs through its logger: one `InstanceLoader` line per named module that is ready then, one `RouteExplorer` line per route (sorted), one `WebSocketEvent` line per event, then the address. When stdout is a terminal, that is the colored access-URL banner (`http://` or `https://`, localhost and the LAN address); otherwise it is a `ServerListening` line with `address` (the bound address: `Listen(0, nil)` logs the port the system chose), `tls` and `protocols`, for log collectors. Errors of the server itself (a failed TLS handshake, for example) are logged as `Logger.Warn("HTTPServer", "message", <line>)`.
 
 ### Protocols
 

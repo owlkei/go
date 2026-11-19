@@ -118,11 +118,12 @@ app.Listen(port, opts)
   ├─ checks (before Create, already serving, stopped, option conflicts) → return an error
   ├─ bind :<port>          a bind error returns here: nothing logged, no hook runs
   ├─ log InstanceLoader (one line per named module that is ready), RouteExplorer (one per route),
-  │  WebSocketEvent (one per event), ServerListening (address, tls, protocols)
+  │  WebSocketEvent (one per event), then the access-URL banner on a terminal, else ServerListening
+  │  (address, tls, protocols)
   └─ serve until SIGINT / SIGTERM / app.Stop() or a server error
 ```
 
-The server accepts connections as soon as `ServerListening` is logged.
+The server accepts connections as soon as the banner or `ServerListening` is out.
 
 ### Phase 4: Shutdown (`internal/core/server.go`)
 

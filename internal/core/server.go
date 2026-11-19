@@ -375,12 +375,12 @@ func (app *App) logStartup(addr net.Addr, isTLS bool, protocols string) {
 		}
 	}
 
-	app.logger.Info("ServerListening", "address", addr.String(), "tls", isTLS, "protocols", protocols)
-
 	if tcpAddr, ok := addr.(*net.TCPAddr); ok && isTerminal(os.Stdout) {
 		logpipe.Stdout().Flush(logpipe.FlushTimeout)
-		logBoostrap(tcpAddr.Port)
+		logBoostrap(tcpAddr.Port, isTLS)
+		return
 	}
+	app.logger.Info("ServerListening", "address", addr.String(), "tls", isTLS, "protocols", protocols)
 }
 
 func isTerminal(f *os.File) bool {
@@ -389,11 +389,15 @@ func isTerminal(f *os.File) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func logBoostrap(port int) {
+func logBoostrap(port int, isTLS bool) {
+	scheme := "http"
+	if isTLS {
+		scheme = "https"
+	}
 	accessURLs := color.FmtBold("%s", color.FmtBGYellow(" GG! Here Are Your Access URLs: ")) + "\n"
 	divider := color.FmtDim("--------------------------------------------") + "\n"
-	host := color.FmtBold("%s", color.FmtWhite("Localhost: ")) + color.FmtMagenta("%v:%v", "localhost", port) + "\n"
-	lan := color.FmtBold("%s", color.FmtWhite("      LAN: ")) + color.FmtMagenta("%v:%v", getLocalIP(), port) + "\n"
+	host := color.FmtBold("%s", color.FmtWhite("Localhost: ")) + color.FmtMagenta("%s://localhost:%v", scheme, port) + "\n"
+	lan := color.FmtBold("%s", color.FmtWhite("      LAN: ")) + color.FmtMagenta("%s://%v:%v", scheme, getLocalIP(), port) + "\n"
 	close := color.FmtItalic("%s", color.FmtGreen("Press CTRL+C to stop")) + "\n"
 
 	_, _ = fmt.Fprint(os.Stdout, "\n"+accessURLs+divider+host+lan+divider+close)

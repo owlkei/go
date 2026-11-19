@@ -1282,13 +1282,20 @@ func TestGetLocalIP(t *testing.T) {
 	}
 }
 
-func TestLogBoostrapNoPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Error(test.DiffMessage(r, nil, "logBoostrap should not panic"))
+func TestLogBoostrap_URLScheme(t *testing.T) {
+	for _, c := range []struct {
+		isTLS bool
+		want  string
+	}{{false, "http://localhost:8080"}, {true, "https://localhost:8443"}} {
+		port := 8080
+		if c.isTLS {
+			port = 8443
 		}
-	}()
-	logBoostrap(8080)
+		out := srvCaptureStdout(t, func() { logBoostrap(port, c.isTLS) })
+		if !strings.Contains(out, c.want) {
+			t.Error(test.DiffMessage(out, c.want, "the banner shows the URL with its scheme"))
+		}
+	}
 }
 
 func TestHooks_OnShutdownReverseOrder(t *testing.T) {
