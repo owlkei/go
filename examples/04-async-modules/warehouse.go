@@ -29,22 +29,28 @@ func (client *warehouseClient) ping(ctx context.Context) error {
 	return nil
 }
 
-func (client *warehouseClient) quantity(sku string) int {
-	return len(sku) * 10
+var shelves = map[string]int{"green-tea": 30, "black-tea": 12, "teapot": 4}
+
+func (client *warehouseClient) quantity(sku string) (int, bool) {
+	n, ok := shelves[sku]
+	return n, ok
 }
 
 type Warehouse struct {
 	Client *warehouseClient
 }
 
-func (instance Warehouse) NewProvider() owlky.Provider {
-	return instance
+func (w Warehouse) NewProvider() owlky.Provider {
+	return w
 }
 
-func (instance Warehouse) Quantity(sku string) int {
-	return instance.Client.quantity(sku)
+func (w Warehouse) Quantity(sku string) (int, bool) {
+	return w.Client.quantity(sku)
 }
 
+// NewWarehouseModule connects to the warehouse. A bad setting is a permanent error: it is returned
+// at once and the module fails. A refused connection is transient: Retry tries again with backoff
+// until it works or the app shuts down.
 func NewWarehouseModule(ctx context.Context) (owlky.Module, error) {
 	client, err := newWarehouseClient(os.Getenv("WAREHOUSE_URL"), os.Getenv("WAREHOUSE_DELAY"))
 	if err != nil {
