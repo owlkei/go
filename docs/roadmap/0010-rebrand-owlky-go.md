@@ -1,6 +1,6 @@
 # 0010: Rebrand to Owlky Go
 
-Status: Running
+Status: Done
 
 ## Goal
 The framework is Owlky Go: users write `import "go.owlky.com/owlky"` and `owlky.New()`, every
@@ -22,12 +22,12 @@ agents, skills, API check) follows the new names. Behavior does not change.
 ## Steps
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
-| 1 | Module path and package: `go.mod` → `go.owlky.com/owlky`, every import, root package `owlky`, `bench/go.mod` (its `replace` keeps working without `go.owlky.com`) | light | - | - | `go build ./...`, `go vet ./...` and the bench module build; no `dangduoc08/ginject` import left | todo |
-| 2 | API check: `api/ginject.txt` → `api/owlky.txt`, `internal/apicheck` and `make api-check` follow | light | - | 1 | `make api-check` passes; the file shows only the package rename | todo |
-| 3 | Texts: the `ginject:` prefix of errors, logs and panics → `owlky:`; startup banner and log names that say Ginject; tests that pin them; `GINJECT_FRESH_PROCESS` → `OWLKY_FRESH_PROCESS` | light | - | 1 | `git grep -i ginject -- '*.go'` is empty; `go test -race ./...` green | todo |
-| 4 | Tooling: `.ginject/` → `.owlky/`, `.claude/agents/ginject-*` → `go-*`, the skills and CLAUDE.md that name them, lint and hook configs | light | - | 1 | no reference to `.ginject/` or `ginject-*` agents | todo |
-| 5 | Docs: README (Owlky Go, pairs with Owlky UI, import path, a `replace` note until `go.owlky.com` serves), every package README, `sample/`, badges and links to `github.com/dangduoc08/go`, the backlog | light | - | 1-4 | `git grep -i ginject` matches only this roadmap, the note in `docs/roadmap/README.md` and the backlog entry that names the old brand; README examples compile | todo |
-| 6 | Verify and ship: `make check`, CI green on `main`, push | light | - | 1-5 | CI green on the pushed `main` | todo |
+| 1 | Module path and package: `go.mod` → `go.owlky.com/owlky`, every import, root package `owlky`, `bench/go.mod` (its `replace` keeps working without `go.owlky.com`) | light | - | - | `go build ./...`, `go vet ./...` and the bench module build; no `dangduoc08/ginject` import left | done |
+| 2 | API check: `api/ginject.txt` → `api/owlky.txt`, `internal/apicheck` and `make api-check` follow | light | - | 1 | `make api-check` passes; the file shows only the package rename | done |
+| 3 | Texts: the `ginject:` prefix of errors, logs and panics → `owlky:`; startup banner and log names that say Ginject; tests that pin them; `GINJECT_FRESH_PROCESS` → `OWLKY_FRESH_PROCESS` | light | - | 1 | `git grep -i ginject -- '*.go'` is empty; `go test -race ./...` green | done |
+| 4 | Tooling: `.ginject/` → `.owlky/`, `.claude/agents/ginject-*` → `go-*`, the skills and CLAUDE.md that name them, lint and hook configs | light | - | 1 | no reference to `.ginject/` or `ginject-*` agents | done |
+| 5 | Docs: README (Owlky Go, pairs with Owlky UI, import path, a `replace` note until `go.owlky.com` serves), every package README, `sample/`, badges and links to `github.com/dangduoc08/go`, the backlog | light | - | 1-4 | `git grep -i ginject` matches only this roadmap, the note in `docs/roadmap/README.md` and the backlog entry that names the old brand; README examples compile | done |
+| 6 | Verify and ship: `make check`, CI green on `main`, push | light | - | 1-5 | CI green on the pushed `main` | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -44,3 +44,4 @@ Agreed with the owner on 2026-11-19 (backlog › "Rebrand to Owlky Go"):
 - Commits follow `.claude/commands/commit.md`: no Claude attribution or trailers.
 
 ## Log
+- 2026-11-19: run started at `4d83124`; the owner renamed the repository to `dangduoc08/go` first. `api/owlky.txt` equals the old file with `ginject` → `owlky` and nothing else. The owner then chose a clean rename: the history documents were renamed too (the note in `docs/roadmap/README.md` points at git for the originals). The `.owlky/` and `go-*` moves landed in the docs commit (`f982443`) instead of a separate chore commit (a wrong pathspec). `make check`: all green; the loadshed L12 line now has `-timeout 30m` (the group takes about 10 minutes on a busy machine and hit the default 10-minute limit, no attempt failed; 624 s alone). The repository's About and 20 topics were set on GitHub.
