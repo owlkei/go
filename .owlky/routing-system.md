@@ -90,6 +90,9 @@ controller; two `Path` for one handler; `?` or `#` in the path; `Path` or target
 | `READ_files_BY_name_ANY_x`, `READ_users_BY_id_FILE` | `<W> in <Name> comes after a parameter; start the next resource with OF` |
 | `READ_OF_users`, `READ_users_OF`, `READ_a_OF_OF_b` | `OF in <Name> needs a resource or a parameter on both sides` |
 | `READ_txt_FILE`, `READ_FILE`, `READ_FILE_ANY` | `FILE in <Name> needs a name and an extension before it` |
+| `READ_logo_png_FILE_FILE` | `FILE twice in one resource of <Name>` |
+| `READ_logo_ANY_FILE` | `FILE in <Name> needs a word as the extension, not ANY` |
+| `SERVE_x_ANY_ANY`, `READ_ANY_ANY_FILE` | `ANY twice in a row in <Name>; one ANY already matches any text` |
 | `RENDER_files_ANY`, `SUBMIT_x_VERSION_2`, `RENDER_feed_xml_FILE` | `<W> in <Name>: a page route has no wildcard` / `has no version` / `has no file extension` |
 | `SUBSCRIBE_chat_ALL_x` | `ALL in <Name> must be the last word` |
 

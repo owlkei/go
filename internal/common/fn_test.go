@@ -620,6 +620,10 @@ func TestParseFuncNameToURL_MalformedPanics(t *testing.T) {
 		{"B16", "READ_txt_FILE", "invalid route: FILE in READ_txt_FILE needs a name and an extension before it"},
 		{"B16", "READ_FILE", "invalid route: FILE in READ_FILE needs a name and an extension before it"},
 		{"B16", "READ_FILE_ANY", "invalid route: FILE in READ_FILE_ANY needs a name and an extension before it"},
+		{"B16", "READ_logo_png_FILE_FILE", "invalid route: FILE twice in one resource of READ_logo_png_FILE_FILE"},
+		{"B16", "READ_ANY_ANY_FILE", "invalid route: ANY twice in a row in READ_ANY_ANY_FILE; one ANY already matches any text"},
+		{"B16", "READ_logo_ANY_FILE", "invalid route: FILE in READ_logo_ANY_FILE needs a word as the extension, not ANY"},
+		{"B16", "SERVE_x_ANY_ANY", "invalid route: ANY twice in a row in SERVE_x_ANY_ANY; one ANY already matches any text"},
 	}
 	for _, c := range cases {
 		expectRoutePanic(t, c.rule, c.fn, c.want)

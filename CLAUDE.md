@@ -167,7 +167,7 @@ Controller method names are parsed into HTTP routes — no annotations needed (d
 - Words of one resource are kebab-case: `READ_user_profile` → `GET /user-profile` (`/user_profile` with `PathStyleAsWritten`). camelCase, parameter names, versions, `Prefix` and `Path` strings are never rewritten. Non-resource segments go through `OF`: `READ_new_OF_bookings` → `GET /bookings/new`.
 - Example: `READ_BY_ID_AND_NAME` → `GET /{ID}/{NAME}` (parameter names keep the method name's case; `READ_users_BY_id` → `GET /users/{id}`). Versioning adds a `_VERSION_X` suffix: `READ_VERSION_1` → version 1 of that route.
 - `instance.Path("/oauth2/token", instance.CREATE_token)` in `NewController()` gives a handler an exact path; method, version and prefixes still apply.
-- An upper-case word that is not a route word (`READ_orgs_FB`, `SUBSCRIBE_chat_V2`) and a malformed name (`READ_users_BY`, `READ_OF_users`, `READ_txt_FILE`) stop `Create()` with `invalid route:`.
+- An upper-case word that is not a route word (`READ_orgs_FB`, `SUBSCRIBE_chat_V2`) and a malformed name (`READ_users_BY`, `READ_OF_users`, `READ_txt_FILE`, `READ_logo_png_FILE_FILE`, `SERVE_x_ANY_ANY`) stop `Create()` with `invalid route:`.
 
 ### Request Pipeline (per route)
 

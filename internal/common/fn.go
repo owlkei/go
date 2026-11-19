@@ -122,10 +122,19 @@ func (p *routeParser) resource() []string {
 		case TokenBy, TokenAnd:
 			return append(p.renderItems(items), p.params()...)
 		case TokenAny:
+			if len(items) > 0 && items[len(items)-1].isAny {
+				panic(errors.New(color.FmtRed("invalid route: ANY twice in a row in %s; one ANY already matches any text", p.name)))
+			}
 			items = append(items, routeItem{isAny: true})
 		case TokenFile:
 			if len(items) < 2 {
 				panic(errors.New(color.FmtRed("invalid route: FILE in %s needs a name and an extension before it", p.name)))
+			}
+			if slices.ContainsFunc(items, func(item routeItem) bool { return item.isExt }) {
+				panic(errors.New(color.FmtRed("invalid route: FILE twice in one resource of %s", p.name)))
+			}
+			if items[len(items)-1].isAny {
+				panic(errors.New(color.FmtRed("invalid route: FILE in %s needs a word as the extension, not ANY", p.name)))
 			}
 			last := &items[len(items)-1]
 			last.isExt = true

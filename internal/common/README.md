@@ -208,6 +208,9 @@ common.ParseFuncNameToURL("READ_user_profile", common.PathStyleKebab)
   - `x in READ_files_BY_name_ANY_x comes after a parameter; start the next resource with OF` (also `FILE` in `READ_users_BY_id_FILE`);
   - `OF in READ_OF_users needs a resource or a parameter on both sides` (also `READ_users_OF`, `READ_a_OF_OF_b`, `SERVE_ANY_OF_`);
   - `FILE in READ_txt_FILE needs a name and an extension before it` (also `READ_FILE`, `READ_FILE_ANY`).
+  - `FILE twice in one resource of READ_logo_png_FILE_FILE`.
+  - `FILE in READ_logo_ANY_FILE needs a word as the extension, not ANY` (a name may be `ANY`: `READ_ANY_html_FILE` → `/*.html`).
+  - `ANY twice in a row in SERVE_x_ANY_ANY; one ANY already matches any text` (also `READ_ANY_ANY_FILE`).
 
 ### ParseWSFuncNameToEvent
 

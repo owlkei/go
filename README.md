@@ -769,6 +769,9 @@ starts with `invalid route:`:
 | `READ_files_BY_name_ANY_x` | A word after the parameters | `x in READ_files_BY_name_ANY_x comes after a parameter; start the next resource with OF` |
 | `READ_OF_users`, `READ_users_OF` | `OF` with nothing on one side | `OF in READ_OF_users needs a resource or a parameter on both sides` |
 | `READ_txt_FILE` | `FILE` without a name and an extension | `FILE in READ_txt_FILE needs a name and an extension before it` |
+| `READ_logo_png_FILE_FILE` | `FILE` twice in one resource | `FILE twice in one resource of READ_logo_png_FILE_FILE` |
+| `READ_logo_ANY_FILE` | `ANY` as the extension | `FILE in READ_logo_ANY_FILE needs a word as the extension, not ANY` |
+| `SERVE_x_ANY_ANY`, `READ_ANY_ANY_FILE` | `ANY` twice in a row | `ANY twice in a row in SERVE_x_ANY_ANY; one ANY already matches any text` |
 | `RENDER_files_ANY`, `RENDER_x_VERSION_2` | A page route with `ANY`, `VERSION` or `FILE` | `ANY in RENDER_files_ANY: a page route has no wildcard` |
 
 Write `READ_orgsFB` or `READ_orgs_fb` instead of `READ_orgs_FB`. Digits are not upper case:
