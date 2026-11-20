@@ -217,7 +217,7 @@ remains (`runtime.nodeID` goes with the package).
 - Docs: a `README.md` in `internal/str`, `internal/slice`, `internal/num`, `internal/color`,
   `internal/crypto` (structure of `modules/config/README.md`, shortened: what the package is for, a
   table of functions with one line each, hot / cold and the performance notes above, the benchmark
-  table). `.owlky/package-reference.md` if it lists these helpers.
+  table). `.owlkei/package-reference.md` if it lists these helpers.
 
 ## Test plan
 

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/log"
 )
 
 func BenchmarkAccessLog_Request_1Stage(b *testing.B) {

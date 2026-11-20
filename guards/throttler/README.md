@@ -43,7 +43,7 @@ libraries understand (RFC 6585 § 4).
 
 ## Usage
 
-Bind a `Throttler` value as a guard. Owlky Go calls `NewGuard` once at `Create()`, so every request
+Bind a `Throttler` value as a guard. Owlkei Go calls `NewGuard` once at `Create()`, so every request
 to the bound handlers shares one budget per client:
 
 ```go
@@ -52,16 +52,16 @@ package main
 import (
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/guards/throttler"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/guards/throttler"
 )
 
 type LoginController struct {
-	owlky.HTTP
-	owlky.Guard
+	owlkei.HTTP
+	owlkei.Guard
 }
 
-func (instance LoginController) NewController() owlky.Controller {
+func (instance LoginController) NewController() owlkei.Controller {
 	instance.BindGuard(throttler.Throttler{
 		Limit: 10,
 		TTL:   time.Minute,
@@ -74,9 +74,9 @@ func (instance LoginController) CREATE_login() string {
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{Server: &owlky.ServerOptions{Port: 8080}})
+	app := owlkei.New(&owlkei.AppOptions{Server: &owlkei.ServerOptions{Port: 8080}})
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Controllers(LoginController{}).
 			Build(),
 	)
@@ -95,8 +95,8 @@ Behind a proxy every request arrives from the proxy's address, so every client w
 budget. List your proxies in `AppOptions.Proxy`; the throttler then limits the real client:
 
 ```go
-app := owlky.New(&owlky.AppOptions{
-	Proxy: &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+app := owlkei.New(&owlkei.AppOptions{
+	Proxy: &owlkei.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 })
 ```
 
@@ -151,7 +151,7 @@ throttler.Throttler{Strategy: throttler.StrategyTokenBucket}
 
 ### KeyFunc
 
-Type: `func(owlky.HTTPContext) string`
+Type: `func(owlkei.HTTPContext) string`
 
 Default: the client IP (see [How the client is identified](#how-the-client-is-identified))
 
@@ -159,16 +159,16 @@ Required: `false`
 
 Returns the identity to charge, for example a user or an API key. A key longer than 128 bytes is
 stored as `h:` and 16 hex digits of a hash of it, so a client cannot store large keys. Read the
-client address with `owlky.ClientIP(c.Request)`, never from a request header yourself: a header is
+client address with `owlkei.ClientIP(c.Request)`, never from a request header yourself: a header is
 whatever the client sends.
 
 ```go
 throttler.Throttler{
-	KeyFunc: func(c owlky.HTTPContext) string {
+	KeyFunc: func(c owlkei.HTTPContext) string {
 		if user := c.Request.Header.Get("X-User-ID"); user != "" {
 			return "user:" + user
 		}
-		return owlky.ClientIP(c.Request).String()
+		return owlkei.ClientIP(c.Request).String()
 	},
 }
 ```
@@ -204,8 +204,8 @@ throttler.Throttler{
 
 ### NewGuard
 
-Applies the defaults and returns the compiled guard. Owlky Go calls it for you when you bind a
-`Throttler`; call it yourself only to use the guard outside Owlky Go's binding.
+Applies the defaults and returns the compiled guard. Owlkei Go calls it for you when you bind a
+`Throttler`; call it yourself only to use the guard outside Owlkei Go's binding.
 
 **Signature**
 
@@ -215,7 +215,7 @@ func (instance Throttler) NewGuard() any
 
 **Returns**
 
-- 1st value: `any`: the compiled guard, a value with `CanActivate(owlky.HTTPContext) bool`
+- 1st value: `any`: the compiled guard, a value with `CanActivate(owlkei.HTTPContext) bool`
 
 **Rules**
 
@@ -249,7 +249,7 @@ A refusal is `429 Too Many Requests` with the fixed message `Too Many Requests`.
 
 ## How the client is identified
 
-The default key is `owlky.ClientIP(c.Request)`: the connection's address, or the client that
+The default key is `owlkei.ClientIP(c.Request)`: the connection's address, or the client that
 the proxy stage (`AppOptions.Proxy`) resolved from the headers of a trusted proxy.
 
 - **IPv4:** the address, without the port.

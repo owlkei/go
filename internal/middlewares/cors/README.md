@@ -1,6 +1,6 @@
 # CORS Middleware
 
-Internal package: applications use `AppOptions.CORS` (`owlky.CORSOptions`) with `AppOptions.Origins` instead; it is the `cors` pre-route stage. The allowed origins come from `Origins` (`AllowOrigins` below).
+Internal package: applications use `AppOptions.CORS` (`owlkei.CORSOptions`) with `AppOptions.Origins` instead; it is the `cors` pre-route stage. The allowed origins come from `Origins` (`AllowOrigins` below).
 
 *`cors` lets the browser pages you list read your API from another origin, following the [Fetch Standard CORS protocol](https://fetch.spec.whatwg.org/#http-cors-protocol): actual requests, `OPTIONS` preflights, credentials and private network access.*
 
@@ -39,13 +39,13 @@ package main
 import (
 	"time"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
+	app := owlkei.New(&owlkei.AppOptions{
 		Origins: []string{"https://app.example.com", "https://*.example.com"},
-		CORS: &owlky.CORSOptions{
+		CORS: &owlkei.CORSOptions{
 			IsEnabled:          true,
 			ExposeHeaders:      []string{"X-Total-Count"},
 			MaxAge:             time.Hour,
@@ -54,7 +54,7 @@ func main() {
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -157,7 +157,7 @@ call your app on a private network (a device, an intranet service).
 
 ### NewMiddleware
 ```go
-func (instance CORS) NewMiddleware() owlky.MiddlewareFn
+func (instance CORS) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates and compiles the options once; the framework calls it at `Create()`. It panics with
@@ -169,10 +169,10 @@ token.
 
 ### Use
 ```go
-func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `CORS` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `CORS` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules

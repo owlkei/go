@@ -7,12 +7,12 @@ import (
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func noop() {}
@@ -89,7 +89,7 @@ func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
 	t.Helper()
 	app := core.New(&core.AppOptions{Logger: silentLogger{}})
 	app.BindGlobalMiddlewares(mws...)
-	app.Create(owlky.ModuleBuilder().Controllers(okController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(okController{}).Build())
 	return app
 }
 

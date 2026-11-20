@@ -16,7 +16,7 @@
     - [ConfigStateOf](#configstateof)
   - [Cost](#cost)
 
-The package is internal: only code in the Owlky Go module can import it. It holds plain state structs
+The package is internal: only code in the Owlkei Go module can import it. It holds plain state structs
 and one function variable per component. The component's own package sets its variable in `init`
 (`memorycache` sets `CacheStateOf`, `modules/config` sets `ConfigStateOf`). There is no registry of
 instances: a tool passes the value it found (for example a provider from the container), and nothing
@@ -31,8 +31,8 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/memorycache"
 )
 
 func main() {

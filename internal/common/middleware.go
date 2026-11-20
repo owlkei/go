@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 type Use = func(*http.Request, http.ResponseWriter, ctx.Next)

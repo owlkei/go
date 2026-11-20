@@ -10,11 +10,11 @@ app starts.
 
 ## What you learn
 
-- **`AsyncImports`.** `NewWarehouseModule(ctx)` returns `(owlky.Module, error)` and runs in the
+- **`AsyncImports`.** `NewWarehouseModule(ctx)` returns `(owlkei.Module, error)` and runs in the
   background. `Create()` does not wait for it.
 - **Who waits.** `StockController` injects `Warehouse`, so its routes stay registered but answer `503`
   until the warehouse module is ready. `HealthController` injects nothing from it and answers at once.
-- **Transient and permanent errors.** A refused connection is transient: `owlky.Retry` tries again with
+- **Transient and permanent errors.** A refused connection is transient: `owlkei.Retry` tries again with
   backoff (1 s, then up to 10 s) until it works or the app shuts down. A bad `WAREHOUSE_URL` is
   permanent: the factory returns the error at once, the module fails, and the route answers `503`
   without `Retry-After` until you fix the value and restart.

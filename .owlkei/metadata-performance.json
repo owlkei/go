@@ -1,6 +1,6 @@
 {
   "format": "ai-metadata-v1",
-  "title": "Owlky Go Performance Characteristics",
+  "title": "Owlkei Go Performance Characteristics",
   "purpose": "Document performance bottlenecks and optimization opportunities",
   "request_latency_breakdown": {
     "typical_fast_path": {

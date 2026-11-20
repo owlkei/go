@@ -16,7 +16,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it.
+The package is internal: only code in the Owlkei Go module can import it.
 
 ## Key Features
 - Generic: each pattern end holds a `*T` of the caller (the router stores its `*RouterItem`)
@@ -33,7 +33,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/ds"
+	"go.owlkei.com/owlkei/internal/ds"
 )
 
 func main() {
@@ -202,7 +202,7 @@ Results depend on the machine. They were captured when this README was generated
 ```console
 goos: darwin
 goarch: amd64
-pkg: go.owlky.com/owlky/internal/ds
+pkg: go.owlkei.com/owlkei/internal/ds
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkMatchGlob-12                     	38214238	        31.31 ns/op	       0 B/op	       0 allocs/op
 BenchmarkTrieFind_Static-12               	26811342	        45.98 ns/op	       0 B/op	       0 allocs/op

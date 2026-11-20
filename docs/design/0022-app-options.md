@@ -4,14 +4,14 @@ Status: Approved
 Packages: root package (`aliases.go`, new `options.go`), `internal/core` (`app.go`, `server.go`, `http.go`,
 `ws.go`, new `options.go`, `options_env.go`, `byte_size.go`, `security_check.go`), `middlewares/*` →
 `internal/middlewares/*`, new `internal/middlewares/origin`, new `internal/dotenv`, `modules/config`,
-`guards/throttler`, `internal/trace`, `internal/devtool`, `api/owlky.txt`
+`guards/throttler`, `internal/trace`, `internal/devtool`, `api/owlkei.txt`
 
 Covers steps 1-8 of `docs/roadmap/0013-app-options.md`, plus the declaration of roadmap 0012 step 1c(a).
 The roadmap's Decisions and `docs/roadmap/backlog.md` › "App options" and "Less configuration in `main`"
 (the "`AppOptions` from the environment" part) are taken as given and not repeated here.
 
 ## Goal
-`owlky.New(&owlky.AppOptions{…})` holds the whole configuration of an app; `owlky.OptionsFromEnv()` fills
+`owlkei.New(&owlkei.AppOptions{…})` holds the whole configuration of an app; `owlkei.OptionsFromEnv()` fills
 the same struct from `OK_*` variables and `.env`. The eight built-in middlewares become internal
 pre-route stages that run in a fixed order, each off until configured. One `Origins` list serves CORS,
 CSRF and the WebSocket Origin check. `app.Listen()` takes no argument. A startup warning names a missing
@@ -79,7 +79,7 @@ Removed: `SetLogger`, `SetStartupTimeout`, `EnableAccessLog`, `EnableDevtool`, `
 ### `AppOptions` and its groups (`internal/core/options.go`)
 
 Godoc as written below goes on every field (roadmap decision; the no-comment rule of
-`.owlky/conventions.md` yields here). A pointer group left `nil` is the same as an empty one.
+`.owlkei/conventions.md` yields here). A pointer group left `nil` is the same as an empty one.
 
 ```go
 type AppOptions struct {
@@ -91,7 +91,7 @@ type AppOptions struct {
 	IsAccessLog bool
 	// IsDevtool builds the devtool snapshot at Create. Default: false.
 	IsDevtool bool
-	// Server applies when Owlky opens the listener (Listen, Serve). Default: port 3000, HTTP/1.1, no TLS.
+	// Server applies when Owlkei opens the listener (Listen, Serve). Default: port 3000, HTTP/1.1, no TLS.
 	Server *ServerOptions
 	// HTTP holds the settings of every HTTP request, also when App runs in your own http.Server.
 	HTTP *HTTPOptions
@@ -272,20 +272,20 @@ func parseByteSize(text string) (ByteSize, error) // unexported: OptionsFromEnv 
 
 | Before | After |
 |---|---|
-| `owlky.New()` | `owlky.New(nil)` or `owlky.New(&owlky.AppOptions{…})` |
+| `owlkei.New()` | `owlkei.New(nil)` or `owlkei.New(&owlkei.AppOptions{…})` |
 | `app.SetLogger(l)` | `Logger: l` |
 | `app.SetStartupTimeout(d)` | `StartupTimeout: d` |
 | `app.EnableAccessLog()` / `EnableDevtool()` | `IsAccessLog: true` / `IsDevtool: true` |
-| `app.EnableRender(&owlky.RenderOptions{…})` | `Render: &owlky.RenderOptions{…}` |
-| `app.EnableVersioning(&owlky.VersioningOptions{…})` | `Versioning: &owlky.VersioningOptions{…}` (`Type` required) |
-| `app.EnableWS(&owlky.WSOptions{Path: "ws"}, mws…)` | `WS: &owlky.WSOptions{Path: "ws"}`; built-ins from their fields; user `mws` via `BindGlobalMiddlewares` (B-W6) |
-| `app.Listen(port, &owlky.ServerOptions{…})` | `Server: &owlky.ServerOptions{Port: port, …}` + `app.Listen()` |
-| `app.ListenTLS(port, cert, key, opts)` | `Server.TLS: &owlky.TLSOptions{CertFile: cert, KeyFile: key}` + `app.Listen()` |
+| `app.EnableRender(&owlkei.RenderOptions{…})` | `Render: &owlkei.RenderOptions{…}` |
+| `app.EnableVersioning(&owlkei.VersioningOptions{…})` | `Versioning: &owlkei.VersioningOptions{…}` (`Type` required) |
+| `app.EnableWS(&owlkei.WSOptions{Path: "ws"}, mws…)` | `WS: &owlkei.WSOptions{Path: "ws"}`; built-ins from their fields; user `mws` via `BindGlobalMiddlewares` (B-W6) |
+| `app.Listen(port, &owlkei.ServerOptions{…})` | `Server: &owlkei.ServerOptions{Port: port, …}` + `app.Listen()` |
+| `app.ListenTLS(port, cert, key, opts)` | `Server.TLS: &owlkei.TLSOptions{CertFile: cert, KeyFile: key}` + `app.Listen()` |
 | `app.Serve(l, opts)` | `app.Serve(l)` |
 | `ServerOptions.MaxRequestBodyBytes` (int64) | `HTTP.MaxBodyBytes` (`ByteSize`) |
 | `ServerOptions.TLSConfig` | `Server.TLS.Config` |
 | `app.BindGlobalMiddlewares(loadshed.LoadShed{}, …)` (any of the eight) | the matching `AppOptions` field (table above) |
-| `proxy.ClientIP` / `Scheme` / `Host` | `owlky.ClientIP` / `ClientScheme` / `ClientHost` |
+| `proxy.ClientIP` / `Scheme` / `Host` | `owlkei.ClientIP` / `ClientScheme` / `ClientHost` |
 | `cors.CORS{AllowOrigins: o}` + `csrf.CSRF{TrustedOrigins: o}` | `Origins: o` |
 
 ## Behavior
@@ -351,8 +351,8 @@ func parseByteSize(text string) (ByteSize, error) // unexported: OptionsFromEnv 
   (`h2c` too with `IsH2C`). The `ServerListening` line and the terminal banner say `https` with TLS.
 - **S2.** `Serve(l)` serves on `l` with the same TLS and protocol rules; it ignores `Port`, and logs
   `Info "ServerPortIgnored" "port" <n>` once when `Port` is non-zero.
-- **S3.** `Listen` and `Serve` keep their errors for state (`owlky: Create must be called before serving`,
-  `owlky: app is already serving`, `owlky: app is stopped`) and for the socket (`owlky: listen on :<p>:
+- **S3.** `Listen` and `Serve` keep their errors for state (`owlkei: Create must be called before serving`,
+  `owlkei: app is already serving`, `owlkei: app is stopped`) and for the socket (`owlkei: listen on :<p>:
   …`); the TLS errors `errTLSConfigOnListen`, `errH2CWithTLS`, `errNoCertificate` are gone (A3).
 - **S4.** `ShutdownTimeout` bounds draining and hooks after a signal or `Stop()`; `Stop()` before
   serving uses it too.
@@ -444,7 +444,7 @@ func parseByteSize(text string) (ByteSize, error) // unexported: OptionsFromEnv 
 ### Step 8: `OptionsFromEnv`
 
 - **E1.** `OptionsFromEnv()` returns an `*AppOptions` with every pointer group non-nil (`Server.TLS`
-  included), each field set from its variable or left zero. Without a call to it, Owlky reads no variable
+  included), each field set from its variable or left zero. Without a call to it, Owlkei reads no variable
   and no file.
 - **E2.** Names: `OK_` + the field path from `AppOptions`, levels joined by `__`, each field name in upper
   snake case (a `_` before an upper-case letter that follows a lower-case letter, and before the last
@@ -576,16 +576,16 @@ an `http.Server` after `New` returns. No goroutine is added.
   configuration calls, mostly tests; `examples/`, `bench/`, READMEs): roadmap step 9.
 - `guards/throttler` reads `tracecontext.ClientIP` directly (public packages don't import the root).
 - Docs (step 10): README Configuration section and production checklist (the `SecurityCheck` link target),
-  behavior changes of P7, `.owlky/request-pipeline.md` (the pre-route stages before the pipeline),
+  behavior changes of P7, `.owlkei/request-pipeline.md` (the pre-route stages before the pipeline),
   CLAUDE.md (package map without `middlewares/*`; "Safe defaults" → "Explicit protection"; the
   `invalid app:` list; App line), the moved packages' READMEs (become internal docs), `internal/trace` and
   `internal/core` READMEs (`pre-route`, `ClientIP` naming).
-- `api/owlky.txt`:
-  - removed: the eight `pkg owlky/middlewares/*` blocks (57 lines), `func New() owlky.App`,
+- `api/owlkei.txt`:
+  - removed: the eight `pkg owlkei/middlewares/*` blocks (57 lines), `func New() owlkei.App`,
     `EnableAccessLog`, `EnableDevtool`, `EnableRender`, `EnableVersioning`, `EnableWS`, `ListenTLS`,
     `SetLogger`, `SetStartupTimeout`, `Listen(int, *core.ServerOptions)`, `Serve(net.Listener,
     *core.ServerOptions)`, `ServerOptions` fields `MaxRequestBodyBytes`, `TLSConfig`;
-  - added: `func New(*core.AppOptions) owlky.App`, `func OptionsFromEnv() *core.AppOptions`, `ClientIP`,
+  - added: `func New(*core.AppOptions) owlkei.App`, `func OptionsFromEnv() *core.AppOptions`, `ClientIP`,
     `ClientScheme`, `ClientHost`, 12 type aliases, 2 `ProxyHeader` and 6 `ByteSize` constants,
     `Listen() error`, `Serve(net.Listener) error`, `method (core.ByteSize) String() string`, `reach` lines
     for every field above, `ServerOptions` fields `Port`, `TLS`.
@@ -638,8 +638,8 @@ Internal test packages, `Test<Subject>_<Behavior>`, one function per behavior.
 
 ## Open questions
 
-1. **Home of the client helpers.** Recommendation: root `owlky.ClientIP`, `ClientScheme`, `ClientHost`
-   (`owlky.Host` / `owlky.Scheme` read as properties of Owlky). Alternative: methods on `HTTPContext`,
+1. **Home of the client helpers.** Recommendation: root `owlkei.ClientIP`, `ClientScheme`, `ClientHost`
+   (`owlkei.Host` / `owlkei.Scheme` read as properties of Owlkei). Alternative: methods on `HTTPContext`,
    which user middlewares (they get `*http.Request`) can't use.
 2. **`IsAccessLog` / `IsDevtool`** (D-032 `Is…` booleans) instead of the roadmap's working names
    `AccessLog` / `Devtool`. Recommendation: `Is…`; groups later if they grow options.

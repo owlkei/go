@@ -1,6 +1,6 @@
 # Middleware CSRF
 
-> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.CSRF` (`owlky.CSRFOptions`) cùng `AppOptions.Origins` trong `owlky.New(&owlky.AppOptions{…})`; các ví dụ `owlky.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
+> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.CSRF` (`owlkei.CSRFOptions`) cùng `AppOptions.Origins` trong `owlkei.New(&owlkei.AppOptions{…})`; các ví dụ `owlkei.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
 
 *`csrf` từ chối các request thay đổi trạng thái (state-changing) gửi từ trình duyệt ở origin khác, dựa trên header Fetch Metadata `Sec-Fetch-Site` và header `Origin`: không token, không cookie, không đọc body.*
 
@@ -31,19 +31,19 @@
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/middlewares/csrf"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/middlewares/csrf"
 )
 
 func main() {
-	app := owlky.New()
+	app := owlkei.New()
 
 	app.BindGlobalMiddlewares(csrf.CSRF{
 		TrustedOrigins: []string{"https://app.example.com"},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -89,7 +89,7 @@ csrf.CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.examp
 
 ### NewMiddleware
 ```go
-func (instance CSRF) NewMiddleware() owlky.MiddlewareFn
+func (instance CSRF) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Kiểm tra và biên dịch các option một lần; framework gọi nó khi `Create()`. Nó panic với
@@ -98,10 +98,10 @@ Kiểm tra và biên dịch các option một lần; framework gọi nó khi `Cr
 
 ### Use
 ```go
-func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Giúp `CSRF` là một `owlky.MiddlewareFn`. Nó biên dịch option ở mỗi lần gọi, nên chỉ dùng trong
+Giúp `CSRF` là một `owlkei.MiddlewareFn`. Nó biên dịch option ở mỗi lần gọi, nên chỉ dùng trong
 test; framework luôn gọi `NewMiddleware`.
 
 ## Quy Tắc

@@ -4,9 +4,9 @@ import (
 	stdHTTP "net/http"
 	"slices"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 const publicRoutePrefix = "public/"

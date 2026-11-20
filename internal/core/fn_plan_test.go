@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/trace"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/trace"
 	"golang.org/x/net/websocket"
 )
 

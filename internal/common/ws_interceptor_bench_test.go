@@ -3,8 +3,8 @@ package common
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func BenchmarkInjectProvidersIntoWSInterceptors_ApplyAll(b *testing.B) {

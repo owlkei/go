@@ -3,7 +3,7 @@ package crypto
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestUUID_Format(t *testing.T) {

@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 func TestNewHTTPContext_DefaultCode(t *testing.T) {

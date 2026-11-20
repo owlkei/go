@@ -4,7 +4,7 @@ import (
 	"go/token"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 var formatByKind = map[reflect.Kind]string{

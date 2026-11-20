@@ -8,9 +8,9 @@ import (
 	"reflect"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 type JSONAppender interface {

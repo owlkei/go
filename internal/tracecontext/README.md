@@ -1,6 +1,6 @@
 # Trace context
 
-*Package `tracecontext` gives every HTTP request, WebSocket connection and WebSocket message its IDs in the W3C Trace Context format, and carries them in the `context.Context` Owlky Go hands out.*
+*Package `tracecontext` gives every HTTP request, WebSocket connection and WebSocket message its IDs in the W3C Trace Context format, and carries them in the `context.Context` Owlkei Go hands out.*
 
 - [Trace context](#trace-context)
   - [Key Features](#key-features)
@@ -34,7 +34,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it. Users read the IDs through
+The package is internal: only code in the Owlkei Go module can import it. Users read the IDs through
 `c.ID()`, the `X-Request-Id` and `Traceparent` response headers, the access log and (from design
 0012) the scoped logger.
 
@@ -56,7 +56,7 @@ import (
 	"net/http"
 	"time"
 
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 func main() {
@@ -333,7 +333,7 @@ func IsHTTPS(r *http.Request) bool
 func Host(r *http.Request) string
 ```
 
-The client of a request, as `owlky.ClientIP`, `owlky.ClientScheme` and `owlky.ClientHost` show it to users.
+The client of a request, as `owlkei.ClientIP`, `owlkei.ClientScheme` and `owlkei.ClientHost` show it to users.
 
 #### Rules
 - A scope with `IsClientSet` decides: its `ClientIP`, `IsClientHTTPS` and `ClientHost` (or `r.Host`
@@ -449,7 +449,7 @@ Results depend on the machine. They were captured when this README was generated
 ```console
 goos: darwin
 goarch: amd64
-pkg: go.owlky.com/owlky/internal/tracecontext
+pkg: go.owlkei.com/owlkei/internal/tracecontext
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
 BenchmarkNewSpanID-12                             	25177364	        41.13 ns/op	       0 B/op	       0 allocs/op
 BenchmarkNewSpanID_Parallel-12                    	24549900	        43.85 ns/op	       0 B/op	       0 allocs/op

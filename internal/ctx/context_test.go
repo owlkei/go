@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestContext_InterfaceMethods(t *testing.T) {

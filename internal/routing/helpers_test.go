@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func randomSegment(rnd *rand.Rand, n int) string {

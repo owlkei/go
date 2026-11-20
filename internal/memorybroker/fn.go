@@ -1,8 +1,8 @@
 package memorybroker
 
 import (
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/crypto"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/crypto"
 )
 
 func newID() string {

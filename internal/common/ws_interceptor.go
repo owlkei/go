@@ -4,9 +4,9 @@ import (
 	"errors"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type WSIntercept = func(*ctx.WSContext, *aggregation.Aggregation) any
@@ -51,7 +51,7 @@ func InjectProvidersIntoWSInterceptors(i *Interceptor, ws *WS, cb func(int, refl
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid interceptor: %v.%s must be func(owlky.WSContext, owlky.Aggregation) any to be bound as a WS interceptor",
+				"invalid interceptor: %v.%s must be func(owlkei.WSContext, owlkei.Aggregation) any to be bound as a WS interceptor",
 				interceptableType,
 				InterceptorMethodName,
 			)))

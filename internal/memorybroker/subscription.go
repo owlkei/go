@@ -1,7 +1,7 @@
 package memorybroker
 
 import (
-	ptrn "go.owlky.com/owlky/internal/pattern"
+	ptrn "go.owlkei.com/owlkei/internal/pattern"
 )
 
 type Subscription interface {

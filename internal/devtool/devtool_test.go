@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestDevtool_GetConfigurationReturnsSnapshot(t *testing.T) {

@@ -1,8 +1,8 @@
 # Common
 
-Internal package: applications use `owlky.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
+Internal package: applications use `owlkei.HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher` and `log.Logger` / `log.LogAdapter` instead.
 
-*Common is a part of `Owlky Go` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
+*Common is a part of `Owlkei Go` framework: it holds the contracts a controller embeds (`HTTP`, `WS`, `Middleware`, `Guard`, `Interceptor`, `ExceptionFilter`), the route and event naming DSL, the pipes and the types a handler can ask for, and the request-time glue that runs guards, interceptors and exception filters.*
 
 - [Common](#common)
   - [Key Features](#key-features)
@@ -57,11 +57,11 @@ A controller embeds `common.HTTP` for its routes and one embed per layer it bind
 package main
 
 import (
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type RoleGuard struct {
@@ -286,7 +286,7 @@ name := common.ToWSEventName("/message/")
 
 ## `HTTP` Controller Embed
 
-`HTTP` makes a controller an HTTP controller. Its methods are `Prefix` and `Path` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `owlky.HTTP`.
+`HTTP` makes a controller an HTTP controller. Its methods are `Prefix` and `Path` and it has no exported field: `core` fills its unexported maps at `Create()` and reads them through package functions, which a controller can't reach through the root alias `owlkei.HTTP`.
 
 | Function | Returns |
 |----------|---------|
@@ -349,7 +349,7 @@ Gives one or more handlers an exact path that replaces the path their names spel
 #### Usage
 
 ```go
-func (instance TokenController) NewController() owlky.Controller {
+func (instance TokenController) NewController() owlkei.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
@@ -365,7 +365,7 @@ func (instance TokenController) NewController() owlky.Controller {
 
 ### PathStyle
 
-`type PathStyle int` decides how `ParseFuncNameToURL` joins the words of one resource. The root package re-exports it as `owlky.PathStyle`; `core`'s `ModuleBuilder.PathStyle` sets it per module.
+`type PathStyle int` decides how `ParseFuncNameToURL` joins the words of one resource. The root package re-exports it as `owlkei.PathStyle`; `core`'s `ModuleBuilder.PathStyle` sets it per module.
 
 | Constant | Value | Joint | `READ_payment_intents` |
 |---|---|---|---|

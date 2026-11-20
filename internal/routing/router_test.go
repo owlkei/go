@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestRouter_Match_Root(t *testing.T) {

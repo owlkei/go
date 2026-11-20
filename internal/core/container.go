@@ -6,12 +6,12 @@ import (
 	"reflect"
 	"strings"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/render"
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/str"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/render"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/str"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 var fieldNameByRole = map[string]string{

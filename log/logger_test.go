@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestLogger_ExtendsLogAdapter(t *testing.T) {

@@ -12,11 +12,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestThrottler_DefaultsAreAppliedByNewGuard(t *testing.T) {

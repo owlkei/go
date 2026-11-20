@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/tracecontext"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/tracecontext"
+	"go.owlkei.com/owlkei/log"
 )
 
 func sameImport(a, b any) bool {

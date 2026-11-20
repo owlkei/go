@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/ds"
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ds"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 const SERVE = "SERVE"

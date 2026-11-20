@@ -12,8 +12,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestCacheService_ForwardsToBackend(t *testing.T) {

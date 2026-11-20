@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestSink_SyncWriteReturnsAfterOutput(t *testing.T) {

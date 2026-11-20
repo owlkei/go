@@ -8,12 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/httphook"
-	"go.owlky.com/owlky/internal/inspect"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/httphook"
+	"go.owlkei.com/owlkei/internal/inspect"
 )
 
 const (

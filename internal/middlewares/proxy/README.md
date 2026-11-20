@@ -1,6 +1,6 @@
 # Proxy Middleware
 
-Internal package: applications use `AppOptions.Proxy` (`owlky.ProxyOptions`) and read the client with `owlky.ClientIP`, `owlky.ClientScheme` and `owlky.ClientHost` (`proxy.ClientIP`, `proxy.Scheme` and `proxy.Host` below); it is the `proxy` pre-route stage.
+Internal package: applications use `AppOptions.Proxy` (`owlkei.ProxyOptions`) and read the client with `owlkei.ClientIP`, `owlkei.ClientScheme` and `owlkei.ClientHost` (`proxy.ClientIP`, `proxy.Scheme` and `proxy.Host` below); it is the `proxy` pre-route stage.
 
 *`proxy` tells your app who the client really is when it runs behind a load balancer or reverse proxy: the client IP, the scheme (`http` or `https`) and the host, read from proxy headers only when they come from a proxy you trust.*
 
@@ -47,7 +47,7 @@ the throttler, `hostcheck`, `httpsredirect` and `helmet` all see the proxy, not 
 gives a new identity (a rate limit bypass) or a fake one in your logs. `proxy` reads those headers
 only from a peer you list, and only the entries your proxies wrote.
 
-Without `proxy` bound, nothing in Owlky Go reads a forwarding header: the client is `r.RemoteAddr`.
+Without `proxy` bound, nothing in Owlkei Go reads a forwarding header: the client is `r.RemoteAddr`.
 
 ## Usage
 
@@ -57,28 +57,28 @@ Without `proxy` bound, nothing in Owlky Go reads a forwarding header: the client
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type WhoController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance WhoController) NewController() owlky.Controller {
+func (instance WhoController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance WhoController) READ_who(c owlky.HTTPContext) string {
-	return owlky.ClientIP(c.Request).String() + " " + owlky.ClientScheme(c.Request) + " " + owlky.ClientHost(c.Request)
+func (instance WhoController) READ_who(c owlkei.HTTPContext) string {
+	return owlkei.ClientIP(c.Request).String() + " " + owlkei.ClientScheme(c.Request) + " " + owlkei.ClientHost(c.Request)
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Proxy: &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+	app := owlkei.New(&owlkei.AppOptions{
+		Proxy: &owlkei.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Controllers(WhoController{}).
 			Build(),
 	)
@@ -154,7 +154,7 @@ Reads the host the client asked for from `X-Forwarded-Host` (with `HeaderXForwar
 (with `HeaderForwarded`). Turn it on only when every trusted proxy sets that header itself and never
 passes a client's value through. Many proxy setups don't: the common nginx configuration sets
 `Host` and leaves `X-Forwarded-Host` to the client. A host the client chooses ends up in your
-redirects, links and password reset mails, so it is off by default and `owlky.ClientHost` returns
+redirects, links and password reset mails, so it is off by default and `owlkei.ClientHost` returns
 `r.Host`, the host your proxy routed on.
 
 You need it when your proxy rewrites `Host` to an internal name (for example nginx without
@@ -187,7 +187,7 @@ IPv6 addresses are unmapped and zones removed. Returns the zero `netip.Addr` whe
 not `ip:port`.
 
 ```go
-ip := owlky.ClientIP(c.Request)
+ip := owlkei.ClientIP(c.Request)
 if ip.IsValid() {
 	fmt.Println(ip.String())
 }
@@ -215,7 +215,7 @@ port.
 
 ### NewMiddleware
 ```go
-func (instance Proxy) NewMiddleware() owlky.MiddlewareFn
+func (instance Proxy) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates the options and compiles them once. The framework calls it for you at `Create()`. It
@@ -225,10 +225,10 @@ entries, and for `TrustedHops` outside 1-16.
 
 ### Use
 ```go
-func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance Proxy) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `Proxy` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `Proxy` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Configure your proxy

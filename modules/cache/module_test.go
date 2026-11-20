@@ -5,11 +5,11 @@ import (
 	"runtime"
 	"testing"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestRegister_NilOptions(t *testing.T) {
@@ -100,7 +100,7 @@ func TestRegister_StartsNoGoroutine(t *testing.T) {
 
 func TestRegister_InjectedServicesShareBackend(t *testing.T) {
 	cacheModule := Register(&CacheModuleOptions{IsGlobal: true})
-	root := owlky.ModuleBuilder().
+	root := owlkei.ModuleBuilder().
 		Imports(cacheModule).
 		Providers(consumerA{}, consumerB{}).
 		Build()

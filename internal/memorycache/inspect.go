@@ -1,6 +1,6 @@
 package memorycache
 
-import "go.owlky.com/owlky/internal/inspect"
+import "go.owlkei.com/owlkei/internal/inspect"
 
 func init() {
 	inspect.CacheStateOf = cacheStateOf

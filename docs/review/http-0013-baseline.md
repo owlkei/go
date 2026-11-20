@@ -10,7 +10,7 @@ differences under about 10 % as noise.
 `bench/load.sh`, `wrk`, 64 connections, 8 s per run, log on for every framework (logger parity),
 three rounds with the framework order reversed in the second; medians of requests per second.
 
-| GOMAXPROCS | Scenario | Owlky Go | Gin | Echo | Chi | Fiber | Owlky ÷ best of Gin/Echo/Chi | Owlky ÷ Fiber |
+| GOMAXPROCS | Scenario | Owlkei Go | Gin | Echo | Chi | Fiber | Owlkei ÷ best of Gin/Echo/Chi | Owlkei ÷ Fiber |
 |---|---|---|---|---|---|---|---|---|
 | 1 | Static | 25.4k | 25.2k | 22.1k | 25.3k | 42.8k | **100 %** | 59 % |
 | 1 | Chain | 18.6k | 22.0k | 20.8k | 20.9k | 30.7k | **84 %** | 61 % |
@@ -20,7 +20,7 @@ three rounds with the framework order reversed in the second; medians of request
 | 12 | Chain | 56.2k | 30.9k | 44.5k | 49.2k | 59.3k | **114 %** | 95 % |
 
 The same picture as `http-0006.md`: level with the `net/http` group on one or two cores (behind on
-Chain at one core, where Owlky's access line is about three times longer), ahead at twelve, Fiber
+Chain at one core, where Owlkei's access line is about three times longer), ahead at twelve, Fiber
 (`fasthttp`) ahead on small machines. p99 values on this run are too noisy to compare (one-core runs
 show 9 to 25 ms for every `net/http` framework); they are in the raw table only.
 
@@ -54,7 +54,7 @@ Cold-path numbers are new in this report: from roadmap 0013 on, every roadmap's 
 
 ## Rerun
 
-- Load: `FRAMEWORKS="owlky gin echo chi fiber" LOGS=on PROCS="1 2 all" DURATION=8s CONNECTIONS=64 SCENARIOS="Static Chain" ./bench/load.sh`, three rounds, reversed order in round two.
-- Hot path: `cd bench && go test -run '^$' -bench 'BenchmarkOwlky' -benchmem -count 3 .`
+- Load: `FRAMEWORKS="owlkei gin echo chi fiber" LOGS=on PROCS="1 2 all" DURATION=8s CONNECTIONS=64 SCENARIOS="Static Chain" ./bench/load.sh`, three rounds, reversed order in round two.
+- Hot path: `cd bench && go test -run '^$' -bench 'BenchmarkOwlkei' -benchmem -count 3 .`
 - Cold path: `go test -run '^$' -bench BenchmarkCreate -benchmem -count 5 ./internal/core/`;
   binary: `go build` of `examples/01-hello`.

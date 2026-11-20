@@ -3,7 +3,7 @@ package routing
 import (
 	"strings"
 
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 var patternByMethod = func() map[string]string {

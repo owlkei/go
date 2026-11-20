@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	ptrn "go.owlky.com/owlky/internal/pattern"
+	ptrn "go.owlkei.com/owlkei/internal/pattern"
 )
 
 type MemoryBroker struct {

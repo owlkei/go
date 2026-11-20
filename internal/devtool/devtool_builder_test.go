@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 func TestDevtoolBuilder_BuildsHTTPComponent(t *testing.T) {

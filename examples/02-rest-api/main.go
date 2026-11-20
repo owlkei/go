@@ -5,11 +5,11 @@ package main
 import (
 	"log"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
-func newApp() owlky.App {
-	app := owlky.New(nil)
+func newApp() owlkei.App {
+	app := owlkei.New(nil)
 	app.Create(NewBooksModule())
 	return app
 }

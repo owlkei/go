@@ -6,14 +6,14 @@ import (
 	"reflect"
 	"time"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/memorybroker"
-	"go.owlky.com/owlky/internal/str"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/tracecontext"
-	"go.owlky.com/owlky/internal/wsevent"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/memorybroker"
+	"go.owlkei.com/owlkei/internal/str"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/wsevent"
+	"go.owlkei.com/owlkei/log"
 	"golang.org/x/net/websocket"
 )
 

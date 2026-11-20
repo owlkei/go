@@ -10,11 +10,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/memorybroker"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/memorybroker"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/versioning"
+	"go.owlkei.com/owlkei/log"
 )
 
 func TestApp_SameGuardTypeDifferentConfig(t *testing.T) {
@@ -84,7 +84,7 @@ func TestContainer_NoImportPathLiteralKeys(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, needle := range []string{"owlky/internal/common/common.", "owlky/common/common.", "owlky/log/log."} {
+		for _, needle := range []string{"owlkei/internal/common/common.", "owlkei/common/common.", "owlkei/log/log."} {
 			if strings.Contains(string(raw), needle) {
 				t.Error(test.DiffMessage(file, "no import path literal", "B21: "+file+" holds the literal "+needle))
 			}

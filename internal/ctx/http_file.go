@@ -4,7 +4,7 @@ import (
 	"mime/multipart"
 	"strings"
 
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type fileValidator interface {

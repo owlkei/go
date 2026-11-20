@@ -4,7 +4,7 @@ import (
 	"errors"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 const InterceptorMethodName = "Intercept"

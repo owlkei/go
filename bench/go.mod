@@ -1,14 +1,14 @@
-module go.owlky.com/owlky/bench
+module go.owlkei.com/owlkei/bench
 
 go 1.27.4
 
 require (
-	go.owlky.com/owlky v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/gofiber/fiber/v2 v2.52.16
 	github.com/labstack/echo/v4 v4.16.5
 	github.com/valyala/fasthttp v1.51.0
+	go.owlkei.com/owlkei v0.0.0
 )
 
 require (
@@ -54,4 +54,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace go.owlky.com/owlky => ../
+replace go.owlkei.com/owlkei => ../

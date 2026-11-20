@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/internal/dotenv"
-	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/dotenv"
+	"go.owlkei.com/owlkei/internal/versioning"
+	"go.owlkei.com/owlkei/log"
 )
 
 const (

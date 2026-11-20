@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 func envSetup(t *testing.T, dotenv string, vars map[string]string) {

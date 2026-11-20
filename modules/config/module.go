@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/dotenv"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/dotenv"
 )
 
 type (

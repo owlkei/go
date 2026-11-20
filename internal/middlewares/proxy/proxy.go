@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 type Header int

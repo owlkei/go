@@ -1,6 +1,6 @@
 # Loadshed Middleware
 
-Internal package: applications use `AppOptions.LoadShed` (`owlky.LoadShedOptions`) instead; it is the `loadshed` pre-route stage.
+Internal package: applications use `AppOptions.LoadShed` (`owlkei.LoadShedOptions`) instead; it is the `loadshed` pre-route stage.
 
 *`loadshed` keeps your server fast when more requests arrive than it can serve: it lets a bounded number of requests run at once, holds a few more for a moment, and answers the rest `503 Service Unavailable` with `Retry-After` right away.*
 
@@ -62,17 +62,17 @@ confirms that the server really is slower. See [How the limit adapts](#how-the-l
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Server:   &owlky.ServerOptions{Port: 8080},
-		LoadShed: &owlky.LoadShedOptions{IsEnabled: true},
+	app := owlkei.New(&owlkei.AppOptions{
+		Server:   &owlkei.ServerOptions{Port: 8080},
+		LoadShed: &owlkei.LoadShedOptions{IsEnabled: true},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 
 	if err := app.Listen(); err != nil {
@@ -135,7 +135,7 @@ The wait and the `Retry-After` value are fixed.
 
 ### NewMiddleware
 ```go
-func (instance LoadShed) NewMiddleware() owlky.MiddlewareFn
+func (instance LoadShed) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates the options and reads the machine's bounds once; the framework calls it at `Create()`.
@@ -143,10 +143,10 @@ Validates the options and reads the machine's bounds once; the framework calls i
 
 ### Use
 ```go
-func (instance LoadShed) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance LoadShed) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `LoadShed` a `owlky.MiddlewareFn`. It builds a new limiter on every call, so use it in tests
+Makes `LoadShed` a `owlkei.MiddlewareFn`. It builds a new limiter on every call, so use it in tests
 only; the framework always calls `NewMiddleware`. Called outside an app, it only calls the next
 layer.
 

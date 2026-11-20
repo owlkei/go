@@ -7,7 +7,7 @@ shuts down without dropping requests.
 
 ## What you learn
 
-- **One `AppOptions` block.** The whole configuration is the struct given to `owlky.New`. Nothing
+- **One `AppOptions` block.** The whole configuration is the struct given to `owlkei.New`. Nothing
   protects the app until you set it: every protection is off by default.
 - **Protections in a fixed order.** They run before routing and before your own middlewares. Load
   shedding runs first, so a request refused under overload costs as little as possible; then the
@@ -21,7 +21,7 @@ shuts down without dropping requests.
 - **An access log.** `IsAccessLog: true` writes one line per request.
 - **Bounded memory.** Anyone can post, so the inbox keeps the newest 500 notes: a flood of posts can't
   fill a small server's memory.
-- **What Owlky Go already does for you.** Server timeouts, a 10 MiB body limit, a fixed `500` for
+- **What Owlkei Go already does for you.** Server timeouts, a 10 MiB body limit, a fixed `500` for
   any panic that is not an exception, and graceful shutdown are always on.
 
 ## Run it

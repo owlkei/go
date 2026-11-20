@@ -1,6 +1,6 @@
 # CSRF Middleware
 
-Internal package: applications use `AppOptions.CSRF` (`owlky.CSRFOptions`) with `AppOptions.Origins` instead; it is the `csrf` pre-route stage. The trusted origins come from `Origins` (`TrustedOrigins` below), wildcard entries included.
+Internal package: applications use `AppOptions.CSRF` (`owlkei.CSRFOptions`) with `AppOptions.Origins` instead; it is the `csrf` pre-route stage. The trusted origins come from `Origins` (`TrustedOrigins` below), wildcard entries included.
 
 *`csrf` refuses cross-origin state-changing requests from browsers, using the Fetch Metadata `Sec-Fetch-Site` header and the `Origin` header, with no token, no cookie and no body read.*
 
@@ -32,17 +32,17 @@ Internal package: applications use `AppOptions.CSRF` (`owlky.CSRFOptions`) with 
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
+	app := owlkei.New(&owlkei.AppOptions{
 		Origins: []string{"https://app.example.com"},
-		CSRF:    &owlky.CSRFOptions{IsEnabled: true},
+		CSRF:    &owlkei.CSRFOptions{IsEnabled: true},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -69,7 +69,7 @@ requests. Non-browser clients send neither.
 
 ## Forms on rendered pages
 
-A page that Owlky Go renders (`AppOptions.Render`, a `RENDER_` route) needs nothing more for its forms: no
+A page that Owlkei Go renders (`AppOptions.Render`, a `RENDER_` route) needs nothing more for its forms: no
 token, no hidden field and no template function. The form posts to its own URL, which the
 `SUBMIT_` route of the same words answers (`<form method="post" action="/bookings/new">` reaches
 `SUBMIT_new_OF_bookings`). Browsers send `Sec-Fetch-Site` with the form post, and `csrf` refuses it
@@ -106,7 +106,7 @@ csrf.CSRF{TrustedOrigins: []string{"https://app.example.com", "https://idp.examp
 
 ### NewMiddleware
 ```go
-func (instance CSRF) NewMiddleware() owlky.MiddlewareFn
+func (instance CSRF) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates and compiles the options once; the framework calls it at `Create()`. It panics with
@@ -116,10 +116,10 @@ origins.
 
 ### Use
 ```go
-func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance CSRF) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `CSRF` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `CSRF` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Rules
@@ -131,7 +131,7 @@ only; the framework always calls `NewMiddleware`.
 - The origin's host and port must both equal the request's: `http://example.com:9090` is refused
   on `example.com:8080`.
 - Behind a trusted `proxy` with `IsHostForwarded` on and a forwarded host, and without `Sec-Fetch-Site`, the origin's host
-  is compared with `owlky.ClientHost(r)`. With no `proxy` bound, `X-Forwarded-Host` and `Forwarded` are
+  is compared with `owlkei.ClientHost(r)`. With no `proxy` bound, `X-Forwarded-Host` and `Forwarded` are
   never read.
 - No cookie and no token header is ever set, on a pass or a refusal. The body is never read; the
   request and its context are passed on unchanged.

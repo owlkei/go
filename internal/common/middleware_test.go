@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestBindMiddleware_Chaining(t *testing.T) {

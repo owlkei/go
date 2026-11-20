@@ -13,7 +13,7 @@ func TestRoutes(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{"/hello", http.StatusOK, "Hello from Owlky Go"},
+		{"/hello", http.StatusOK, "Hello from Owlkei Go"},
 		{"/hello/ada", http.StatusOK, `{"greeting":"Hello, ada"}`},
 		{"/goodbye", http.StatusNotFound, `{"code":404,"error":"Not Found","message":"Not Found"}`},
 	}

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestConfigService_GetSet(t *testing.T) {
@@ -75,15 +75,15 @@ func TestConfigService_ConcurrentGetSetNoRace(t *testing.T) {
 
 func TestConfigService_Transform_Strings(t *testing.T) {
 	svc := newService(t)
-	svc.Set("TT_TR_NAME", "owlky")
+	svc.Set("TT_TR_NAME", "owlkei")
 	svc.Set("TT_TR_PORT", "8080")
 	dto, _ := svc.Transform(boundConfig{})
 	got, ok := dto.(boundConfig)
 	if !ok {
 		t.Fatal(test.DiffMessage(fmt.Sprintf("%T", dto), "config.boundConfig", "E15: Transform returns the bound struct"))
 	}
-	if got.Name != "owlky" || got.Port != 8080 {
-		t.Error(test.DiffMessage(fmt.Sprintf("%+v", got), "{Name:owlky Port:8080 ...}", "E15: string values are bound"))
+	if got.Name != "owlkei" || got.Port != 8080 {
+		t.Error(test.DiffMessage(fmt.Sprintf("%+v", got), "{Name:owlkei Port:8080 ...}", "E15: string values are bound"))
 	}
 }
 

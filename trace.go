@@ -1,9 +1,9 @@
-package owlky
+package owlkei
 
 import (
 	"net/http"
 
-	"go.owlky.com/owlky/internal/trace"
+	"go.owlkei.com/owlkei/internal/trace"
 )
 
 func TraceTransport(base http.RoundTripper) http.RoundTripper {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 	"golang.org/x/net/websocket"
 )
 

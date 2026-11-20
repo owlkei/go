@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const apiFile = "api/owlky.txt"
+const apiFile = "api/owlkei.txt"
 
 var targetPackages = []string{
 	".",

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"reflect"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 const ExceptionFilterMethodName = "Catch"

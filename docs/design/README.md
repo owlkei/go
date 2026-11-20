@@ -39,7 +39,7 @@ Goroutines, shared state, how each is protected, lock order, how goroutines stop
 Limits, validation, secrets, anything an attacker controls.
 
 ## Impact
-Callers that change, compatibility, docs to update (README, CLAUDE.md, .owlky/).
+Callers that change, compatibility, docs to update (README, CLAUDE.md, .owlkei/).
 
 ## Test plan
 For each rule: the test name and the case (happy path, zero/nil, boundaries, invalid,

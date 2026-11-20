@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strconv"
 
-	"go.owlky.com/owlky/internal/num"
+	"go.owlkei.com/owlkei/internal/num"
 )
 
 func BindStruct(d map[string]any, fls *[]FieldLevel, s any, parentNS string, parentTag string) (any, []FieldLevel) {

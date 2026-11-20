@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestBindExceptionFilter_Chaining(t *testing.T) {

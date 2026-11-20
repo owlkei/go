@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"go.owlky.com/owlky/internal/logpipe"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/logpipe"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 type Format int

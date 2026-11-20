@@ -72,7 +72,7 @@ Variants (all with the 0012 limits and buffers):
 
 Every cell is the best of 2-6 runs (requests per second, lowest p99 and lowest CPU taken
 separately). "Line cost" is the CPU per request minus the same framework's log-off CPU in the same
-rounds: Owlky Go 25.9 / 30.6 µs (1 core, Static / Chain) and 29.8 / 34.8 µs (2 cores), Gin 23.3 µs
+rounds: Owlkei Go 25.9 / 30.6 µs (1 core, Static / Chain) and 29.8 / 34.8 µs (2 cores), Gin 23.3 µs
 (1) and 22.6 µs (2).
 
 | GOMAXPROCS | Scenario | Variant | Requests/s | p99 (best, all runs) | CPU / request | Line cost | Writer wakes / line |
@@ -356,7 +356,7 @@ buffers of 0012) is reused as is.
   `Write` rules, Limits, Concurrency, Performance notes, Benchmarks, a new Inspection section),
   `internal/inspect/README.md` (a `logpipe` row in the snapshots table, noting it is not a
   middleware), the `log` README's production section ("a line reaches stdout within about 1 ms";
-  X3), `.owlky/metadata-concurrency-model.json` and `.owlky/metadata-performance.json` (the
+  X3), `.owlkei/metadata-concurrency-model.json` and `.owlkei/metadata-performance.json` (the
   writer's lifetime), and `docs/roadmap/backlog.md` (remove "Log writer batching delay").
 - **Measurement (roadmap step 6):** `docs/review/http-0006.md` measures again with the same
   method and compares with `http-0005.md` and with the table above.
@@ -388,7 +388,7 @@ buffers of 0012) is reused as is.
    cost).
 4. Docs as listed in Impact, in step 7 (not in this step), except the `internal/logpipe` README
    rules that the tests cite.
-5. Acceptance (roadmap step 1 "Done when"): run `bench/load.sh` as in Measurements, Owlky Go and Gin
+5. Acceptance (roadmap step 1 "Done when"): run `bench/load.sh` as in Measurements, Owlkei Go and Gin
    alternating, at GOMAXPROCS 1 and 2. Record in the roadmap Log: p99 within 2× of Gin's, CPU per
    request at 2 no higher than at 1, and lines ≥ requests.
 

@@ -43,18 +43,18 @@ import (
 	"testing/fstest"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/httphook"
-	"go.owlky.com/owlky/internal/logpipe"
-	"go.owlky.com/owlky/internal/test"
-	ctxlookalike "go.owlky.com/owlky/internal/test/lookalike/ctx"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/tracecontext"
-	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/httphook"
+	"go.owlkei.com/owlkei/internal/logpipe"
+	"go.owlkei.com/owlkei/internal/test"
+	ctxlookalike "go.owlkei.com/owlkei/internal/test/lookalike/ctx"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/versioning"
+	"go.owlkei.com/owlkei/log"
 	"golang.org/x/net/websocket"
 )
 
@@ -1609,7 +1609,7 @@ func svApp(t *testing.T) *App {
 	return app
 }
 
-const freshProcessEnv = "OWLKY_FRESH_PROCESS"
+const freshProcessEnv = "OWLKEI_FRESH_PROCESS"
 
 func freshProcess(t *testing.T, body func(t *testing.T)) {
 	t.Helper()
@@ -7045,7 +7045,7 @@ func srvMakeCert(t *testing.T) srvCerts {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "owlky test"},
+		Subject:               pkix.Name{CommonName: "owlkei test"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,

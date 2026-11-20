@@ -9,21 +9,21 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/middlewares/compress"
-	"go.owlky.com/owlky/internal/middlewares/cors"
-	"go.owlky.com/owlky/internal/middlewares/csrf"
-	"go.owlky.com/owlky/internal/middlewares/helmet"
-	"go.owlky.com/owlky/internal/middlewares/hostcheck"
-	"go.owlky.com/owlky/internal/middlewares/httpsredirect"
-	"go.owlky.com/owlky/internal/middlewares/loadshed"
-	"go.owlky.com/owlky/internal/middlewares/origin"
-	"go.owlky.com/owlky/internal/middlewares/proxy"
-	"go.owlky.com/owlky/internal/render"
-	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/middlewares/compress"
+	"go.owlkei.com/owlkei/internal/middlewares/cors"
+	"go.owlkei.com/owlkei/internal/middlewares/csrf"
+	"go.owlkei.com/owlkei/internal/middlewares/helmet"
+	"go.owlkei.com/owlkei/internal/middlewares/hostcheck"
+	"go.owlkei.com/owlkei/internal/middlewares/httpsredirect"
+	"go.owlkei.com/owlkei/internal/middlewares/loadshed"
+	"go.owlkei.com/owlkei/internal/middlewares/origin"
+	"go.owlkei.com/owlkei/internal/middlewares/proxy"
+	"go.owlkei.com/owlkei/internal/render"
+	"go.owlkei.com/owlkei/internal/versioning"
+	"go.owlkei.com/owlkei/log"
 )
 
 const (
@@ -41,7 +41,7 @@ type AppOptions struct {
 	IsAccessLog bool
 	// IsDevtool builds the devtool snapshot at Create. Default: false.
 	IsDevtool bool
-	// Server applies when Owlky opens the listener (Listen, Serve). Default: port 3000, HTTP/1.1, no TLS.
+	// Server applies when Owlkei opens the listener (Listen, Serve). Default: port 3000, HTTP/1.1, no TLS.
 	Server *ServerOptions
 	// HTTP holds the settings of every HTTP request, also when App runs in your own http.Server.
 	HTTP *HTTPOptions

@@ -4,7 +4,7 @@ import (
 	"mime/multipart"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/slice"
+	"go.owlkei.com/owlkei/internal/slice"
 )
 
 func BindFile(f File, s any) (map[string][]*DataFile, any) {

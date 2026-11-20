@@ -3,16 +3,16 @@
 Status: Done
 
 ## Goal
-An Owlky Go app serves finished HTML pages from the same controllers, modules and layers as its REST
+An Owlkei Go app serves finished HTML pages from the same controllers, modules and layers as its REST
 routes: a page route renders an `html/template` with the handler's data, inside a layout, with
 contextual escaping, a per-request CSP nonce and the same guards, CSRF protection and error
 handling. Errors are HTML for pages and JSON for APIs. One binary carries its templates and assets,
-and development reloads them from disk. A sample app shows pages built with Owlky's framework-free
+and development reloads them from disk. A sample app shows pages built with Owlkei's framework-free
 HTML components.
 
 ## Scope
-- In: the page route kind (the slot design 0017 left: a controller role, a DSL word, a result, `EnableRender(opts *owlky.RenderOptions)`); template loading (an `fs.FS`: `embed.FS` in production, the disk in development), parsing once, layouts and partials, a small fixed set of template functions; the render result and status codes; HTML error pages (404, 405, exceptions from handlers, guards and filters) for page routes, JSON for API routes; middleware refusals (`csrf` 403, `hostcheck` 421, `loadshed` 503, `throttler` 429) choosing HTML or JSON from `Accept`; forms (urlencoded and multipart through the existing binding) with validation errors rendered back into the form; a CSP nonce per request that `helmet` and the templates share; static assets served from an `fs.FS` with cache headers (the existing `SERVE` route kind where it fits); devtool and trace events for renders; docs and a sample.
-- Out: a client-side framework or a JavaScript build step; a template engine other than `html/template`; streaming or partial page updates (HTMX-style fragments may come later); authentication (next roadmap: the sample uses no login); a dependency on Owlky's repository or package: Owlky Go stays Owlky-agnostic, and the sample uses Owlky's published HTML snippets and assets as plain files.
+- In: the page route kind (the slot design 0017 left: a controller role, a DSL word, a result, `EnableRender(opts *owlkei.RenderOptions)`); template loading (an `fs.FS`: `embed.FS` in production, the disk in development), parsing once, layouts and partials, a small fixed set of template functions; the render result and status codes; HTML error pages (404, 405, exceptions from handlers, guards and filters) for page routes, JSON for API routes; middleware refusals (`csrf` 403, `hostcheck` 421, `loadshed` 503, `throttler` 429) choosing HTML or JSON from `Accept`; forms (urlencoded and multipart through the existing binding) with validation errors rendered back into the form; a CSP nonce per request that `helmet` and the templates share; static assets served from an `fs.FS` with cache headers (the existing `SERVE` route kind where it fits); devtool and trace events for renders; docs and a sample.
+- Out: a client-side framework or a JavaScript build step; a template engine other than `html/template`; streaming or partial page updates (HTMX-style fragments may come later); authentication (next roadmap: the sample uses no login); a dependency on Owlkei's repository or package: Owlkei Go stays Owlkei-agnostic, and the sample uses Owlkei's published HTML snippets and assets as plain files.
 
 ## Steps
 | # | Step | Path | Design | Depends on | Done when | State |
@@ -23,20 +23,20 @@ HTML components.
 | 4 | Forms: a page route that receives a form re-renders it with the submitted values and the validation errors; CSRF covers it; redirect after a successful post | tdd | docs/design/0018-server-rendered-html.md | 2 | invalid input re-renders the form with messages and the values kept (escaped); valid input redirects with 303 | done |
 | 5 | CSP nonce and assets: one nonce per request in `helmet`'s CSP and in templates; assets from an `fs.FS` with cache headers | tdd | docs/design/0018-server-rendered-html.md | 2 | an inline script with the request's nonce runs under the CSP, one without is blocked; hashed assets are immutable | done |
 | 6 | Observability: render time and template name in trace events, devtool snapshot of templates and page routes | light | docs/design/0018-server-rendered-html.md | 2 | a render emits a stage event with its template; the snapshot lists the page routes | done |
-| 7 | Sample: `sample/pages` (a small booking-style site: list, detail, form, error pages) with Owlky's HTML snippets and assets | light | - | 2-5 | the sample builds and serves its pages; a test drives the form flow | done |
-| 8 | Docs: README section, a `render` reference, `.owlky/`, `CLAUDE.md` | light | - | 2-7 | every new name documented with a runnable example | done |
+| 7 | Sample: `sample/pages` (a small booking-style site: list, detail, form, error pages) with Owlkei's HTML snippets and assets | light | - | 2-5 | the sample builds and serves its pages; a test drives the form flow | done |
+| 8 | Docs: README section, a `render` reference, `.owlkei/`, `CLAUDE.md` | light | - | 2-7 | every new name documented with a runnable example | done |
 | 9 | Measure: a page route against a JSON route in `bench/` (time and allocations per request, idle memory) | light | - | 2-5 | numbers in `docs/review/http-0008.md` | done |
-| 10 | Design, one architect pass: design 0019 (route DSL: kebab-case and its edge cases, `PathStyle` inherited like `Prefix` with an explicit setting winning, exact path for one route, `ALL`, the upper-case rule, the two parser bugs) and design 0018 amendment 2 (pages by route: `RENDER_`/`SUBMIT_`, template resolution after prefixes and `PathStyle`, no `ANY` or `VERSION` on pages, removal of `owlky.Page` and `owlky.View`, error pages by status, reserved names, `public/`, page CSS/JS with `{{pageAssets}}`), with the migration list of every name, file and doc | light | docs/design/0019-route-dsl.md, docs/design/0018-server-rendered-html.md | - | every rule with current → expected output and its test name; every exported addition and removal | done |
+| 10 | Design, one architect pass: design 0019 (route DSL: kebab-case and its edge cases, `PathStyle` inherited like `Prefix` with an explicit setting winning, exact path for one route, `ALL`, the upper-case rule, the two parser bugs) and design 0018 amendment 2 (pages by route: `RENDER_`/`SUBMIT_`, template resolution after prefixes and `PathStyle`, no `ANY` or `VERSION` on pages, removal of `owlkei.Page` and `owlkei.View`, error pages by status, reserved names, `public/`, page CSS/JS with `{{pageAssets}}`), with the migration list of every name, file and doc | light | docs/design/0019-route-dsl.md, docs/design/0018-server-rendered-html.md | - | every rule with current → expected output and its test name; every exported addition and removal | done |
 | 11 | DSL: kebab-case paths (`_` between the words of one resource → `-`; camelCase, parameters, versions and `Prefix` strings unchanged) and the upper-case rule | tdd | docs/design/0019-route-dsl.md | 10 | `READ_user_profile` → `/user-profile`; `READ_orgs_FB` panics; parser rule tests pass | done |
 | 12 | DSL: `ModuleBuilder().PathStyle(…)` (`PathStyleKebab` default, `PathStyleAsWritten`), inherited by imports like `Prefix`, an explicit setting wins | tdd | docs/design/0019-route-dsl.md | 11 | a root `PathStyleAsWritten` gives `/payment_intents` to its own and imported modules; a module that sets kebab keeps `/payment-intents` | done |
 | 13 | DSL: exact path for one route (the design's spelling); WebSocket `ALL`; the parser bugs (`ANY` after a parameter, `__` in a parameter name) | tdd | docs/design/0019-route-dsl.md | 11 | the design's expected outputs; `SUBSCRIBE_chat_ALL` handles `chat.room1.typing` | done |
-| 14 | Pages by route: `RENDER_` (GET page; template `<path>.html` or `<path>/index.html` after prefixes and `PathStyle`; data result; no `ANY`/`VERSION`; missing or double template panics), removal of `owlky.Page` and `owlky.View` | tdd | docs/design/0018-server-rendered-html.md | 12 | `RENDER_bookings` renders `bookings/index.html`; a module `Prefix("admin")` page renders `admin/…`; the API file loses `Page`, `View` | done |
+| 14 | Pages by route: `RENDER_` (GET page; template `<path>.html` or `<path>/index.html` after prefixes and `PathStyle`; data result; no `ANY`/`VERSION`; missing or double template panics), removal of `owlkei.Page` and `owlkei.View` | tdd | docs/design/0018-server-rendered-html.md | 12 | `RENDER_bookings` renders `bookings/index.html`; a module `Prefix("admin")` page renders `admin/…`; the API file loses `Page`, `View` | done |
 | 15 | `SUBMIT_`: POST on the URL of its `RENDER_`, same template, 422 re-render or 303; a `SUBMIT_` without its `RENDER_` panics | tdd | docs/design/0018-server-rendered-html.md | 14 | the form flow of the sample passes with `SUBMIT_new_OF_bookings` | done |
 | 16 | Error pages by status (`<code>.html` → `<N>xx.html` → built-in, replacing `error.html`) and the reserved names check after prefixes | tdd | docs/design/0018-server-rendered-html.md | 14 | 404 uses `404.html`, 503 falls back to `5xx.html`; `RENDER_404` panics | done |
 | 17 | `public/` served at the root URL (`no-cache` + `ETag`, conflicts with routes panic) and page CSS/JS next to templates with `{{pageAssets}}` (orphans and a missing `{{pageAssets}}` panic) | tdd | docs/design/0018-server-rendered-html.md | 14 | `/robots.txt` from `public/`; `/bookings/new` links `new.css` and `new.form.js` after the layout's files | done |
 | 18 | Migrate every route name, template and test in the repo (`sample/`, `bench/`, docs) to the new DSL and pages; the startup route log and the devtool snapshot show final paths and page routes | light | - | 11-17 | `make check` green; samples serve what they document | done |
-| 19 | Docs: README (routes, pages), `internal/common` › Route DSL, `internal/render`, `.owlky/`, `CLAUDE.md`, Sổ tay; every example compiles | light | - | 18 | every new rule documented with an example | done |
-| 20 | Regroup test files by the rule of `.owlky/conventions.md` › Tests › Files (plan in backlog › "Regroup test files"), after the review's fixes and before the final `make check`: moves only | light | - | 19 and the review | the count of tests and benchmarks per package is unchanged (`go test -list .`); `make check` green | done |
+| 19 | Docs: README (routes, pages), `internal/common` › Route DSL, `internal/render`, `.owlkei/`, `CLAUDE.md`, Sổ tay; every example compiles | light | - | 18 | every new rule documented with an example | done |
+| 20 | Regroup test files by the rule of `.owlkei/conventions.md` › Tests › Files (plan in backlog › "Regroup test files"), after the review's fixes and before the final `make check`: moves only | light | - | 19 and the review | the count of tests and benchmarks per package is unchanged (`go test -list .`); `make check` green | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -46,9 +46,9 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
   and leaves the work **uncommitted** for the maintainer to review in the morning.
 - `html/template` only; no new module dependency.
 - The public names go in the slots design 0017 reserved (a root alias for the page role, a DSL word,
-  `EnableRender(opts *owlky.RenderOptions)`), by its naming rules; every addition goes through
-  `api/owlky.txt`.
-- Owlky Go does not depend on Owlky: it renders any HTML. The sample uses Owlky's HTML components as
+  `EnableRender(opts *owlkei.RenderOptions)`), by its naming rules; every addition goes through
+  `api/owlkei.txt`.
+- Owlkei Go does not depend on Owlkei: it renders any HTML. The sample uses Owlkei's HTML components as
   static files.
 - Small machines first: templates are parsed once; nothing runs while idle; per-request cost is
   measured.
@@ -66,9 +66,9 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
   - **`ALL` for WebSocket `**`** (approved).
   - **Exact path for one route** (the per-field override of ORMs): in scope; the spelling is the
     design's.
-- Owlky Go is not published: the URL changes are breaking and free; no compatibility switch beyond
+- Owlkei Go is not published: the URL changes are breaking and free; no compatibility switch beyond
   `PathStyleAsWritten`.
-- Every exported addition goes through `api/owlky.txt`.
+- Every exported addition goes through `api/owlkei.txt`.
 
 ### Open questions of the route DSL (the design proposes, the maintainer decides)
 1. Upper-case words that are not tokens (`READ_orgs_FB` → `/orgs-FB` today): keep them as path text,
@@ -87,7 +87,7 @@ The maintainer wants pages like Next.js: the route picks the template.
 - No version on `RENDER_` (versioning is an API concern): panic at `Create()`.
 - `PathStyle` applies: the file path follows the final URL (`RENDER_court_bookings` → `court-bookings/`).
 - A template without a `RENDER_` handler is not a route (no file-only pages).
-- `owlky.Page` goes away; a `RENDER_` handler returns its data (`owlky.Map` or any value).
+- `owlkei.Page` goes away; a `RENDER_` handler returns its data (`owlkei.Map` or any value).
 - **Error pages by status:** `<code>.html` → `<N>xx.html` (`4xx.html`, `5xx.html`) → the built-in page, at
   the root of `Dir` only (nested error pages may come later). They replace `error.html`. Same data
   (`.Code`, `.Status`, `.Message`, `.RequestID`), inside the root layout, parsed at `Create()`.
@@ -117,7 +117,7 @@ The maintainer wants pages like Next.js: the route picks the template.
 - **Form POST (option 1, approved):** `SUBMIT_<route>` is a POST on the URL of `RENDER_<route>` and uses its
   template: data with errors re-renders it (422), success redirects (303). A `SUBMIT_` without its
   `RENDER_` panics at `Create()`. Edit and delete forms post to the page that shows them; no `_method`
-  override. `owlky.View` goes away: page handlers always return data. `CREATE_`, `UPDATE_`, `DELETE_`
+  override. `owlkei.View` goes away: page handlers always return data. `CREATE_`, `UPDATE_`, `DELETE_`
   stay API routes.
 
 ## Log

@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo-light.svg" alt="Owlky Go logo" width="120">
+    <img src="docs/assets/logo-light.svg" alt="Owlkei Go logo" width="120">
   </picture>
 </p>
 
-<h1 align="center">Owlky Go</h1>
+<h1 align="center">Owlkei Go</h1>
 
 <p align="center">
   <strong>Build Go backends the way you think.</strong><br>
@@ -14,11 +14,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dangduoc08/go/actions/workflows/ci.yml"><img src="https://github.com/dangduoc08/go/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/owlkei/go/actions/workflows/ci.yml"><img src="https://github.com/owlkei/go/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/dangduoc08/go?logo=go&amp;label=Go" alt="Go version"></a>
   <a href="LICENSE.md"><img src="https://img.shields.io/github/license/dangduoc08/go?color=4D7A5C" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/status-pre--release-E8A33D" alt="Status: pre-release">
-  <a href="https://owlky.com"><img src="https://img.shields.io/badge/part%20of-Owlky-3E6A8A" alt="Part of Owlky"></a>
+  <a href="https://owlkei.com"><img src="https://img.shields.io/badge/part%20of-Owlkei-3E6A8A" alt="Part of Owlkei"></a>
 </p>
 
 <p align="center">
@@ -26,36 +26,36 @@
   <a href="#core-concepts">Concepts</a> ·
   <a href="examples/">Examples</a> ·
   <a href="#module-lifecycle">Lifecycle</a> ·
-  <a href="https://owlky.com">Owlky UI</a>
+  <a href="https://owlkei.com">Owlkei UI</a>
 </p>
 
 ---
 
 Most Go web code is plumbing: routes registered by hand, constructors passed down by hand, and the
-same checks written in every handler. Owlky Go takes that work off your plate. You write modules,
-controllers and services; Owlky Go reads their names and types once at startup and wires the whole
+same checks written in every handler. Owlkei Go takes that work off your plate. You write modules,
+controllers and services; Owlkei Go reads their names and types once at startup and wires the whole
 app, so a mistake stops the boot instead of reaching production. If you have used NestJS, you will
 feel at home.
 
 ```go
 type UserController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Users UserService // injected by type
 }
 
-func (c UserController) READ_users_BY_id(param owlky.Param) User { // GET /users/{id}
+func (c UserController) READ_users_BY_id(param owlkei.Param) User { // GET /users/{id}
 	return c.Users.Find(param.Get("id"))
 }
 ```
 
-Owlky Go is part of [Owlky](https://owlky.com). It works on its own, and it pairs with **Owlky UI**,
-the component library: page routes render Owlky UI's HTML markup, and its stylesheet and scripts are
+Owlkei Go is part of [Owlkei](https://owlkei.com). It works on its own, and it pairs with **Owlkei UI**,
+the component library: page routes render Owlkei UI's HTML markup, and its stylesheet and scripts are
 served from your app's own origin.
 
-> **Pre-release.** Owlky Go is not published yet and its API may change before 1.0. See
+> **Pre-release.** Owlkei Go is not published yet and its API may change before 1.0. See
 > [Installation](#installation) to try it today.
 
-## Why Owlky Go
+## Why Owlkei Go
 
 - **No routing code.** A method named `READ_users_BY_id` answers `GET /users/{id}`. You declare
   routes and WebSocket events by naming methods.
@@ -63,7 +63,7 @@ served from your app's own origin.
   parameters by parameter type. There are no struct tags and no code generation.
 - **Mistakes stop the boot.** A missing provider, a parameter that can't be injected or two
   handlers for one route make `Create()` panic, before the server takes a request.
-- **Fast at run time.** Owlky Go does its reflection once, at `Create()`. A request runs a plan
+- **Fast at run time.** Owlkei Go does its reflection once, at `Create()`. A request runs a plan
   that was built at startup.
 - **Explicit protection.** Nothing runs unless you configure it. One `AppOptions` block holds the
   whole configuration, documented in [one place](#configuration), with a
@@ -73,7 +73,7 @@ served from your app's own origin.
 
 ## Contents
 
-- [Why Owlky Go](#why-owlky-go)
+- [Why Owlkei Go](#why-owlkei-go)
   - [Features](#features)
   - [Installation](#installation)
   - [Quick start](#quick-start)
@@ -161,18 +161,18 @@ served from your app's own origin.
 
 ## Installation
 
-Owlky Go needs Go 1.27.4 or later.
+Owlkei Go needs Go 1.27.4 or later.
 
 ```bash
-go get go.owlky.com/owlky
+go get go.owlkei.com/owlkei
 ```
 
-Until `go.owlky.com` serves the module, `go get` can't find it. Clone the repository next to your
+Until `go.owlkei.com` serves the module, `go get` can't find it. Clone the repository next to your
 project and point the import path at it:
 
 ```bash
-git clone https://github.com/dangduoc08/go ../owlky-go
-go mod edit -require=go.owlky.com/owlky@v0.0.0 -replace=go.owlky.com/owlky=../owlky-go
+git clone https://github.com/owlkei/go ../owlkei-go
+go mod edit -require=go.owlkei.com/owlkei@v0.0.0 -replace=go.owlkei.com/owlkei=../owlkei-go
 go mod tidy
 ```
 
@@ -185,11 +185,11 @@ Create `main.go`:
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type GreetingService struct{}
 
-func (instance GreetingService) NewProvider() owlky.Provider {
+func (instance GreetingService) NewProvider() owlkei.Provider {
 	return instance
 }
 
@@ -198,11 +198,11 @@ func (instance GreetingService) Greet(name string) string {
 }
 
 type HelloController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	GreetingService GreetingService
 }
 
-func (instance HelloController) NewController() owlky.Controller {
+func (instance HelloController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -210,14 +210,14 @@ func (instance HelloController) READ_hello() string {
 	return "hello"
 }
 
-func (instance HelloController) READ_hello_BY_name(param owlky.Param) owlky.Map {
-	return owlky.Map{"greeting": instance.GreetingService.Greet(param.Get("name"))}
+func (instance HelloController) READ_hello_BY_name(param owlkei.Param) owlkei.Map {
+	return owlkei.Map{"greeting": instance.GreetingService.Greet(param.Get("name"))}
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Controllers(HelloController{}).
 			Providers(GreetingService{}).
 			Build(),
@@ -245,7 +245,7 @@ with a README and tests: copy a folder out of the repository and it is the start
 |---|---|
 | [01 · Hello](examples/01-hello/README.md) | A controller and routes from method names, in under 40 lines |
 | [02 · REST API](examples/02-rest-api/README.md) | Modules, a shared service, a validating pipe, `404` and `422` |
-| [03 · Pages](examples/03-pages/README.md) | Server-rendered pages and forms with Owlky UI's HTML components |
+| [03 · Pages](examples/03-pages/README.md) | Server-rendered pages and forms with Owlkei UI's HTML components |
 | [04 · Async modules](examples/04-async-modules/README.md) | Start before a dependency is ready; `503` until it is, `Retry` with backoff |
 | [05 · Production](examples/05-production/README.md) | Load shedding, security headers, CORS, rate limits, body limits, graceful shutdown |
 
@@ -255,11 +255,11 @@ with a README and tests: copy a folder out of the repository and it is the start
 
 ### Application
 
-`owlky.New(opts)` creates an application from an `*owlky.AppOptions` (`nil` gives the defaults),
+`owlkei.New(opts)` creates an application from an `*owlkei.AppOptions` (`nil` gives the defaults),
 then you wire it once with `Create` and serve it:
 
-1. **Configure.** Every setting is a field of `owlky.AppOptions`, read once by `New`. A bad value
-   panics in `New` with `invalid app: <Field> …`. `owlky.OptionsFromEnv()` fills the same struct
+1. **Configure.** Every setting is a field of `owlkei.AppOptions`, read once by `New`. A bad value
+   panics in `New` with `invalid app: <Field> …`. `owlkei.OptionsFromEnv()` fills the same struct
    from `OK_*` variables and `.env` (see [Configuration](#configuration)).
 2. **Bind app-wide layers.** `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`
    and `BindGlobalExceptionFilters` run before `Create`; after it they panic with
@@ -295,14 +295,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type HealthController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance HealthController) NewController() owlky.Controller {
+func (instance HealthController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -311,8 +311,8 @@ func (instance HealthController) READ_health() string {
 }
 
 func TestHealth(t *testing.T) {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(HealthController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(HealthController{}).Build())
 
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
@@ -323,22 +323,22 @@ func TestHealth(t *testing.T) {
 }
 ```
 
-Each `owlky.New(…)` is independent: two apps in one process have their own providers, routes,
+Each `owlkei.New(…)` is independent: two apps in one process have their own providers, routes,
 layers and logger.
 
 ### Module
 
 A module groups controllers and providers, and imports other modules. Build one with
-`owlky.ModuleBuilder()`:
+`owlkei.ModuleBuilder()`:
 
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type UserService struct{}
 
-func (instance UserService) NewProvider() owlky.Provider {
+func (instance UserService) NewProvider() owlkei.Provider {
 	return instance
 }
 
@@ -347,11 +347,11 @@ func (instance UserService) FindAll() []string {
 }
 
 type UserController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	UserService UserService
 }
 
-func (instance UserController) NewController() owlky.Controller {
+func (instance UserController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -359,18 +359,18 @@ func (instance UserController) READ_users() []string {
 	return instance.UserService.FindAll()
 }
 
-var UserModule = owlky.ModuleBuilder().
+var UserModule = owlkei.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}).
 	Build()
 
-var AppModule = owlky.ModuleBuilder().
+var AppModule = owlkei.ModuleBuilder().
 	Imports(UserModule).
 	Build().
 	Prefix("api")
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(AppModule)
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -383,13 +383,13 @@ func main() {
 - **Prefix:** `Prefix("api")` adds a path prefix to every route of the module and of the modules
   it imports. A prefix on an importing module goes in front: a child with `Prefix("v1")` imported
   by a root with `Prefix("api")` serves `/api/v1/…`.
-- **Path style:** `ModuleBuilder().PathStyle(owlky.PathStyleAsWritten)` keeps `_` in the URLs of
+- **Path style:** `ModuleBuilder().PathStyle(owlkei.PathStyleAsWritten)` keeps `_` in the URLs of
   the module and of the modules it imports, instead of `-`. See
   [Routes from method names](#routes-from-method-names).
 - **Global modules:** set `IsGlobal = true` on a module to make its providers visible to every
   module, without an import. The root module's providers are always global.
-- **Module factories:** `Imports` also takes a function that returns a `owlky.Module`, and
-  optionally an error. Owlky Go calls it once per app and injects its arguments, so a module can
+- **Module factories:** `Imports` also takes a function that returns a `owlkei.Module`, and
+  optionally an error. Owlkei Go calls it once per app and injects its arguments, so a module can
   depend on configuration or connect to a database first. `config.Register(…)` and
   `cache.Register(…)` are not factories: you call them, and they return a module.
 - **Async imports:** `AsyncImports` takes the same entries as `Imports`, but builds them in the
@@ -405,21 +405,21 @@ The details, with the timeline of `Create()` and of the background, are in
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/modules/config"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/modules/config"
 )
 
 type Database struct {
 	URL string
 }
 
-func (instance Database) NewProvider() owlky.Provider {
+func (instance Database) NewProvider() owlkei.Provider {
 	return instance
 }
 
-func NewDatabaseModule(configService config.ConfigService) owlky.Module {
+func NewDatabaseModule(configService config.ConfigService) owlkei.Module {
 	url, _ := configService.Get("DATABASE_URL").(string)
-	module := owlky.ModuleBuilder().
+	module := owlkei.ModuleBuilder().
 		Providers(Database{URL: url}).
 		Build()
 	module.IsGlobal = true
@@ -430,11 +430,11 @@ func NewDatabaseModule(configService config.ConfigService) owlky.Module {
 }
 
 type StatusController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Database Database
 }
 
-func (instance StatusController) NewController() owlky.Controller {
+func (instance StatusController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -443,9 +443,9 @@ func (instance StatusController) READ_status() bool {
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
 				NewDatabaseModule,
@@ -465,19 +465,19 @@ supplies stops `Create()` with `dependency injection: can't resolve argument of 
 
 ### Provider
 
-A provider is a struct with a `NewProvider() owlky.Provider` method. It holds your business logic:
+A provider is a struct with a `NewProvider() owlkei.Provider` method. It holds your business logic:
 services, repositories, clients.
 
-- Owlky Go constructs each provider type once per app. It first injects the provider's exported
+- Owlkei Go constructs each provider type once per app. It first injects the provider's exported
   fields, then calls `NewProvider`, and keeps what `NewProvider` returns.
-- Fields are matched by type: declare a field of a provider's type and Owlky Go fills it. A field
+- Fields are matched by type: declare a field of a provider's type and Owlkei Go fills it. A field
   whose type no visible provider has stops `Create()` with
   `dependency injection: can't resolve dependency '<type>' of the provider…`.
 - A provider is visible to its own module, to the modules that import it, and to every module
   when its module is global.
 - Providers are injected by value. Put state that must be shared, such as a connection pool,
   behind a pointer.
-- A field of type `log.Logger` gets the app's logger, and a field of type `owlky.Publisher`
+- A field of type `log.Logger` gets the app's logger, and a field of type `owlkei.Publisher`
   the app's WebSocket publisher.
 
 Never call `NewProvider` yourself: the instance it returns has no injected fields. To read a
@@ -485,10 +485,10 @@ provider from outside the module tree, use `app.Get(UserService{}).(UserService)
 
 ### Controller
 
-A controller is a struct with a `NewController() owlky.Controller` method. Embed `owlky.HTTP` for
-HTTP routes and HTML pages (see [Pages](#pages)) or `owlky.WS` for WebSocket events, plus one
+A controller is a struct with a `NewController() owlkei.Controller` method. Embed `owlkei.HTTP` for
+HTTP routes and HTML pages (see [Pages](#pages)) or `owlkei.WS` for WebSocket events, plus one
 embed per kind of layer you bind:
-`owlky.Middleware`, `owlky.Guard`, `owlky.Interceptor` and `owlky.ExceptionFilter`.
+`owlkei.Middleware`, `owlkei.Guard`, `owlkei.Interceptor` and `owlkei.ExceptionFilter`.
 
 Bind layers in `NewController`. Pass method values to bind a layer to some handlers only, or none
 to bind it to every handler of the controller:
@@ -499,29 +499,29 @@ package main
 import (
 	"net/http"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type AdminGuard struct{}
 
-func (instance AdminGuard) CanActivate(c owlky.HTTPContext) bool {
+func (instance AdminGuard) CanActivate(c owlkei.HTTPContext) bool {
 	return c.Header().Get("X-Role") == "admin"
 }
 
 type NoStoreMiddleware struct{}
 
-func (instance NoStoreMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
+func (instance NoStoreMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next) {
 	w.Header().Set("Cache-Control", "no-store")
 	next()
 }
 
 type ProductController struct {
-	owlky.HTTP
-	owlky.Guard
-	owlky.Middleware
+	owlkei.HTTP
+	owlkei.Guard
+	owlkei.Middleware
 }
 
-func (instance ProductController) NewController() owlky.Controller {
+func (instance ProductController) NewController() owlkei.Controller {
 	instance.Prefix("catalog")
 	instance.BindMiddleware(NoStoreMiddleware{})
 	instance.BindGuard(AdminGuard{}, instance.CREATE_products, instance.DELETE_products_BY_id)
@@ -536,13 +536,13 @@ func (instance ProductController) CREATE_products() string {
 	return "created"
 }
 
-func (instance ProductController) DELETE_products_BY_id(param owlky.Param) string {
+func (instance ProductController) DELETE_products_BY_id(param owlkei.Param) string {
 	return "deleted " + param.Get("id")
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(ProductController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(ProductController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -629,13 +629,13 @@ A long chain of `OF` makes long names. Put the shared part of the path in the co
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type CommentController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance CommentController) NewController() owlky.Controller {
+func (instance CommentController) NewController() owlkei.Controller {
 	instance.Prefix("users/{user_id}/posts/{post_id}")
 	return instance
 }
@@ -644,8 +644,8 @@ func (instance CommentController) READ_comments() []string {
 	return []string{"first"}
 }
 
-func (instance CommentController) READ_comments_BY_comment_id(param owlky.Param) owlky.Map {
-	return owlky.Map{
+func (instance CommentController) READ_comments_BY_comment_id(param owlkei.Param) owlkei.Map {
+	return owlkei.Map{
 		"user":    param.Get("user_id"),
 		"post":    param.Get("post_id"),
 		"comment": param.Get("comment_id"),
@@ -653,8 +653,8 @@ func (instance CommentController) READ_comments_BY_comment_id(param owlky.Param)
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(CommentController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(CommentController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -674,13 +674,13 @@ reusable module's URLs never change with the app that imports it:
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type BillingController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance BillingController) NewController() owlky.Controller {
+func (instance BillingController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -689,10 +689,10 @@ func (instance BillingController) READ_payment_intents() []string {
 }
 
 type StatusController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance StatusController) NewController() owlky.Controller {
+func (instance StatusController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -700,19 +700,19 @@ func (instance StatusController) READ_health_checks() string {
 	return "ok"
 }
 
-var StatusModule = owlky.ModuleBuilder().
-	PathStyle(owlky.PathStyleKebab).
+var StatusModule = owlkei.ModuleBuilder().
+	PathStyle(owlkei.PathStyleKebab).
 	Controllers(StatusController{}).
 	Build()
 
-var AppModule = owlky.ModuleBuilder().
-	PathStyle(owlky.PathStyleAsWritten).
+var AppModule = owlkei.ModuleBuilder().
+	PathStyle(owlkei.PathStyleAsWritten).
 	Imports(StatusModule).
 	Controllers(BillingController{}).
 	Build()
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(AppModule)
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -724,8 +724,8 @@ func main() {
 
 | Style | `READ_payment_intents` | Default |
 |---|---|---|
-| `owlky.PathStyleKebab` | `GET /payment-intents` | yes |
-| `owlky.PathStyleAsWritten` | `GET /payment_intents` | no |
+| `owlkei.PathStyleKebab` | `GET /payment-intents` | yes |
+| `owlkei.PathStyleAsWritten` | `GET /payment_intents` | no |
 
 - The style applies to the words of a resource only. Prefixes, exact paths, parameter names,
   versions and WebSocket events never change.
@@ -733,7 +733,7 @@ func main() {
 - A module imported by two modules with different styles gets the first one found, in the order
   that module prefixes are stacked.
 - Any other value stops the call:
-  `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten`.
+  `invalid module: PathStyle needs owlkei.PathStyleKebab or owlkei.PathStyleAsWritten`.
 
 #### Write a path by hand with `Path`
 
@@ -742,24 +742,24 @@ When no name can spell a path (`/oauth2/token`), give the handler an exact path 
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type TokenController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance TokenController) NewController() owlky.Controller {
+func (instance TokenController) NewController() owlkei.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
 
-func (instance TokenController) CREATE_token() owlky.Map {
-	return owlky.Map{"access_token": "t0k3n"}
+func (instance TokenController) CREATE_token() owlkei.Map {
+	return owlkei.Map{"access_token": "t0k3n"}
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(TokenController{}).Build().Prefix("api"))
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(TokenController{}).Build().Prefix("api"))
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -799,7 +799,7 @@ Write `READ_orgsFB` or `READ_orgs_fb` instead of `READ_orgs_FB`. Digits are not 
 
 ### Handler parameters
 
-Declare the parameters a handler needs. Owlky Go passes them by type, in any order:
+Declare the parameters a handler needs. Owlkei Go passes them by type, in any order:
 
 ```go
 package main
@@ -807,24 +807,24 @@ package main
 import (
 	"net/http"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type OrderController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance OrderController) NewController() owlky.Controller {
+func (instance OrderController) NewController() owlkei.Controller {
 	return instance
 }
 
 func (instance OrderController) READ_orders_BY_id(
-	c owlky.HTTPContext,
-	param owlky.Param,
-	query owlky.Query,
-	header owlky.Header,
-) owlky.Map {
-	return owlky.Map{
+	c owlkei.HTTPContext,
+	param owlkei.Param,
+	query owlkei.Query,
+	header owlkei.Header,
+) owlkei.Map {
+	return owlkei.Map{
 		"id":       param.Get("id"),
 		"expand":   query.Get("expand"),
 		"language": header.Get("Accept-Language"),
@@ -832,14 +832,14 @@ func (instance OrderController) READ_orders_BY_id(
 	}
 }
 
-func (instance OrderController) CREATE_orders(body owlky.Body, w http.ResponseWriter) owlky.Map {
+func (instance OrderController) CREATE_orders(body owlkei.Body, w http.ResponseWriter) owlkei.Map {
 	w.Header().Set("Location", "/orders/1")
-	return owlky.Map{"item": body.Get("item")}
+	return owlkei.Map{"item": body.Get("item")}
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(OrderController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(OrderController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -848,21 +848,21 @@ func main() {
 
 | Parameter type | HTTP | WebSocket | Value |
 |---|---|---|---|
-| `owlky.HTTPContext` | yes | no | The request's context: request data, status and response helpers. |
+| `owlkei.HTTPContext` | yes | no | The request's context: request data, status and response helpers. |
 | `*http.Request`, `http.ResponseWriter` | yes | no | The request and the response writer. |
-| `owlky.Param` | yes | no | Path parameters. |
-| `owlky.Query` | yes | no | Query string values. |
-| `owlky.Header` | yes | no | Request headers. |
-| `owlky.Body` | yes | no | The JSON body, as a `map[string]any`. Malformed JSON answers `400`. |
-| `owlky.Form`, `owlky.File` | yes | no | Form values and uploaded files of a urlencoded or multipart request. |
-| `owlky.Redirect` | yes | no | `c.Redirect`: sends a redirect. |
-| `owlky.WSContext` | no | yes | The message's context. |
-| `owlky.WSPayload` | no | yes | The message's `message` object. |
-| `owlky.Next` | yes | yes | Continues the pipeline. |
-| `owlky.Publisher` | yes | yes | Publishes to WebSocket subscribers. |
+| `owlkei.Param` | yes | no | Path parameters. |
+| `owlkei.Query` | yes | no | Query string values. |
+| `owlkei.Header` | yes | no | Request headers. |
+| `owlkei.Body` | yes | no | The JSON body, as a `map[string]any`. Malformed JSON answers `400`. |
+| `owlkei.Form`, `owlkei.File` | yes | no | Form values and uploaded files of a urlencoded or multipart request. |
+| `owlkei.Redirect` | yes | no | `c.Redirect`: sends a redirect. |
+| `owlkei.WSContext` | no | yes | The message's context. |
+| `owlkei.WSPayload` | no | yes | The message's `message` object. |
+| `owlkei.Next` | yes | yes | Continues the pipeline. |
+| `owlkei.Publisher` | yes | yes | Publishes to WebSocket subscribers. |
 | A pipe | yes | yes | What its `Transform` returns. See [Pipes](#pipes). |
 
-These types live in the root `owlky` package. An application imports it, plus `exception`,
+These types live in the root `owlkei` package. An application imports it, plus `exception`,
 `log`, `modules/*` and `guards/*`; the engine's other packages are internal.
 
 Any other parameter type stops `Create()`:
@@ -885,7 +885,7 @@ A handler returns nothing, one value, or a status code and a value:
 
 The status is `200`, or `201` for `POST`, unless a layer or the handler sets another one. A page
 route (`RENDER_`, `SUBMIT_`) renders its result into its template instead: see [Pages](#pages). To
-write the response yourself, take `owlky.HTTPContext` and call `c.Status(code).JSON(data)`,
+write the response yourself, take `owlkei.HTTPContext` and call `c.Status(code).JSON(data)`,
 `c.Text(…)` or `c.Redirect(url)`, and return nothing.
 
 ```go
@@ -894,28 +894,28 @@ package main
 import (
 	"net/http"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type JobController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance JobController) NewController() owlky.Controller {
+func (instance JobController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance JobController) CREATE_jobs() (int, owlky.Map) {
-	return http.StatusAccepted, owlky.Map{"status": "queued"}
+func (instance JobController) CREATE_jobs() (int, owlkei.Map) {
+	return http.StatusAccepted, owlkei.Map{"status": "queued"}
 }
 
-func (instance JobController) READ_jobs_BY_id(c owlky.HTTPContext) {
-	c.Status(http.StatusOK).JSON(owlky.Map{"id": c.Param().Get("id")})
+func (instance JobController) READ_jobs_BY_id(c owlkei.HTTPContext) {
+	c.Status(http.StatusOK).JSON(owlkei.Map{"id": c.Param().Get("id")})
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(JobController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(JobController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -954,7 +954,7 @@ The complete rules are in [core › Request lifecycle](internal/core/README.md#r
 
 ### Middleware
 
-A middleware is a struct with a `Use(*http.Request, http.ResponseWriter, owlky.Next)` method. Call
+A middleware is a struct with a `Use(*http.Request, http.ResponseWriter, owlkei.Next)` method. Call
 `next()` to continue, or write a response and return to stop the request:
 
 ```go
@@ -963,22 +963,22 @@ package main
 import (
 	"net/http"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/log"
 )
 
 type RequestLogMiddleware struct {
 	Logger log.Logger
 }
 
-func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
+func (instance RequestLogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next) {
 	instance.Logger.From(r.Context()).Info("Request", "method", r.Method, "path", r.URL.Path)
 	next()
 }
 
 type APIKeyMiddleware struct{}
 
-func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
+func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next) {
 	if r.Header.Get("X-Api-Key") == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -989,11 +989,11 @@ func (instance APIKeyMiddleware) Use(r *http.Request, w http.ResponseWriter, nex
 }
 
 type ReportController struct {
-	owlky.HTTP
-	owlky.Middleware
+	owlkei.HTTP
+	owlkei.Middleware
 }
 
-func (instance ReportController) NewController() owlky.Controller {
+func (instance ReportController) NewController() owlkei.Controller {
 	instance.BindMiddleware(APIKeyMiddleware{}, instance.READ_reports)
 	return instance
 }
@@ -1003,9 +1003,9 @@ func (instance ReportController) READ_reports() []string {
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.BindGlobalMiddlewares(RequestLogMiddleware{})
-	app.Create(owlky.ModuleBuilder().Controllers(ReportController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(ReportController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1023,14 +1023,14 @@ func main() {
 ### Guard
 
 A guard decides whether a request may reach its handler. Write
-`CanActivate(owlky.HTTPContext) bool` for HTTP routes, or `CanActivate(owlky.WSContext) bool` for
+`CanActivate(owlkei.HTTPContext) bool` for HTTP routes, or `CanActivate(owlkei.WSContext) bool` for
 WebSocket events. A guard that returns `false` answers `403` with
 `{"code":403,"error":"Forbidden","message":"Access denied"}`.
 
-Owlky Go reads the signature of `CanActivate` to know the guard's transport: a global HTTP guard
+Owlkei Go reads the signature of `CanActivate` to know the guard's transport: a global HTTP guard
 runs only for HTTP routes, and a WebSocket guard only for WebSocket events.
 
-A guard can have an optional `NewGuard` constructor. Owlky Go injects providers into the guard's
+A guard can have an optional `NewGuard` constructor. Owlkei Go injects providers into the guard's
 exported fields, calls `NewGuard` once at `Create()`, and runs the instance it returns. A guard
 can't have unexported fields: they stop `Create()`.
 
@@ -1038,8 +1038,8 @@ can't have unexported fields: they stop `Create()`.
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/modules/config"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/modules/config"
 )
 
 type TokenGuard struct {
@@ -1052,16 +1052,16 @@ func (instance TokenGuard) NewGuard() TokenGuard {
 	return instance
 }
 
-func (instance TokenGuard) CanActivate(c owlky.HTTPContext) bool {
+func (instance TokenGuard) CanActivate(c owlkei.HTTPContext) bool {
 	return instance.Token != "" && c.Header().Get("Authorization") == "Bearer "+instance.Token
 }
 
 type AccountController struct {
-	owlky.HTTP
-	owlky.Guard
+	owlkei.HTTP
+	owlkei.Guard
 }
 
-func (instance AccountController) NewController() owlky.Controller {
+func (instance AccountController) NewController() owlkei.Controller {
 	instance.BindGuard(TokenGuard{})
 	return instance
 }
@@ -1071,9 +1071,9 @@ func (instance AccountController) READ_account() string {
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Imports(config.Register(&config.ConfigModuleOptions{IsGlobal: true})).
 			Controllers(AccountController{}).
 			Build(),
@@ -1092,8 +1092,8 @@ shape of the input, use a [pipe](#pipes).
 ### Interceptor
 
 An interceptor runs code before and after the handler. Write
-`Intercept(owlky.HTTPContext, owlky.Aggregation) any`, or the same method with
-`owlky.WSContext` for WebSocket events.
+`Intercept(owlkei.HTTPContext, owlkei.Aggregation) any`, or the same method with
+`owlkei.WSContext` for WebSocket events.
 
 - Return `a.Pipe(operators…)` to run the handler and pass its result through the operators.
 - Return any other value to skip the handler: that value is the response.
@@ -1107,23 +1107,23 @@ An interceptor runs code before and after the handler. Write
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type EnvelopeInterceptor struct{}
 
-func (instance EnvelopeInterceptor) Intercept(c owlky.HTTPContext, a owlky.Aggregation) any {
+func (instance EnvelopeInterceptor) Intercept(c owlkei.HTTPContext, a owlkei.Aggregation) any {
 	return a.Pipe(
 		a.Transform(func(data any) any {
-			return owlky.Map{"data": data, "request": c.ID()}
+			return owlkei.Map{"data": data, "request": c.ID()}
 		}),
 	)
 }
 
 type TagController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance TagController) NewController() owlky.Controller {
+func (instance TagController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -1132,9 +1132,9 @@ func (instance TagController) READ_tags() []string {
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.BindGlobalInterceptors(EnvelopeInterceptor{})
-	app.Create(owlky.ModuleBuilder().Controllers(TagController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(TagController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1142,7 +1142,7 @@ func main() {
 ```
 
 `GET /tags` answers `{"data":["go","web"],"request":"<request ID>"}`. Bind an interceptor to one
-controller with `instance.BindInterceptor(EnvelopeInterceptor{})` (embed `owlky.Interceptor`).
+controller with `instance.BindInterceptor(EnvelopeInterceptor{})` (embed `owlkei.Interceptor`).
 The optional constructor is `NewInterceptor`.
 
 ### Exception filter
@@ -1151,21 +1151,21 @@ Panic with an exception anywhere from a guard onwards, and an exception filter t
 response. Without a filter of your own, the built-in filter answers with the exception's code
 and `{"code":<int>,"error":<string>,"message":<string>}`.
 
-To change the response, write `Catch(owlky.HTTPContext, *exception.Exception)`, or the same method
-with `owlky.WSContext` for WebSocket events:
+To change the response, write `Catch(owlkei.HTTPContext, *exception.Exception)`, or the same method
+with `owlkei.WSContext` for WebSocket events:
 
 ```go
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type ProblemFilter struct{}
 
-func (instance ProblemFilter) Catch(c owlky.HTTPContext, ex *exception.Exception) {
-	c.Status(ex.Code()).JSON(owlky.Map{
+func (instance ProblemFilter) Catch(c owlkei.HTTPContext, ex *exception.Exception) {
+	c.Status(ex.Code()).JSON(owlkei.Map{
 		"status": ex.Code(),
 		"title":  ex.StatusText(),
 		"detail": ex.Message(),
@@ -1173,16 +1173,16 @@ func (instance ProblemFilter) Catch(c owlky.HTTPContext, ex *exception.Exception
 }
 
 type BookController struct {
-	owlky.HTTP
-	owlky.ExceptionFilter
+	owlkei.HTTP
+	owlkei.ExceptionFilter
 }
 
-func (instance BookController) NewController() owlky.Controller {
+func (instance BookController) NewController() owlkei.Controller {
 	instance.BindExceptionFilter(ProblemFilter{})
 	return instance
 }
 
-func (instance BookController) READ_books_BY_id(param owlky.Param) string {
+func (instance BookController) READ_books_BY_id(param owlkei.Param) string {
 	if param.Get("id") != "1" {
 		panic(exception.NotFoundException("Book not found"))
 	}
@@ -1190,8 +1190,8 @@ func (instance BookController) READ_books_BY_id(param owlky.Param) string {
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(BookController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(BookController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1214,20 +1214,20 @@ Bind a filter to every route with `app.BindGlobalExceptionFilters(ProblemFilter{
 ### Pipes
 
 A pipe binds and validates one handler parameter. It is a value type with a `Transform` method
-that takes a source and a `owlky.ArgumentMetadata`, and returns a value of the pipe's own type.
-Declare the pipe as a handler parameter: Owlky Go calls `Transform` before the handler and passes
+that takes a source and a `owlkei.ArgumentMetadata`, and returns a value of the pipe's own type.
+Declare the pipe as a handler parameter: Owlkei Go calls `Transform` before the handler and passes
 its result.
 
 | Source | `Transform` method |
 |---|---|
-| The JSON body | `Transform(owlky.Body, owlky.ArgumentMetadata) any` |
-| The query string | `Transform(owlky.Query, owlky.ArgumentMetadata) any` |
-| The path parameters | `Transform(owlky.Param, owlky.ArgumentMetadata) any` |
-| The request headers | `Transform(owlky.Header, owlky.ArgumentMetadata) any` |
-| The form values | `Transform(owlky.Form, owlky.ArgumentMetadata) any` |
-| The uploaded files | `Transform(owlky.File, owlky.ArgumentMetadata) any` |
-| The request's context | `Transform(owlky.HTTPContext, owlky.ArgumentMetadata) any` |
-| A WebSocket message | `Transform(owlky.WSPayload, owlky.ArgumentMetadata) any` |
+| The JSON body | `Transform(owlkei.Body, owlkei.ArgumentMetadata) any` |
+| The query string | `Transform(owlkei.Query, owlkei.ArgumentMetadata) any` |
+| The path parameters | `Transform(owlkei.Param, owlkei.ArgumentMetadata) any` |
+| The request headers | `Transform(owlkei.Header, owlkei.ArgumentMetadata) any` |
+| The form values | `Transform(owlkei.Form, owlkei.ArgumentMetadata) any` |
+| The uploaded files | `Transform(owlkei.File, owlkei.ArgumentMetadata) any` |
+| The request's context | `Transform(owlkei.HTTPContext, owlkei.ArgumentMetadata) any` |
+| A WebSocket message | `Transform(owlkei.WSPayload, owlkei.ArgumentMetadata) any` |
 
 `ArgumentMetadata` tells the pipe where it runs: `ContextType` is `http` or `ws`, and `ParamType`
 is the source (`body`, `query`, `param`, `header`, `form`, `file`, `context` or `wsPayload`).
@@ -1240,8 +1240,8 @@ package main
 import (
 	"strings"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type CreateUserBody struct {
@@ -1249,7 +1249,7 @@ type CreateUserBody struct {
 	Email string `bind:"email"`
 }
 
-func (instance CreateUserBody) Transform(body owlky.Body, _ owlky.ArgumentMetadata) any {
+func (instance CreateUserBody) Transform(body owlkei.Body, _ owlkei.ArgumentMetadata) any {
 	user := body.BindValue(instance).(CreateUserBody)
 	if user.Name == "" || !strings.Contains(user.Email, "@") {
 		panic(exception.BadRequestException("A name and a valid email are required"))
@@ -1258,20 +1258,20 @@ func (instance CreateUserBody) Transform(body owlky.Body, _ owlky.ArgumentMetada
 }
 
 type SignupController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance SignupController) NewController() owlky.Controller {
+func (instance SignupController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance SignupController) CREATE_users(user CreateUserBody) owlky.Map {
-	return owlky.Map{"name": user.Name, "email": user.Email}
+func (instance SignupController) CREATE_users(user CreateUserBody) owlkei.Map {
+	return owlkei.Map{"name": user.Name, "email": user.Email}
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(SignupController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(SignupController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -1295,7 +1295,7 @@ See [core › Pipes](internal/core/README.md#pipes) and [ctx › Binding](intern
 
 ## Module lifecycle
 
-This section explains how Owlky Go builds modules, in which order, and what happens when a module
+This section explains how Owlkei Go builds modules, in which order, and what happens when a module
 needs a slow or unreliable dependency such as a database. Read it before you write a module that
 connects to something.
 
@@ -1303,35 +1303,35 @@ connects to something.
 
 `Imports` and `AsyncImports` take two kinds of entries:
 
-- **Module:** a value built with `owlky.ModuleBuilder()…Build()`. Its providers and controllers
+- **Module:** a value built with `owlkei.ModuleBuilder()…Build()`. Its providers and controllers
   are known before `Create()`.
-- **Module factory:** a function that returns a module. Owlky Go calls it during `Create()` (or in
+- **Module factory:** a function that returns a module. Owlkei Go calls it during `Create()` (or in
   the background, with `AsyncImports`) and injects its parameters. Use a factory when the module
   needs configuration, or must connect to something before it can provide anything.
 
 There is no third kind. **Global** is a property of a module: set `IsGlobal = true` on the module,
 whether you built it yourself or a factory returned it. **`Register`** is only a function name:
 `config.Register(opts)` and `cache.Register(opts)` are functions you call, and they return a
-module. Owlky Go never calls them.
+module. Owlkei Go never calls them.
 
 ### Factory signatures
 
 A factory has one of these three shapes:
 
 ```go
-func(deps...) owlky.Module
-func(deps...) (owlky.Module, error)
-func(ctx context.Context, deps...) (owlky.Module, error)
+func(deps...) owlkei.Module
+func(deps...) (owlkei.Module, error)
+func(ctx context.Context, deps...) (owlkei.Module, error)
 ```
 
 - **`deps`:** any number of parameters. Each one is a provider type, `log.Logger` or
-  `owlky.Publisher`.
-- **`ctx`:** only as the first parameter, and only with the `(owlky.Module, error)` result. Its
+  `owlkei.Publisher`.
+- **`ctx`:** only as the first parameter, and only with the `(owlkei.Module, error)` result. Its
   deadline is the startup timeout in `Imports`. In `AsyncImports` it has no deadline and is
   canceled at shutdown.
 - **Anything else stops `Build()`.** A nil entry, a variadic function, `ctx` in second place or a
   `ctx` factory without an error result panic with every bad entry listed:
-  `invalid module: can't import '<type>' with Imports: an import is a owlky.Module or a module factory: …`.
+  `invalid module: can't import '<type>' with Imports: an import is a owlkei.Module or a module factory: …`.
 - **Called once per app.** The same function listed by two modules is one factory, called once.
   Two closures of one function literal count as one factory too.
 - **A failed factory stops `Create()`** when it is in `Imports`. The message names the factory:
@@ -1346,11 +1346,11 @@ A factory listed by module `P` resolves each argument from, in this order:
 1. The providers of the other entries of `P`'s `Imports` and `AsyncImports`: its siblings, and what
    they import.
 2. The global providers: the root module's, and those of every `IsGlobal` module.
-3. `log.Logger` and `owlky.Publisher`.
+3. `log.Logger` and `owlkei.Publisher`.
 
 `P`'s own providers are not in scope: `P` is built after its imports.
 
-**Order doesn't matter.** Owlky Go calls the factories in dependency order, whatever their position
+**Order doesn't matter.** Owlkei Go calls the factories in dependency order, whatever their position
 in the list. A factory can come before the sibling it needs, and a factory can need what another
 factory returns. When nothing can be called anymore, `Create()` stops:
 
@@ -1368,19 +1368,19 @@ import (
 	"database/sql"
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/modules/config"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/modules/config"
 )
 
 type Database struct {
 	DB *sql.DB
 }
 
-func (instance Database) NewProvider() owlky.Provider {
+func (instance Database) NewProvider() owlkei.Provider {
 	return instance
 }
 
-func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlkei.Module, error) {
 	url, _ := configService.Get("DATABASE_URL").(string)
 	// Import a driver, such as github.com/jackc/pgx/v5/stdlib, to register "pgx".
 	db, err := sql.Open("pgx", url)
@@ -1392,7 +1392,7 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 		return nil, err
 	}
 
-	module := owlky.ModuleBuilder().
+	module := owlkei.ModuleBuilder().
 		Providers(Database{DB: db}).
 		Build()
 	module.OnShutdown = func() {
@@ -1402,15 +1402,15 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 }
 
 type StatusController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Database Database
 }
 
-func (instance StatusController) NewController() owlky.Controller {
+func (instance StatusController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance StatusController) READ_status(c owlky.HTTPContext) string {
+func (instance StatusController) READ_status(c owlkei.HTTPContext) string {
 	if err := instance.Database.DB.PingContext(c.Context()); err != nil {
 		return "down"
 	}
@@ -1418,9 +1418,9 @@ func (instance StatusController) READ_status(c owlky.HTTPContext) string {
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{StartupTimeout: 10 * time.Second})
+	app := owlkei.New(&owlkei.AppOptions{StartupTimeout: 10 * time.Second})
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Imports(
 				NewDatabaseModule,
 				config.Register(&config.ConfigModuleOptions{IsIgnoreEnvFile: true}),
@@ -1446,7 +1446,7 @@ default is 30 seconds.
 - **One budget.** The timeout counts from the start of `Create()`, for all factories together.
 - **The deadline is in `ctx`.** A `ctx` factory gets a context with that deadline. The context is
   canceled when `Create()` returns: don't keep it for later work.
-- **A factory that ignores `ctx` is abandoned.** Owlky Go calls every factory of `Imports` on a
+- **A factory that ignores `ctx` is abandoned.** Owlkei Go calls every factory of `Imports` on a
   helper goroutine and stops waiting at the deadline, whatever the factory's shape. `Create()` then
   panics with `module factory '<name>' did not return within the startup timeout (10s)`.
 - **Factories only.** `OnInit` and `NewProvider` are not covered: they take no `ctx`. Do slow work,
@@ -1478,20 +1478,20 @@ import (
 	"context"
 	"database/sql"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/modules/config"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/modules/config"
 )
 
 type Database struct {
 	DB *sql.DB
 }
 
-func (instance Database) NewProvider() owlky.Provider {
+func (instance Database) NewProvider() owlkei.Provider {
 	return instance
 }
 
-func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlkei.Module, error) {
 	url, _ := configService.Get("DATABASE_URL").(string)
 	// Import a driver, such as github.com/jackc/pgx/v5/stdlib, to register "pgx".
 	db, err := sql.Open("pgx", url)
@@ -1499,7 +1499,7 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 		return nil, err
 	}
 
-	err = owlky.Retry(ctx, nil, func(ctx context.Context) error {
+	err = owlkei.Retry(ctx, nil, func(ctx context.Context) error {
 		return db.PingContext(ctx)
 	})
 	if err != nil {
@@ -1507,7 +1507,7 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 		return nil, err
 	}
 
-	module := owlky.ModuleBuilder().
+	module := owlkei.ModuleBuilder().
 		Providers(Database{DB: db}).
 		Build()
 	module.OnShutdown = func() {
@@ -1517,28 +1517,28 @@ func NewDatabaseModule(ctx context.Context, configService config.ConfigService) 
 }
 
 type UserController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Database Database
 }
 
-func (instance UserController) NewController() owlky.Controller {
+func (instance UserController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance UserController) READ_users_count(c owlky.HTTPContext) owlky.Map {
+func (instance UserController) READ_users_count(c owlkei.HTTPContext) owlkei.Map {
 	var count int
 	err := instance.Database.DB.QueryRowContext(c.Context(), "SELECT count(*) FROM users").Scan(&count)
 	if err != nil {
 		panic(exception.ServiceUnavailableException("Service Unavailable", exception.ExceptionOptions{Cause: err}))
 	}
-	return owlky.Map{"count": count}
+	return owlkei.Map{"count": count}
 }
 
 type HealthController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance HealthController) NewController() owlky.Controller {
+func (instance HealthController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -1546,12 +1546,12 @@ func (instance HealthController) READ_health() string {
 	return "ok"
 }
 
-var UserModule = owlky.ModuleBuilder().
+var UserModule = owlkei.ModuleBuilder().
 	AsyncImports(NewDatabaseModule).
 	Controllers(UserController{}).
 	Build()
 
-var AppModule = owlky.ModuleBuilder().
+var AppModule = owlkei.ModuleBuilder().
 	Imports(
 		config.Register(&config.ConfigModuleOptions{IsGlobal: true, IsIgnoreEnvFile: true}),
 		UserModule,
@@ -1560,7 +1560,7 @@ var AppModule = owlky.ModuleBuilder().
 	Build()
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(AppModule)
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -1606,7 +1606,7 @@ shutdown (SIGINT, SIGTERM, app.Stop())
   └─ OnShutdown of the ready modules, in the reverse of the order they became ready
 ```
 
-- Owlky Go wires one module at a time. Factories run in parallel, but a slow `OnInit` or
+- Owlkei Go wires one module at a time. Factories run in parallel, but a slow `OnInit` or
   `NewProvider` delays the other background modules: connect in the factory.
 - A factory that returns after the cancel has its module dropped. Close what it opened when `ctx`
   is done.
@@ -1693,7 +1693,7 @@ These mistakes stop the boot, or fail the module, with a message that names it:
 - **One entry in both lists.** `Build()` panics with `invalid module: '<name>' is in both Imports and AsyncImports`,
   and `Create()` with `invalid module: '<name>' is imported with Imports by '<a>' and with AsyncImports by '<b>'`
   when two modules disagree.
-- **`NewController` must not use injected providers.** In an app with `AsyncImports`, Owlky Go may
+- **`NewController` must not use injected providers.** In an app with `AsyncImports`, Owlkei Go may
   call `NewController` twice: once at `Create()` on a throwaway instance, to register and check the
   routes, and once to build the controller. This is always the case for the controllers of a module
   that is not ready at `Create()`, and can happen for other controllers that bind layers. In the
@@ -1710,11 +1710,11 @@ These mistakes stop the boot, or fail the module, with a message that names it:
 
 ### Retry
 
-`owlky.Retry(ctx, opts, fn)` calls `fn` until it returns `nil`, waiting longer after each failure.
+`owlkei.Retry(ctx, opts, fn)` calls `fn` until it returns `nil`, waiting longer after each failure.
 Use it inside a factory:
 
 ```go
-err := owlky.Retry(ctx, &owlky.RetryOptions{InitialDelay: time.Second}, func(ctx context.Context) error {
+err := owlkei.Retry(ctx, &owlkei.RetryOptions{InitialDelay: time.Second}, func(ctx context.Context) error {
 	return db.PingContext(ctx)
 })
 ```
@@ -1729,12 +1729,12 @@ err := owlky.Retry(ctx, &owlky.RetryOptions{InitialDelay: time.Second}, func(ctx
   `MaxDelay`, then a random time between half of it and all of it. The jitter keeps many instances
   from reconnecting at the same moment.
 - **It stops with `ctx`.** When `ctx` is done, `Retry` returns
-  `owlky: retry stopped after <n> attempts: …`. `errors.Is` finds both `ctx.Err()` and the last
+  `owlkei: retry stopped after <n> attempts: …`. `errors.Is` finds both `ctx.Err()` and the last
   error. `fn` is not called when `ctx` is already done.
-- **It gives up after `MaxAttempts`.** It returns `owlky: retry gave up after <n> attempts: <last error>`.
+- **It gives up after `MaxAttempts`.** It returns `owlkei: retry gave up after <n> attempts: <last error>`.
 - **`nil` options** mean the defaults. A nil `fn` panics `invalid retry: Retry needs a function`.
   A panic in `fn` is not recovered.
-- **It reports to the module.** With the `ctx` that Owlky Go gave an `AsyncImports` factory, each
+- **It reports to the module.** With the `ctx` that Owlkei Go gave an `AsyncImports` factory, each
   failed attempt logs `ModuleRetry`, counts in the devtool's `attempts` and `last_error`, and sets
   the `Retry-After` that clients get. With any other `ctx`, `Retry` only retries.
 
@@ -1757,7 +1757,7 @@ once, and only `PingContext` is retried.
 
 ### Don't retry in a goroutine of your own
 
-Owlky Go calls a factory once. Two shortcuts look tempting, and both lose what the framework gives
+Owlkei Go calls a factory once. Two shortcuts look tempting, and both lose what the framework gives
 you:
 
 - **Returning an error and retrying later yourself.** The error makes the module `failed`, and
@@ -1767,11 +1767,11 @@ you:
   no `503` with `Retry-After`, no state in the log or the devtool, no cancel at shutdown, and
   `OnShutdown` can run while the goroutine still connects.
 
-Retry inside the factory with `owlky.Retry` and the factory's `ctx`.
+Retry inside the factory with `owlkei.Retry` and the factory's `ctx`.
 
 ### After a module is ready
 
-A `ready` module stays ready. When its database goes down later, Owlky Go doesn't unwire the module
+A `ready` module stays ready. When its database goes down later, Owlkei Go doesn't unwire the module
 or close its routes: run-time failures are the business code's job. Let the driver's pool
 reconnect, and answer the failed request with an exception, as `READ_users_count` does with
 `exception.ServiceUnavailableException`.
@@ -1779,19 +1779,19 @@ reconnect, and answer the failed request with an exception, as `READ_users_count
 ### Compared with NestJS forRootAsync
 
 NestJS's `forRootAsync` awaits its `useFactory` during the bootstrap: the app doesn't listen until
-every async module has resolved, and a factory that rejects stops the bootstrap. An Owlky Go factory
+every async module has resolved, and a factory that rejects stops the bootstrap. An Owlkei Go factory
 in `Imports` behaves the same way, with a deadline.
 
 `AsyncImports` is different. The app listens at once, only the routes that need the module answer
 `503` until it is ready, and a failure leaves the rest of the app running. In NestJS, "async"
-describes how the module's author configures the module. In Owlky Go, it describes how the app
+describes how the module's author configures the module. In Owlkei Go, it describes how the app
 imports it.
 
 ---
 
 ## Pages
 
-Owlky Go also serves finished HTML pages, rendered on the server with Go's `html/template`. A page
+Owlkei Go also serves finished HTML pages, rendered on the server with Go's `html/template`. A page
 is a route like any other: it uses the same route words, modules, guards, interceptors, pipes and
 filters as an API route, and the route picks the template. One binary carries its templates and
 assets, and nothing extra runs while the server is idle.
@@ -1804,15 +1804,15 @@ assets, and nothing extra runs while the server is idle.
   An API route answers JSON.
 - **Strict CSP without work.** With `Headers` on, an inline `<script nonce="{{nonce}}">` runs and every
   other inline script is blocked.
-- **Forms without tokens.** `CSRF: &owlky.CSRFOptions{IsEnabled: true}` refuses cross-origin form posts, and a `Form` pipe binds
+- **Forms without tokens.** `CSRF: &owlkei.CSRFOptions{IsEnabled: true}` refuses cross-origin form posts, and a `Form` pipe binds
   and checks the fields.
 - **Mistakes stop the boot.** A page without a template, a template without a route, or a
   stylesheet that belongs to no page stops `Create()`.
 
 ### Render a page
 
-Turn on rendering with `Render: &owlky.RenderOptions{FS: web}` in `AppOptions`. Then,
-in a controller that embeds `owlky.HTTP`, name a handler with one of the two page operations:
+Turn on rendering with `Render: &owlkei.RenderOptions{FS: web}` in `AppOptions`. Then,
+in a controller that embeds `owlkei.HTTP`, name a handler with one of the two page operations:
 
 - **`RENDER_<route>`** answers `GET` (and `HEAD`) on the path that `READ_<route>` would have. It
   renders the template of that path, and the handler's result is the template's data.
@@ -1851,8 +1851,8 @@ import (
 	"strings"
 	"sync"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 //go:embed web
@@ -1873,7 +1873,7 @@ type BookingService struct {
 	Table *BookingTable
 }
 
-func (instance BookingService) NewProvider() owlky.Provider {
+func (instance BookingService) NewProvider() owlkei.Provider {
 	instance.Table = &BookingTable{}
 	return instance
 }
@@ -1906,7 +1906,7 @@ type BookingForm struct {
 	Errors map[string]string
 }
 
-func (instance BookingForm) Transform(form owlky.Form, _ owlky.ArgumentMetadata) any {
+func (instance BookingForm) Transform(form owlkei.Form, _ owlkei.ArgumentMetadata) any {
 	bound, fields := form.Bind(instance)
 	dto := bound.(BookingForm)
 	dto.Errors = map[string]string{}
@@ -1919,19 +1919,19 @@ func (instance BookingForm) Transform(form owlky.Form, _ owlky.ArgumentMetadata)
 }
 
 type BookingPages struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Bookings BookingService
 }
 
-func (instance BookingPages) NewController() owlky.Controller {
+func (instance BookingPages) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance BookingPages) RENDER_bookings() owlky.Map {
-	return owlky.Map{"Bookings": instance.Bookings.All()}
+func (instance BookingPages) RENDER_bookings() owlkei.Map {
+	return owlkei.Map{"Bookings": instance.Bookings.All()}
 }
 
-func (instance BookingPages) RENDER_bookings_BY_id(param owlky.Param) Booking {
+func (instance BookingPages) RENDER_bookings_BY_id(param owlkei.Param) Booking {
 	booking, ok := instance.Bookings.Find(param.Get("id"))
 	if !ok {
 		panic(exception.NotFoundException("No booking has this number"))
@@ -1943,7 +1943,7 @@ func (instance BookingPages) RENDER_new_OF_bookings() BookingForm {
 	return BookingForm{Nights: "1"}
 }
 
-func (instance BookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form BookingForm) BookingForm {
+func (instance BookingPages) SUBMIT_new_OF_bookings(c owlkei.HTTPContext, form BookingForm) BookingForm {
 	if len(form.Errors) == 0 {
 		instance.Bookings.Add(form.Guest, form.Nights)
 		c.Redirect("/bookings")
@@ -1952,14 +1952,14 @@ func (instance BookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form Bo
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Headers: &owlky.HeadersOptions{IsEnabled: true},
-		CSRF:    &owlky.CSRFOptions{IsEnabled: true},
+	app := owlkei.New(&owlkei.AppOptions{
+		Headers: &owlkei.HeadersOptions{IsEnabled: true},
+		CSRF:    &owlkei.CSRFOptions{IsEnabled: true},
 		// The web directory of the embedded files; PAGES_DEV=1 reads it from disk and reloads it.
-		Render: &owlky.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"},
+		Render: &owlkei.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"},
 	})
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Controllers(BookingPages{}).
 			Providers(BookingService{}).
 			Build(),
@@ -2084,10 +2084,10 @@ Run it with `go run .`, then open the pages in a browser:
 ### File conventions
 
 `RenderOptions.FS` holds the templates and the assets, usually the app's `embed.FS`
-(`//go:embed web`). Owlky Go reads the directory `RenderOptions.Dir` inside it: `web` when `Dir` is empty,
+(`//go:embed web`). Owlkei Go reads the directory `RenderOptions.Dir` inside it: `web` when `Dir` is empty,
 the root of `FS` with `Dir: "."`. A `FS` without that directory stops `New` with
 `invalid render: RenderOptions.FS has no "web" directory: embed it with //go:embed web, or set Dir`.
-With `IsReload` on an `embed.FS`, Owlky Go reads the same directory from disk instead (relative to the
+With `IsReload` on an `embed.FS`, Owlkei Go reads the same directory from disk instead (relative to the
 working directory), so edits show without a rebuild; `Create()` logs a `Warn` `RenderReloadOn`, and a
 missing directory on disk stops it. Where a file is decides what it is:
 
@@ -2125,7 +2125,7 @@ the file or directory name, with the route's parameter name:
   `orgs/{org_id}/layout.html` wraps every page below it, such as `orgs/{org_id}/projects/{project_id}.html`,
   while `orgs/{org_id}.html` (in `orgs/`) keeps the root layout.
 - **Data:** the handler's only or last result is `.` in the page and in its layout, of any type: a
-  `owlky.Map`, a struct, a slice or `nil`. A handler with no result renders with `nil`. A partial
+  `owlkei.Map`, a struct, a slice or `nil`. A handler with no result renders with `nil`. A partial
   gets what the caller passes.
 
 `Create()` reads and parses every layout, page, partial and error page once, and binds each page
@@ -2155,7 +2155,7 @@ data instead, such as `{{.Date.Format "2 Jan 2006"}}`.
 | A `RENDER_` handler returns | `200` |
 | A `SUBMIT_` handler returns without a redirect | `422`: the form is shown again with its errors |
 | The handler calls `c.Status(code)`, or returns `(int, data)` | That code |
-| The handler calls `c.Redirect(url)`, or the `owlky.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
+| The handler calls `c.Redirect(url)`, or the `owlkei.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
 | The handler set a 3xx status with `c.Status` before the redirect | That status |
 
 - A page answers with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and
@@ -2202,14 +2202,14 @@ Where an error happened decides its format:
 | Before any guard: a refusal of a pre-route stage (`csrf` `403`, `hostcheck` `421`, `loadshed` `503`) or of your own middleware, and no route (`404`, `405` with its `Allow` header, `410`) | HTML when a value of the request's `Accept` header contains `text/html`, else JSON. The response carries `Vary: Accept` |
 
 - Browsers send `Accept: text/html,…`, so they get HTML. `*/*` alone, `application/xhtml+xml` alone,
-  or no `Accept` header gets JSON. Owlky Go doesn't read q-values.
+  or no `Accept` header gets JSON. Owlkei Go doesn't read q-values.
 - An HTML error with the code `C` renders the first file that exists at the root of `Dir`:
   `<C>.html`, then `4xx.html` or `5xx.html`, then a built-in page. It is rendered in the root
   `layout.html`, with `Content-Type: text/html; charset=utf-8` and the error's status. Headers that
   layers set, such as `Retry-After` and `Allow`, are kept.
 - The built-in page is a complete HTML document with the code, the status text and the message,
   and no style, script or external resource, so it passes any CSP.
-- When the chosen file or its layout fails to render, Owlky Go sends the built-in page with the same
+- When the chosen file or its layout fails to render, Owlkei Go sends the built-in page with the same
   code and logs `RenderFailed`. It doesn't try the next file. An error page is never empty and
   never half a page.
 - Your exception filters run first on a page route, and can answer by themselves.
@@ -2251,12 +2251,12 @@ See [Exceptions](#exceptions) and [core › Error response](internal/core/README
 
 ### Forms
 
-A form is a pipe whose `Transform` takes `owlky.Form`, as `BookingForm` above:
+A form is a pipe whose `Transform` takes `owlkei.Form`, as `BookingForm` above:
 
 1. The page's form posts to its own URL: `<form method="post" action="/bookings/new">` reaches
    `SUBMIT_new_OF_bookings`.
 2. `form.Bind(instance)` copies the fields by their `bind` tags (`application/x-www-form-urlencoded`
-   and `multipart/form-data`, the same as on an API route) and returns one `owlky.FieldLevel` per
+   and `multipart/form-data`, the same as on an API route) and returns one `owlkei.FieldLevel` per
    field.
 3. `Transform` checks the fields and keeps its messages in an exported field of the DTO, such as
    `Errors map[string]string`.
@@ -2265,12 +2265,12 @@ A form is a pipe whose `Transform` takes `owlky.Form`, as `BookingForm` above:
 5. When the form is valid, the handler saves it and calls `c.Redirect`, which answers `303`. The
    browser loads the next page with `GET`, so a reload never posts the form twice.
 
-- A pipe's fields are exported. Owlky Go injects providers into them, and an unexported field stops
+- A pipe's fields are exported. Owlkei Go injects providers into them, and an unexported field stops
   `Create()`: `dependency injection: can't set value to unexported 'nights' field of the main.BookingForm pipe`.
   Keep computed values out of the pipe, or compute them again where you need them.
 - A malformed form body (`400`) or one over `HTTP.MaxBodyBytes` (`413`) answers the
   HTML error page.
-- Set `CSRF: &owlky.CSRFOptions{IsEnabled: true}`. It needs no token and no hidden field: it reads
+- Set `CSRF: &owlkei.CSRFOptions{IsEnabled: true}`. It needs no token and no hidden field: it reads
   the `Sec-Fetch-Site` and `Origin` headers that browsers send. A cross-origin form post gets a
   `403` error page. See [Configuration](#configuration).
 - A layer bound to `RENDER_x` only doesn't run for `SUBMIT_x`. Bind a guard to both handlers, or
@@ -2300,8 +2300,8 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-<N>'; styl
 
 ### Assets
 
-When `Dir` has an `assets` directory, Owlky Go serves it at `GET /assets/*` with a built-in route.
-Link a file with `{{asset "app.css"}}`: Owlky Go hashes every asset once at `Create()`, so the URL
+When `Dir` has an `assets` directory, Owlkei Go serves it at `GET /assets/*` with a built-in route.
+Link a file with `{{asset "app.css"}}`: Owlkei Go hashes every asset once at `Create()`, so the URL
 changes when the file does.
 
 | Request | `Cache-Control` |
@@ -2317,7 +2317,7 @@ changes when the file does.
   `.well-known`) answers `404` as JSON. Templates are not reachable through this route.
 - Global middlewares and global guards run for the asset route. A route of your own at `/assets/*`
   stops `Create()` with `route conflict:`. Without an `assets` directory and without page CSS or
-  JS, Owlky Go adds no route.
+  JS, Owlkei Go adds no route.
 - `assets/_pages` is reserved for page CSS and JS: a file or directory with that name stops
   `Create()`.
 
@@ -2335,7 +2335,7 @@ below `public`: `public/robots.txt` answers `/robots.txt`.
   `route conflict: public/robots.txt method is conflicted with READ_robots_txt_FILE method`.
 - A segment that starts with `.` is never served, except `.well-known`. `//go:embed web` leaves
   out names that start with `.` or `_`. To ship `.well-known`, write `//go:embed all:web`, which
-  also embeds every other dotfile under `web` in the binary. Owlky Go never serves those.
+  also embeds every other dotfile under `web` in the binary. Owlkei Go never serves those.
 - The list of files is fixed at `Create()`. With `IsReload`, a file is read on each request, with
   no `ETag`, and a file added later answers `404` until the restart.
 - Errors are JSON. Global middlewares and global guards run for these routes, which appear in the
@@ -2399,41 +2399,41 @@ files are read from `FS` on each request. Point `FS` at the disk, as `main.go` d
   one route in memory.
 
 See [core › Pages](internal/core/README.md#pages) and the full [`examples/03-pages`](examples/03-pages/README.md),
-built with Owlky's framework-free HTML components.
+built with Owlkei's framework-free HTML components.
 
 ---
 
 ## WebSocket
 
-Turn on the WebSocket server with `WS: &owlky.WSOptions{Path: "ws"}` in `AppOptions`; an empty
-`Path` leaves it off. Then write a controller that embeds `owlky.WS`, with one
+Turn on the WebSocket server with `WS: &owlkei.WSOptions{Path: "ws"}` in `AppOptions`; an empty
+`Path` leaves it off. Then write a controller that embeds `owlkei.WS`, with one
 `SUBSCRIBE_…` method per event:
 
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type ChatMessage struct {
 	Text string `bind:"text"`
 }
 
 type ChatController struct {
-	owlky.WS
+	owlkei.WS
 }
 
-func (instance ChatController) NewController() owlky.Controller {
+func (instance ChatController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky.Map {
+func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlkei.WSPayload) owlkei.Map {
 	message := payload.BindValue(ChatMessage{}).(ChatMessage)
-	return owlky.Map{"received": message.Text}
+	return owlkei.Map{"received": message.Text}
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{WS: &owlky.WSOptions{Path: "ws"}})
-	app.Create(owlky.ModuleBuilder().Controllers(ChatController{}).Build())
+	app := owlkei.New(&owlkei.AppOptions{WS: &owlkei.WSOptions{Path: "ws"}})
+	app.Create(owlkei.ModuleBuilder().Controllers(ChatController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2482,44 +2482,44 @@ Clients and the server exchange JSON objects with the fields `type`, `id`, `topi
 
 ### Publish from the server
 
-Ask for a `owlky.Publisher` in any handler, HTTP or WebSocket, to send a message to every
+Ask for a `owlkei.Publisher` in any handler, HTTP or WebSocket, to send a message to every
 subscriber of a topic:
 
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type NewsController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance NewsController) NewController() owlky.Controller {
+func (instance NewsController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance NewsController) CREATE_news(body owlky.Body, publisher owlky.Publisher) string {
-	if err := publisher.Publish("chat.news", owlky.Map{"headline": body.Get("headline")}); err != nil {
+func (instance NewsController) CREATE_news(body owlkei.Body, publisher owlkei.Publisher) string {
+	if err := publisher.Publish("chat.news", owlkei.Map{"headline": body.Get("headline")}); err != nil {
 		panic(err)
 	}
 	return "sent"
 }
 
 type ChatController struct {
-	owlky.WS
+	owlkei.WS
 }
 
-func (instance ChatController) NewController() owlky.Controller {
+func (instance ChatController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky.WSPayload {
+func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlkei.WSPayload) owlkei.WSPayload {
 	return payload
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{WS: &owlky.WSOptions{Path: "ws"}})
-	app.Create(owlky.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
+	app := owlkei.New(&owlkei.AppOptions{WS: &owlkei.WSOptions{Path: "ws"}})
+	app.Create(owlkei.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2533,7 +2533,7 @@ subscribed to `chat.news`.
 ### Layers on WebSocket
 
 - Guards, interceptors and exception filters work on WebSocket events: write their methods with
-  `owlky.WSContext` and bind them in the controller or globally.
+  `owlkei.WSContext` and bind them in the controller or globally.
 - The handshake runs the load shedding, proxy and host stages that `AppOptions` turns on, then the
   Origin check: an `Origin` that is neither the same origin nor in `Origins` gets `403`. Then the
   middlewares bound with `BindGlobalMiddlewares` run, once per connection, and one that doesn't
@@ -2550,13 +2550,13 @@ Versioning lets one path answer differently per API version. Enable it before `C
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type UserController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance UserController) NewController() owlky.Controller {
+func (instance UserController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -2564,8 +2564,8 @@ func (instance UserController) READ_users_VERSION_1() []string {
 	return []string{"alice"}
 }
 
-func (instance UserController) READ_users_VERSION_2() owlky.Map {
-	return owlky.Map{"users": []string{"alice"}, "total": 1}
+func (instance UserController) READ_users_VERSION_2() owlkei.Map {
+	return owlkei.Map{"users": []string{"alice"}, "total": 1}
 }
 
 func (instance UserController) READ_health_VERSION_NEUTRAL() string {
@@ -2573,12 +2573,12 @@ func (instance UserController) READ_health_VERSION_NEUTRAL() string {
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{Versioning: &owlky.VersioningOptions{
-		Type:           owlky.VersioningHeader,
+	app := owlkei.New(&owlkei.AppOptions{Versioning: &owlkei.VersioningOptions{
+		Type:           owlkei.VersioningHeader,
 		Key:            "X-Api-Version",
 		DefaultVersion: "1",
 	}})
-	app.Create(owlky.ModuleBuilder().Controllers(UserController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(UserController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2590,10 +2590,10 @@ func main() {
 
 | `Type` | Where the version is read | Example with the default `Key` (`v`) |
 |---|---|---|
-| `owlky.VersioningQuery` | A query parameter | `GET /users?v=2` |
-| `owlky.VersioningHeader` | A request header | `v: 2` |
-| `owlky.VersioningMediaType` | A parameter of the `Accept` header | `Accept: application/json;v=2` |
-| `owlky.VersioningCustom` | Your `Extractor` function, `func(owlky.HTTPContext) string` | |
+| `owlkei.VersioningQuery` | A query parameter | `GET /users?v=2` |
+| `owlkei.VersioningHeader` | A request header | `v: 2` |
+| `owlkei.VersioningMediaType` | A parameter of the `Accept` header | `Accept: application/json;v=2` |
+| `owlkei.VersioningCustom` | Your `Extractor` function, `func(owlkei.HTTPContext) string` | |
 
 - `DefaultVersion` is the version of a request that carries none.
 - `VERSION_NEUTRAL` marks a route that answers for every version, and for requests without one.
@@ -2613,24 +2613,24 @@ A `SERVE_…` handler returns the directory to serve. `SERVE_ANY_OF_assets` serv
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 type AssetController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance AssetController) NewController() owlky.Controller {
+func (instance AssetController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance AssetController) SERVE_ANY_OF_assets(c owlky.HTTPContext) string {
+func (instance AssetController) SERVE_ANY_OF_assets(c owlkei.HTTPContext) string {
 	c.ResponseWriter.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	return "public/assets"
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(AssetController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(AssetController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2668,8 +2668,8 @@ binding, variable expansion and validation hooks. It never prints a value. See t
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/modules/config"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/modules/config"
 )
 
 type DatabaseService struct {
@@ -2677,17 +2677,17 @@ type DatabaseService struct {
 	Host          string
 }
 
-func (instance DatabaseService) NewProvider() owlky.Provider {
+func (instance DatabaseService) NewProvider() owlkei.Provider {
 	instance.Host, _ = instance.ConfigService.Get("DB_HOST").(string)
 	return instance
 }
 
 type InfoController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	DatabaseService DatabaseService
 }
 
-func (instance InfoController) NewController() owlky.Controller {
+func (instance InfoController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -2696,9 +2696,9 @@ func (instance InfoController) READ_info() string {
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{
 					IsGlobal:          true,
@@ -2741,20 +2741,20 @@ package main
 import (
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/modules/cache"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/modules/cache"
 )
 
 type ProfileController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Cache cache.CacheService
 }
 
-func (instance ProfileController) NewController() owlky.Controller {
+func (instance ProfileController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance ProfileController) READ_profiles_BY_id(c owlky.HTTPContext) string {
+func (instance ProfileController) READ_profiles_BY_id(c owlkei.HTTPContext) string {
 	key := "profile:" + c.Param().Get("id")
 	if data, ok := instance.Cache.Get(c.Context(), key); ok {
 		return string(data)
@@ -2766,9 +2766,9 @@ func (instance ProfileController) READ_profiles_BY_id(c owlky.HTTPContext) strin
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Imports(cache.Register(&cache.CacheModuleOptions{IsGlobal: true})).
 			Controllers(ProfileController{}).
 			Build(),
@@ -2789,8 +2789,8 @@ func main() {
 
 ### Outbound HTTP calls
 
-Owlky Go ships no HTTP client module. Call other services with `net/http`, and wrap the transport
-with `owlky.TraceTransport` so the outgoing request continues the incoming request's trace
+Owlkei Go ships no HTTP client module. Call other services with `net/http`, and wrap the transport
+with `owlkei.TraceTransport` so the outgoing request continues the incoming request's trace
 (`Traceparent`). See the [trace documentation](internal/trace/README.md#outbound-calls).
 
 ```go
@@ -2800,23 +2800,23 @@ import (
 	"net/http"
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/log"
 )
 
-var client = &http.Client{Transport: owlky.TraceTransport(nil), Timeout: 10 * time.Second}
+var client = &http.Client{Transport: owlkei.TraceTransport(nil), Timeout: 10 * time.Second}
 
 type AccountController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Logger log.Logger
 }
 
-func (instance AccountController) NewController() owlky.Controller {
+func (instance AccountController) NewController() owlkei.Controller {
 	return instance
 }
 
-func (instance AccountController) READ_profile(c owlky.HTTPContext) int {
+func (instance AccountController) READ_profile(c owlkei.HTTPContext) int {
 	req, err := http.NewRequestWithContext(c.Context(), http.MethodGet, "https://accounts.example.com/me", nil)
 	if err != nil {
 		panic(err)
@@ -2831,8 +2831,8 @@ func (instance AccountController) READ_profile(c owlky.HTTPContext) int {
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(AccountController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(AccountController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -2846,7 +2846,7 @@ the framework logs it (`ExceptionCause`, at `Debug`) and sends only the status t
 
 ## Configuration
 
-The whole configuration of an app is one struct, `owlky.AppOptions`, passed to `owlky.New`. Code is
+The whole configuration of an app is one struct, `owlkei.AppOptions`, passed to `owlkei.New`. Code is
 bound with the `Bind…` methods, and `app.Listen()` takes no argument.
 
 - `New` reads the struct once and copies what it keeps. Changing it after `New` has no effect.
@@ -2865,18 +2865,18 @@ An app with no options is a complete app for development:
 ```go
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
 ```
 
-`New(nil)` and `New(&owlky.AppOptions{})` give the same app:
+`New(nil)` and `New(&owlkei.AppOptions{})` give the same app:
 
 | What | Value |
 |---|---|
@@ -2901,16 +2901,16 @@ package main
 import (
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/guards/throttler"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/guards/throttler"
+	"go.owlkei.com/owlkei/log"
 )
 
 type HelloController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance HelloController) NewController() owlky.Controller {
+func (instance HelloController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -2919,29 +2919,29 @@ func (instance HelloController) READ_hello() string {
 }
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
+	app := owlkei.New(&owlkei.AppOptions{
 		Logger: log.NewLog(&log.LogOptions{
 			Format:     log.FormatJSON,
 			MaskFields: []string{"password", "token"},
 		}),
 		IsAccessLog:   true,
-		Server:        &owlky.ServerOptions{Port: 8080},
-		HTTP:          &owlky.HTTPOptions{MaxBodyBytes: 1 * owlky.MiB},
-		Proxy:         &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+		Server:        &owlkei.ServerOptions{Port: 8080},
+		HTTP:          &owlkei.HTTPOptions{MaxBodyBytes: 1 * owlkei.MiB},
+		Proxy:         &owlkei.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 		Hosts:         []string{"example.com"},
 		Origins:       []string{"https://app.example.com"},
-		LoadShed:      &owlky.LoadShedOptions{IsEnabled: true},
-		HTTPSRedirect: &owlky.HTTPSRedirectOptions{IsEnabled: true, Host: "example.com"},
-		Headers:       &owlky.HeadersOptions{IsEnabled: true},
-		CORS:          &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true},
-		CSRF:          &owlky.CSRFOptions{IsEnabled: true},
-		Compress:      &owlky.CompressOptions{IsEnabled: true},
+		LoadShed:      &owlkei.LoadShedOptions{IsEnabled: true},
+		HTTPSRedirect: &owlkei.HTTPSRedirectOptions{IsEnabled: true, Host: "example.com"},
+		Headers:       &owlkei.HeadersOptions{IsEnabled: true},
+		CORS:          &owlkei.CORSOptions{IsEnabled: true, IsAllowCredentials: true},
+		CSRF:          &owlkei.CSRFOptions{IsEnabled: true},
+		Compress:      &owlkei.CompressOptions{IsEnabled: true},
 	})
 
 	app.BindGlobalGuards(throttler.Throttler{Limit: 300, TTL: time.Minute})
 
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Controllers(HelloController{}).
 			Build(),
 	)
@@ -3020,7 +3020,7 @@ peer of the TCP connection, which is your proxy when you have one. The stage is 
 | `IsHostForwarded` | `false` | `OK_PROXY__IS_HOST_FORWARDED` | Your proxy rewrites `Host` and sends the client's host in the forwarding header. |
 
 Every later stage, your middlewares, the throttler and the access log then see the real client.
-Read it with `owlky.ClientIP(r)`, `owlky.ClientScheme(r)` and `owlky.ClientHost(r)`.
+Read it with `owlkei.ClientIP(r)`, `owlkei.ClientScheme(r)` and `owlkei.ClientHost(r)`.
 
 **`Hosts`** lists the host names the app answers. A request for another host gets `421`.
 
@@ -3047,7 +3047,7 @@ Read it with `owlky.ClientIP(r)`, `owlky.ClientScheme(r)` and `owlky.ClientHost(
 | `MaxBodyBytes` | `10MiB` | `OK_HTTP__MAX_BODY_BYTES` | Lower it to the largest body you accept; raise it for uploads. A larger body answers `413`. A negative value removes the limit. |
 | `ServeDirs` | empty | `OK_HTTP__SERVE_DIRS` | Reserved: the directories a `SERVE_` handler may return. It has no effect yet. |
 
-`MaxBodyBytes` is a `ByteSize`. In code, write `16 * owlky.KiB` or `2 * owlky.MB`. In a variable,
+`MaxBodyBytes` is a `ByteSize`. In code, write `16 * owlkei.KiB` or `2 * owlkei.MB`. In a variable,
 write bytes (`1500`) or a whole number with a unit: `KB`, `MB`, `GB` are powers of 1000, and
 `KiB`, `MiB`, `GiB` powers of 1024. Units are case-sensitive, without a space or a fraction:
 `10Mb`, `10 MB` and `1.5MB` are refused.
@@ -3126,7 +3126,7 @@ Don't compress routes that put a secret next to text from the request in one res
 
 ### Server
 
-`Server` applies when Owlky Go opens the listener (`Listen`, `Serve`). It has no effect when you
+`Server` applies when Owlkei Go opens the listener (`Listen`, `Serve`). It has no effect when you
 mount the `App` in your own `http.Server`. See [core › Server](internal/core/README.md#server).
 
 | Field | Default | Variable | When to change it |
@@ -3198,8 +3198,8 @@ The built-in logger writes JSON when stdout is not a terminal, which is the case
 
 ### From the environment
 
-`owlky.OptionsFromEnv()` returns the same `*AppOptions`, filled from environment variables and
-from a `.env` file. Without a call to it, Owlky Go reads no variable and no file.
+`owlkei.OptionsFromEnv()` returns the same `*AppOptions`, filled from environment variables and
+from a `.env` file. Without a call to it, Owlkei Go reads no variable and no file.
 
 ```go
 package main
@@ -3207,18 +3207,18 @@ package main
 import (
 	"embed"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 //go:embed all:web
 var web embed.FS
 
 func main() {
-	opts := owlky.OptionsFromEnv()
+	opts := owlkei.OptionsFromEnv()
 	opts.Render.FS = web
 	opts.IsDevtool = false
-	app := owlky.New(opts)
-	app.Create(owlky.ModuleBuilder().Build())
+	app := owlkei.New(opts)
+	app.Create(owlkei.ModuleBuilder().Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -3327,7 +3327,7 @@ For apps written before `AppOptions`. The old API is removed, with no alias.
 
 | Before | Now |
 |---|---|
-| `owlky.New()` | `owlky.New(nil)` or `owlky.New(&owlky.AppOptions{…})` |
+| `owlkei.New()` | `owlkei.New(nil)` or `owlkei.New(&owlkei.AppOptions{…})` |
 | `SetLogger`, `SetStartupTimeout`, `EnableAccessLog`, `EnableDevtool` | `Logger`, `StartupTimeout`, `IsAccessLog`, `IsDevtool` |
 | `EnableRender`, `EnableVersioning`, `EnableWS` | `Render`, `Versioning`, `WS` |
 | `Listen(port, opts)`, `ListenTLS(port, cert, key, opts)` | `Server.Port`, `Server.TLS` and `Listen()` |
@@ -3335,7 +3335,7 @@ For apps written before `AppOptions`. The old API is removed, with no alias.
 | `ServerOptions.MaxRequestBodyBytes` | `HTTP.MaxBodyBytes`, a `ByteSize` |
 | The `middlewares/*` packages bound with `BindGlobalMiddlewares` | The matching `AppOptions` field. The packages are no longer public. |
 | An origin list for CORS and another for CSRF | One `Origins` list |
-| `proxy.ClientIP`, `proxy.Scheme`, `proxy.Host` | `owlky.ClientIP`, `owlky.ClientScheme`, `owlky.ClientHost` |
+| `proxy.ClientIP`, `proxy.Scheme`, `proxy.Host` | `owlkei.ClientIP`, `owlkei.ClientScheme`, `owlkei.ClientHost` |
 
 What behaves differently:
 
@@ -3362,7 +3362,7 @@ What behaves differently:
 - **Configuration errors come from `New`.** They read `invalid app: <Group>.<Field> …` in place
   of `invalid cors: …`, `invalid proxy: …` and the others. TLS files are loaded at `New`.
 - **Sizes are `ByteSize` values.** `HTTP.MaxBodyBytes` and `Compress.MinSize` take
-  `10 * owlky.MiB` in code. A plain number is still bytes. In a variable, `KB`, `MB` and `GB` are
+  `10 * owlkei.MiB` in code. A plain number is still bytes. In a variable, `KB`, `MB` and `GB` are
   powers of 1000, `KiB`, `MiB` and `GiB` powers of 1024, and a lower-case `b` (`10Mb`) is refused,
   because it means bits.
 
@@ -3371,13 +3371,13 @@ What behaves differently:
   ([ctx › Redirect](internal/ctx/README.md#redirect)).
 - `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
   instead ([ctx › JSON](internal/ctx/README.md#json)).
-- `owlky.TraceTransport` sends your trace ID and request ID to every host you call
+- `owlkei.TraceTransport` sends your trace ID and request ID to every host you call
   ([trace › Outbound calls](internal/trace/README.md#outbound-calls)).
 - Change response headers with `Header().Set`, `Add` or `Del`, never by writing into a value slice
   in place ([core › Response writer](internal/core/README.md#response-writer)).
 - A guard bound to a `RENDER_` handler doesn't cover its `SUBMIT_`: bind it to both, or to the
   controller ([Pages › Forms](#forms)).
-- Turn `CSRF` on in every app with `SUBMIT_` routes or cookies: Owlky Go doesn't add it for you.
+- Turn `CSRF` on in every app with `SUBMIT_` routes or cookies: Owlkei Go doesn't add it for you.
 - Files in `public/` are sent as they are, at the root URL, with no escaping and no nonce: never
   write user content there ([Pages › Public files](#public-files)).
 - Page CSS and JS URLs show your template tree and are served without the page's guards
@@ -3396,15 +3396,15 @@ package main
 import (
 	"database/sql"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type InvoiceController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance InvoiceController) NewController() owlky.Controller {
+func (instance InvoiceController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -3416,8 +3416,8 @@ func (instance InvoiceController) READ_invoices() string {
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(InvoiceController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(InvoiceController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
@@ -3470,7 +3470,7 @@ WebSocket events also have constructors with WebSocket close codes, such as
 
 ## Package reference
 
-An application imports `go.owlky.com/owlky`, plus the packages it uses among
+An application imports `go.owlkei.com/owlkei`, plus the packages it uses among
 [`exception`](exception/README.md), [`log`](log/README.md), `modules/*` and
 `guards/*`. Every other package of the module is under `internal/` and can't be imported.
 
@@ -3493,7 +3493,7 @@ An application imports `go.owlky.com/owlky`, plus the packages it uses among
 | `Provider` | The interface of a provider: `NewProvider() Provider`. |
 | `Controller` | The interface of a controller: `NewController() Controller`. |
 | `AppOptions` | The argument of `New`; `nil` gives the defaults. See [Configuration](#configuration). |
-| `ServerOptions` | `AppOptions.Server`, used when Owlky Go opens the listener: `Port` (default 3000), `ShutdownTimeout` (default 30 s), `TLS` (`TLSOptions`: `CertFile`, `KeyFile`, `Config`) and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |
+| `ServerOptions` | `AppOptions.Server`, used when Owlkei Go opens the listener: `Port` (default 3000), `ShutdownTimeout` (default 30 s), `TLS` (`TLSOptions`: `CertFile`, `KeyFile`, `Config`) and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |
 | `HTTPOptions` | `AppOptions.HTTP`: `MaxBodyBytes` (a `ByteSize`, default 10 MiB, negative turns the cap off) and `ServeDirs`. |
 | `WSOptions` | `AppOptions.WS`. `Path` is the endpoint path; setting it turns WebSocket on. |
 | `RenderOptions` | `AppOptions.Render`. `FS` holds the templates and the `assets` and `public` directories (required); `Dir` is the directory inside it (default `web`, `.` for the root); `IsReload` reads that directory from disk and parses it again when a file changes (development only). See [Pages](#pages). |
@@ -3526,7 +3526,7 @@ Without handlers, a layer applies to every handler of the controller.
 Guards, interceptors and exception filters are any value with the right method
 (`CanActivate`, `Intercept` or `Catch`). `Create()` checks each method's shape and stops on a
 wrong one, for example
-`invalid guard: main.TokenGuard.CanActivate must be func(owlky.HTTPContext) bool to be bound as a HTTP guard`.
+`invalid guard: main.TokenGuard.CanActivate must be func(owlkei.HTTPContext) bool to be bound as a HTTP guard`.
 
 ### Contexts and request data
 

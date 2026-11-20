@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/devtool"
-	"go.owlky.com/owlky/internal/render"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/devtool"
+	"go.owlkei.com/owlkei/internal/render"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 type RenderOptions struct {

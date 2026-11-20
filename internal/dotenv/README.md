@@ -1,6 +1,6 @@
 # Dotenv
 
-Internal package: applications use `modules/config` (`.env` with typed binding) or `owlky.OptionsFromEnv()` instead.
+Internal package: applications use `modules/config` (`.env` with typed binding) or `owlkei.OptionsFromEnv()` instead.
 
 *Package `dotenv` is the strict `.env` parser shared by `modules/config` and `OptionsFromEnv`: one syntax, bounded input, and errors that name the file and the line but never a value.*
 

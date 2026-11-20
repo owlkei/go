@@ -3,7 +3,7 @@ package helmet_test
 import (
 	"crypto/tls"
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/helmet"
+	. "go.owlkei.com/owlkei/internal/middlewares/helmet"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -12,13 +12,13 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func benchHelmet(b *testing.B, r *http.Request) {
@@ -106,7 +106,7 @@ func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
 	t.Helper()
 	app := core.New(&core.AppOptions{Logger: silentLogger{}})
 	app.BindGlobalMiddlewares(mws...)
-	app.Create(owlky.ModuleBuilder().Controllers(okController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(okController{}).Build())
 	return app
 }
 

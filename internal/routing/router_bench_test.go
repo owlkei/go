@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func BenchmarkRouterAdd(b *testing.B) {

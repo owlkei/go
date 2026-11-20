@@ -8,8 +8,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 func TestPublic_ServesAtRoot(t *testing.T) {

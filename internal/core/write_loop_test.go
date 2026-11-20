@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/log"
 )
 
 func TestWriteLoop_SendsPayloadToConn(t *testing.T) {

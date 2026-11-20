@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.owlky.com/owlky/internal/slice"
+	"go.owlkei.com/owlkei/internal/slice"
 )
 
 func BindStrArr(d map[string][]string, fls *[]FieldLevel, s any) (any, []FieldLevel) {

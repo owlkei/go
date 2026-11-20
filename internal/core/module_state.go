@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/devtool"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/devtool"
+	"go.owlkei.com/owlkei/log"
 )
 
 type moduleStatus uint32

@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/memorybroker"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/memorybroker"
+	"go.owlkei.com/owlkei/log"
 )
 
 func BenchmarkWSConnmgr_Get(b *testing.B) {

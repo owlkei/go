@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"go.owlky.com/owlky/internal/httphook"
+	"go.owlkei.com/owlkei/internal/httphook"
 )
 
 const cspHeader = "Content-Security-Policy"
 
-var errResponseEnded = errors.New("owlky: response writer used after the request ended")
+var errResponseEnded = errors.New("owlkei: response writer used after the request ended")
 
 type responseWriter struct {
 	w     http.ResponseWriter

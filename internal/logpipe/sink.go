@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"go.owlky.com/owlky/internal/inspect"
+	"go.owlkei.com/owlkei/internal/inspect"
 )
 
 type Level uint8

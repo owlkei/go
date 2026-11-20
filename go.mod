@@ -1,4 +1,4 @@
-module go.owlky.com/owlky
+module go.owlkei.com/owlkei
 
 go 1.27.4
 

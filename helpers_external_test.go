@@ -1,4 +1,4 @@
-package owlky_test
+package owlkei_test
 
 import (
 	"io"
@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/log"
 	"golang.org/x/net/websocket"
 )
 
@@ -51,16 +51,16 @@ func assertNoMethods(t *testing.T, typ reflect.Type, rule string, forbidden ...s
 
 type pointerCatchFilter struct{}
 
-func (pointerCatchFilter) Catch(c owlky.HTTPContext, e *exception.Exception) {
-	c.Status(http.StatusTeapot).JSON(owlky.Map{"caught": true})
+func (pointerCatchFilter) Catch(c owlkei.HTTPContext, e *exception.Exception) {
+	c.Status(http.StatusTeapot).JSON(owlkei.Map{"caught": true})
 }
 
 type pointerCatchController struct {
-	owlky.HTTP
-	owlky.ExceptionFilter
+	owlkei.HTTP
+	owlkei.ExceptionFilter
 }
 
-func (instance pointerCatchController) NewController() owlky.Controller {
+func (instance pointerCatchController) NewController() owlkei.Controller {
 	instance.BindExceptionFilter(pointerCatchFilter{}, instance.READ_boom)
 	return instance
 }
@@ -69,7 +69,7 @@ func (instance pointerCatchController) READ_boom() string {
 	panic(exception.BadRequestException("boom"))
 }
 
-const modulePath = "go.owlky.com/owlky"
+const modulePath = "go.owlkei.com/owlkei"
 
 var movedPackages = map[string]bool{
 	"common":       true,
@@ -128,7 +128,7 @@ type loggerProvider struct {
 	Logger log.Logger
 }
 
-func (instance loggerProvider) NewProvider() owlky.Provider { return instance }
+func (instance loggerProvider) NewProvider() owlkei.Provider { return instance }
 
 type loggerGuard struct {
 	Logger log.Logger
@@ -136,26 +136,26 @@ type loggerGuard struct {
 
 var guardLogger log.Logger
 
-func (instance loggerGuard) CanActivate(c owlky.HTTPContext) bool {
+func (instance loggerGuard) CanActivate(c owlkei.HTTPContext) bool {
 	guardLogger = instance.Logger
 	return true
 }
 
 type injectedController struct {
-	owlky.HTTP
-	owlky.Guard
+	owlkei.HTTP
+	owlkei.Guard
 	Logger    log.Logger
-	Publisher owlky.Publisher
+	Publisher owlkei.Publisher
 	Provider  loggerProvider
 }
 
 var (
 	controllerLogger    log.Logger
 	providerLogger      log.Logger
-	controllerPublisher owlky.Publisher
+	controllerPublisher owlkei.Publisher
 )
 
-func (instance injectedController) NewController() owlky.Controller {
+func (instance injectedController) NewController() owlkei.Controller {
 	instance.BindGuard(loggerGuard{}, instance.READ_fields)
 	return instance
 }
@@ -167,37 +167,37 @@ func (instance injectedController) READ_fields() string {
 	return "ok"
 }
 
-func injectedApp(t *testing.T) (owlky.App, log.Logger) {
+func injectedApp(t *testing.T) (owlkei.App, log.Logger) {
 	t.Helper()
 	logger := log.NewLog(&log.LogOptions{Level: log.LevelError})
-	app := owlky.New(&owlky.AppOptions{Logger: logger})
-	app.Create(owlky.ModuleBuilder().Providers(loggerProvider{}).Controllers(injectedController{}).Build())
+	app := owlkei.New(&owlkei.AppOptions{Logger: logger})
+	app.Create(owlkei.ModuleBuilder().Providers(loggerProvider{}).Controllers(injectedController{}).Build())
 	return app, logger
 }
 
 type paramsSeen struct {
 	hasContext, hasNext, hasRedirect, hasPublisher bool
 	query, header, param                           string
-	body                                           owlky.Body
-	form                                           owlky.Form
+	body                                           owlkei.Body
+	form                                           owlkei.Form
 	fileNames                                      []string
 }
 
 var seen paramsSeen
 
 type paramsController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance paramsController) NewController() owlky.Controller { return instance }
+func (instance paramsController) NewController() owlkei.Controller { return instance }
 
 func (instance paramsController) READ_inspect_BY_id(
-	c owlky.HTTPContext,
-	query owlky.Query,
-	header owlky.Header,
-	param owlky.Param,
-	next owlky.Next,
-	publisher owlky.Publisher,
+	c owlkei.HTTPContext,
+	query owlkei.Query,
+	header owlkei.Header,
+	param owlkei.Param,
+	next owlkei.Next,
+	publisher owlkei.Publisher,
 ) string {
 	seen.hasContext = c != nil
 	seen.hasNext = next != nil
@@ -208,12 +208,12 @@ func (instance paramsController) READ_inspect_BY_id(
 	return "ok"
 }
 
-func (instance paramsController) CREATE_body(body owlky.Body) string {
+func (instance paramsController) CREATE_body(body owlkei.Body) string {
 	seen.body = body
 	return "ok"
 }
 
-func (instance paramsController) CREATE_upload(form owlky.Form, file owlky.File) string {
+func (instance paramsController) CREATE_upload(form owlkei.Form, file owlkei.File) string {
 	seen.form = form
 	for _, headers := range file {
 		for _, h := range headers {
@@ -223,25 +223,25 @@ func (instance paramsController) CREATE_upload(form owlky.Form, file owlky.File)
 	return "ok"
 }
 
-func (instance paramsController) READ_away(redirect owlky.Redirect) {
+func (instance paramsController) READ_away(redirect owlkei.Redirect) {
 	seen.hasRedirect = redirect != nil
 	redirect("/elsewhere")
 }
 
 type wsSeen struct {
 	hasContext, hasPublisher, hasNext bool
-	payload                           owlky.WSPayload
+	payload                           owlkei.WSPayload
 }
 
 var wsSeenCh = make(chan wsSeen, 4)
 
 type wsParamsGateway struct {
-	owlky.WS
+	owlkei.WS
 }
 
-func (instance wsParamsGateway) NewController() owlky.Controller { return instance }
+func (instance wsParamsGateway) NewController() owlkei.Controller { return instance }
 
-func (instance wsParamsGateway) SUBSCRIBE_probe(c owlky.WSContext, payload owlky.WSPayload, publisher owlky.Publisher, next owlky.Next) string {
+func (instance wsParamsGateway) SUBSCRIBE_probe(c owlkei.WSContext, payload owlkei.WSPayload, publisher owlkei.Publisher, next owlkei.Next) string {
 	wsSeenCh <- wsSeen{hasContext: c != nil, hasPublisher: publisher != nil, hasNext: next != nil, payload: payload}
 	return "ok"
 }
@@ -250,36 +250,36 @@ type greeter struct {
 	Word string
 }
 
-func (instance greeter) NewProvider() owlky.Provider { return instance }
+func (instance greeter) NewProvider() owlkei.Provider { return instance }
 
 type greetController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Greeter greeter
 }
 
-func (instance greetController) NewController() owlky.Controller { return instance }
+func (instance greetController) NewController() owlkei.Controller { return instance }
 
 func (instance greetController) READ_greet() string { return instance.Greeter.Word }
 
-var greeterModule = func() owlky.Module {
-	m := owlky.ModuleBuilder().Providers(greeter{Word: "hi"}).Build()
+var greeterModule = func() owlkei.Module {
+	m := owlkei.ModuleBuilder().Providers(greeter{Word: "hi"}).Build()
 	m.IsGlobal = true
 	return m
 }
 
-var funcModule = func(g greeter) owlky.Module {
-	return owlky.ModuleBuilder().Controllers(greetController{}).Build()
+var funcModule = func(g greeter) owlkei.Module {
+	return owlkei.ModuleBuilder().Controllers(greetController{}).Build()
 }
 
 var funcModuleCalls int
 
-var countedModule = func() owlky.Module {
+var countedModule = func() owlkei.Module {
 	funcModuleCalls++
-	return owlky.ModuleBuilder().Build()
+	return owlkei.ModuleBuilder().Build()
 }
 
-var namedModule = func() owlky.Module {
-	return owlky.ModuleBuilder().Build()
+var namedModule = func() owlkei.Module {
+	return owlkei.ModuleBuilder().Build()
 }
 
 type wrongGuard struct{}
@@ -288,14 +288,14 @@ func (wrongGuard) NewGuard() wrongGuard { return wrongGuard{} }
 
 func (wrongGuard) CanActivate(string) bool { return true }
 
-func (wrongGuard) NewController() owlky.Controller { return nil }
+func (wrongGuard) NewController() owlkei.Controller { return nil }
 
 type wrongShapeController struct {
-	owlky.HTTP
-	owlky.Guard
+	owlkei.HTTP
+	owlkei.Guard
 }
 
-func (c wrongShapeController) NewController() owlky.Controller {
+func (c wrongShapeController) NewController() owlkei.Controller {
 	c.BindGuard(wrongGuard{}, c.READ_x)
 	return c
 }
@@ -315,11 +315,11 @@ func (wrongFilter) NewExceptionFilter() wrongFilter { return wrongFilter{} }
 func (wrongFilter) Catch(string) {}
 
 type wrongHTTPInterceptorController struct {
-	owlky.HTTP
-	owlky.Interceptor
+	owlkei.HTTP
+	owlkei.Interceptor
 }
 
-func (c wrongHTTPInterceptorController) NewController() owlky.Controller {
+func (c wrongHTTPInterceptorController) NewController() owlkei.Controller {
 	c.BindInterceptor(wrongInterceptor{}, c.READ_x)
 	return c
 }
@@ -327,11 +327,11 @@ func (c wrongHTTPInterceptorController) NewController() owlky.Controller {
 func (wrongHTTPInterceptorController) READ_x() string { return "x" }
 
 type wrongHTTPFilterController struct {
-	owlky.HTTP
-	owlky.ExceptionFilter
+	owlkei.HTTP
+	owlkei.ExceptionFilter
 }
 
-func (c wrongHTTPFilterController) NewController() owlky.Controller {
+func (c wrongHTTPFilterController) NewController() owlkei.Controller {
 	c.BindExceptionFilter(wrongFilter{}, c.READ_x)
 	return c
 }
@@ -339,11 +339,11 @@ func (c wrongHTTPFilterController) NewController() owlky.Controller {
 func (wrongHTTPFilterController) READ_x() string { return "x" }
 
 type wrongWSGuardController struct {
-	owlky.WS
-	owlky.Guard
+	owlkei.WS
+	owlkei.Guard
 }
 
-func (c wrongWSGuardController) NewController() owlky.Controller {
+func (c wrongWSGuardController) NewController() owlkei.Controller {
 	c.BindGuard(wrongGuard{}, c.SUBSCRIBE_x)
 	return c
 }
@@ -351,11 +351,11 @@ func (c wrongWSGuardController) NewController() owlky.Controller {
 func (wrongWSGuardController) SUBSCRIBE_x() string { return "x" }
 
 type wrongWSInterceptorController struct {
-	owlky.WS
-	owlky.Interceptor
+	owlkei.WS
+	owlkei.Interceptor
 }
 
-func (c wrongWSInterceptorController) NewController() owlky.Controller {
+func (c wrongWSInterceptorController) NewController() owlkei.Controller {
 	c.BindInterceptor(wrongInterceptor{}, c.SUBSCRIBE_x)
 	return c
 }
@@ -363,11 +363,11 @@ func (c wrongWSInterceptorController) NewController() owlky.Controller {
 func (wrongWSInterceptorController) SUBSCRIBE_x() string { return "x" }
 
 type wrongWSFilterController struct {
-	owlky.WS
-	owlky.ExceptionFilter
+	owlkei.WS
+	owlkei.ExceptionFilter
 }
 
-func (c wrongWSFilterController) NewController() owlky.Controller {
+func (c wrongWSFilterController) NewController() owlkei.Controller {
 	c.BindExceptionFilter(wrongFilter{}, c.SUBSCRIBE_x)
 	return c
 }
@@ -379,7 +379,7 @@ type surfaceBooking struct {
 	Errors map[string]string
 }
 
-func (surfaceBooking) Transform(f owlky.Form, _ owlky.ArgumentMetadata) any {
+func (surfaceBooking) Transform(f owlkei.Form, _ owlkei.ArgumentMetadata) any {
 	bound, _ := f.Bind(surfaceBooking{})
 	form := bound.(surfaceBooking)
 	form.Errors = map[string]string{}
@@ -390,16 +390,16 @@ func (surfaceBooking) Transform(f owlky.Form, _ owlky.ArgumentMetadata) any {
 }
 
 type surfaceBookingPages struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance surfaceBookingPages) NewController() owlky.Controller { return instance }
+func (instance surfaceBookingPages) NewController() owlkei.Controller { return instance }
 
-func (instance surfaceBookingPages) RENDER_bookings() owlky.Map {
-	return owlky.Map{"Bookings": []string{"one", "two"}}
+func (instance surfaceBookingPages) RENDER_bookings() owlkei.Map {
+	return owlkei.Map{"Bookings": []string{"one", "two"}}
 }
 
-func (instance surfaceBookingPages) RENDER_bookings_BY_id(param owlky.Param) surfaceBooking {
+func (instance surfaceBookingPages) RENDER_bookings_BY_id(param owlkei.Param) surfaceBooking {
 	if param.Get("id") != "1" {
 		panic(exception.NotFoundException("No booking has this number"))
 	}
@@ -410,7 +410,7 @@ func (instance surfaceBookingPages) RENDER_new_OF_bookings() surfaceBooking {
 	return surfaceBooking{Nights: "1"}
 }
 
-func (instance surfaceBookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form surfaceBooking) surfaceBooking {
+func (instance surfaceBookingPages) SUBMIT_new_OF_bookings(c owlkei.HTTPContext, form surfaceBooking) surfaceBooking {
 	if len(form.Errors) == 0 {
 		c.Redirect("/bookings")
 	}
@@ -418,28 +418,28 @@ func (instance surfaceBookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, 
 }
 
 type tokenController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance tokenController) NewController() owlky.Controller {
+func (instance tokenController) NewController() owlkei.Controller {
 	instance.Path("/oauth2/token", instance.CREATE_token)
 	return instance
 }
 
-func (instance tokenController) CREATE_token() owlky.Map { return owlky.Map{"token": "t"} }
+func (instance tokenController) CREATE_token() owlkei.Map { return owlkei.Map{"token": "t"} }
 
 func (instance tokenController) READ_payment_intents() []string { return []string{"pi"} }
 
-var billingModule = owlky.ModuleBuilder().
-	PathStyle(owlky.PathStyleKebab).
+var billingModule = owlkei.ModuleBuilder().
+	PathStyle(owlkei.PathStyleKebab).
 	Controllers(billingController{}).
 	Build()
 
 type billingController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance billingController) NewController() owlky.Controller { return instance }
+func (instance billingController) NewController() owlkei.Controller { return instance }
 
 func (instance billingController) READ_invoice_lines() string { return "lines" }
 
@@ -454,20 +454,20 @@ func serve(app http.Handler, method, target string, body io.Reader, headers map[
 }
 
 type helloController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance helloController) NewController() owlky.Controller { return instance }
+func (instance helloController) NewController() owlkei.Controller { return instance }
 
 func (instance helloController) READ_hello() string { return "hello" }
 
 var chatCalls atomic.Int32
 
 type chatGateway struct {
-	owlky.WS
+	owlkei.WS
 }
 
-func (instance chatGateway) NewController() owlky.Controller { return instance }
+func (instance chatGateway) NewController() owlkei.Controller { return instance }
 
 func (instance chatGateway) SUBSCRIBE_chat_ANY() string {
 	chatCalls.Add(1)
@@ -501,23 +501,23 @@ var layerCalls = struct{ guard, interceptor, filter, middleware atomic.Int32 }{}
 
 type layerGuard struct{}
 
-func (instance layerGuard) CanActivate(c owlky.HTTPContext) bool {
+func (instance layerGuard) CanActivate(c owlkei.HTTPContext) bool {
 	layerCalls.guard.Add(1)
 	return c.Query().Get("deny") != "true"
 }
 
 type layerInterceptor struct{}
 
-func (instance layerInterceptor) Intercept(c owlky.HTTPContext, a owlky.Aggregation) any {
+func (instance layerInterceptor) Intercept(c owlkei.HTTPContext, a owlkei.Aggregation) any {
 	layerCalls.interceptor.Add(1)
 	return a.Pipe(a.Transform(func(data any) any {
-		return owlky.Map{"wrapped": data}
+		return owlkei.Map{"wrapped": data}
 	}))
 }
 
 type layerFilter struct{}
 
-func (instance layerFilter) Catch(c owlky.HTTPContext, e *exception.Exception) {
+func (instance layerFilter) Catch(c owlkei.HTTPContext, e *exception.Exception) {
 	layerCalls.filter.Add(1)
 	c.Status(http.StatusTeapot)
 	c.Text("filtered")
@@ -525,21 +525,21 @@ func (instance layerFilter) Catch(c owlky.HTTPContext, e *exception.Exception) {
 
 type layerMiddleware struct{}
 
-func (instance layerMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
+func (instance layerMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next) {
 	layerCalls.middleware.Add(1)
 	w.Header().Set("X-Layer", "on")
 	next()
 }
 
 type layersController struct {
-	owlky.HTTP
-	owlky.Guard
-	owlky.Interceptor
-	owlky.ExceptionFilter
-	owlky.Middleware
+	owlkei.HTTP
+	owlkei.Guard
+	owlkei.Interceptor
+	owlkei.ExceptionFilter
+	owlkei.Middleware
 }
 
-func (instance layersController) NewController() owlky.Controller {
+func (instance layersController) NewController() owlkei.Controller {
 	instance.BindGuard(layerGuard{}, instance.READ_bound)
 	instance.BindInterceptor(layerInterceptor{}, instance.READ_bound)
 	instance.BindExceptionFilter(layerFilter{}, instance.READ_bound)
@@ -554,11 +554,11 @@ func (instance layersController) READ_bound() string {
 func (instance layersController) READ_plain() string { return "plain" }
 
 type wrapController struct {
-	owlky.HTTP
-	owlky.Interceptor
+	owlkei.HTTP
+	owlkei.Interceptor
 }
 
-func (instance wrapController) NewController() owlky.Controller {
+func (instance wrapController) NewController() owlkei.Controller {
 	instance.BindInterceptor(layerInterceptor{}, instance.READ_wrapped)
 	return instance
 }

@@ -1,6 +1,6 @@
 # 0014: Rebrand to Owlkei Go
 
-Status: Approved
+Status: Running
 
 ## Goal
 The framework is Owlkei Go: users write `import "go.owlkei.com/owlkei"` and `owlkei.New()`, every
@@ -21,11 +21,11 @@ README shows the new Owlkei Go lockup. Behavior does not change.
 ## Steps
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
-| 1 | Module path and package: `go.owlkei.com/owlkei`, package `owlkei`, every import in the module, `bench/` and `examples/*` (their `replace` lines) | light | - | - | `go build ./...`, the bench module and `make examples` build | todo |
-| 2 | API check: `api/owlkei.txt`, `internal/apicheck`, `make api-check` | light | - | 1 | the file shows only the rename | todo |
-| 3 | Texts: `owlky:` → `owlkei:` in errors, logs and panics and the tests that pin them; banner; test-only env names | light | - | 1 | `git grep -i owlky -- '*.go'` is empty; `go test -race ./...` green | todo |
-| 4 | Tooling and docs: `.owlky/` → `.owlkei/`, CLAUDE.md, every README and document, links to `github.com/owlkei/go`, history documents with the note updated | light | - | 1-3 | `git grep -i owlky` matches only the rename note and this roadmap | todo |
-| 5 | Brand assets: the `owlkei-go-{horizontal,stacked}-{light,dark}.svg` lockups from the UI repository (branch `rebrand/owlkei`, `apps/storybook/public/brand/`) replace `docs/assets/logo-*.svg`; the README header uses the lockup; badges and the "Part of Owlkei" link point at owlkei.com; GitHub About and topics (`owlky` → `owlkei`) | light | - | 4 | the README renders the new lockup in both themes | todo |
+| 1 | Module path and package: `go.owlkei.com/owlkei`, package `owlkei`, every import in the module, `bench/` and `examples/*` (their `replace` lines) | light | - | - | `go build ./...`, the bench module and `make examples` build | done |
+| 2 | API check: `api/owlkei.txt`, `internal/apicheck`, `make api-check` | light | - | 1 | the file shows only the rename | done |
+| 3 | Texts: `owlky:` → `owlkei:` in errors, logs and panics and the tests that pin them; banner; test-only env names | light | - | 1 | `git grep -i owlky -- '*.go'` is empty; `go test -race ./...` green | done |
+| 4 | Tooling and docs: `.owlky/` → `.owlkei/`, CLAUDE.md, every README and document, links to `github.com/owlkei/go`, history documents with the note updated | light | - | 1-3 | `git grep -i owlky` matches only the rename note and this roadmap | done |
+| 5 | Brand assets: the `owlkei-go-{horizontal,stacked}-{light,dark}.svg` lockups from the UI repository (branch `rebrand/owlkei`, `apps/storybook/public/brand/`) replace `docs/assets/logo-*.svg`; the README header uses the lockup; badges and the "Part of Owlkei" link point at owlkei.com; GitHub About and topics (`owlky` → `owlkei`) | light | - | 4 | the README renders the new lockup in both themes | blocked |
 | 6 | Verify and ship: `make check`, push to `owlkei/go`, CI green | light | - | 1-5 | CI green on `main` | todo |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
@@ -45,3 +45,6 @@ Agreed with the owner on 2026-11-20 (prompted by the UI session's brand notice):
 ## Log
 - 2026-11-20: repository transferred `dangduoc08/go` → `owlkei/go` by the orchestrator at the owner's
   request, before the run.
+- 2026-11-21: steps 1-4 in one pass: 423 files (module path, package, `api/owlkei.txt`, `bench/owlkei*.go`, `.owlkei/`, every document including the history), except this roadmap, 0010 and the note in `docs/roadmap/README.md` (they describe the renames), the local folder name `~/Projects/owlky/go`, and the vendored Owlky UI build files in `examples/03-pages/web/assets/` (their names follow the UI build they were copied from).
+- 2026-11-21: step 5 blocked: the Owlkei Go lockups are not reachable from this machine (the UI branch `rebrand/owlkei` is not on GitHub; `owlkei/ui` main still has `owlky-*` lockups). The README keeps the owl mark (unchanged in the new brand) and the name in text; the lockups follow when the UI pushes them.
+

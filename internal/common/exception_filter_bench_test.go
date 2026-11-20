@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei/exception"
 )
 
 func BenchmarkNormalizeRecovered_Exception(b *testing.B) {

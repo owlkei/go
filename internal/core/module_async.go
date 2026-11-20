@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/wsevent"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/wsevent"
 )
 
 type entryKey struct{}

@@ -403,7 +403,7 @@ If H1 is refused: one shared handler per level and `slog.Handler.WithAttrs` per 
 - **Docs (step 7):** READMEs of `log` ("starts no goroutine", `From`, the pipeline, what can be
   lost), `accesslog` (no worker, line shape, cost), `common`, `core` (`SetLogger`, shutdown order,
   stack sampling, `app.Stop()` for embedders), a new `internal/logpipe/README.md`; `CLAUDE.md` and
-  `.owlky/` (`package-reference.md`, `request-pipeline.md`, `metadata-concurrency-model.json`,
+  `.owlkei/` (`package-reference.md`, `request-pipeline.md`, `metadata-concurrency-model.json`,
   `metadata-performance.json`, `anti-patterns-gotchas.md`: forgetting `From`).
 
 ## Test plan

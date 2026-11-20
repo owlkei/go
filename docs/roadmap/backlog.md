@@ -12,47 +12,47 @@ from here.
    auth, and drives the next roadmaps.
 4. Authentication and authorization (sessions for SSR, tokens for REST, roles and permissions as
    guards).
-5. Storage: adapters over existing databases (SQLite, Postgres), not an engine of our own; Owlky Go
+5. Storage: adapters over existing databases (SQLite, Postgres), not an engine of our own; Owlkei Go
    adds connections, transactions, migrations, pool bounds, the circuit breaker, trace and devtools.
 6. HTTP client (timeouts, bounded retries, circuit breaker).
 7. 0.x release once the court booking app runs for real.
 8. After the release: WebSocket (0006), devtools and MCP.
 
-## Rebrand to Owlky Go (decided 2026-11-19, before the security roadmap)
+## Rebrand to Owlkei Go (decided 2026-11-19, before the security roadmap)
 
-Ginject (this framework's old name) and Owlky become one brand, Owlky, with independent products: **Owlky UI** (the component
-library) and **Owlky Go** (this framework; "Server" was dropped: it reads like VPS hosting); later Owlky CLI, Devtools, SDK and Studio. "Ginject"
-read as a plugin of Gin, and one brand shares owlky.com, accounts, MCP and the devtools platform.
+Ginject (this framework's old name) and Owlkei become one brand, Owlkei, with independent products: **Owlkei UI** (the component
+library) and **Owlkei Go** (this framework; "Server" was dropped: it reads like VPS hosting); later Owlkei CLI, Devtools, SDK and Studio. "Ginject"
+read as a plugin of Gin, and one brand shares owlkei.com, accounts, MCP and the devtools platform.
 Map: https://claude.ai/artifact/58h7inTZEi2qboPG41i1f1 (private to the owner).
 
-- **Import path:** `go.owlky.com/owlky`, package `owlky` (`owlky.New()`, `owlky.Module`); a vanity path:
-  `go.owlky.com/*?go-get=1` answers `<meta name="go-import" content="go.owlky.com/owlky git
+- **Import path:** `go.owlkei.com/owlkei`, package `owlkei` (`owlkei.New()`, `owlkei.Module`); a vanity path:
+  `go.owlkei.com/*?go-get=1` answers `<meta name="go-import" content="go.owlkei.com/owlkei git
   https://github.com/<owner>/go">` (a DNS record `go` to the website's host, a small middleware in
-  the Next.js site, browsers redirected to the Owlky Go docs). Needed before publishing; until then a
+  the Next.js site, browsers redirected to the Owlkei Go docs). Needed before publishing; until then a
   `replace` in `go.mod` works.
-- **Repositories:** the GitHub org `owlky` was deleted and its name is blocked for 90 days (from about
+- **Repositories:** the GitHub org `owlkei` was deleted and its name is blocked for 90 days (from about
   2026-11-19). Until then the repositories stay on the owner's account (`dangduoc08/go`,
   `dangduoc08/ui`) and the `go-import` tag points there; once the org name is free, move them to
-  `owlky/go` and `owlky/ui` and change that one tag (no import changes for users). Nothing is published
+  `owlkei/go` and `owlkei/ui` and change that one tag (no import changes for users). Nothing is published
   yet, so nobody depends on the interim location.
 - **Rename in this repository:** done by roadmap 0010 (module, package, API file, knowledge base,
   agents `go-*`, every document). The planned mode switch is named `OK_ENV` for now; its final
   name is decided with "Less configuration in `main`".
-- **Independence:** UI works with any backend, Owlky Go with any frontend or JSON only; they meet at the
-  `data-ok-*` markup, never import each other. owlky.com is the one shared platform.
+- **Independence:** UI works with any backend, Owlkei Go with any frontend or JSON only; they meet at the
+  `data-ok-*` markup, never import each other. owlkei.com is the one shared platform.
 - **Devtools:** the collector stays here (`internal/devtool`, `EnableDevtool`); the interface lives at
-  `owlky.com/devtools` (built with Owlky UI, source next to the website). The browser fetches the
-  snapshot from the local app directly (CORS + `Access-Control-Allow-Private-Network` for the owlky.com
+  `owlkei.com/devtools` (built with Owlkei UI, source next to the website). The browser fetches the
+  snapshot from the local app directly (CORS + `Access-Control-Allow-Private-Network` for the owlkei.com
   origin only, a pairing token printed at start, off in production); only the paid tier sends it to
-  owlky.com.
+  owlkei.com.
 
 ## Own WebSocket implementation (after HTTP is production ready)
 
-Decided 2026-11-16: Owlky Go replaces `golang.org/x/net/websocket` (its last dependency; its own
+Decided 2026-11-16: Owlkei Go replaces `golang.org/x/net/websocket` (its last dependency; its own
 documentation points to other packages) with an implementation of its own, once the HTTP roadmaps
 (0003 to 0005) are done. It becomes part of the WebSocket roadmap (0006).
 
-- **Why:** no dependency left in `go.mod`; hot-path control by the rules of `.owlky/conventions.md`
+- **Why:** no dependency left in `go.mod`; hot-path control by the rules of `.owlkei/conventions.md`
   (buffer reuse, low allocations); backpressure, limits, trace and devtools hooks at the frame
   level; ownership of every line.
 - **Scope, phase 1 (RFC 6455):** the handshake through `http.Hijacker`; framing (masking, 7 / 16 /
@@ -75,7 +75,7 @@ connection scope.
 
 ## Public API surface (after roadmap 0005)
 
-Decided 2026-11-16 (Product principles in `CLAUDE.md`): Owlky Go exports about 607 functions, types and
+Decided 2026-11-16 (Product principles in `CLAUDE.md`): Owlkei Go exports about 607 functions, types and
 methods outside `sample/` and `bench/`, most of them framework internals (`common.Construct`,
 `BuildHTTPInterceptMiddleware`, the `common.InsertedRoutes` global, `routing` internals,
 `ctx.BinderOf`, the devtool builder). A dedicated roadmap, after 0005 and before WebSocket: review
@@ -87,16 +87,16 @@ one job, and rewrite the docs around the resulting surface.
 
 ## MCP (with the devtools platform)
 
-Decided 2026-11-16: Owlky Go gets MCP support when development of the devtools platform starts, in
+Decided 2026-11-16: Owlkei Go gets MCP support when development of the devtools platform starts, in
 three forms:
 
-1. **A developer MCP:** tools AI coding agents query to write correct Owlky Go code (concepts, the
+1. **A developer MCP:** tools AI coding agents query to write correct Owlkei Go code (concepts, the
    route DSL, injectable types, examples, scaffolding of modules / controllers / guards, a handler
    signature check, explanations of bootstrap panics). Lives outside the framework's code.
 2. **A runtime MCP module** (for example `modules/mcp`, `app.EnableMCP()`): an app's routes exposed as
    MCP tools, with input schemas from the DTOs (the devtool snapshot already computes them), the
    Streamable HTTP transport, auth through guards, nothing exposed unless chosen, rate limits.
-   Implemented by Owlky Go itself (JSON-RPC over HTTP), to keep `go.mod` free of dependencies.
+   Implemented by Owlkei Go itself (JSON-RPC over HTTP), to keep `go.mod` free of dependencies.
 3. **A devtools MCP:** AI agents read a running app through the devtools platform (routes, DI graph,
    traces of failed requests).
 
@@ -147,7 +147,7 @@ interceptor, not a middleware.
 
 ## Real app phase: court booking SaaS (after the 0.x alpha)
 
-Decided 2026-11-17: a real app built with Owlky Go + Owlky (no devtools needed yet), to validate the
+Decided 2026-11-17: a real app built with Owlkei Go + Owlkei (no devtools needed yet), to validate the
 framework from the user's side before 1.0. Idea: booking for pickleball / badminton / mini football
 courts (SaaS for court owners). Keep it small: one court type, one payment gateway, one 1 vCPU VPS.
 
@@ -163,11 +163,11 @@ courts (SaaS for court owners). Keep it small: one court type, one payment gatew
 
 ## Server-rendered HTML controllers (before the first release)
 
-Priority: one of the two focuses of Owlky Go (CLAUDE.md › Product principles). Planned right after
+Priority: one of the two focuses of Owlkei Go (CLAUDE.md › Product principles). Planned right after
 the public API review (which must design the render route kind), before the 0.x alpha; the court
 booking app (real app phase) is built with it.
 
-Decided 2026-11-17: Owlky Go renders HTML pages on the server, so an app built with Owlky's
+Decided 2026-11-17: Owlkei Go renders HTML pages on the server, so an app built with Owlkei's
 framework-free HTML version needs no separate JSON API plus a React client (cheaper on small
 machines: no client bundle, no second app). Details are discussed when the roadmap starts. Known
 points to cover:
@@ -176,13 +176,13 @@ points to cover:
   public API review must leave room for it).
 - `html/template` (contextual autoescaping) as the engine; layouts and partials; templates from an
   `embed.FS` in production, reloaded from disk in development; parsed once and cached.
-- Owlky's HTML snippets and CDN assets (`owlky.css`, the loader) used directly in templates; the CSP
+- Owlkei's HTML snippets and CDN assets (`owlkei.css`, the loader) used directly in templates; the CSP
   from `helmet` must allow them (nonces or hashes for inline scripts).
 - Errors and 404 pages as HTML for page routes, JSON for API routes.
 - Forms: `csrf` (0005) already protects them; validation errors rendered back into the form.
 - Middleware refusals (`csrf` 403, `hostcheck` 421, `loadshed` 503) run before routing, so they
   pick HTML or JSON from the `Accept` header, not from the route.
-- CSP: per-request nonces for inline scripts; Owlky's assets embedded in the binary and served from
+- CSP: per-request nonces for inline scripts; Owlkei's assets embedded in the binary and served from
   the app's own origin (`'self'`).
 
 ## WebSocket bugs found while documenting (roadmap 0005, for 0006)
@@ -233,14 +233,14 @@ Proposals the maintainer asked to keep for later (not decided):
 - **One mode switch.** `OK_ENV=development` turns on, together, the pretty log, template reload
   from disk and the devtools; unset means production. Replaces per-feature switches
   (`IsReload`, the log format, the pages example's `PAGES_DEV`).
-- **Enable from the controllers.** A `owlky.WS` controller opens `/ws` without `EnableWS` (the
+- **Enable from the controllers.** A `owlkei.WS` controller opens `/ws` without `EnableWS` (the
   render side cannot do the same: `//go:embed` must stay in the app). Weigh against "one obvious way".
 - **`Listen()` without arguments** reads `PORT` (default 3000), as PaaS platforms expect.
-- **`AppOptions` from the environment (decided 2026-11-19).** Opt-in `owlky.OptionsFromEnv()` returns
+- **`AppOptions` from the environment (decided 2026-11-19).** Opt-in `owlkei.OptionsFromEnv()` returns
   an `AppOptions` filled from the environment and `.env` (every group non-nil, "off" when no variable
   set it); every field that is plain data binds from a variable.
-  - **Names (decided 2026-11-19):** `OK_` (the same `ok` as Owlky UI's `--ok-*` and `data-ok-*`; the
-    docs say `OK_` is Owlky's), then the field path, each `.` written `__`, each field in upper snake
+  - **Names (decided 2026-11-19):** `OK_` (the same `ok` as Owlkei UI's `--ok-*` and `data-ok-*`; the
+    docs say `OK_` is Owlkei's), then the field path, each `.` written `__`, each field in upper snake
     case: `HTTP.MaxBodyBytes` → `OK_HTTP__MAX_BODY_BYTES`, `Server.TLS.CertFile` →
     `OK_SERVER__TLS__CERT_FILE`, `Origins` → `OK_ORIGINS`. Readers derive the name from `AppOptions`
     without the docs, and it splits back one way only. Only letters, digits and `_`: a `.` or `-` can't
@@ -259,20 +259,20 @@ Proposals the maintainer asked to keep for later (not decided):
     `OK_HOSTS`?"). The panic names the variable, the element, the expected type and the `.env` line,
     never a secret's value. Version skew (a variable a newer release added) fails the same way, on
     purpose. An empty value (`OK_ORIGINS=`) is an error too ("remove the variable to unset it").
-  - **Sizes (decided):** a type `owlky.ByteSize` (`int64` underneath, like `time.Duration`) for every size
+  - **Sizes (decided):** a type `owlkei.ByteSize` (`int64` underneath, like `time.Duration`) for every size
     field (`HTTP.MaxBodyBytes`, later WebSocket message sizes and upload limits), chosen by type, not by
     a struct tag. It accepts a plain number of bytes and units with their standard meaning, as
     Kubernetes does: `KB` / `MB` / `GB` = 1000ⁿ, `KiB` / `MiB` / `GiB` = 1024ⁿ; a lower-case `b` (bits)
-    is refused. Constants for code: `owlky.KB`, `owlky.MB`, `owlky.KiB`, `owlky.MiB`… (`10 * owlky.MiB`).
+    is refused. Constants for code: `owlkei.KB`, `owlkei.MB`, `owlkei.KiB`, `owlkei.MiB`… (`10 * owlkei.MiB`).
     An exported addition, justified by the size fields across groups.
   - **Sources and precedence (decided: code wins):** environment > `.env` fill the options first, then
     code assigns after them, so code wins by statement order, explicit `false` / `0` / `""` included,
     with no pointer fields:
     ```go
-    opts := owlky.OptionsFromEnv()
+    opts := owlkei.OptionsFromEnv()
     opts.HTTP.Compress = false
-    opts.Render = &owlky.RenderOptions{FS: web}
-    app := owlky.New(opts)
+    opts.Render = &owlkei.RenderOptions{FS: web}
+    app := owlkei.New(opts)
     ```
     Without `OptionsFromEnv()` nothing is read. The real environment beats `.env`. `.env` only: standard syntax (Docker Compose, Kubernetes,
     systemd and IDEs read the same file), no YAML / TOML / JSON (one more source and a parser; JSON
@@ -302,27 +302,27 @@ Proposals the maintainer asked to keep for later (not decided):
 
 Layouts don't repeat HTML, but every page handler must still put the data its header and sidebar need
 (current user, active menu item) into its `View.Data`. Proposal: `RenderOptions.Layout func(c
-owlky.HTTPContext) any`, called once per render; the layout receives `.Layout` and `.Page` and places
+owlkei.HTTPContext) any`, called once per render; the layout receives `.Layout` and `.Page` and places
 the page with `{{template "content" .Page}}`; `error.html` gets the same `.Layout`. Changes design
 0018's rule that page and layout share `.`. Belongs with the authentication roadmap (the current user).
 
-## Owlky Go CLI and editor tools (decided 2026-11-18)
+## Owlkei Go CLI and editor tools (decided 2026-11-18)
 
-Owlky Go gets a command-line tool. Commands discussed so far:
-- **`owlky routes [packages]`**: the route table of an app (method, path, page or API, handler,
+Owlkei Go gets a command-line tool. Commands discussed so far:
+- **`owlkei routes [packages]`**: the route table of an app (method, path, page or API, handler,
   file and line, WebSocket events), computed with the runtime's own parser (`ParseFuncNameToURL`,
   `ParseWSFuncNameToEvent`), never a re-implementation. `--json` for tools; usable in CI to catch
   route conflicts or diff routes between branches.
-- **`owlky routes -w`** (optional, `go:generate`): writes a `// GET /path` comment above each
+- **`owlkei routes -w`** (optional, `go:generate`): writes a `// GET /path` comment above each
   handler, with `-check` for CI. Only if routes in the source are wanted; the editor tool below is
   preferred because it never goes stale.
 - **VS Code extension**: a CodeLens or inlay hint above each handler with its method and path,
-  updated as the name is typed, fed by `owlky routes --json`. `gopls` has no custom CodeLens, so
+  updated as the name is typed, fed by `owlkei routes --json`. `gopls` has no custom CodeLens, so
   an extension is the only way. JetBrains later, if needed.
-- **`owlky new`**: scaffolds a project (module, controller, provider; for SSR the `web/`
+- **`owlkei new`**: scaffolds a project (module, controller, provider; for SSR the `web/`
   directory with `layout.html`, `error.html` and one page with its controller). The runtime never
   creates files (design 0018 amendment 1).
-- Later: the local devtools binary (`owlky devtools`) discussed for the devtools platform.
+- Later: the local devtools binary (`owlkei devtools`) discussed for the devtools platform.
 
 ## Route DSL changes
 
@@ -358,13 +358,13 @@ what fails) for:
 
 ## TechEmpower benchmarks (owner, 2026-11-19: after the storage roadmap)
 
-The owner wants to know where Owlky Go stands, and to use a good result in its marketing. Estimate
+The owner wants to know where Owlkei Go stands, and to use a good result in its marketing. Estimate
 today (not measured): with the `net/http` group (Gin, Echo, Chi), mid-table on plaintext and JSON,
 upper half once a database is involved; our own load tests (0006) put it level with or ahead of
 Gin / Echo / Chi, 61-67 % of Fiber on 1-2 cores and ahead of Fiber at 12 cores.
 
-- **When:** after the storage roadmap, so the database tests use Owlky Go's own SQL module.
-- **What:** a TechEmpower implementation of Owlky Go for the six tests (plaintext, JSON, single
+- **When:** after the storage roadmap, so the database tests use Owlkei Go's own SQL module.
+- **What:** a TechEmpower implementation of Owlkei Go for the six tests (plaintext, JSON, single
   query, multiple queries, fortunes, updates) with PostgreSQL, written as a user would write it
   (`AppOptions`, controllers, providers, `RENDER_` for fortunes): classified **Realistic**, no
   hand-written HTTP parser, no benchmark-only shortcuts; log off as the other entries do.
@@ -380,20 +380,20 @@ Gin / Echo / Chi, 61-67 % of Fiber on 1-2 cores and ahead of Fiber at 12 cores.
 ## Release hygiene (owner, 2026-11-20: before 0.1)
 
 The repository is public, so everything committed is already published: `CLAUDE.md`, `.claude/`
-(agents and commands), `.owlky/` (the AI knowledge base), `docs/roadmap/`, `docs/design/`,
+(agents and commands), `.owlkei/` (the AI knowledge base), `docs/roadmap/`, `docs/design/`,
 `docs/review/`. Decided: keep them (transparency, and they help contributors who work with AI agents);
 Claude Code memory lives in the owner's home directory and is never part of the repository;
 `CLAUDE.local.md` and `.claude/settings.local.json` stay ignored. Before 0.1:
-1. **No personal data or local paths** in committed files, checked in CI (like Owlky UI's
-   `check:names`). Fixed 2026-11-20: a local path in `.owlky/README.md`. Open: `package.json`'s author
+1. **No personal data or local paths** in committed files, checked in CI (like Owlkei UI's
+   `check:names`). Fixed 2026-11-20: a local path in `.owlkei/README.md`. Open: `package.json`'s author
    email (the owner decides: keep, or a GitHub `noreply` address).
-2. **`AGENTS.md`** pointing at `CLAUDE.md` and `.owlky/`, so every AI tool (Codex, Cursor, Claude Code…)
+2. **`AGENTS.md`** pointing at `CLAUDE.md` and `.owlkei/`, so every AI tool (Codex, Cursor, Claude Code…)
    finds the conventions.
 3. **Roadmap wording:** keep the decisions and their reasons; remove internal notes a reader can't
    follow.
 4. **README › Contributing:** the knowledge base, `make check`, and the workflow commands (`/roadmap`,
    `/feature`, `/implement`).
-5. **Know that `go get` downloads the whole module** (`docs/`, `.claude/`, `.owlky/` included) into
+5. **Know that `go get` downloads the whole module** (`docs/`, `.claude/`, `.owlkei/` included) into
    the user's module cache; small, so acceptable.
 
 ## Accurate trace timings (found 2026-11-19)
@@ -425,18 +425,18 @@ configuration. Comparable frameworks: Spring Security and Rails own their securi
 configure it; ASP.NET Core and Django leave the order to users and pay for it in docs and bugs.
 
 ```go
-app := owlky.New(&owlky.AppOptions{
-	Proxy:   &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+app := owlkei.New(&owlkei.AppOptions{
+	Proxy:   &owlkei.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 	Hosts:   []string{"shop.example.com"},
 	Origins: []string{"https://shop.example.com"}, // CORS, CSRF and the WebSocket Origin check
-	HTTP:    &owlky.HTTPOptions{MaxBodyBytes: 1 << 20, Compress: true, HTTPSRedirect: true},
-	Server: &owlky.ServerOptions{
+	HTTP:    &owlkei.HTTPOptions{MaxBodyBytes: 1 << 20, Compress: true, HTTPSRedirect: true},
+	Server: &owlkei.ServerOptions{
 		ShutdownTimeout: 15 * time.Second,
-		TLS:             &owlky.TLSOptions{CertFile: "cert.pem", KeyFile: "key.pem"},
+		TLS:             &owlkei.TLSOptions{CertFile: "cert.pem", KeyFile: "key.pem"},
 	},
-	Render:         &owlky.RenderOptions{FS: web},
-	WS:             &owlky.WSOptions{Path: "ws", MaxConnectionsPerIP: 20},
-	Versioning:     &owlky.VersioningOptions{Type: owlky.VersioningHeader},
+	Render:         &owlkei.RenderOptions{FS: web},
+	WS:             &owlkei.WSOptions{Path: "ws", MaxConnectionsPerIP: 20},
+	Versioning:     &owlkei.VersioningOptions{Type: owlkei.VersioningHeader},
 	Logger:         log.NewLog(&log.LogOptions{Format: log.FormatJSON}),
 	AccessLog:      true,
 	StartupTimeout: 30 * time.Second,
@@ -448,12 +448,12 @@ app.Listen(443) // TLS comes from AppOptions.Server.TLS; ListenTLS is gone
 ```
 
 Agreed with the owner (2026-11-19):
-- `owlky.New(opts *AppOptions)`, `nil` = safe defaults (D-032 naming: `XxxOptions`, never `Config`;
-  `AppOptions` because it configures `owlky.App`). Replaced: `SetLogger`, `SetStartupTimeout`,
+- `owlkei.New(opts *AppOptions)`, `nil` = safe defaults (D-032 naming: `XxxOptions`, never `Config`;
+  `AppOptions` because it configures `owlkei.App`). Replaced: `SetLogger`, `SetStartupTimeout`,
   `EnableAccessLog`, `EnableDevtool`, `EnableRender`, `EnableVersioning`, `EnableWS`, the `ServerOptions`
   parameter of `Listen` / `Serve`, `ListenTLS`. `MaxRequestBodyBytes` moves to `HTTP.MaxBodyBytes` so it
   also applies when `App` runs inside the user's own `http.Server`. `Server` (shutdown, TLS, H2C) only
-  applies when Owlky serves; ignored with a log line otherwise.
+  applies when Owlkei serves; ignored with a log line otherwise.
 - **No public built-in middlewares.** The eight (`loadshed`, `proxy`, `hostcheck`, `httpsredirect`,
   `helmet`, `cors`, `csrf`, `compress`) move to `internal/` and become fixed-order stages built at `New`
   from `AppOptions`: loadshed → proxy → hostcheck → httpsredirect → security headers → CORS → CSRF →
@@ -471,11 +471,11 @@ Agreed with the owner (2026-11-19):
   of your own. `Create` (wire the app) and `Listen` (serve) stay separate: tests and embedding use
   `Create` + `ServeHTTP` with no port opened, `Listen` returns serve errors as an `error`, and a
   blocking `Create` would stop the code after it (NestJS splits `create()` and `listen()` too). No
-  one-line `owlky.Run(opts, module)`: a second way.
+  one-line `owlkei.Run(opts, module)`: a second way.
 - **Defaults (2026-11-19): every stage is off** unless configured, in both roadmaps. Safety comes from
   the docs (a Configuration page that opens with a production checklist: one `AppOptions` block to
   copy), `examples/05-production`, `llms.txt` / MCP returning that block, and later the CLI templates
-  (`owlky new`). One startup warning, no behavior change: `Warn` `SecurityCheck` when the app has
+  (`owlkei new`). One startup warning, no behavior change: `Warn` `SecurityCheck` when the app has
   `SUBMIT_` routes without CSRF, or HTML pages without security headers, with the docs link; silenced
   by turning the protection off explicitly. This changes the product principle "Safe defaults" in
   CLAUDE.md to "Explicit protection: nothing runs unless configured; one `AppOptions` block; the CLI's
@@ -613,7 +613,7 @@ Also in scope:
 - Found 2026-11-18 (pages by route, step 17): a file in `public/` whose name holds `{` or `*` becomes a
   route parameter or a wildcard, so a file name can widen what the public route matches. Refuse such
   names at `Create()` (or escape them) in the security roadmap.
-- **Injection review (raised by the maintainer, 2026-11-18).** Owlky Go has no database layer yet, so
+- **Injection review (raised by the maintainer, 2026-11-18).** Owlkei Go has no database layer yet, so
   SQL injection is a rule for the storage roadmap: its API takes parameters only (placeholders through
   `database/sql`), never a query built by string concatenation, and offers no raw-string escape helper;
   `gosec` (G201/G202, already used by `go-security` audits) runs in CI. No input-sanitizing
@@ -633,7 +633,7 @@ Taken by roadmap 0008 (step 20, 2026-11-18: after its review, before its `make c
 
 ### Plan
 
-The rule is in `.owlky/conventions.md` › Tests › Files. Move every test into the `_test.go` of the
+The rule is in `.owlkei/conventions.md` › Tests › Files. Move every test into the `_test.go` of the
 code file that implements it (`internal/core`: 14 `create_*_test.go` → `app_test.go` /
 `container_test.go`; `http_page_*_test.go` → `http_page_test.go`; `http_page_error_test.go` and
 `http_error_page_test.go` → `http_error_test.go`; root `surface_*_test.go` → `surface_test.go`; the same
@@ -649,8 +649,8 @@ count of tests and benchmarks per package is the same before and after (`go test
 ## Startup and dependency lifecycle (discussed 2026-11-18, first part of the storage roadmap)
 
 Verified on `402b10f`..HEAD (`internal/core/container.go` `callModuleFunc`, `scanGlobals`): a module
-factory (`func(deps...) owlky.Module`, passed to `Imports`) gets its parameters only from global
-providers (plus `log.Logger` and `owlky.Publisher`). A global from a static module is found whatever its
+factory (`func(deps...) owlkei.Module`, passed to `Imports`) gets its parameters only from global
+providers (plus `log.Logger` and `owlkei.Publisher`). A global from a static module is found whatever its
 position or depth; a provider of a non-global sibling module panics `can't resolve argument`; a global
 provided by a module that another factory returns is found only if that factory ran first (order of
 `Imports`). Factories and `OnInit` run sequentially with no deadline: a dependency that never answers
@@ -658,11 +658,11 @@ provided by a module that another factory returns is found only if that factory 
 
 Agreed with the owner (design with the storage roadmap):
 
-1. **Names:** **Module** (`ModuleBuilder()…Build()`) and **Module factory** (`func(deps...) owlky.Module`).
+1. **Names:** **Module** (`ModuleBuilder()…Build()`) and **Module factory** (`func(deps...) owlkei.Module`).
    **Global** is a property of either (`IsGlobal`) and **async** is how it is imported (`AsyncImports`,
    item 5): neither is a kind. `Register…` is only a function name a module author picks. Rename the
    internal `isDynamicModule` / `dynamicModules` / `callModuleFunc`; one wording in README, CLAUDE.md and
-   `.owlky/`.
+   `.owlkei/`.
 2. **Factory scope:** a factory resolves providers from its siblings in the same `Imports`, not only
    globals.
 3. **No order dependency:** factories run in dependency order, whatever their position in `Imports`; a
@@ -713,7 +713,7 @@ Agreed with the owner (design with the storage roadmap):
      `publish`;
    - **docs:** this lifecycle gets a detailed section in the README (a timeline of `Create()`, the
      background and shutdown; the states; what runs when; the two refusals above; the difference from
-     NestJS), with runnable examples, plus `.owlky/` and CLAUDE.md.
+     NestJS), with runnable examples, plus `.owlkei/` and CLAUDE.md.
 6. **Readiness propagates through the module graph** (imports and injected providers): a module is ready
    only when every async module it depends on is ready, and a failure propagates (`sql` failed → `user`
    → `booking` not ready; a `booking` that only needs `redis` works). Per module first; per controller
@@ -726,7 +726,7 @@ Agreed with the owner (design with the storage roadmap):
 
 Nice to have, later (with the health check and the circuit breaker):
 
-- **Health check:** `app.EnableHealth(nil | &owlky.HealthOptions{…})`; `/health/live` always `200`
+- **Health check:** `app.EnableHealth(nil | &owlkei.HealthOptions{…})`; `/health/live` always `200`
   (never checks a dependency); `/health/ready` `200` when the static modules are up, `503` while draining
   after SIGTERM; a minimal body (`status`, `degraded`), per-module detail opt-in, never error text (R24);
   answered before the middlewares and guards except `proxy` (goes into the security roadmap as a

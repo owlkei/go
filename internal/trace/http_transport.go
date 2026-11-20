@@ -3,7 +3,7 @@ package trace
 import (
 	"net/http"
 
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 const traceparentHeader = "Traceparent"

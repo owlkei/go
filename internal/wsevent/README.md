@@ -1,6 +1,6 @@
 # WSEvent
 
-Internal package: applications declare WebSocket events with `SUBSCRIBE_…` methods on a controller that embeds `owlky.WS` instead.
+Internal package: applications declare WebSocket events with `SUBSCRIBE_…` methods on a controller that embeds `owlkei.WS` instead.
 
 *Package `wsevent` is the WebSocket event table: it maps each event pattern of the app to its handler and handshake middlewares, and finds the handler for a topic a client subscribes or publishes to.*
 

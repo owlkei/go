@@ -1,8 +1,8 @@
 package core
 
 import (
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type globalHTTPExceptionFilter struct {

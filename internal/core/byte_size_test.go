@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 const byteSizeHint = "is not a size: write bytes or a number with KB, MB, GB (1000ⁿ) or KiB, MiB, GiB (1024ⁿ)"

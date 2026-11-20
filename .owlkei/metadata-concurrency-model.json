@@ -1,6 +1,6 @@
 {
   "format": "ai-metadata-v1",
-  "title": "Owlky Go Concurrency Model",
+  "title": "Owlkei Go Concurrency Model",
   "purpose": "Document thread safety guarantees and race conditions",
   "http_request_model": {
     "concurrency_level": "each request is independent",
@@ -79,7 +79,7 @@
       "thread_safe": true,
       "synchronization": "status and attempts are atomics; settle is first-call-wins; a gated module's routes and events open by one atomic.Pointer Store of a fully built table (the happens-before edge); lock order wireMu → mu, never held while user code runs except wireMu around OnInit / NewProvider / NewController / OnReady; a stopping flag under mu stops wiring at shutdown"
     },
-    "owlky.Retry": {
+    "owlkei.Retry": {
       "description": "Retry helper for module factories (internal/core/retry.go)",
       "access": "runs on the caller's goroutine",
       "thread_safe": true,

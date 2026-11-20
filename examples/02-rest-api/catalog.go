@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type Book struct {
@@ -15,7 +15,7 @@ type Book struct {
 	Year   int    `json:"year"`
 }
 
-// Catalog keeps the library's books in memory. Owlky Go injects providers by value, so the
+// Catalog keeps the library's books in memory. Owlkei Go injects providers by value, so the
 // shelf that every copy shares sits behind a pointer.
 type Catalog struct {
 	Shelf *shelf
@@ -34,7 +34,7 @@ func NewCatalog() Catalog {
 	return c
 }
 
-func (c Catalog) NewProvider() owlky.Provider {
+func (c Catalog) NewProvider() owlkei.Provider {
 	return c
 }
 

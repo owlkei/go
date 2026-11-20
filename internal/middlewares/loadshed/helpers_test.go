@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/httphook"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/httphook"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 const (

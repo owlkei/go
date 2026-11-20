@@ -3,15 +3,15 @@ package httpsredirect_test
 import (
 	"crypto/tls"
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/httpsredirect"
+	. "go.owlkei.com/owlkei/internal/middlewares/httpsredirect"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/middlewares/proxy"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/middlewares/proxy"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestHTTPSRedirect_HTTPS_Passes(t *testing.T) {

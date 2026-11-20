@@ -1,11 +1,11 @@
-package owlky
+package owlkei
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestTraceTransport_DelegatesToTrace(t *testing.T) {

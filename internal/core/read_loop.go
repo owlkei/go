@@ -5,13 +5,13 @@ import (
 	"reflect"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/memorybroker"
-	ptrn "go.owlky.com/owlky/internal/pattern"
-	"go.owlky.com/owlky/internal/wsevent"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/memorybroker"
+	ptrn "go.owlkei.com/owlkei/internal/pattern"
+	"go.owlkei.com/owlkei/internal/wsevent"
 	"golang.org/x/net/websocket"
 )
 

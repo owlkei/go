@@ -1,8 +1,8 @@
 # Core
 
-Internal package: applications use `owlky.New(opts)`, `owlky.OptionsFromEnv()`, `owlky.ModuleBuilder()` and the root package's `App`, `AppOptions` (with its groups), `Module`, `Controller` and `Provider` instead.
+Internal package: applications use `owlkei.New(opts)`, `owlkei.OptionsFromEnv()`, `owlkei.ModuleBuilder()` and the root package's `App`, `AppOptions` (with its groups), `Module`, `Controller` and `Provider` instead.
 
-*Package `core` is the dependency injection container and the server of `Owlky Go`: it builds the module tree, injects providers into controllers, plans every handler's arguments once at `Create()` and serves HTTP and WebSocket requests through the middleware, guard, interceptor, handler and exception filter pipeline.*
+*Package `core` is the dependency injection container and the server of `Owlkei Go`: it builds the module tree, injects providers into controllers, plans every handler's arguments once at `Create()` and serves HTTP and WebSocket requests through the middleware, guard, interceptor, handler and exception filter pipeline.*
 
 - [Core](#core)
   - [Key Features](#key-features)
@@ -77,9 +77,9 @@ Internal package: applications use `owlky.New(opts)`, `owlky.OptionsFromEnv()`, 
 package main
 
 import (
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type GreetingService struct{}
@@ -270,13 +270,13 @@ func (m *ModuleBuilder) PathStyle(style common.PathStyle) *ModuleBuilder
 func (m *ModuleBuilder) Build() *Module
 ```
 
-`NewModuleBuilder()` starts a module (the root package's `owlky.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `AsyncImports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
+`NewModuleBuilder()` starts a module (the root package's `owlkei.ModuleBuilder()` calls it). Each call returns a new builder. `Imports`, `AsyncImports`, `Providers` and `Controllers` append to the module's lists and return the builder, so calls can be chained and repeated. `PathStyle` sets how the resource words of the module's route names are joined (see [PathStyle](#pathstyle)). `Build()` returns the `*Module`.
 
 #### Parameters
 - `Imports`, `AsyncImports`: `...any`, each a `*Module` or a module factory of one of the three shapes in [Module factories](#module-factories).
 - `Providers`: `...Provider`, provider values (see [Provider and Controller](#provider-and-controller)).
 - `Controllers`: `...Controller`, controller values.
-- `PathStyle`: `common.PathStyleKebab` or `common.PathStyleAsWritten` (`owlky.PathStyleKebab`, `owlky.PathStyleAsWritten`).
+- `PathStyle`: `common.PathStyleKebab` or `common.PathStyleAsWritten` (`owlkei.PathStyleKebab`, `owlkei.PathStyleAsWritten`).
 
 #### Returns
 - `NewModuleBuilder`: a new `*ModuleBuilder`. `Imports`, `AsyncImports`, `Providers`, `Controllers`, `PathStyle`: the same builder.
@@ -296,11 +296,11 @@ var AppModule = core.NewModuleBuilder().
 ```
 
 #### Rules
-- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a owlky.Module or a module factory: func(deps...) owlky.Module, func(deps...) (owlky.Module, error) or func(ctx context.Context, deps...) (owlky.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`). The check is by `reflect.Type`: a nil entry, a variadic func, `context.Context` anywhere but first, a `ctx` func without the error result and three results are refused.
+- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a owlkei.Module or a module factory: func(deps...) owlkei.Module, func(deps...) (owlkei.Module, error) or func(ctx context.Context, deps...) (owlkei.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`). The check is by `reflect.Type`: a nil entry, a variadic func, `context.Context` anywhere but first, a `ctx` func without the error result and three results are refused.
 - The same entry (the same `*Module`, or the same function) in both lists of one builder panics `invalid module: '<label>' is in both Imports and AsyncImports` at `Build()`; listed with `Imports` by one module and with `AsyncImports` by another, it panics `invalid module: '<label>' is imported with Imports by '<x>' and with AsyncImports by '<y>'` at `Create()`.
 - `Name` is `<package>.<variable>` of the variable the module is assigned to (a `var X = func() *core.Module {…}` or a `var X = factory()` included), else `<package>.<function>` of the function that calls `Build`. A module built as an argument of `Imports` gets its own factory's name, never the outer variable's.
 - Chained calls accumulate: `Providers(p1).Providers(p2)` lists both.
-- `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten` at the call. Called twice, the last call wins.
+- `PathStyle` with a value other than the two constants (`PathStyle(0)`, `PathStyle(9)`) panics `invalid module: PathStyle needs owlkei.PathStyleKebab or owlkei.PathStyleAsWritten` at the call. Called twice, the last call wins.
 
 ### PathStyle
 
@@ -383,12 +383,12 @@ type RetryOptions struct {
 func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context) error) error
 ```
 
-`Retry` (the root package's `owlky.Retry`) calls `fn(ctx)` until it returns `nil`. The wait before attempt `n+1` is `min(MaxDelay, InitialDelay × 2^(n-1))`, then a uniform random time in `[d/2, d]`. Defaults: `InitialDelay` 500 ms, `MaxDelay` 30 s (zero or less means the default), `MaxAttempts` 0 (until `ctx` is done). It starts no goroutine (one `time.Timer`, stopped on return).
+`Retry` (the root package's `owlkei.Retry`) calls `fn(ctx)` until it returns `nil`. The wait before attempt `n+1` is `min(MaxDelay, InitialDelay × 2^(n-1))`, then a uniform random time in `[d/2, d]`. Defaults: `InitialDelay` 500 ms, `MaxDelay` 30 s (zero or less means the default), `MaxAttempts` 0 (until `ctx` is done). It starts no goroutine (one `time.Timer`, stopped on return).
 
 #### Rules
 - A nil error returns `nil` at once; attempts count from 1.
-- `ctx` done before or during a wait, or after a failed attempt, returns `owlky: retry stopped after <n> attempts: …` wrapping `errors.Join(ctx.Err(), lastErr)`; `fn` is not called when `ctx` is already done (`n` = 0).
-- `MaxAttempts > 0` reached returns `owlky: retry gave up after <n> attempts: <lastErr>` without waiting.
+- `ctx` done before or during a wait, or after a failed attempt, returns `owlkei: retry stopped after <n> attempts: …` wrapping `errors.Join(ctx.Err(), lastErr)`; `fn` is not called when `ctx` is already done (`n` = 0).
+- `MaxAttempts > 0` reached returns `owlkei: retry gave up after <n> attempts: <lastErr>` without waiting.
 - `nil` options are the defaults; a nil `fn` panics `invalid retry: Retry needs a function`; a panic in `fn` is not recovered.
 - With the `ctx` of an `AsyncImports` factory, each failed attempt adds to the entry's `attempts`, stores `last_error`, sets the next attempt time for `Retry-After` and logs `Warn` `ModuleRetry` (`module`, `attempt`, `error`, `next`). With any other `ctx` it only retries.
 
@@ -600,10 +600,10 @@ The serving calls return an error, and never fall back to plain HTTP, when:
 
 | Case | Error |
 |---|---|
-| Called before `Create` | `owlky: Create must be called before serving` |
-| The app is already serving | `owlky: app is already serving` |
-| The app has stopped | `owlky: app is stopped` |
-| The port can't be bound (in use, out of range) | `owlky: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
+| Called before `Create` | `owlkei: Create must be called before serving` |
+| The app is already serving | `owlkei: app is already serving` |
+| The app has stopped | `owlkei: app is stopped` |
+| The port can't be bound (in use, out of range) | `owlkei: listen on :<port>: <err>`, wrapping `net.Listen`'s error |
 
 In these cases nothing is logged, no hook runs, a listener passed to `Serve` is left open, and the port stays free. After a bind error the app can be served again.
 
@@ -628,9 +628,9 @@ A serving call shuts down on `SIGINT`, `SIGTERM` or `app.Stop()`, and logs `Shut
 3. Running requests finish normally, for at most `ShutdownTimeout`. When it passes, their connections are closed (each request's `Context()` is cancelled).
 4. The app waits for the `AsyncImports` goroutines until `ShutdownTimeout` has passed since shutdown began; one still running is logged `ModuleShutdownTimeout` and abandoned. Then the modules' `OnShutdown` hooks run until the same deadline (at least 100 ms when the drain used it all; hooks still running are logged `ShutdownHooksTimeout` and abandoned), only for `ready` modules, after the last request returned, once each, in the reverse of the initialization order (root module first, see [Hooks](#hooks)). A hook that panics is logged (`OnShutdownPanic` with `module` and `panic`) and the other hooks still run.
 5. The access log stops, a pending count of suppressed panic stacks is logged, and the log's stdout pipeline is flushed for at most 2 seconds: the lines of the last requests and of the hooks are written when the serving call returns. Lines logged after that are synchronous.
-6. The serving call returns `nil`, `owlky: shutdown timed out after <timeout>` when step 3 timed out, or `owlky: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
+6. The serving call returns `nil`, `owlkei: shutdown timed out after <timeout>` when step 3 timed out, or `owlkei: serve: <err>` when the server stopped by itself (the listener failed; the hooks run in that case too).
 
-After that the app is stopped: a new serving call returns `owlky: app is stopped`, while `ServeHTTP` still answers.
+After that the app is stopped: a new serving call returns `owlkei: app is stopped`, while `ServeHTTP` still answers.
 
 `Stop()` is safe from any goroutine and any number of times. On a serving app it runs the shutdown above and returns when the hooks have finished. On an app that is not serving, it runs the hooks once and marks the app stopped. The hooks run once per app: every later call waits until the hooks have finished, from any goroutine, and only a call made from inside an `OnShutdown` hook returns at once. Called from a request handler, `Stop()` waits for that same request, so call it as `go app.Stop()` there.
 
@@ -675,7 +675,7 @@ server := &http.Server{Addr: ":8080", Handler: app, ReadHeaderTimeout: 10 * time
 
 Caveats:
 
-- No listener, timeouts or signal handling come from Owlky Go: set them on your server.
+- No listener, timeouts or signal handling come from Owlkei Go: set them on your server.
 - The body cap is `HTTP.MaxBodyBytes` (10 MiB by default); `AppOptions.Server` has no effect.
 - No graceful shutdown: call `server.Shutdown`, then `app.Stop()` to run the `OnShutdown` hooks and flush the log. Log lines are asynchronous from `Create` on, so call `app.Stop()` before the process exits.
 
@@ -872,9 +872,9 @@ package main
 import (
 	"embed"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 //go:embed web
@@ -1062,7 +1062,7 @@ WS handlers reply with their last result as the message.
 
 Each app has its own `trace.Tracer`. It is internal: `AppOptions.IsAccessLog` adds the only listener, and there is no public way to add another. With that listener, each pipe argument emits a `pipe` event (name: the parameter type, transport `http` or `ws`, the time its `Transform` took), also when `Transform` panics or returns a wrong value. Each HTTP handler call emits a `handler` event (name: the method name, `SERVE_…` routes included) whose duration excludes the pipes; it is not emitted when an argument failed. WS handlers emit no `handler` event. Without a listener nothing is emitted and no clock is read. Each render of a page or an HTML error page emits a `render` event after the `handler` event and before `complete`: `Name` is the template path without `.html` (`bookings/{id}`, `404`, `4xx`) or `error (built-in)` for the built-in page, `Duration` the time to execute the template and place the nonce, and `Code` 500 when the render failed. A JSON error renders nothing.
 
-Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic), `Code` and, for an HTTP request or handshake, `ClientIP` (as `owlky.ClientIP` resolves it). `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
+Every event carries `ID`, `TraceID`, `SpanID`, `ParentID`, `Stage`, `Name`, `Transport` (`HTTP` or `WS`, on every stage) and `Duration`; the `complete` event also carries `Operation` (the method or the WS message type), `Target` (the URL path without the query string, or the WS topic), `Code` and, for an HTTP request or handshake, `ClientIP` (as `owlkei.ClientIP` resolves it). `Enabled()` is asked once per request: a request that started without a listener emits nothing, exception filter events included.
 
 The events of one request or WebSocket message form a span tree: `complete` is emitted last and is the root (`SpanID == ID`, `ParentID` the incoming `traceparent` parent, `""`, or the connection ID for a WS message); every other stage is a child with a fresh `SpanID` and `ParentID == ID`, in lifecycle order. Span IDs are generated only while a listener exists: without one, a request generates its own ID and nothing else. With `EnableAccessLog()`, the access log is stopped once at shutdown, after the `OnShutdown` hooks, so the lines of the last requests are written before the process exits.
 

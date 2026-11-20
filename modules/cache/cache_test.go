@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestNewMemoryCache_NilUsesDefaults(t *testing.T) {

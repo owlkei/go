@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func BenchmarkGlobalHTTPExceptionFilterFull(b *testing.B) {

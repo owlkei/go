@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/logpipe"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/logpipe"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 func BenchmarkLog_Info_Scalars_JSON(b *testing.B) {

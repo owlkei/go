@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestWSPayload_Bind(t *testing.T) {

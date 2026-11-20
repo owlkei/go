@@ -341,7 +341,7 @@ Sources: Go `net/http.CrossOriginProtection` (Go 1.25+); Fetch Metadata Request 
 OWASP Cheat Sheet "Cross-Site Request Forgery Prevention" › Fetch Metadata; MDN `Sec-Fetch-Site`.
 
 `csrf` wraps the standard library: the decision is `(*http.CrossOriginProtection).Check(r)`, with
-`TrustedOrigins` added through `AddTrustedOrigin`. The Go team maintains the browser table; Owlky Go
+`TrustedOrigins` added through `AddTrustedOrigin`. The Go team maintains the browser table; Owlkei Go
 adds S4 and S5. `SetDenyHandler`, `AddInsecureBypassPattern` and `Handler` are not used.
 
 | # | Method | `Sec-Fetch-Site` | `Origin` | Result |
@@ -769,7 +769,7 @@ TLS-terminating proxy then redirects forever instead of serving over what it thi
 - Docs: a README for each new package and for `internal/httphook`; rewritten READMEs for `csrf`,
   `cors`, `helmet`, `guards/throttler` (with their `README.vi.md`); core README › Request lifecycle
   (hooks are internal: one sentence), Static files, Performance notes; main README production
-  checklist (step 14); `.owlky/request-pipeline.md`, `package-reference.md`,
+  checklist (step 14); `.owlkei/request-pipeline.md`, `package-reference.md`,
   `anti-patterns-gotchas.md` (read the client IP with `proxy.ClientIP`, never from headers).
 
 ## Test plan
@@ -908,7 +908,7 @@ not the screens:
 
 ## Decisions (2026-11-17)
 
-Approved by the user. All open questions answered as recommended (Q1-Q8), with the CSP note: Owlky's HTML snippets carry no inline styles, and apps should serve Owlky's assets from their own origin (`'self'`); per-request nonces for inline scripts come with the server-side rendering roadmap. Reconciled with 0015: the default store evicts by CLOCK (T4, Coordination 2) and the fixed window counts with `Incr` (T3). The user's condition: the public API stays as small and simple as the Product principles require, and every name is documented clearly (the docs will feed a website later).
+Approved by the user. All open questions answered as recommended (Q1-Q8), with the CSP note: Owlkei's HTML snippets carry no inline styles, and apps should serve Owlkei's assets from their own origin (`'self'`); per-request nonces for inline scripts come with the server-side rendering roadmap. Reconciled with 0015: the default store evicts by CLOCK (T4, Coordination 2) and the fixed window counts with `Incr` (T3). The user's condition: the public API stays as small and simple as the Product principles require, and every name is documented clearly (the docs will feed a website later).
 
 ## Revision 2026-11-17: forwarded scheme and host (security M2)
 
@@ -967,7 +967,7 @@ One addition: the field `IsHostForwarded bool` on `proxy.Proxy` (zero value: off
 - Why a boolean and not a set of header flags (ASP.NET): the client IP is the reason to bind
   `proxy`, and the scheme must work by default, so only the host needs a choice.
 - Why no allowlist of hosts on `proxy`: `hostcheck` is that allowlist (one obvious way).
-- The name follows the `Is…` rule of `.owlky/conventions.md` and reads as the operator's
+- The name follows the `Is…` rule of `.owlkei/conventions.md` and reads as the operator's
   statement about the proxies.
 
 No other exported name changes. Unexported: the compiled option gains one boolean; the count helpers
@@ -1022,7 +1022,7 @@ Unchanged: the new boolean is written once in `NewMiddleware` and only read afte
   "Security" with the proxy lines), `middlewares/httpsredirect/README.md` (drop the count
   paragraph), `middlewares/hostcheck/README.md` lines 20 and 106, `middlewares/csrf/README.md` and
   `README.vi.md` (forwarded host only with the option), `internal/tracecontext/README.md`,
-  `.owlky/package-reference.md`, `.owlky/request-pipeline.md`, `.owlky/anti-patterns-gotchas.md`.
+  `.owlkei/package-reference.md`, `.owlkei/request-pipeline.md`, `.owlkei/anti-patterns-gotchas.md`.
 
 ### Builder: changes in `middlewares/proxy/proxy.go`
 1. `Proxy` gains `IsHostForwarded bool`; `compiledProxy` gains `isHostForwarded`, set in
@@ -1504,7 +1504,7 @@ Replaces the "Steering the adaptive limit" row:
 - No exported identifier, option or snapshot field is added.
 - Docs: `middlewares/loadshed/README.md` ("How the limit adapts", "Defaults and where they come
   from", "Rules", "Known limits", "Memory and CPU", "Benchmarks");
-  `.owlky/package-reference.md` › `middlewares/loadshed`.
+  `.owlkei/package-reference.md` › `middlewares/loadshed`.
 
 ### Builder: changes in `middlewares/loadshed`
 1. `adaptive.go`, L8: store sums as `ns >> 6` in `sample` and shift back in `closeWindowLocked`
@@ -1525,7 +1525,7 @@ Replaces the "Steering the adaptive limit" row:
    `finish(elapsed - waited - body time, isProbe)`. Attach it instead of `register` / the waiter
    at the three admission points when the mode is adaptive and the request has a body. It is
    created only after admission. Body time uses `time.Now`, like the queue wait, not `now`.
-6. README and `.owlky/package-reference.md` as "Impact"; the "Known limits" above; the security
+6. README and `.owlkei/package-reference.md` as "Impact"; the "Known limits" above; the security
    table's rows in "Why you need it" or "Rules" wording, not as a threat list.
 7. No change to admission, the queue, the bounds (L7), the snapshot, or fixed mode.
 
@@ -1613,7 +1613,7 @@ and the measurements below.
 
 Measurements: a prototype of each candidate in a copy of the working tree (`git archive HEAD`),
 go1.27.4 darwin/amd64, the shared 12-thread i7-9750H of the earlier revisions. Every
-timing-sensitive run held `/tmp/owlky-heavy.lock` (another architect measured on the same
+timing-sensitive run held `/tmp/owlkei-heavy.lock` (another architect measured on the same
 machine); the machine still carried an editor at about 150 % CPU and a load average of 3.5-5.9, so
 L12's two tightest tests also failed at HEAD in this session (see "Results").
 
@@ -1951,7 +1951,7 @@ Replaces the "Enter" and "Leave" lines of "Concurrency" and adds the probe recor
 - Docs: `middlewares/loadshed/README.md` ("What happens to a request" step 2, "How the limit
   adapts" › Baseline and Probe, "Rules": the queue order, L1's probe sentence, the allocation
   rule, L14 as a measured rule, "Known limits", "Memory and CPU", "Benchmarks");
-  `.owlky/package-reference.md` › `middlewares/loadshed` (probe slots, overlap rule, FIFO fast
+  `.owlkei/package-reference.md` › `middlewares/loadshed` (probe slots, overlap rule, FIFO fast
   path, L14); `Makefile` (`check` runs L14 with L12 and L13).
 
 ### Builder: changes in `middlewares/loadshed`
@@ -1975,7 +1975,7 @@ Replaces the "Enter" and "Leave" lines of "Concurrency" and adds the probe recor
    cap uses the same baseline load as the window. `endProbeLocked` reads the current record.
 6. No change to L7-L10, the window, the snapshot, the probe start condition, fixed mode's limit or
    the public API. `probeAdmitLimit` stays as it is.
-7. README and `.owlky/package-reference.md` as "Impact", the three "Known limits" above, and the
+7. README and `.owlkei/package-reference.md` as "Impact", the three "Known limits" above, and the
    benchmark table rerun at `GOMAXPROCS` 1 and 2.
 8. `Makefile`, target `check`: add `LongHeld` to the loadshed acceptance pattern
    (`'^TestAdaptive_(Stable|NoRefusalBelowCapacity|RecoversWhenHandlerSlows|Steering|LongHeld)_'`).
@@ -2146,7 +2146,7 @@ L14 (c) and (d).
    that has waited longest; a request that arrives at the instant a slot frees may take it before
    a waiter does." Rules: replace the queue-order rule with amended L2's wording; the L14 rule's
    numbers (3 ×, 85 %); the known limit above.
-3. `.owlky/package-reference.md` › `middlewares/loadshed`: "FIFO queue" with the same one-line
+3. `.owlkei/package-reference.md` › `middlewares/loadshed`: "FIFO queue" with the same one-line
    exception; drop "the fast path checks `waiting`" if it was written.
 4. `loadshed_stability_test.go`: in `longHeldRun`, (c) bound `3 * noLoad`, (d) bound
    `0.85 * capacity`; messages as today.

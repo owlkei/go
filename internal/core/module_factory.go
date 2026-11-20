@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 type factoryNode struct {

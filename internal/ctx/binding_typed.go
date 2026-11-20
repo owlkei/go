@@ -3,8 +3,8 @@ package ctx
 import (
 	"reflect"
 
-	"go.owlky.com/owlky/internal/num"
-	"go.owlky.com/owlky/internal/slice"
+	"go.owlkei.com/owlkei/internal/num"
+	"go.owlkei.com/owlkei/internal/slice"
 )
 
 type number interface {

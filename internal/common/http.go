@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 var HTTPOperations = map[string]string{

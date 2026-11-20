@@ -4,7 +4,7 @@ import (
 	"maps"
 	"slices"
 
-	"go.owlky.com/owlky/internal/inspect"
+	"go.owlkei.com/owlkei/internal/inspect"
 )
 
 func init() {

@@ -41,5 +41,7 @@ Dated lines written during the run: deviations from a design, escalations, block
 ```
 
 The framework was called Ginject until roadmap 0010 (2026-11-19) renamed it Owlky Go
-(`go.owlky.com/owlky`). The old name was replaced in every document, history included; the original
-texts are in the git history.
+(`go.owlky.com/owlky`), and Owlky Go until roadmap 0014 (2026-11-21) renamed it Owlkei Go
+(`go.owlkei.com/owlkei`). The old names were replaced in every document, history included, except the
+two roadmaps that describe the renames; the original texts are in the git history. The files under
+`examples/03-pages/web/assets/` keep the names of the Owlky UI build they were copied from.

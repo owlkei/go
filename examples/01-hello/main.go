@@ -1,33 +1,33 @@
-// Command hello is the smallest Owlky Go app: one controller and two routes.
+// Command hello is the smallest Owlkei Go app: one controller and two routes.
 package main
 
 import (
 	"log"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type GreetingController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (c GreetingController) NewController() owlky.Controller {
+func (c GreetingController) NewController() owlkei.Controller {
 	return c
 }
 
 // GET /hello
 func (c GreetingController) READ_hello() string {
-	return "Hello from Owlky Go"
+	return "Hello from Owlkei Go"
 }
 
 // GET /hello/{name}
-func (c GreetingController) READ_hello_BY_name(param owlky.Param) owlky.Map {
-	return owlky.Map{"greeting": "Hello, " + param.Get("name")}
+func (c GreetingController) READ_hello_BY_name(param owlkei.Param) owlkei.Map {
+	return owlkei.Map{"greeting": "Hello, " + param.Get("name")}
 }
 
-func newApp() owlky.App {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(GreetingController{}).Build())
+func newApp() owlkei.App {
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(GreetingController{}).Build())
 	return app
 }
 

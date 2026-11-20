@@ -1,6 +1,6 @@
 # Access Log
 
-Internal package: applications set `IsAccessLog: true` in `owlky.AppOptions` instead.
+Internal package: applications set `IsAccessLog: true` in `owlkei.AppOptions` instead.
 
 *Package `accesslog` writes one log line per HTTP request or WebSocket message, with the time each middleware, guard, interceptor, pipe, handler and filter took. The line is formatted and logged on the request goroutine (a few microseconds), with no worker, queue or timer of its own.*
 
@@ -33,8 +33,8 @@ Internal package: applications set `IsAccessLog: true` in `owlky.AppOptions` ins
 package main
 
 import (
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/log"
 )
 
 func main() {
@@ -146,7 +146,7 @@ al.Stop()
 
 - **64 stage events per request.** Later ones are counted and the line carries `stages_dropped`.
 - **16,384 pending requests** (64 shards of 256). A new request that finds its shard full evicts that shard's oldest pending request; an evicted request that completes later is logged without stages. A new request is always traced.
-- **The log's output pipeline bounds the rest.** With the built-in logger the line is an Info record: under overload it is dropped and counted in `WARN LogDropped` like any Info line (see `log/README.md`, Output pipeline). A logger you bring gets no bound from `Owlky Go`.
+- **The log's output pipeline bounds the rest.** With the built-in logger the line is an Info record: under overload it is dropped and counted in `WARN LogDropped` like any Info line (see `log/README.md`, Output pipeline). A logger you bring gets no bound from `Owlkei Go`.
 - **A broken logger cannot break a request.** A panic of the logger is recovered in the listener; that line is lost and the next ones are logged.
 
 A team that needs a complete audit trail writes it in a middleware or an interceptor: the access log trades completeness for never waiting on stdout.

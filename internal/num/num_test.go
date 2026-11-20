@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestF64ToAnyNum_SignedInRange(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/compress"
+	. "go.owlkei.com/owlkei/internal/middlewares/compress"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/httphook"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/httphook"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 type outputCounter struct {
@@ -126,7 +126,7 @@ func newApp(t testing.TB, mws ...common.MiddlewareFn) *core.App {
 	t.Helper()
 	app := core.New(&core.AppOptions{Logger: silentLogger{}})
 	app.BindGlobalMiddlewares(mws...)
-	app.Create(owlky.ModuleBuilder().Controllers(okController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(okController{}).Build())
 	return app
 }
 
@@ -194,7 +194,7 @@ func (v varyBefore) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
 }
 
 func payload(n int) []byte {
-	unit := []byte(`{"id":1234,"name":"owlky","tags":["alpha","beta","gamma"],"ok":true},`)
+	unit := []byte(`{"id":1234,"name":"owlkei","tags":["alpha","beta","gamma"],"ok":true},`)
 	out := make([]byte, 0, n+len(unit))
 	for len(out) < n {
 		out = append(out, unit...)
@@ -346,7 +346,7 @@ type bigController struct{ common.HTTP }
 func (c bigController) NewController() core.Controller { return c }
 
 func (bigController) READ_big() map[string]string {
-	return map[string]string{"data": strings.Repeat("owlky ", 1000)}
+	return map[string]string{"data": strings.Repeat("ok-ok ", 1000)}
 }
 
 type readerFromWriter struct {

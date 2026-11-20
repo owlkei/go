@@ -1,6 +1,6 @@
 # Compress Middleware
 
-Internal package: applications use `AppOptions.Compress` (`owlky.CompressOptions`) instead; it is the `compress` pre-route stage.
+Internal package: applications use `AppOptions.Compress` (`owlkei.CompressOptions`) instead; it is the `compress` pre-route stage.
 
 *`compress` gzips text responses (JSON, HTML, CSS, JavaScript, SVG) for clients that accept it, with a bounded amount of memory and nothing to configure.*
 
@@ -32,16 +32,16 @@ Internal package: applications use `AppOptions.Compress` (`owlky.CompressOptions
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Compress: &owlky.CompressOptions{IsEnabled: true},
+	app := owlkei.New(&owlkei.AppOptions{
+		Compress: &owlkei.CompressOptions{IsEnabled: true},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -71,7 +71,7 @@ Level, types and the writer count are fixed.
 
 ### NewMiddleware
 ```go
-func (instance Compress) NewMiddleware() owlky.MiddlewareFn
+func (instance Compress) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates the options once; the framework calls it at `Create()`. It panics with
@@ -79,10 +79,10 @@ Validates the options once; the framework calls it at `Create()`. It panics with
 
 ### Use
 ```go
-func (instance Compress) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance Compress) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `Compress` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `Compress` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`. Called outside an app, it only calls the
 next layer.
 

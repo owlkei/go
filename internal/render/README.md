@@ -1,8 +1,8 @@
 # Render
 
-Internal package: applications use `RENDER_` / `SUBMIT_` routes, `AppOptions.Render` (`owlky.RenderOptions`) instead.
+Internal package: applications use `RENDER_` / `SUBMIT_` routes, `AppOptions.Render` (`owlkei.RenderOptions`) instead.
 
-*Render is a part of `Owlky Go` framework: it turns the `.html` files of an `fs.FS` into `html/template` sets at `Create()`, binds each page route to the template its path names, renders a page by route into a pooled buffer, picks the error page of a status, and holds the asset, public file and page CSS and JS tables and the template functions.*
+*Render is a part of `Owlkei Go` framework: it turns the `.html` files of an `fs.FS` into `html/template` sets at `Create()`, binds each page route to the template its path names, renders a page by route into a pooled buffer, picks the error page of a status, and holds the asset, public file and page CSS and JS tables and the template functions.*
 
 - [Render](#render)
   - [Key Features](#key-features)
@@ -47,7 +47,7 @@ import (
 	"fmt"
 	"testing/fstest"
 
-	"go.owlky.com/owlky/internal/render"
+	"go.owlkei.com/owlkei/internal/render"
 )
 
 func main() {

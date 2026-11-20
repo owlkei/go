@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 func TestHTTPError_Format(t *testing.T) {

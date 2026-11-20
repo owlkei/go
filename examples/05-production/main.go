@@ -8,21 +8,21 @@ import (
 	"os"
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/guards/throttler"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/guards/throttler"
 )
 
-func newApp(webOrigin string) owlky.App {
+func newApp(webOrigin string) owlkei.App {
 	// The protections run before routing, in a fixed order: load shedding first, so a request
 	// refused under overload costs as little as possible.
-	app := owlky.New(&owlky.AppOptions{
+	app := owlkei.New(&owlkei.AppOptions{
 		IsAccessLog: true,
-		Server:      &owlky.ServerOptions{ShutdownTimeout: 10 * time.Second},
-		HTTP:        &owlky.HTTPOptions{MaxBodyBytes: 16 * owlky.KiB},
+		Server:      &owlkei.ServerOptions{ShutdownTimeout: 10 * time.Second},
+		HTTP:        &owlkei.HTTPOptions{MaxBodyBytes: 16 * owlkei.KiB},
 		Origins:     []string{webOrigin},
-		LoadShed:    &owlky.LoadShedOptions{IsEnabled: true},
-		Headers:     &owlky.HeadersOptions{IsEnabled: true},
-		CORS:        &owlky.CORSOptions{IsEnabled: true},
+		LoadShed:    &owlkei.LoadShedOptions{IsEnabled: true},
+		Headers:     &owlkei.HeadersOptions{IsEnabled: true},
+		CORS:        &owlkei.CORSOptions{IsEnabled: true},
 	})
 	app.BindGlobalGuards(throttler.Throttler{Limit: 100, TTL: time.Minute})
 	app.Create(NewFeedbackModule())

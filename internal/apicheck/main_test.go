@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 // Entry point the tests drive (the builder implements exactly this):
@@ -16,7 +16,7 @@ import (
 //
 // dir is the module root (go.mod). allowed lists module-relative import paths of the public
 // packages: "." is the root, "log" is one package, "middlewares/*" is every package below
-// middlewares/; nil means the tool's built-in list. write=true writes dir/api/owlky.txt and
+// middlewares/; nil means the tool's built-in list. write=true writes dir/api/owlkei.txt and
 // returns 0; write=false compares with it, prints differing lines ("+ line" / "- line", one per
 // line) and the B1 message to out, and returns 1 on any difference. Lines name a package by the
 // last element of the module path plus the relative path ("pkg fix/log, ..."). A B1 message is
@@ -25,7 +25,7 @@ import (
 func TestAPICheck_WriteProducesSortedLines(t *testing.T) {
 	dir := writeFixture(t)
 	generate(t, dir)
-	data, err := os.ReadFile(filepath.Join(dir, "api", "owlky.txt"))
+	data, err := os.ReadFile(filepath.Join(dir, "api", "owlkei.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestAPIFile_MatchesCode(t *testing.T) {
 	var out bytes.Buffer
 	code := run("../..", nil, false, &out)
 	if code != 0 {
-		t.Error(test.DiffMessage(out.String(), "", "B2: api/owlky.txt matches the code"))
+		t.Error(test.DiffMessage(out.String(), "", "B2: api/owlkei.txt matches the code"))
 	}
 }
 

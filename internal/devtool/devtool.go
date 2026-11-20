@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"go.owlky.com/owlky/internal/inspect"
+	"go.owlkei.com/owlkei/internal/inspect"
 )
 
 const PageKind = "page"

@@ -43,6 +43,6 @@ _ = stage
 `NewCheck(set *Set) *Check` is the `origin` pre-route stage of the handshake.
 
 - No `Origin` header passes (a client that is not a browser).
-- The same origin passes: the `Origin`, in lower case, equals the client's scheme and host (as `owlky.ClientScheme` and `owlky.ClientHost` give them); a default port (`:443` for `https`, `:80` for `http`) is dropped on both sides.
+- The same origin passes: the `Origin`, in lower case, equals the client's scheme and host (as `owlkei.ClientScheme` and `owlkei.ClientHost` give them); a default port (`:443` for `https`, `:80` for `http`) is dropped on both sides.
 - An `Origin` in the set passes.
 - Anything else, `null` and an `Origin` longer than 256 bytes included, is refused with `403 Origin not allowed`, and the `refused` counter of `Snapshot()` grows.

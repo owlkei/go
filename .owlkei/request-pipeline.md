@@ -151,7 +151,7 @@ template in `HTTPLayer.Template`) runs the same boxes. The differences:
 - Trace scope (design 0011, `internal/tracecontext`): the request ID is always ours; one valid
   `traceparent` continues the trace ID, anything else is ignored silently. Middleware, guards,
   interceptors, filters and the handler read the same `*Scope` (`r.Context()` / `c.Context()`).
-  Outbound calls continue the trace through `owlky.TraceTransport(base)` on an `http.Client` and a request
+  Outbound calls continue the trace through `owlkei.TraceTransport(base)` on an `http.Client` and a request
   built with `c.Context()`: it sends the scope's own `traceparent` (design 0013).
 - `HTTP.handleRequest` (`internal/core/http.go`) holds the request's only `recover`. `ex.filters` is `nil`
   while middlewares run (a panic there is the HTTP layer's) and the route's filter list from the
@@ -186,7 +186,7 @@ Bind calls must pass a **struct value implementing `Use`** — the framework res
 ```go
 type LogMiddleware struct{}
 
-func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Next) {
+func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next) {
     next()
 }
 ```
@@ -211,8 +211,8 @@ app.BindGlobalMiddlewares(LogMiddleware{})
 **Module-Scoped** (applies to this module's routes):
 ```go
 type UserController struct {
-    owlky.HTTP
-    owlky.Middleware
+    owlkei.HTTP
+    owlkei.Middleware
 }
 
 func (c UserController) NewController() Controller {
@@ -251,7 +251,7 @@ request. Unused, it costs one length check. The lifecycle order does not change;
 ### 2.5 Pre-route stages and the client
 
 `proxy` writes the resolved client (IP, scheme, host) into the request's `tracecontext.Scope`;
-`owlky.ClientIP` / `ClientScheme` / `ClientHost` (backed by `tracecontext.ClientIP` / `IsHTTPS` / `Host`) are the
+`owlkei.ClientIP` / `ClientScheme` / `ClientHost` (backed by `tracecontext.ClientIP` / `IsHTTPS` / `Host`) are the
 only readers, used by `hostcheck`, `httpsredirect`, `headers` (HSTS), `csrf` (forwarded host, only with `Proxy.IsHostForwarded`), the WebSocket `origin` check, the
 throttler and the `complete` event (`trace.Event.ClientIP`, printed as `ip` by the access log).
 No stage copies the request, replaces its context or reads its body; refusals
@@ -301,13 +301,13 @@ A guard is a value — bind a struct implementing `CanActivate`, not a bare func
 ```go
 type AuthGuard struct{}
 
-func (g AuthGuard) CanActivate(httpCtx owlky.HTTPContext) bool {
+func (g AuthGuard) CanActivate(httpCtx owlkei.HTTPContext) bool {
     return isAuthorized(httpCtx)
 }
 
 type UserController struct {
-    owlky.HTTP
-    owlky.Guard
+    owlkei.HTTP
+    owlkei.Guard
 }
 
 func (c UserController) NewController() Controller {
@@ -376,7 +376,7 @@ An interceptor is a value — bind a struct implementing `Intercept`, not a bare
 ```go
 type TimestampInterceptor struct{}
 
-func (i TimestampInterceptor) Intercept(httpCtx owlky.HTTPContext, agg owlky.Aggregation) any {
+func (i TimestampInterceptor) Intercept(httpCtx owlkei.HTTPContext, agg owlkei.Aggregation) any {
     return agg.Pipe(
         agg.Transform(func(data any) any {
             return map[string]any{"data": data, "timestamp": time.Now()}
@@ -385,8 +385,8 @@ func (i TimestampInterceptor) Intercept(httpCtx owlky.HTTPContext, agg owlky.Agg
 }
 
 type UserController struct {
-    owlky.HTTP
-    owlky.Interceptor
+    owlkei.HTTP
+    owlkei.Interceptor
 }
 
 func (c UserController) NewController() Controller {
@@ -471,7 +471,7 @@ An exception filter is `any` — bind a struct implementing `Catch(*ctx.HTTPCont
 ```go
 type UserErrorFilter struct{}
 
-func (f UserErrorFilter) Catch(httpCtx owlky.HTTPContext, ex *exception.Exception) {
+func (f UserErrorFilter) Catch(httpCtx owlkei.HTTPContext, ex *exception.Exception) {
     httpCtx.Status(ex.Code())
     httpCtx.JSON(map[string]any{
         "error": ex.Message(),
@@ -479,8 +479,8 @@ func (f UserErrorFilter) Catch(httpCtx owlky.HTTPContext, ex *exception.Exceptio
 }
 
 type UserController struct {
-    owlky.HTTP
-    owlky.ExceptionFilter
+    owlkei.HTTP
+    owlkei.ExceptionFilter
 }
 
 func (c UserController) NewController() Controller {

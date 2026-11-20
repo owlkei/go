@@ -1,6 +1,6 @@
 # HTTPS Redirect Middleware
 
-Internal package: applications use `AppOptions.HTTPSRedirect` (`owlky.HTTPSRedirectOptions`) instead; it is the `httpsredirect` pre-route stage. It does not run on the WebSocket handshake.
+Internal package: applications use `AppOptions.HTTPSRedirect` (`owlkei.HTTPSRedirectOptions`) instead; it is the `httpsredirect` pre-route stage. It does not run on the WebSocket handshake.
 
 *`httpsredirect` sends every plain HTTP request to the same address over HTTPS with a `308 Permanent Redirect`, and can never be turned into an open redirect.*
 
@@ -19,7 +19,7 @@ Internal package: applications use `AppOptions.HTTPSRedirect` (`owlky.HTTPSRedir
 ## Key Features
 - `308`, so browsers repeat the method and the body (RFC 9110 § 15.4.9)
 - Path and query kept, re-encoded; the target always starts with `https://` and a validated host
-- Reads the scheme from `owlky.ClientScheme`, so a TLS-terminating proxy that sends `X-Forwarded-Proto: https` passes
+- Reads the scheme from `owlkei.ClientScheme`, so a TLS-terminating proxy that sends `X-Forwarded-Proto: https` passes
 - A fixed `Host` for production closes redirects built from a client's `Host` header
 - No allocation on HTTPS requests
 
@@ -29,17 +29,17 @@ Internal package: applications use `AppOptions.HTTPSRedirect` (`owlky.HTTPSRedir
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Proxy:         &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
-		HTTPSRedirect: &owlky.HTTPSRedirectOptions{IsEnabled: true, Host: "www.example.com"},
+	app := owlkei.New(&owlkei.AppOptions{
+		Proxy:         &owlkei.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+		HTTPSRedirect: &owlkei.HTTPSRedirectOptions{IsEnabled: true, Host: "www.example.com"},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -83,7 +83,7 @@ httpsredirect.HTTPSRedirect{Port: 8443}
 
 ### NewMiddleware
 ```go
-func (instance HTTPSRedirect) NewMiddleware() owlky.MiddlewareFn
+func (instance HTTPSRedirect) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates the options once; the framework calls it at `Create()`. It panics with
@@ -93,14 +93,14 @@ outside 0-65535.
 
 ### Use
 ```go
-func (instance HTTPSRedirect) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance HTTPSRedirect) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `HTTPSRedirect` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `HTTPSRedirect` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules
-- When `owlky.ClientScheme(r)` is `https`, the next layer runs and nothing else happens.
+- When `owlkei.ClientScheme(r)` is `https`, the next layer runs and nothing else happens.
 - Otherwise the response is `308` with `Location: https://<host><:port><path>[?<query>]` and no
   body; the next layer does not run, for every method.
 - `<host>` is `Host` when set, else the request host without its port (`[::1]:8080` becomes

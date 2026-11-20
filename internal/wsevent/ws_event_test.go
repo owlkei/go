@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/wsevent"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/wsevent"
 )
 
 func TestWSEvent_MatchExactPattern(t *testing.T) {

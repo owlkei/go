@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestInjectProvidersIntoWSInterceptors_Empty(t *testing.T) {

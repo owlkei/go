@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/logpipe"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/logpipe"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestWrapLogger_ExactRule_MasksScalarLeaf(t *testing.T) {

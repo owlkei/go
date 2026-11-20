@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 	"golang.org/x/net/websocket"
 )
 
@@ -131,8 +131,8 @@ func TestServe_ShutdownTimeoutReadOnce(t *testing.T) {
 	h.sigs <- syscall.SIGTERM
 
 	err := h.wait()
-	if err == nil || err.Error() != "owlky: shutdown timed out after 50ms" {
-		t.Error(test.DiffMessage(err, "owlky: shutdown timed out after 50ms", "O6: the timeout is the one read at New"))
+	if err == nil || err.Error() != "owlkei: shutdown timed out after 50ms" {
+		t.Error(test.DiffMessage(err, "owlkei: shutdown timed out after 50ms", "O6: the timeout is the one read at New"))
 	}
 	<-res
 }
@@ -191,7 +191,7 @@ func TestListen_BeforeCreateReturnsError(t *testing.T) {
 		err = app.Listen()
 	}()
 
-	want := "owlky: Create must be called before serving"
+	want := "owlkei: Create must be called before serving"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "S2: Listen before Create"))
 	}
@@ -207,7 +207,7 @@ func TestServe_BeforeCreateReturnsError(t *testing.T) {
 
 	got := app.Serve(ln)
 
-	want := "owlky: Create must be called before serving"
+	want := "owlkei: Create must be called before serving"
 	if got == nil || got.Error() != want {
 		t.Error(test.DiffMessage(got, want, "S2: Serve before Create"))
 	}
@@ -230,7 +230,7 @@ func TestServe_SecondCallReturnsError(t *testing.T) {
 
 	got := h.app.Serve(second)
 
-	want := "owlky: app is already serving"
+	want := "owlkei: app is already serving"
 	if got == nil || got.Error() != want {
 		t.Error(test.DiffMessage(got, want, "S2: a second serving call"))
 	}
@@ -257,7 +257,7 @@ func TestServe_AfterStopReturnsError(t *testing.T) {
 
 	got := h.app.Serve(again)
 
-	want := "owlky: app is stopped"
+	want := "owlkei: app is stopped"
 	if got == nil || got.Error() != want {
 		t.Error(test.DiffMessage(got, want, "S2/G9: a serving call after the app stopped"))
 	}
@@ -282,7 +282,7 @@ func TestListen_PortInUseReturnsBeforeLogging(t *testing.T) {
 	var got error
 	out := srvCaptureStdout(t, func() { got = h.app.Listen() })
 
-	prefix := fmt.Sprintf("owlky: listen on :%d: ", port)
+	prefix := fmt.Sprintf("owlkei: listen on :%d: ", port)
 	if got == nil || !strings.HasPrefix(got.Error(), prefix) {
 		t.Fatal(test.DiffMessage(got, prefix+"<err>", "S3: the bind error is wrapped"))
 	}
@@ -831,7 +831,7 @@ func TestShutdown_TimeoutCutsRequestAndReports(t *testing.T) {
 	h.sigs <- syscall.SIGTERM
 	err := h.wait()
 
-	want := "owlky: shutdown timed out after 50ms"
+	want := "owlkei: shutdown timed out after 50ms"
 	if err == nil || err.Error() != want {
 		t.Error(test.DiffMessage(err, want, "C11, G4: the error names the timeout"))
 	}
@@ -886,8 +886,8 @@ func TestShutdown_ListenerFailureRunsHooks(t *testing.T) {
 
 	err := h.wait()
 
-	if err == nil || err.Error() != "owlky: serve: boom" {
-		t.Error(test.DiffMessage(err, "owlky: serve: boom", "G8: the listener failure is returned"))
+	if err == nil || err.Error() != "owlkei: serve: boom" {
+		t.Error(test.DiffMessage(err, "owlkei: serve: boom", "G8: the listener failure is returned"))
 	}
 	if names := srvCur.hookNames(); fmt.Sprint(names) != "[root child]" {
 		t.Error(test.DiffMessage(names, []string{"root", "child"}, "G8: the hooks run when the server stops by itself"))
@@ -940,8 +940,8 @@ func TestShutdown_AppCannotServeAgain(t *testing.T) {
 
 	got := h.app.Serve(again)
 
-	if got == nil || got.Error() != "owlky: app is stopped" {
-		t.Error(test.DiffMessage(got, "owlky: app is stopped", "G9: the app cannot serve again"))
+	if got == nil || got.Error() != "owlkei: app is stopped" {
+		t.Error(test.DiffMessage(got, "owlkei: app is stopped", "G9: the app cannot serve again"))
 	}
 	w := httptest.NewRecorder()
 	h.app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ok", nil))
@@ -1521,22 +1521,22 @@ func TestServe_TLS(t *testing.T) {
 
 func TestListen_StateErrors(t *testing.T) {
 	app := New(&AppOptions{Logger: &mockLogger{}})
-	if err := app.Listen(); err == nil || err.Error() != "owlky: Create must be called before serving" {
-		t.Error(test.DiffMessage(err, "owlky: Create must be called before serving", "S3: Listen before Create"))
+	if err := app.Listen(); err == nil || err.Error() != "owlkei: Create must be called before serving" {
+		t.Error(test.DiffMessage(err, "owlkei: Create must be called before serving", "S3: Listen before Create"))
 	}
-	if err := app.Serve(nil); err == nil || err.Error() != "owlky: Create must be called before serving" {
-		t.Error(test.DiffMessage(err, "owlky: Create must be called before serving", "S3: Serve before Create"))
+	if err := app.Serve(nil); err == nil || err.Error() != "owlkei: Create must be called before serving" {
+		t.Error(test.DiffMessage(err, "owlkei: Create must be called before serving", "S3: Serve before Create"))
 	}
 
 	h := newSrvOpts(t, nil)
 	h.serve()
-	if err := h.app.Serve(h.ln); err == nil || err.Error() != "owlky: app is already serving" {
-		t.Error(test.DiffMessage(err, "owlky: app is already serving", "S3: second serve"))
+	if err := h.app.Serve(h.ln); err == nil || err.Error() != "owlkei: app is already serving" {
+		t.Error(test.DiffMessage(err, "owlkei: app is already serving", "S3: second serve"))
 	}
 	h.app.Stop()
 	_ = h.wait()
-	if err := h.app.Serve(h.ln); err == nil || err.Error() != "owlky: app is stopped" {
-		t.Error(test.DiffMessage(err, "owlky: app is stopped", "S3: serve after Stop"))
+	if err := h.app.Serve(h.ln); err == nil || err.Error() != "owlkei: app is stopped" {
+		t.Error(test.DiffMessage(err, "owlkei: app is stopped", "S3: serve after Stop"))
 	}
 }
 
@@ -1550,7 +1550,7 @@ func TestListen_PortInUseKeepsSocketError(t *testing.T) {
 	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port}})
 
 	got := h.app.Listen()
-	prefix := fmt.Sprintf("owlky: listen on :%d: ", port)
+	prefix := fmt.Sprintf("owlkei: listen on :%d: ", port)
 	if got == nil || !strings.HasPrefix(got.Error(), prefix) {
 		t.Error(test.DiffMessage(got, prefix+"<err>", "S3: the socket error is wrapped"))
 	}
@@ -1565,8 +1565,8 @@ func TestServe_ShutdownTimeoutFromOptions(t *testing.T) {
 	h.sigs <- syscall.SIGTERM
 
 	err := h.wait()
-	if err == nil || err.Error() != "owlky: shutdown timed out after 50ms" {
-		t.Error(test.DiffMessage(err, "owlky: shutdown timed out after 50ms", "S4: ShutdownTimeout bounds draining"))
+	if err == nil || err.Error() != "owlkei: shutdown timed out after 50ms" {
+		t.Error(test.DiffMessage(err, "owlkei: shutdown timed out after 50ms", "S4: ShutdownTimeout bounds draining"))
 	}
 	<-res
 }

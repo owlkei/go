@@ -4,9 +4,9 @@ import (
 	"errors"
 	"reflect"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type WSCatch = func(*ctx.WSContext, *exception.Exception)
@@ -51,7 +51,7 @@ func InjectProvidersIntoWSExceptionFilters(e *ExceptionFilter, ws *WS, cb func(i
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid exception filter: %v.%s must be func(owlky.WSContext, *exception.Exception) to be bound as a WS exception filter",
+				"invalid exception filter: %v.%s must be func(owlkei.WSContext, *exception.Exception) to be bound as a WS exception filter",
 				exceptionFilterableType,
 				ExceptionFilterMethodName,
 			)))

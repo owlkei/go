@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestAdaptive_Bounds(t *testing.T) {

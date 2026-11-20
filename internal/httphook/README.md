@@ -15,12 +15,12 @@
   - [Rules](#rules)
   - [Cost](#cost)
 
-The package is internal: only code in the Owlky Go module can import it. `compress` and `loadshed`
+The package is internal: only code in the Owlkei Go module can import it. `compress` and `loadshed`
 use it, and `helmet` hands its precompiled nonce policy to the framework through it; users never see it.
 
 ## Why it exists
 
-Owlky Go's middleware chain is linear: `next()` only marks that the next layer may run, and the
+Owlkei Go's middleware chain is linear: `next()` only marks that the next layer may run, and the
 handler runs after `Use` returns. A middleware therefore cannot see the handler's writes or run
 code after it. `compress` must wrap the response writer, and `loadshed` must release its slot when
 the exchange ends. The framework's response writer (the `w` every middleware receives) implements
@@ -35,8 +35,8 @@ import (
 	"net/http"
 	"time"
 
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/httphook"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/httphook"
 )
 
 type timer struct{}

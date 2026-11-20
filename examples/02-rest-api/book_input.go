@@ -4,19 +4,19 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 // BookInput is the body of POST /books and PUT /books/{id}. As a handler parameter it is a pipe:
-// Owlky Go calls Transform before the handler, and a refused body never reaches it.
+// Owlkei Go calls Transform before the handler, and a refused body never reaches it.
 type BookInput struct {
 	Title  string `bind:"title"`
 	Author string `bind:"author"`
 	Year   int    `bind:"year"`
 }
 
-func (in BookInput) Transform(body owlky.Body, _ owlky.ArgumentMetadata) any {
+func (in BookInput) Transform(body owlkei.Body, _ owlkei.ArgumentMetadata) any {
 	in = body.BindValue(in).(BookInput)
 	in.Title = strings.TrimSpace(in.Title)
 	in.Author = strings.TrimSpace(in.Author)

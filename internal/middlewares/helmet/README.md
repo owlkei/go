@@ -1,6 +1,6 @@
 # Helmet Middleware
 
-Internal package: applications use `AppOptions.Headers` (`owlky.HeadersOptions`) instead; it is the `headers` pre-route stage. A field set to `"-"` omits its header (`helmet.Disabled` below).
+Internal package: applications use `AppOptions.Headers` (`owlkei.HeadersOptions`) instead; it is the `headers` pre-route stage. A field set to `"-"` omits its header (`helmet.Disabled` below).
 
 *`helmet` sets the HTTP security response headers that OWASP recommends, with safe defaults that suit both JSON APIs and server-rendered HTML pages.*
 
@@ -28,11 +28,11 @@ Internal package: applications use `AppOptions.Headers` (`owlky.HeadersOptions`)
 
 ## Key Features
 - A strict Content Security Policy by default (`'self'` only, no inline script attributes, no framing)
-- `Strict-Transport-Security` only over HTTPS (RFC 6797 § 7.2), read through `owlky.ClientScheme`
+- `Strict-Transport-Security` only over HTTPS (RFC 6797 § 7.2), read through `owlkei.ClientScheme`
 - One rule for every field: `""` is the default, `helmet.Disabled` turns the header off, any other value is sent as written
 - `Permissions-Policy` denies powerful browser features by default
 - Every header value is built once at startup; no allocation per request
-- Pages rendered by Owlky Go that call `{{nonce}}` get a per-response nonce in `script-src` and `style-src`, with no option to set
+- Pages rendered by Owlkei Go that call `{{nonce}}` get a per-response nonce in `script-src` and `style-src`, with no option to set
 
 ## Usage
 
@@ -40,12 +40,12 @@ Internal package: applications use `AppOptions.Headers` (`owlky.HeadersOptions`)
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Headers: &owlky.HeadersOptions{
+	app := owlkei.New(&owlkei.AppOptions{
+		Headers: &owlkei.HeadersOptions{
 			IsEnabled:             true,
 			ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:",
 			FrameOptions:          "-",
@@ -53,7 +53,7 @@ func main() {
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -79,9 +79,9 @@ func main() {
 `X-Download-Options` is no longer sent: only Internet Explorer read it.
 
 The default CSP allows scripts, styles, images and fonts from your own origin only. An inline
-`<style>` or `<script>` runs when it carries `nonce="{{nonce}}"` in a page that Owlky Go renders
+`<style>` or `<script>` runs when it carries `nonce="{{nonce}}"` in a page that Owlkei Go renders
 (see [Nonce](#nonce)); other inline code, or assets on a CDN, need your own policy. Serve your assets
-(Owlky's CSS and JavaScript included) from your own origin and the default works as is.
+(Owlkei's CSS and JavaScript included) from your own origin and the default works as is.
 `upgrade-insecure-requests` makes the browser load `http:` subresources over HTTPS; when you test
 plain HTTP from another device (not `localhost`), set your own policy without it.
 
@@ -186,7 +186,7 @@ helmet.Helmet{StrictTransportSecurity: "max-age=63072000; includeSubDomains; pre
 
 ### NewMiddleware
 ```go
-func (instance Helmet) NewMiddleware() owlky.MiddlewareFn
+func (instance Helmet) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Builds every header value once; the framework calls it at `Create()`. It panics with
@@ -194,15 +194,15 @@ Builds every header value once; the framework calls it at `Create()`. It panics 
 
 ### Use
 ```go
-func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `Helmet` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in tests
+Makes `Helmet` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in tests
 only; the framework always calls `NewMiddleware`.
 
 ## Nonce
 
-`helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Owlky Go
+`helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Owlkei Go
 (`AppOptions.Render`: a `RENDER_` or `SUBMIT_` route, or an HTML error page) that calls `{{nonce}}`, the
 response's `Content-Security-Policy` carries `'nonce-<N>'`, where `<N>` is the same 32-character
 value the page writes. Every other response (API routes, assets, public files, pages without
@@ -247,7 +247,7 @@ value, `-` when disabled) and `nonce_directives`, the directives that receive a 
 (`["script-src","style-src"]` for the default policy, `[]` when none does).
 
 ## Rules
-- `Strict-Transport-Security` is sent only when `owlky.ClientScheme(r)` is `https`: a direct TLS
+- `Strict-Transport-Security` is sent only when `owlkei.ClientScheme(r)` is `https`: a direct TLS
   connection, or `https` forwarded by a trusted `proxy`. An untrusted client cannot claim HTTPS,
   and with no `proxy` bound no forwarding header is read. A custom value follows the same rule.
 - The always-sent headers are on every response that passes `helmet`, a `404` or `405` included,

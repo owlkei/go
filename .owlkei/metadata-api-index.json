@@ -1,14 +1,14 @@
 {
   "format": "ai-metadata-v1",
-  "purpose": "Machine-readable API index for Owlky Go framework",
+  "purpose": "Machine-readable API index for Owlkei Go framework",
   "public_surface": {
-    "source_of_truth": "api/owlky.txt (make api writes it, make api-check diffs it); design 0017",
+    "source_of_truth": "api/owlkei.txt (make api writes it, make api-check diffs it); design 0017",
     "import_paths": [
-      "go.owlky.com/owlky",
-      "go.owlky.com/owlky/exception",
-      "go.owlky.com/owlky/log",
-      "go.owlky.com/owlky/modules/*",
-      "go.owlky.com/owlky/guards/*"
+      "go.owlkei.com/owlkei",
+      "go.owlkei.com/owlkei/exception",
+      "go.owlkei.com/owlkei/log",
+      "go.owlkei.com/owlkei/modules/*",
+      "go.owlkei.com/owlkei/guards/*"
     ],
     "root_functions": [
       "New(opts *core.AppOptions) App (nil = defaults)",
@@ -84,7 +84,7 @@
       "responsibility": "Application lifecycle, server, handler invocation, DI container (user docs: README.md; maintainer docs: internal/core/README.md)",
       "public_types": {
         "App": {
-          "description": "Main application container; every owlky.New(opts) is independent (own routes, providers, layers, logger, publisher). The whole configuration is the *AppOptions given to New (design 0022)",
+          "description": "Main application container; every owlkei.New(opts) is independent (own routes, providers, layers, logger, publisher). The whole configuration is the *AppOptions given to New (design 0022)",
           "methods": [
             {
               "name": "New",
@@ -171,13 +171,13 @@
           ]
         },
         "ModuleBuilder": {
-          "description": "Fluent API for building modules: core.NewModuleBuilder() (owlky.ModuleBuilder()) returns a new *core.ModuleBuilder",
+          "description": "Fluent API for building modules: core.NewModuleBuilder() (owlkei.ModuleBuilder()) returns a new *core.ModuleBuilder",
           "methods": [
             "Imports(modules ...any) *ModuleBuilder - *Module values or module factories (func(deps...) *core.Module, func(deps...) (*core.Module, error), func(ctx, deps...) (*core.Module, error)); fail fast at Create",
             "AsyncImports(modules ...any) *ModuleBuilder - the same entries, built in the background; dependents pending (routes 503) until ready; one entry in both lists panics",
             "Providers(providers ...Provider) *ModuleBuilder",
             "Controllers(controllers ...Controller) *ModuleBuilder",
-            "PathStyle(style common.PathStyle) *ModuleBuilder - PathStyleKebab (default: READ_user_profile -> /user-profile) or PathStyleAsWritten (/user_profile); inherited by imports like Prefix, an explicit setting wins; another value panics `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten`",
+            "PathStyle(style common.PathStyle) *ModuleBuilder - PathStyleKebab (default: READ_user_profile -> /user-profile) or PathStyleAsWritten (/user_profile); inherited by imports like Prefix, an explicit setting wins; another value panics `invalid module: PathStyle needs owlkei.PathStyleKebab or owlkei.PathStyleAsWritten`",
             "Build() *Module"
           ],
           "notes": "No Export or IsGlobal builder methods exist: set m.IsGlobal on the built module."
@@ -187,7 +187,7 @@
           "interface": "type Provider interface { NewProvider() Provider }"
         },
         "AppOptions": {
-          "description": "Argument of New (root alias owlky.AppOptions); nil = defaults; documented in README.md › Configuration with each field's default and OK_* variable",
+          "description": "Argument of New (root alias owlkei.AppOptions); nil = defaults; documented in README.md › Configuration with each field's default and OK_* variable",
           "fields": [
             "Logger log.LogAdapter - default log.NewLog(nil); code only",
             "StartupTimeout time.Duration - budget of Create for Imports factories (default 30s); OK_STARTUP_TIMEOUT",
@@ -210,11 +210,11 @@
           ],
           "notes": [
             "A group with a required field is on when that field is set; a group whose fields are all optional has IsEnabled. A field set while its group is off panics at New.",
-            "ByteSize: plain bytes; constants owlky.KB / MB / GB (1000ⁿ) and KiB / MiB / GiB (1024ⁿ); in a variable a whole number with one of those units, case-sensitive; a lower-case b is refused."
+            "ByteSize: plain bytes; constants owlkei.KB / MB / GB (1000ⁿ) and KiB / MiB / GiB (1024ⁿ); in a variable a whole number with one of those units, case-sensitive; a lower-case b is refused."
           ]
         },
         "ServerOptions": {
-          "description": "AppOptions.Server: applies when Owlky opens the listener (Listen, Serve); no effect when App is only an http.Handler",
+          "description": "AppOptions.Server: applies when Owlkei opens the listener (Listen, Serve); no effect when App is only an http.Handler",
           "fields": [
             "Port int - TCP port of Listen (0 = 3000); Serve ignores it",
             "ShutdownTimeout time.Duration - drain time at shutdown (0 = 30 s; negative panics at New)",
@@ -223,7 +223,7 @@
           ]
         },
         "RenderOptions": {
-          "description": "AppOptions.Render (root alias owlky.RenderOptions); pages are on when FS is set",
+          "description": "AppOptions.Render (root alias owlkei.RenderOptions); pages are on when FS is set",
           "fields": {
             "FS": "fs.FS, required: holds Dir. In Dir: layout.html per directory, top-level partials/, root error pages <400-599>.html / 4xx.html / 5xx.html, assets/ served at /assets/*, public/ served at the root URL, X.css / X.js next to X.html (linked by {{pageAssets}}, served at /assets/_pages/...), every other .html is the template of the page route with that path (<path>.html or <path>/index.html) and stops Create without one",
             "Dir": "string: the directory of FS holding the files (default web, . for the root of FS)",
@@ -559,7 +559,7 @@
     "Code after next() runs before the next layer, not after the handler: post-handler work belongs in an interceptor's Pipe operators",
     "Configuration only in AppOptions (checked at New); BindGlobal* only before Create",
     "Providers are fields, never handler parameters",
-    "Pages are RENDER_ / SUBMIT_ routes: the route picks the template (<path>.html or <path>/index.html), the only or last result is the data; there is no owlky.Page or owlky.View. Template functions are fixed (nonce, asset, dict, pageAssets): no user FuncMap",
+    "Pages are RENDER_ / SUBMIT_ routes: the route picks the template (<path>.html or <path>/index.html), the only or last result is the data; there is no owlkei.Page or owlkei.View. Template functions are fixed (nonce, asset, dict, pageAssets): no user FuncMap",
     "Errors: a matched page route from its first guard on answers HTML (<code>.html, then <N>xx.html, then built-in), an API / SERVE / asset / public file route JSON; before any guard (middlewares, 404, 405, 410) HTML only when Accept contains text/html. A cause's text and a 500's own message never reach the client"
   ],
   "common_mistakes": [

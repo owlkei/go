@@ -10,7 +10,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it. Request, connection,
+The package is internal: only code in the Owlkei Go module can import it. Request, connection,
 message and trace IDs come from `internal/tracecontext`, not from here.
 
 ## Usage
@@ -21,7 +21,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/crypto"
+	"go.owlkei.com/owlkei/internal/crypto"
 )
 
 func main() {

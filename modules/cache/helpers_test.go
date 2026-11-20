@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 type consumerA struct {

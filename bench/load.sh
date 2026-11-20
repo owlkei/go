@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Usage: FRAMEWORKS="owlky gin" LOGS="on off" PROCS="1 2 all" DURATION=10s CONNECTIONS="64 256" ./load.sh
+# Usage: FRAMEWORKS="owlkei gin" LOGS="on off" PROCS="1 2 all" DURATION=10s CONNECTIONS="64 256" ./load.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-frameworks=${FRAMEWORKS:-owlky}
+frameworks=${FRAMEWORKS:-owlkei}
 logs=${LOGS:-on}
 procs=${PROCS:-all}
 duration=${DURATION:-10s}
@@ -13,7 +13,7 @@ threads=${THREADS:-4}
 port=${PORT:-18080}
 log_dir=${LOG_DIR:-${TMPDIR:-/tmp}}
 url="http://127.0.0.1:${port}"
-server="${TMPDIR:-/tmp}/owlky-bench-server"
+server="${TMPDIR:-/tmp}/owlkei-bench-server"
 
 go build -trimpath -ldflags="-s -w" -o "$server" ./cmd/server
 
@@ -39,8 +39,8 @@ for maxprocs in $procs; do
         echo "port $port is already in use; set PORT to a free one" >&2
         exit 1
       fi
-      log_file="$log_dir/owlky-bench-$framework-$log.log"
-      err_file="$log_dir/owlky-bench-$framework-$log.err"
+      log_file="$log_dir/owlkei-bench-$framework-$log.log"
+      err_file="$log_dir/owlkei-bench-$framework-$log.err"
       flags=(-framework "$framework" -port "$port")
       if [ "$log" = on ]; then flags+=(-log); fi
       if [ "$maxprocs" = all ]; then

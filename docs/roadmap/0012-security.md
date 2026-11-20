@@ -12,7 +12,7 @@ SSR changes.
 ## Scope
 - In: `internal/core` (pages, redirects, static routes, the middleware chain), `internal/ctx` (redirect,
   headers), `internal/render`, the built-in middlewares' ordering, `log` (control characters), CI
-  (`gosec`), README and `.owlky/` (the security rules users must know), backlog › "Security roadmap"
+  (`gosec`), README and `.owlkei/` (the security rules users must know), backlog › "Security roadmap"
   (every finding listed there).
 - Out: sessions and authentication (their own roadmap: cookies, login, brute force); the storage
   roadmap's SQL rule (parameters only, decided); WebSocket hardening (the WebSocket roadmap); a
@@ -30,7 +30,7 @@ SSR changes.
 | 7 | Static files: a `public/` name with `{` or `*` stops `Create()`; hidden files in `Dir` are logged; the static-route guard rule (Decisions › open) | tdd | docs/design/0021-security.md | 1 | a file name can't widen a route; the guard rule holds for `public/`, `/assets/*` and page assets | todo |
 | 8 | Sink fixes found by step 1 that need code (header values with CR/LF, log control characters in every format, path normalization before matching) | tdd | docs/design/0021-security.md | 1 | every step-1 finding of high or critical rank is fixed with a test | todo |
 | 9 | CI: `gosec` with the rules that matter for a framework (G201/G202 SQL strings, G1xx, G3xx, G4xx), baseline of accepted findings with reasons | light | - | 1 | CI fails on a new `gosec` finding | todo |
-| 10 | Docs: a "Security" section in the README (what the defaults do, `template.HTML` disables escaping, `Bind` fills only `bind` fields, `public/` is served as is, `//go:embed all:web` ships dotfiles, the error format rule, redirects); `.owlky/`; the examples where a default changes | light | - | 2-9 | every default and every rule users must follow is documented | todo |
+| 10 | Docs: a "Security" section in the README (what the defaults do, `template.HTML` disables escaping, `Bind` fills only `bind` fields, `public/` is served as is, `//go:embed all:web` ships dotfiles, the error format rule, redirects); `.owlkei/`; the examples where a default changes | light | - | 2-9 | every default and every rule users must follow is documented | todo |
 | 11 | Measure: `make bench` and the `bench/` scenarios against `docs/review/http-0009.md` | light | - | 2-8 | no scenario slower than the noise band; `docs/review/http-0012.md` | todo |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main

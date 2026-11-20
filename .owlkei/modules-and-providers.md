@@ -74,12 +74,12 @@ RootModule                    its providers are global
 ### 2.1 Static Module
 
 ```go
-var UserModule = owlky.ModuleBuilder().
+var UserModule = owlkei.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}, UserRepository{}).
 	Build()
 
-var AppModule = owlky.ModuleBuilder().
+var AppModule = owlkei.ModuleBuilder().
 	Imports(UserModule).
 	Build()
 ```
@@ -93,9 +93,9 @@ an entry is imported, `Register` is only a function name. A factory has one of t
 `reflect.Type` at `Build()` (`internal/core/module_builder.go`, `checkImports`):
 
 ```go
-func(deps...) owlky.Module
-func(deps...) (owlky.Module, error)
-func(ctx context.Context, deps...) (owlky.Module, error)
+func(deps...) owlkei.Module
+func(deps...) (owlkei.Module, error)
+func(ctx context.Context, deps...) (owlkei.Module, error)
 ```
 
 **Scope** (`internal/core/module_factory.go`): a factory listed by module `P` resolves each argument from
@@ -118,14 +118,14 @@ panic, a nil module or the deadline panics `invalid module: module factory '<lab
 ```go
 type ReportService struct{}
 
-func (instance ReportService) NewProvider() owlky.Provider { return instance }
+func (instance ReportService) NewProvider() owlkei.Provider { return instance }
 
-func ReportModule(ctx context.Context, logger log.Logger) (owlky.Module, error) {
+func ReportModule(ctx context.Context, logger log.Logger) (owlkei.Module, error) {
 	logger.Info("ReportModule")
-	return owlky.ModuleBuilder().Providers(ReportService{}).Build(), nil
+	return owlkei.ModuleBuilder().Providers(ReportService{}).Build(), nil
 }
 
-var AppModule = owlky.ModuleBuilder().
+var AppModule = owlkei.ModuleBuilder().
 	Imports(UserModule, ReportModule).
 	Build()
 ```
@@ -167,7 +167,7 @@ M ready  ⇔ every entry it needs is ready;  M failed ⇔ one of them failed.
 - Refused: controllers in a module an async factory returns (the entry fails), one entry in both lists,
   a probed `NewController` that panics, app-wide layers injecting async providers, an `Imports` factory
   needing an async module, async modules that need each other.
-- `owlky.Retry(ctx, opts, fn)` retries inside a factory; with the factory's `ctx` it reports attempts
+- `owlkei.Retry(ctx, opts, fn)` retries inside a factory; with the factory's `ctx` it reports attempts
   to the entry (`ModuleRetry`, devtool `attempts`, `Retry-After`).
 
 ---
@@ -185,7 +185,7 @@ func (m *moduleBuilder) Build() *Module
 
 - Calls chain and accumulate: `Providers(P1{}).Providers(P2{})` lists both
 - One entry in both `Imports` and `AsyncImports` panics `invalid module: '<label>' is in both Imports and AsyncImports`
-- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a owlky.Module or a module factory: func(deps...) owlky.Module, func(deps...) (owlky.Module, error) or func(ctx context.Context, deps...) (owlky.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
+- An import that is neither a `*Module` nor a module factory panics `invalid module: can't import '<type>' with Imports: an import is a owlkei.Module or a module factory: func(deps...) owlkei.Module, func(deps...) (owlkei.Module, error) or func(ctx context.Context, deps...) (owlkei.Module, error)` at `Build()` (one line per bad entry; `AsyncImports` entries name `AsyncImports`)
 - `Prefix("v1")` on the built module prefixes its routes and its imports' routes; an importer's prefix goes in front (`/api/v1/ping`)
 
 ---
@@ -220,7 +220,7 @@ type DatabasePool struct {
 	DB *sql.DB
 }
 
-func (instance DatabasePool) NewProvider() owlky.Provider {
+func (instance DatabasePool) NewProvider() owlkei.Provider {
 	instance.DB, _ = sql.Open("postgres", "postgres://localhost/app")
 	return instance
 }
@@ -262,11 +262,11 @@ An unexported field panics `dependency injection: can't set value to unexported 
 
 ```go
 type UserController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	UserService UserService
 }
 
-func (instance UserController) NewController() owlky.Controller {
+func (instance UserController) NewController() owlkei.Controller {
 	return instance
 }
 ```
@@ -283,8 +283,8 @@ recursive type and doesn't compile. Move shared logic into a third provider.
 ## 6. Global Modules
 
 ```go
-var InfraModule = func() owlky.Module {
-	m := owlky.ModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
+var InfraModule = func() owlkei.Module {
+	m := owlkei.ModuleBuilder().Providers(DatabasePool{}, CacheService{}).Build()
 	m.IsGlobal = true
 	return m
 }()
@@ -314,7 +314,7 @@ when they are built, and `OnShutdown` only if they became ready, in the reverse 
 - ✓ Use imports to declare dependencies; `IsGlobal` only for truly global services
 - ✓ Open resources in a module factory (it can return an error and take a `ctx`), close them in `OnShutdown`
 - ✓ Put a dependency that may be slow or down at start in `AsyncImports`, and retry transient errors
-  with `owlky.Retry(ctx, …)`; return permanent errors (bad config) at once
+  with `owlkei.Retry(ctx, …)`; return permanent errors (bad config) at once
 - ✓ Keep shared mutable state behind a pointer, protected by a mutex or atomics
 
 ### 8.2 DON'T
@@ -334,18 +334,18 @@ when they are built, and `OnShutdown` only if they became ready, in the reverse 
 ### 9.1 Dependency Hierarchy
 
 ```go
-var InfraModule = func() owlky.Module {
-	m := owlky.ModuleBuilder().Providers(DatabasePool{}).Build()
+var InfraModule = func() owlkei.Module {
+	m := owlkei.ModuleBuilder().Providers(DatabasePool{}).Build()
 	m.IsGlobal = true
 	return m
 }()
 
-var UserModule = owlky.ModuleBuilder().
+var UserModule = owlkei.ModuleBuilder().
 	Controllers(UserController{}).
 	Providers(UserService{}, UserRepository{}).
 	Build()
 
-var AppModule = owlky.ModuleBuilder().
+var AppModule = owlkei.ModuleBuilder().
 	Imports(InfraModule, UserModule).
 	Build()
 ```

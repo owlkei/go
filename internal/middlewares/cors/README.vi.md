@@ -1,6 +1,6 @@
 # Middleware CORS
 
-> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.CORS` (`owlky.CORSOptions`) cùng `AppOptions.Origins` trong `owlky.New(&owlky.AppOptions{…})`; các ví dụ `owlky.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
+> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.CORS` (`owlkei.CORSOptions`) cùng `AppOptions.Origins` trong `owlkei.New(&owlkei.AppOptions{…})`; các ví dụ `owlkei.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
 
 *`cors` cho phép các trang trình duyệt bạn liệt kê đọc API của bạn từ origin khác, theo [giao thức CORS của Fetch Standard](https://fetch.spec.whatwg.org/#http-cors-protocol): request thật, preflight `OPTIONS`, credentials và private network access.*
 
@@ -39,12 +39,12 @@ package main
 import (
 	"time"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/middlewares/cors"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/middlewares/cors"
 )
 
 func main() {
-	app := owlky.New()
+	app := owlkei.New()
 
 	app.BindGlobalMiddlewares(cors.CORS{
 		AllowOrigins:       []string{"https://app.example.com", "https://*.example.com"},
@@ -54,7 +54,7 @@ func main() {
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -139,7 +139,7 @@ Trả `Access-Control-Allow-Private-Network: true` cho preflight có
 
 ### NewMiddleware
 ```go
-func (instance CORS) NewMiddleware() owlky.MiddlewareFn
+func (instance CORS) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Kiểm tra và biên dịch option một lần; framework gọi khi `Create()`. Panic với
@@ -150,10 +150,10 @@ token RFC 9110.
 
 ### Use
 ```go
-func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance CORS) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Giúp `CORS` là một `owlky.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
+Giúp `CORS` là một `owlkei.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
 
 ## Quy Tắc
 - Với một danh sách (không phải `*`), mọi response có `Vary: Origin`, thêm vào `Vary` sẵn có: kể cả

@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestGlobalHTTPExceptionFilterFullException(t *testing.T) {

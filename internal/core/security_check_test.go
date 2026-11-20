@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 type scFormController struct{ common.HTTP }

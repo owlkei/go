@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 var trustedPrivate = Proxy{TrustedProxies: []string{"10.0.0.0/8"}}

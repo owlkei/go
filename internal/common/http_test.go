@@ -3,8 +3,8 @@ package common
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestGetPrefixes_NoHandlers(t *testing.T) {

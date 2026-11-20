@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 const maxLoadsDepth = 32

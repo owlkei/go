@@ -1,6 +1,6 @@
 package memorybroker
 
-import ptrn "go.owlky.com/owlky/internal/pattern"
+import ptrn "go.owlkei.com/owlkei/internal/pattern"
 
 type complexGroup struct {
 	pattern  ptrn.Pattern

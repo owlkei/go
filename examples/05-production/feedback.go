@@ -7,9 +7,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/guards/throttler"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/guards/throttler"
 )
 
 type Note struct {
@@ -28,7 +28,7 @@ type box struct {
 	notes []Note
 }
 
-func (ib Inbox) NewProvider() owlky.Provider {
+func (ib Inbox) NewProvider() owlkei.Provider {
 	return ib
 }
 
@@ -55,7 +55,7 @@ type NoteInput struct {
 	Message string `bind:"message"`
 }
 
-func (in NoteInput) Transform(body owlky.Body, _ owlky.ArgumentMetadata) any {
+func (in NoteInput) Transform(body owlkei.Body, _ owlkei.ArgumentMetadata) any {
 	in = body.BindValue(in).(NoteInput)
 	in.Message = strings.TrimSpace(in.Message)
 	if in.Message == "" || utf8.RuneCountInString(in.Message) > 1000 {
@@ -65,14 +65,14 @@ func (in NoteInput) Transform(body owlky.Body, _ owlky.ArgumentMetadata) any {
 }
 
 type FeedbackController struct {
-	owlky.HTTP
-	owlky.Guard
+	owlkei.HTTP
+	owlkei.Guard
 	Inbox Inbox
 }
 
 // NewController gives posting its own, tighter budget on top of the app-wide one: anyone can post,
 // so one client must not fill the inbox.
-func (c FeedbackController) NewController() owlky.Controller {
+func (c FeedbackController) NewController() owlkei.Controller {
 	c.BindGuard(throttler.Throttler{Limit: 5, TTL: time.Minute}, c.CREATE_feedback)
 	return c
 }
@@ -87,8 +87,8 @@ func (c FeedbackController) CREATE_feedback(in NoteInput) Note {
 	return c.Inbox.Add(in.Message)
 }
 
-func NewFeedbackModule() owlky.Module {
-	return owlky.ModuleBuilder().
+func NewFeedbackModule() owlkei.Module {
+	return owlkei.ModuleBuilder().
 		Controllers(FeedbackController{}).
 		Providers(Inbox{Box: &box{}}).
 		Build()

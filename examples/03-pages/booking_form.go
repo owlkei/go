@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 // BookingForm is the "New booking" form. It is a Form pipe: Transform binds the
@@ -28,7 +28,7 @@ var requiredMessages = map[string]string{
 	"nights": "Enter the number of nights",
 }
 
-func (form BookingForm) Transform(values owlky.Form, _ owlky.ArgumentMetadata) any {
+func (form BookingForm) Transform(values owlkei.Form, _ owlkei.ArgumentMetadata) any {
 	bound, fields := values.Bind(form)
 	form = bound.(BookingForm)
 	form.Guest = strings.TrimSpace(form.Guest)

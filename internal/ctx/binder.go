@@ -12,7 +12,7 @@ const (
 	TagBind = "bind"
 )
 
-var ErrBindTarget = errors.New("owlky: bind target must be a struct")
+var ErrBindTarget = errors.New("owlkei: bind target must be a struct")
 
 type Binder struct {
 	typ    reflect.Type

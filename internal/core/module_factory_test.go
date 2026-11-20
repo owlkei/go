@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func lfFailFactory() (*Module, error) { return nil, errors.New("lf-factory-boom") }

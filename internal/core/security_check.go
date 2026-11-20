@@ -3,10 +3,10 @@ package core
 import (
 	"strings"
 
-	"go.owlky.com/owlky/internal/common"
+	"go.owlkei.com/owlkei/internal/common"
 )
 
-const securityCheckDocs = "https://github.com/dangduoc08/go#production-checklist"
+const securityCheckDocs = "https://github.com/owlkei/go#production-checklist"
 
 func (app *App) securityCheck() {
 	hasSubmit, hasRender := false, false

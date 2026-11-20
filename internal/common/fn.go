@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/routing"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/routing"
 )
 
 type handlerTargets struct {

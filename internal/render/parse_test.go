@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestPageAssets_Tags(t *testing.T) {

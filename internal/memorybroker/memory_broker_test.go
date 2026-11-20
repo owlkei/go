@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestSubscribeAndPublish(t *testing.T) {

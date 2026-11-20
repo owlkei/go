@@ -1,11 +1,11 @@
-package owlky
+package owlkei
 
 import (
 	"net/http"
 	"net/netip"
 
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 const (

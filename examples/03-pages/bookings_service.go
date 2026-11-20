@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 type Booking struct {
@@ -28,7 +28,7 @@ type BookingService struct {
 	Table *bookingTable
 }
 
-func (s BookingService) NewProvider() owlky.Provider {
+func (s BookingService) NewProvider() owlkei.Provider {
 	s.Table = &bookingTable{nextID: 1, byID: map[string]Booking{}}
 	return s
 }

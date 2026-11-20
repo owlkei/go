@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/tracecontext"
-	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/versioning"
+	"go.owlkei.com/owlkei/log"
 	"golang.org/x/net/websocket"
 )
 

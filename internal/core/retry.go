@@ -7,7 +7,7 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 const (
@@ -42,7 +42,7 @@ func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context)
 		lastErr = err
 		if o.MaxAttempts > 0 && n >= o.MaxAttempts {
 			e.reportAttempt(n, err, 0)
-			return fmt.Errorf("owlky: retry gave up after %d attempts: %w", n, lastErr)
+			return fmt.Errorf("owlkei: retry gave up after %d attempts: %w", n, lastErr)
 		}
 		wait := o.wait(n)
 		e.reportAttempt(n, err, wait)
@@ -90,7 +90,7 @@ func (o RetryOptions) wait(n int) time.Duration {
 }
 
 func retryStopped(n int, ctxErr, lastErr error) error {
-	return fmt.Errorf("owlky: retry stopped after %d attempts: %w", n, errors.Join(ctxErr, lastErr))
+	return fmt.Errorf("owlkei: retry stopped after %d attempts: %w", n, errors.Join(ctxErr, lastErr))
 }
 
 func (e *asyncEntry) reportAttempt(n int, err error, next time.Duration) {

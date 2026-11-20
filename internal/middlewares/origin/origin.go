@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 const (

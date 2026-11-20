@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 const (

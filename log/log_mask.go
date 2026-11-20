@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/logpipe"
-	"go.owlky.com/owlky/internal/pattern"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/logpipe"
+	"go.owlkei.com/owlkei/internal/pattern"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 type convertMode uint8

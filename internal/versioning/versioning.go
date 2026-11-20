@@ -3,7 +3,7 @@ package versioning
 import (
 	"strings"
 
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type Type int

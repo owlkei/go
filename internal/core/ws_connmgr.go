@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"go.owlky.com/owlky/internal/memorybroker"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/memorybroker"
+	"go.owlkei.com/owlkei/log"
 	"golang.org/x/net/websocket"
 )
 

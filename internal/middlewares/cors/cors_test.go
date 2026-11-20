@@ -2,14 +2,14 @@ package cors_test
 
 import (
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/cors"
+	. "go.owlkei.com/owlkei/internal/middlewares/cors"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestNewCORS_Panics_EmptyOrigins(t *testing.T) {

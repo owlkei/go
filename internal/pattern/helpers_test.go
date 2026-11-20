@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/pattern"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/pattern"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 var updateMatching = flag.Bool("update-matching", false, "rewrite MATCHING.md from the current Match behaviour")

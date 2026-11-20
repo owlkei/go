@@ -1,7 +1,7 @@
 # 0020: Startup and dependency lifecycle
 
 Status: Approved
-Packages: `internal/core`, `internal/wsevent`, `internal/devtool`, root package (`aliases.go`), `api/owlky.txt`
+Packages: `internal/core`, `internal/wsevent`, `internal/devtool`, root package (`aliases.go`), `api/owlkei.txt`
 
 Covers steps 2-7 of `docs/roadmap/0009-startup-lifecycle.md`. The decisions of that roadmap and of
 `docs/roadmap/backlog.md` › "Startup and dependency lifecycle" are taken as given. Step 1 renames
@@ -36,21 +36,21 @@ func Retry(ctx context.Context, opts *RetryOptions, fn func(ctx context.Context)
 Accepted entries of `Imports` and `AsyncImports` (no type is added: they stay `any`):
 
 ```go
-owlky.Module
-func(deps...) owlky.Module
-func(deps...) (owlky.Module, error)
-func(ctx context.Context, deps...) (owlky.Module, error)
+owlkei.Module
+func(deps...) owlkei.Module
+func(deps...) (owlkei.Module, error)
+func(ctx context.Context, deps...) (owlkei.Module, error)
 ```
 
 Why each name is exported: `AsyncImports` is the feature; `SetStartupTimeout` is the app option the roadmap
 asks for (a setter like `SetLogger`, because `Create` takes no options and its signature must not change);
 `Retry` / `RetryOptions` are for module authors. Module states are **not** exported (log and devtool only).
 
-Exact additions to `api/owlky.txt`:
+Exact additions to `api/owlkei.txt`:
 
 ```
-pkg owlky, func Retry(context.Context, *core.RetryOptions, func(context.Context) error) error
-pkg owlky, type RetryOptions = core.RetryOptions
+pkg owlkei, func Retry(context.Context, *core.RetryOptions, func(context.Context) error) error
+pkg owlkei, type RetryOptions = core.RetryOptions
 reach core.App, method (*core.App) SetStartupTimeout(time.Duration) *core.App
 reach core.ModuleBuilder, method (*core.ModuleBuilder) AsyncImports(...any) *core.ModuleBuilder
 reach core.RetryOptions, field InitialDelay time.Duration
@@ -75,7 +75,7 @@ Words used below.
 | # | Rule |
 |---|---|
 | F1 | `Build()` checks every entry of both lists by `reflect.Type` (not by the printed type as `isDynamicModule` does): a `*core.Module`, or a non-variadic func whose results are `(*core.Module)` or `(*core.Module, error)`, with `context.Context` allowed only as the first parameter and only with the two-result form |
-| F2 | Any other value (a nil entry, `func() string`, `func(context.Context) owlky.Module`, a variadic func, `context.Context` as second parameter, three results) panics at `Build()`, once for all bad entries, one per line joined by `"\n       "` as today: `invalid module: can't import '<type, or <nil>>' with <Imports\|AsyncImports>: an import is a owlky.Module or a module factory: func(deps...) owlky.Module, func(deps...) (owlky.Module, error) or func(ctx context.Context, deps...) (owlky.Module, error)`. It replaces `can't pass '%v' type as module` |
+| F2 | Any other value (a nil entry, `func() string`, `func(context.Context) owlkei.Module`, a variadic func, `context.Context` as second parameter, three results) panics at `Build()`, once for all bad entries, one per line joined by `"\n       "` as today: `invalid module: can't import '<type, or <nil>>' with <Imports\|AsyncImports>: an import is a owlkei.Module or a module factory: func(deps...) owlkei.Module, func(deps...) (owlkei.Module, error) or func(ctx context.Context, deps...) (owlkei.Module, error)`. It replaces `can't pass '%v' type as module` |
 | F3 | `SetStartupTimeout(d)`: `d <= 0` panics `invalid app: SetStartupTimeout needs a positive duration`; after `Create` it panics `invalid app: SetStartupTimeout must be called before Create` (`mustBeBeforeCreate`). Default 30 s |
 | F4 | The timeout is one budget for the whole `Create()`, counted from its start. A `ctx` factory of `Imports` receives a context whose deadline is that instant; it is canceled when `Create()` returns or panics |
 | F5 | Every factory of the sync set is called on a helper goroutine; `Create()` waits for its return, its panic or the deadline, whatever the signature. Its parameters are resolved on `Create()`'s goroutine before the call |
@@ -89,7 +89,7 @@ Words used below.
 
 | # | Rule |
 |---|---|
-| S1 | A factory listed by module `P` resolves each non-`ctx` parameter `T`, in this order: a provider visible in another entry of `P`'s `Imports` / `AsyncImports` (declared by that module or visible through its imports, the existing `visibleByModule`); a global provider; `log.Logger` / `owlky.Publisher`. `P`'s own providers are not in scope |
+| S1 | A factory listed by module `P` resolves each non-`ctx` parameter `T`, in this order: a provider visible in another entry of `P`'s `Imports` / `AsyncImports` (declared by that module or visible through its imports, the existing `visibleByModule`); a global provider; `log.Logger` / `owlkei.Publisher`. `P`'s own providers are not in scope |
 | S2 | Global resolution is unchanged: a global of a static module is found whatever its position or depth, and its owner's `OnInit` runs before the provider is built |
 | S3 | Order does not matter. `Create()` scans the static tree first, then repeats: call, in discovery order (depth first, list order), the first factory not yet called whose parameters all resolve; scan the module it returns (its globals, its imports, its factories). It stops when no factory is callable |
 | S4 | One factory left with an unresolved parameter panics with today's message `dependency injection: can't resolve argument of '<func type>'. Please make sure that the argument '<key>' at index [<i>] is available in the injected providers` |
@@ -138,8 +138,8 @@ Words used below.
 |---|---|
 | R1 | `Retry` calls `fn(ctx)`; a nil error returns nil at once. Otherwise it waits and calls again. Attempt numbers start at 1 |
 | R2 | Wait before attempt `n+1`: `d = min(MaxDelay, InitialDelay × 2^(n-1))`, then a uniform random time in `[d/2, d]` (`math/rand/v2`) |
-| R3 | `ctx` done before or during a wait, or after a failed attempt: returns `fmt.Errorf("owlky: retry stopped after %d attempts: %w", n, errors.Join(ctx.Err(), lastErr))` (`errors.Is` finds both). `fn` is not called when `ctx` is already done (`n` = 0, no `lastErr`) |
-| R4 | `MaxAttempts > 0` and attempt `MaxAttempts` fails: returns `fmt.Errorf("owlky: retry gave up after %d attempts: %w", n, lastErr)` without waiting |
+| R3 | `ctx` done before or during a wait, or after a failed attempt: returns `fmt.Errorf("owlkei: retry stopped after %d attempts: %w", n, errors.Join(ctx.Err(), lastErr))` (`errors.Is` finds both). `fn` is not called when `ctx` is already done (`n` = 0, no `lastErr`) |
+| R4 | `MaxAttempts > 0` and attempt `MaxAttempts` fails: returns `fmt.Errorf("owlkei: retry gave up after %d attempts: %w", n, lastErr)` without waiting |
 | R5 | `opts == nil` means the defaults. `fn == nil` panics `invalid retry: Retry needs a function`. A panic in `fn` is not recovered |
 | R6 | When `ctx` is the one the framework gave a factory (it carries the entry in an unexported context key), every failed attempt adds 1 to the entry's `attempts`, stores the error as its `last_error` and logs `Warn` `ModuleRetry` (`module`, `attempt`, `error`, `next`). With any other `ctx`, `Retry` only retries |
 
@@ -188,7 +188,7 @@ For a factory entry not yet returned, tests reach its state through `statusOfFac
 
 | Path | Cost |
 |---|---|
-| Ungated HTTP route | One load and compare of `httpRoute.gate` (nil) in `handleRequest`, right after `match`; the field sits next to `middlewares`, which the next statement reads. No atomic, no call, no allocation. Every `bench/` `BenchmarkOwlky/*` scenario must stay inside the noise band of `docs/review/http-0008.md` (Static 1.26 µs, Param 2.91 µs, NotFound 1.09 µs…), bytes and allocations equal |
+| Ungated HTTP route | One load and compare of `httpRoute.gate` (nil) in `handleRequest`, right after `match`; the field sits next to `middlewares`, which the next statement reads. No atomic, no call, no allocation. Every `bench/` `BenchmarkOwlkei/*` scenario must stay inside the noise band of `docs/review/http-0008.md` (Static 1.26 µs, Param 2.91 µs, NotFound 1.09 µs…), bytes and allocations equal |
 | Gated route, open | That compare, one `atomic.Pointer` load of the module's live table, one index. Expected under 2 ns, 0 allocations (`BenchmarkHTTP_GatedRouteOpen` against the same route ungated) |
 | Gated route, closed (client-triggered, so warm) | Global middlewares + a prebuilt JSON body (as `notFoundBody`), one more atomic load for G10; 0 allocations beyond the `Retry-After` header slice, which is a package-level value. Pages cost one error page render, as `loadshed`'s 503 |
 | Ungated WS event | One nil compare on the matched `wsevent.WSEventItem` |
@@ -244,9 +244,9 @@ request reads without the gate.
 - New files (suggested): `module_factory.go` (F, S), `module_state.go` (G, the gate), `module_async.go` (A),
   `retry.go` (R), each with its `_test.go`; the 503 writer in `http_error.go`; the WS reply in `read_loop.go`.
 - `internal/wsevent`: `WSEventItem` gains the gate handle; `Match` is unchanged.
-- Docs (step 8): README lifecycle section, `.owlky/modules-and-providers.md`,
-  `.owlky/startup-lifecycle-analysis.md`, `.owlky/metadata-lifecycles.json`,
-  `.owlky/metadata-concurrency-model.json`, CLAUDE.md (panic list: the new `invalid module:`,
+- Docs (step 8): README lifecycle section, `.owlkei/modules-and-providers.md`,
+  `.owlkei/startup-lifecycle-analysis.md`, `.owlkei/metadata-lifecycles.json`,
+  `.owlkei/metadata-concurrency-model.json`, CLAUDE.md (panic list: the new `invalid module:`,
   `dependency injection:` and `invalid retry:` messages; `SetStartupTimeout`; `AsyncImports`),
   `internal/core/README.md`, `internal/devtool/README.md`.
 
@@ -270,7 +270,7 @@ are factories blocked on a channel the test closes; no test sleeps to wait for a
 | 5 | A1-A4 | `TestAsync_CreateReturnsWhileFactoryBlocks`, `…_ReadySwitchesRoutesOn` (the "10 s later" case: 503, release, `settled`, 200), `…_OrderOnInitProvidersControllersOnReady` (recorded), `…_DependentsInDiscoveryOrder`, `…_OpenRouteHasSameLayersAsSync` (layer order recorded in both apps), `…_StaticAsyncModuleWithControllers`, `…_FactoryWaitsForAsyncSibling`, `…_WSEventSwitchesOn` |
 | 5 | A5-A10 | `…_FactoryErrorFails` (`ModuleFailed` with the cause, routes stay 503), `…_FactoryPanicFails`, `…_ProviderPanicFails`, `…_SQLFailsUserAndBooking503RedisBookingWorks` (the backlog scenario, end to end over `ServeHTTP`), `…_DependentPanicFailsOnlyIt`, `…_UnknownProviderPendingThenFailed` (`can't resolve <T>` after the last factory returns), `…_UnknownProviderArrivesFromFactory`, `…_UnknownProviderWithoutAsyncFactoryStillPanics`, `…_FactoryModuleWithControllersRefused`, `…_RoutesChangedFails`, `…_FactoryCalledOnce` |
 | 5 | A11, A12, C | `…_ShutdownWhilePendingCancelsCtx` (factory sees `ctx.Done()`, `Stop` returns, no `OnShutdown` for it), `…_ShutdownTimeoutAbandons` (factory ignores `ctx`; short `ShutdownTimeout`; `ModuleShutdownTimeout`), `…_LateResultDropped`, `…_OnShutdownOnlyReadyReverseOrder`, `…_StopFromOnReadyDoesNotDeadlock`, `TestAsync_ConcurrentRequestsDuringSwitch_NoRace` (requests on gated and open routes from many goroutines while three entries settle; every answer is 200 or 503, never a mix of layers), `TestAsync_ConcurrentGetAndDevtool_NoRace` |
-| 6 | R1-R6 | `TestRetry_FirstSuccess`, `…_SucceedsAfterTransientErrors`, `…_DelayBounds` (each wait within `[d/2, d]`, capped by `MaxDelay`; measured with small delays), `…_StopsOnCancel` (`errors.Is` for `context.Canceled` and the last error), `…_CtxAlreadyDone`, `…_MaxAttempts`, `…_NilOptions`, `…_NilFnPanics`, `…_ReportsAttemptsToEntry` (factory in `AsyncImports`: `attempts`, `ModuleRetry`, then `ready`), `…_ForeignCtxReportsNothing`, `…_StopsAtShutdown` (`retry_test.go`); root `surface_test.go`: `owlky.Retry`, `owlky.RetryOptions` |
+| 6 | R1-R6 | `TestRetry_FirstSuccess`, `…_SucceedsAfterTransientErrors`, `…_DelayBounds` (each wait within `[d/2, d]`, capped by `MaxDelay`; measured with small delays), `…_StopsOnCancel` (`errors.Is` for `context.Canceled` and the last error), `…_CtxAlreadyDone`, `…_MaxAttempts`, `…_NilOptions`, `…_NilFnPanics`, `…_ReportsAttemptsToEntry` (factory in `AsyncImports`: `attempts`, `ModuleRetry`, then `ready`), `…_ForeignCtxReportsNothing`, `…_StopsAtShutdown` (`retry_test.go`); root `surface_test.go`: `owlkei.Retry`, `owlkei.RetryOptions` |
 | 7 | V | `TestModuleLog_PendingReadyFailed` (fields), `TestServer_InstanceLoaderOnlyReady`; `TestDevtool_ModulesLive` (pending → ready changes between two calls; `waiting_for`, `attempts`, `last_error`) (`devtool_builder_test.go`, core side next to `initDevtool`) |
 
 ## Risks

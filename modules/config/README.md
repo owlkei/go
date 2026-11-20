@@ -1,6 +1,6 @@
 # Config Module
 
-*Config module is a part of `Owlky Go` framework. It merges the process environment, `.env` files and any configuration you load yourself into one read-only-by-default service, and never prints a value.*
+*Config module is a part of `Owlkei Go` framework. It merges the process environment, `.env` files and any configuration you load yourself into one read-only-by-default service, and never prints a value.*
 
 - [Config Module](#config-module)
   - [Key Features](#key-features)
@@ -46,7 +46,7 @@
 First you need create a `.env` file in the root of your project:
 
 ```dosini
-USERNAME=owlky # Support comments
+USERNAME=owlkei # Support comments
 PASSWORD=123$%^
 ```
 
@@ -60,25 +60,25 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/modules/config"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/modules/config"
 )
 
 type DBProvider struct {
 	ConfigService config.ConfigService
 }
 
-func (dbProvider DBProvider) NewProvider() owlky.Provider {
+func (dbProvider DBProvider) NewProvider() owlkei.Provider {
 	fmt.Println("USERNAME:", dbProvider.ConfigService.Get(("USERNAME")))
 	fmt.Println("PASSWORD:", dbProvider.ConfigService.Get(("PASSWORD")))
 	return dbProvider
 }
 
 func main() {
-	app := owlky.New(nil)
+	app := owlkei.New(nil)
 
 	app.Create(
-		owlky.ModuleBuilder().
+		owlkei.ModuleBuilder().
 			Imports(
 				config.Register(&config.ConfigModuleOptions{}),
 			).
@@ -95,7 +95,7 @@ go run main.go
 
 There are logs print out on console:
 ```console
-USERNAME: owlky
+USERNAME: owlkei
 PASSWORD: 123$%^
 ```
 
@@ -420,7 +420,7 @@ Every failure happens in `Register`, at startup, as a panic `invalid config: <de
 ## Imports, AsyncImports and module factories
 
 `Register` is not a module factory: you call it, it reads every source at once, and it returns a
-module. Owlky Go never calls it.
+module. Owlkei Go never calls it.
 
 - **Import it with `Imports`.** The work is done before `Create()` starts, so there is nothing to
   wait for, and a bad `.env` file stops the boot as it should. In `AsyncImports`, the module would
@@ -430,12 +430,12 @@ module. Owlky Go never calls it.
   anywhere in the tree. This works for factories in `AsyncImports` too.
 
 ```go
-func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlky.Module, error) {
+func NewDatabaseModule(ctx context.Context, configService config.ConfigService) (owlkei.Module, error) {
 	url, _ := configService.Get("DATABASE_URL").(string)
 	return newDatabaseModule(ctx, url)
 }
 
-var AppModule = owlky.ModuleBuilder().
+var AppModule = owlkei.ModuleBuilder().
 	Imports(
 		NewDatabaseModule,
 		config.Register(&config.ConfigModuleOptions{}),
@@ -443,7 +443,7 @@ var AppModule = owlky.ModuleBuilder().
 	Build()
 ```
 
-See the main README › Module lifecycle for factory signatures, `AsyncImports` and `owlky.Retry`.
+See the main README › Module lifecycle for factory signatures, `AsyncImports` and `owlkei.Retry`.
 
 ## `ConfigService`
 
@@ -514,7 +514,7 @@ Binds configuration values to the `bind:"NAME"` fields of a struct and returns t
 
 - Description: Transformed configuration data
 
-- 2nd value: `[]owlky.FieldLevel`
+- 2nd value: `[]owlkei.FieldLevel`
 
 - Description: Field validation levels
 

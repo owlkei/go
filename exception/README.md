@@ -1,6 +1,6 @@
 # Exception
 
-*Exception is a part of `Owlky Go` framework: it defines the error value that guards, handlers and filters raise, with an HTTP or WebSocket code, a client message and an error text, and writes it as the standard JSON error body.*
+*Exception is a part of `Owlkei Go` framework: it defines the error value that guards, handlers and filters raise, with an HTTP or WebSocket code, a client message and an error text, and writes it as the standard JSON error body.*
 
 - [Exception](#exception)
   - [Key Features](#key-features)
@@ -40,17 +40,17 @@ package main
 import (
 	"errors"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 var errNoRows = errors.New("no rows")
 
 type UserController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (instance UserController) NewController() owlky.Controller {
+func (instance UserController) NewController() owlkei.Controller {
 	return instance
 }
 
@@ -62,8 +62,8 @@ func (instance UserController) READ() string {
 }
 
 func main() {
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().Controllers(UserController{}).Build())
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().Controllers(UserController{}).Build())
 	app.Listen()
 }
 ```

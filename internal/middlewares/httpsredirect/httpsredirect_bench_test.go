@@ -2,7 +2,7 @@ package httpsredirect_test
 
 import (
 	"crypto/tls"
-	. "go.owlky.com/owlky/internal/middlewares/httpsredirect"
+	. "go.owlkei.com/owlkei/internal/middlewares/httpsredirect"
 	"net/http"
 	"testing"
 )

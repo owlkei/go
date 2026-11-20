@@ -6,9 +6,9 @@ import (
 	stdHTTP "net/http"
 	"strconv"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/render"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/render"
 )
 
 const (

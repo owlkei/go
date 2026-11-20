@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/tracecontext"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/tracecontext"
 )
 
 func TestTransport_ReturnsNonNil(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/compress"
+	. "go.owlkei.com/owlkei/internal/middlewares/compress"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,11 +15,11 @@ import (
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestCompress_RoundTrip_2KiB(t *testing.T) {
@@ -70,7 +70,7 @@ func TestCompress_RoundTrip_ExplicitWriteHeaderFirst(t *testing.T) {
 func TestCompress_RoundTrip_ThroughRoute(t *testing.T) {
 	app := core.New(&core.AppOptions{Logger: silentLogger{}})
 	app.BindGlobalMiddlewares(Compress{})
-	app.Create(owlky.ModuleBuilder().Controllers(bigController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(bigController{}).Build())
 	w := serve(app, request(http.MethodGet, "/big", "Accept-Encoding", "gzip"))
 	res, body := resultOf(t, w)
 	if res.Header.Get("Content-Encoding") != "gzip" {
@@ -317,7 +317,7 @@ func TestCompress_MinSize_DeclaredLength(t *testing.T) {
 }
 
 func TestCompress_DetectsContentType(t *testing.T) {
-	html := append([]byte("<!DOCTYPE html><html><body>"), bytes.Repeat([]byte("<p>owlky owlky owlky</p>"), 100)...)
+	html := append([]byte("<!DOCTYPE html><html><body>"), bytes.Repeat([]byte("<p>owlkei owlkei owlkei</p>"), 100)...)
 	app := terminalApp(t, Compress{}, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(html) })
 	w := serve(app, gzipRequest(http.MethodGet))
 	expectGzip(t, w, html, "Z4: a missing Content-Type is detected from the bytes")
@@ -444,14 +444,14 @@ func TestCompress_ServeFileKeepsReadFrom(t *testing.T) {
 	if err := os.MkdirAll(fileRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, content := range map[string][]byte{"logo.png": []byte("hello"), "small.html": []byte("<p>hi</p>"), "big.html": bytes.Repeat([]byte("<p>owlky</p>"), 500)} {
+	for name, content := range map[string][]byte{"logo.png": []byte("hello"), "small.html": []byte("<p>hi</p>"), "big.html": bytes.Repeat([]byte("<p>owlkei</p>"), 500)} {
 		if err := os.WriteFile(filepath.Join(fileRoot, name), content, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	app := core.New(&core.AppOptions{Logger: silentLogger{}})
 	app.BindGlobalMiddlewares(Compress{})
-	app.Create(owlky.ModuleBuilder().Controllers(fileController{}).Build())
+	app.Create(owlkei.ModuleBuilder().Controllers(fileController{}).Build())
 
 	for _, name := range []string{"logo.png", "small.html"} {
 		w := &readerFromWriter{header: http.Header{}}

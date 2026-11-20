@@ -3,9 +3,9 @@ package core
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/log"
 )
 
 func BenchmarkHandshake_NoListener(b *testing.B) {

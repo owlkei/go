@@ -2,14 +2,14 @@
 
 Status: Approved (by delegation, 2026-11-18: roadmap 0008 › Decisions records that the maintainer
 delegated the approval of this roadmap's designs)
-Packages: root `owlky` (3 aliases); `internal/common` (`Page`, `View`); `internal/core` (`EnableRender`,
+Packages: root `owlkei` (3 aliases); `internal/common` (`Page`, `View`); `internal/core` (`EnableRender`,
 `RenderOptions`, page routes, error output, the asset route); a new `internal/render` (template sets,
 buffers, nonce, asset table); `internal/ctx` (hooks, three client messages); `internal/httphook` (CSP
 hand-over); `internal/trace` (one stage); `internal/devtool`; `middlewares/helmet`; `sample/pages`.
 Roadmap: `docs/roadmap/0008-server-rendered-html.md`, steps 2 to 9.
 
 ## Goal
-A controller that embeds `owlky.Page` serves HTML pages: its handlers return a `owlky.View` (a template
+A controller that embeds `owlkei.Page` serves HTML pages: its handlers return a `owlkei.View` (a template
 name and its data) and the framework renders it with `html/template` inside a layout. Page routes use the
 same route words, modules, pipes, guards, interceptors and filters as API routes, answer errors as HTML,
 share a per-request CSP nonce with `helmet`, and serve their assets from the same `fs.FS` as the templates.
@@ -20,9 +20,9 @@ An app that never calls `EnableRender` behaves and costs exactly as before, exce
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | The page route kind is a **controller role**: embed `owlky.Page` instead of `owlky.HTTP`. No new DSL word; `RENDER` stays unused and reserved | A page controller needs GET pages *and* POST form handlers. A `RENDER_x` word could only say GET, so it would be a second word for `READ` and leave form posts without a kind. With the role, `READ_bookings` is a GET page and `CREATE_bookings` is its form post: zero new vocabulary, and the kind is visible on the first line of the controller |
-| D2 | A page handler returns `owlky.View{Name, Data}`. No `HTTPContext.Render` method | One way to render. The result goes through interceptors like any result; a method would be a second way and would write before post-interceptors run |
-| D3 | Status and redirect use what exists: `c.Status(code)` or the `(int, owlky.View)` result form; `c.Redirect(url)` or the `owlky.Redirect` parameter. `View` has no `Status` or `Redirect` field | Adding them would give status three ways and redirect three ways |
+| D1 | The page route kind is a **controller role**: embed `owlkei.Page` instead of `owlkei.HTTP`. No new DSL word; `RENDER` stays unused and reserved | A page controller needs GET pages *and* POST form handlers. A `RENDER_x` word could only say GET, so it would be a second word for `READ` and leave form posts without a kind. With the role, `READ_bookings` is a GET page and `CREATE_bookings` is its form post: zero new vocabulary, and the kind is visible on the first line of the controller |
+| D2 | A page handler returns `owlkei.View{Name, Data}`. No `HTTPContext.Render` method | One way to render. The result goes through interceptors like any result; a method would be a second way and would write before post-interceptors run |
+| D3 | Status and redirect use what exists: `c.Status(code)` or the `(int, owlkei.View)` result form; `c.Redirect(url)` or the `owlkei.Redirect` parameter. `View` has no `Status` or `Redirect` field | Adding them would give status three ways and redirect three ways |
 | D4 | On a page route the default status is 200 for every method and a redirect without an explicit 3xx status answers **303** | A re-rendered form is not `201 Created`; `301` after a POST is cached forever by browsers. API routes keep 201 and 301 |
 | D5 | `RenderOptions` has two fields: `FS` and `IsReload`. Layouts, partials, the error page and assets are **file conventions** inside `FS`, not options | "Powerful inside, small outside": one `//go:embed web` carries everything; nothing to configure |
 | D6 | Template functions are fixed: `nonce`, `asset`, `dict`. No user `FuncMap` | Formatting belongs on the data (`{{.StartsAt.Format "2 Jan 2006"}}` calls a method). `dict` is the one thing methods cannot do: pass several values to a partial. A user map is an option whose misuse (`template.HTML` helpers) removes the autoescaping this feature exists for |
@@ -35,7 +35,7 @@ An app that never calls `EnableRender` behaves and costs exactly as before, exce
 ## Public API
 
 ```go
-package owlky
+package owlkei
 
 type (
 	Page          = common.Page
@@ -70,20 +70,20 @@ func (app *App) EnableRender(opts *RenderOptions) *App
 
 | Addition | Why users need it |
 |---|---|
-| `owlky.Page` | Embedded in a controller to declare that its handlers are page routes (the slot 0017 reserved: a seventh name in `fieldNameByRole`) |
+| `owlkei.Page` | Embedded in a controller to declare that its handlers are page routes (the slot 0017 reserved: a seventh name in `fieldNameByRole`) |
 | `(*Page).Prefix` | The same prefix call as `(*HTTP).Prefix`; `Page` is a defined type, so the method is declared again |
-| `owlky.View`, fields `Name`, `Data` | The result of a page handler: which template, with what data |
-| `owlky.RenderOptions`, fields `FS`, `IsReload` | Where the templates and assets are; whether to reload them in development |
+| `owlkei.View`, fields `Name`, `Data` | The result of a page handler: which template, with what data |
+| `owlkei.RenderOptions`, fields `FS`, `IsReload` | Where the templates and assets are; whether to reload them in development |
 | `App.EnableRender` | Turns rendering on, by the `Enable…(opts *XxxOptions)` rule |
 
 Nothing else is exported. `internal/render` is not importable. `helmet` gains no field.
 
-Exact lines `make api` adds to `api/owlky.txt` (any other diff is a defect):
+Exact lines `make api` adds to `api/owlkei.txt` (any other diff is a defect):
 
 ```
-pkg owlky, type Page = common.Page
-pkg owlky, type RenderOptions = core.RenderOptions
-pkg owlky, type View = common.View
+pkg owlkei, type Page = common.Page
+pkg owlkei, type RenderOptions = core.RenderOptions
+pkg owlkei, type View = common.View
 reach common.Page, method (*common.Page) Prefix(string, ...any) *common.Page
 reach common.View, field Data any
 reach common.View, field Name string
@@ -99,31 +99,31 @@ As an application writes it:
 var webFS embed.FS
 
 type BookingPages struct {
-	owlky.Page
+	owlkei.Page
 	Bookings BookingService
 }
 
-func (p BookingPages) NewController() owlky.Controller { return p }
+func (p BookingPages) NewController() owlkei.Controller { return p }
 
-func (p BookingPages) READ_bookings() owlky.View {
-	return owlky.View{Name: "bookings/list", Data: owlky.Map{"Bookings": p.Bookings.All()}}
+func (p BookingPages) READ_bookings() owlkei.View {
+	return owlkei.View{Name: "bookings/list", Data: owlkei.Map{"Bookings": p.Bookings.All()}}
 }
 
-func (p BookingPages) CREATE_bookings(c owlky.HTTPContext, form BookingForm) owlky.View {
+func (p BookingPages) CREATE_bookings(c owlkei.HTTPContext, form BookingForm) owlkei.View {
 	if len(form.Errors) > 0 {
 		c.Status(http.StatusUnprocessableEntity)
-		return owlky.View{Name: "bookings/new", Data: form}
+		return owlkei.View{Name: "bookings/new", Data: form}
 	}
 	p.Bookings.Add(form)
 	c.Redirect("/bookings")
-	return owlky.View{}
+	return owlkei.View{}
 }
 
 func main() {
 	web, _ := fs.Sub(webFS, "web")
-	app := owlky.New()
+	app := owlkei.New()
 	app.BindGlobalMiddlewares(helmet.Helmet{}, csrf.CSRF{})
-	app.EnableRender(&owlky.RenderOptions{FS: web})
+	app.EnableRender(&owlkei.RenderOptions{FS: web})
 	app.Create(Module)
 	_ = app.Listen(8080, nil)
 }
@@ -165,12 +165,12 @@ given here. "Fixed 500" means status 500 with the 500 row of R24 in the route's 
 
 | # | Rule |
 |---|---|
-| R1 | In a controller that embeds `owlky.Page`, every method named by the HTTP route words becomes a route with the same method, path, prefixes and version as under `owlky.HTTP`, and is a **page route**. `BindGuard`, `BindInterceptor`, `BindMiddleware`, `BindExceptionFilter` and pipes work unchanged |
-| R2 | `Create()` panics: a controller embedding both → `invalid controller: <Type> embeds both owlky.HTTP and owlky.Page`; a `Page` controller without `EnableRender` → `invalid render: <Type> embeds owlky.Page, call EnableRender before Create`; a page handler (not `SERVE`) whose only or last result is not `owlky.View` → `invalid handler: <Type>.<Method> must return owlky.View`; an `HTTP` controller handler whose only or last result type is `owlky.View` → `invalid handler: <Type>.<Method> returns owlky.View, which needs a owlky.Page controller` |
+| R1 | In a controller that embeds `owlkei.Page`, every method named by the HTTP route words becomes a route with the same method, path, prefixes and version as under `owlkei.HTTP`, and is a **page route**. `BindGuard`, `BindInterceptor`, `BindMiddleware`, `BindExceptionFilter` and pipes work unchanged |
+| R2 | `Create()` panics: a controller embedding both → `invalid controller: <Type> embeds both owlkei.HTTP and owlkei.Page`; a `Page` controller without `EnableRender` → `invalid render: <Type> embeds owlkei.Page, call EnableRender before Create`; a page handler (not `SERVE`) whose only or last result is not `owlkei.View` → `invalid handler: <Type>.<Method> must return owlkei.View`; an `HTTP` controller handler whose only or last result type is `owlkei.View` → `invalid handler: <Type>.<Method> returns owlkei.View, which needs a owlkei.Page controller` |
 | R3 | `EnableRender(nil)` or a nil `FS` panics `invalid render: EnableRender needs RenderOptions.FS`; a second call panics `invalid render: EnableRender called twice`; after `Create` it panics `invalid app: EnableRender must be called before Create` |
 | R4 | `Create()` parses every layout, page, partial and `error.html` once. A parse error, a reference to a template that does not exist, or an `html/template` escaping error panics `invalid render: <file path>: <error>`. No request is needed to find them |
 | R5 | A page handler returning `View{Name: "bookings/list", Data: d}` answers the page inside its nearest layout with `Content-Type: text/html; charset=utf-8`, a `Content-Length`, and `Cache-Control: no-cache` unless the handler set `Cache-Control` |
-| R6 | The status is 200 for every method (POST too) unless set by `c.Status(code)` or the `(int, owlky.View)` form |
+| R6 | The status is 200 for every method (POST too) unless set by `c.Status(code)` or the `(int, owlkei.View)` form |
 | R7 | Values in `Data` are escaped for their context by `html/template`: `<script>alert(1)</script>` in a text node arrives as `&lt;script&gt;…`, and inside an attribute, a URL or a script as that context requires |
 | R8 | When the response is already written (a redirect, a direct write), the returned `View` is ignored and nothing more is written |
 | R9 | A `View` whose `Name` is no page (unknown, empty, `error`, a partial, a layout, a path with `..`) with no response written → fixed 500 as HTML, and one `Error` log `RenderFailed` with `template` and `cause`. The name is looked up in a table built at `Create()`; no file is opened |
@@ -189,7 +189,7 @@ for byte as today apart from R24):
 | # | Situation | Output |
 |---|---|---|
 | R16 | A matched **page route**, from its first guard on: a guard returning `false` (403), an exception or panic from a guard, pipe, interceptor, handler or filter that reaches the built-in filter | HTML |
-| R17 | A matched API route (`owlky.HTTP`), a user `SERVE` route or the asset route, from its first guard on | JSON |
+| R17 | A matched API route (`owlkei.HTTP`), a user `SERVE` route or the asset route, from its first guard on | JSON |
 | R18 | Before any guard: an exception or panic from a global or module middleware (`csrf` 403, `hostcheck` 421 and 400, `loadshed` 503, `httpsredirect` 400, any user middleware), and no route: 404, 405 (with its `Allow` header), 410 | By `Accept`: HTML when a value of the request's `Accept` header contains `text/html` (ASCII case-insensitive), else JSON. `*/*` alone → JSON. No `Accept` → JSON. `application/xhtml+xml` alone → JSON. q-values are not read. The response carries `Vary: Accept` |
 | R19 | `guards/throttler` 429 | A guard: R16 or R17, with its `Retry-After` and rate headers kept |
 
@@ -216,15 +216,15 @@ WebSocket roadmap owns them).
 
 ### Step 4: forms
 
-No new API and no template work: the DTO is a `Form` pipe (`Transform(owlky.Form, owlky.ArgumentMetadata) any`)
-that calls `form.Bind(dto)`, reads the `[]owlky.FieldLevel` and returns the DTO with its own
+No new API and no template work: the DTO is a `Form` pipe (`Transform(owlkei.Form, owlkei.ArgumentMetadata) any`)
+that calls `form.Bind(dto)`, reads the `[]owlkei.FieldLevel` and returns the DTO with its own
 `Errors map[string]string`; the handler passes it to the view.
 
 | # | Rule |
 |---|---|
 | R25 | A `Form` pipe on a page route binds `application/x-www-form-urlencoded` and `multipart/form-data` bodies with the same result as on an API route |
 | R26 | Invalid input: the handler returns the form's view with status 422; the response holds each error message and each submitted value in its field, escaped (`"><script>` submitted as a name arrives as `&#34;&gt;&lt;script&gt;` inside `value="…"`) |
-| R27 | Valid input: `c.Redirect("/bookings")` (or the `owlky.Redirect` parameter) with no status set answers `303 See Other` with `Location: /bookings` and no page body from the returned `View`. An explicit 3xx set with `c.Status` is kept. On an API route the same call still answers 301 |
+| R27 | Valid input: `c.Redirect("/bookings")` (or the `owlkei.Redirect` parameter) with no status set answers `303 See Other` with `Location: /bookings` and no page body from the returned `View`. An explicit 3xx set with `c.Status` is kept. On an API route the same call still answers 301 |
 | R28 | A malformed form body (400) or one over `MaxRequestBodyBytes` (413) on a page route is an HTML error page (R16), with the messages of R24 |
 | R29 | CSRF needs no token and no template helper: `csrf.CSRF{}` checks `Sec-Fetch-Site` / `Origin`. A cross-origin form POST with `Accept: text/html` is refused with a 403 HTML page (R18); the same-origin POST passes; the same refusal with `Accept: application/json` is JSON |
 
@@ -331,7 +331,7 @@ No goroutine is started. Nothing to stop at shutdown.
 | `internal/ctx` | Hooks only (package functions, per design 0017's hook rule): the page flag and the redirect default of a request. No new method on `HTTPContext` |
 | `middlewares/helmet` | Compiles the nonce form of its policy in `NewMiddleware()`; `Use` hands it to the framework's writer. No new field, no new export |
 | `internal/devtool` | `HTTPComponent.Kind`, `GetConfigurationResponse.Render` |
-| Docs (step 8) | `README.md` (Pages section, the root alias table), a `render` reference (`internal/render/README.md`), `internal/core/README.md`, `middlewares/helmet/README.md` and `README.vi.md`, `middlewares/csrf/README.md` (forms), `.owlky/request-pipeline.md`, `routing-system.md`, `handler-execution.md`, `package-reference.md`, `metadata-api-index.json`, `CLAUDE.md` (package map, controller roles, the `invalid render` and `invalid controller` categories, the error output rule) |
+| Docs (step 8) | `README.md` (Pages section, the root alias table), a `render` reference (`internal/render/README.md`), `internal/core/README.md`, `middlewares/helmet/README.md` and `README.vi.md`, `middlewares/csrf/README.md` (forms), `.owlkei/request-pipeline.md`, `routing-system.md`, `handler-execution.md`, `package-reference.md`, `metadata-api-index.json`, `CLAUDE.md` (package map, controller roles, the `invalid render` and `invalid controller` categories, the error output rule) |
 
 ### Sample: `sample/pages` (step 7)
 
@@ -339,15 +339,15 @@ No goroutine is started. Nothing to stop at shutdown.
 |---|---|
 | `main.go` | `helmet`, `csrf`, `EnableRender` with `fs.Sub(embed, "web")`; `IsReload` and `os.DirFS("web")` when `PAGES_DEV=1` |
 | `module.go`, `bookings_service.go` | The module and an in-memory provider |
-| `bookings_pages.go` | `owlky.Page` controller: list (`GET /bookings`), detail (`GET /bookings/{id}`, `NotFoundException` when missing), form (`GET /bookings/new`), submit (`POST /bookings`: 422 or 303). The builder checks each method name against `ParseFuncNameToURL` |
+| `bookings_pages.go` | `owlkei.Page` controller: list (`GET /bookings`), detail (`GET /bookings/{id}`, `NotFoundException` when missing), form (`GET /bookings/new`), submit (`POST /bookings`: 422 or 303). The builder checks each method name against `ParseFuncNameToURL` |
 | `booking_form.go` | The `Form` pipe with `Bind`, `FieldLevel` and `Errors` |
-| `web/layout.html`, `web/error.html`, `web/bookings/{list,detail,new}.html`, `web/partials/field.html` | Owlky's HTML snippets (table, card, text field, button, alert) pasted as markup; an inline theme script with `nonce="{{nonce}}"`; `{{asset}}` links |
-| `web/assets/owlky.min.css` | Copied from `owlky/packages/styles/dist/owlky.min.css`: 221,798 bytes (29,817 gzip) |
-| `web/assets/owlky.js` | Copied from `owlky/packages/html/dist/owlky.js`, the CDN IIFE loader (it starts with `(function(){`): 133,808 bytes (41,851 gzip). `modules/` is not copied: the sample uses only components that `owlky.js` holds |
+| `web/layout.html`, `web/error.html`, `web/bookings/{list,detail,new}.html`, `web/partials/field.html` | Owlkei's HTML snippets (table, card, text field, button, alert) pasted as markup; an inline theme script with `nonce="{{nonce}}"`; `{{asset}}` links |
+| `web/assets/owlky.min.css` | Copied from `owlkei/packages/styles/dist/owlky.min.css`: 221,798 bytes (29,817 gzip) |
+| `web/assets/owlky.js` | Copied from `owlkei/packages/html/dist/owlky.js`, the CDN IIFE loader (it starts with `(function(){`): 133,808 bytes (41,851 gzip). `modules/` is not copied: the sample uses only components that `owlky.js` holds |
 | `web/assets/OWLKY.md` | Source, date and the MIT license of the two copied files |
 | `pages_test.go` | `TestPages_FormFlow`: form page 200 → invalid POST 422 with messages and values → valid POST 303 → the list shows the booking → unknown id is an HTML 404 → `owlky.js?v=<hash>` is immutable |
 
-Owlky Go's `go.mod` gains nothing. No Go file outside `sample/pages` names Owlky.
+Owlkei Go's `go.mod` gains nothing. No Go file outside `sample/pages` names Owlkei.
 
 ## Test plan
 
@@ -424,13 +424,13 @@ public name:
 //go:embed web
 var web embed.FS
 
-app.EnableRender(&owlky.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"})
+app.EnableRender(&owlkei.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"})
 ```
 
 | # | Rule |
 |---|---|
 | A1 | `RenderOptions.Dir` names the directory of `FS` that holds the templates and assets. Empty means `"web"`; `"."` means the root of `FS` |
-| A2 | `EnableRender` panics `invalid render: RenderOptions.FS has no "<dir>" directory: embed it with //go:embed <dir>, or set Dir` when that directory is missing. Owlky Go never creates files: a missing `web` directory already fails `go build` at the `//go:embed` line, and scaffolding belongs to a future CLI |
+| A2 | `EnableRender` panics `invalid render: RenderOptions.FS has no "<dir>" directory: embed it with //go:embed <dir>, or set Dir` when that directory is missing. Owlkei Go never creates files: a missing `web` directory already fails `go build` at the `//go:embed` line, and scaffolding belongs to a future CLI |
 | A3 | With `IsReload` and an `embed.FS`, the directory `Dir` is read from disk with `os.DirFS(Dir)`, relative to the working directory, since embedded files never change. Any other `fs.FS` is used as given, so tests and custom file systems keep working. A missing directory on disk panics `invalid render: IsReload reads "<dir>" from disk, but there is no such directory under the working directory` |
 | A4 | With `IsReload`, `Create()` logs one `Warn` `RenderReloadOn` (`dir`, `note`), so a reload left on in production shows in its log |
 
@@ -442,19 +442,19 @@ API: one more line, `reach core.RenderOptions, field Dir string`. Tests: `intern
 Status: Approved (by delegation, 2026-11-18: roadmap 0008 › Decisions). Roadmap steps 14 to 17 (18, 19 for
 the migration). Paths come from design 0019 (kebab-case, `PathStyle`, `Path`), which lands first.
 
-The route picks the template, as in Next.js. `owlky.Page` and `owlky.View` go away:
+The route picks the template, as in Next.js. `owlkei.Page` and `owlkei.View` go away:
 
 ```go
 type BookingPages struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Bookings BookingService
 }
 
-func (p BookingPages) RENDER_bookings() owlky.Map {
-	return owlky.Map{"Bookings": p.Bookings.All()}
+func (p BookingPages) RENDER_bookings() owlkei.Map {
+	return owlkei.Map{"Bookings": p.Bookings.All()}
 }
 
-func (p BookingPages) RENDER_bookings_BY_id(param owlky.Param) Booking {
+func (p BookingPages) RENDER_bookings_BY_id(param owlkei.Param) Booking {
 	booking, ok := p.Bookings.Find(param.Get("id"))
 	if !ok {
 		panic(exception.NotFoundException("No booking has this number"))
@@ -464,7 +464,7 @@ func (p BookingPages) RENDER_bookings_BY_id(param owlky.Param) Booking {
 
 func (p BookingPages) RENDER_new_OF_bookings() BookingForm { return BookingForm{Nights: "1"} }
 
-func (p BookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form BookingForm) BookingForm {
+func (p BookingPages) SUBMIT_new_OF_bookings(c owlkei.HTTPContext, form BookingForm) BookingForm {
 	if len(form.Errors) == 0 {
 		p.Bookings.Add(form)
 		c.Redirect("/bookings")
@@ -488,21 +488,21 @@ web/public/robots.txt      /robots.txt
 
 | Part of 0018 | After amendment 2 |
 |---|---|
-| D1 (a role, no `RENDER` word) | Reversed: no role; `RENDER` and `SUBMIT` are operation words in a `owlky.HTTP` controller. API and page routes may share one controller |
-| D2, `owlky.View` | Removed. The handler's result is the template's data; the template is bound to the route at `Create()` |
-| D3 | Kept without `View`: status by `c.Status(code)` or the `(int, data)` result form; redirect by `c.Redirect` or the `owlky.Redirect` parameter |
+| D1 (a role, no `RENDER` word) | Reversed: no role; `RENDER` and `SUBMIT` are operation words in a `owlkei.HTTP` controller. API and page routes may share one controller |
+| D2, `owlkei.View` | Removed. The handler's result is the template's data; the template is bound to the route at `Create()` |
+| D3 | Kept without `View`: status by `c.Status(code)` or the `(int, data)` result form; redirect by `c.Redirect` or the `owlkei.Redirect` parameter |
 | D4 | `RENDER_`: 200. A `SUBMIT_` that renders: **422**. A redirect without an explicit 3xx: 303 |
 | D5, file conventions | The table "File conventions" below replaces the old one: pages are named by their route, `error.html` → error pages by status, new `public/`, page CSS and JS |
 | D6 | One more fixed function: `pageAssets` |
 | D7 | The asset route also serves `/assets/_pages/…` |
-| R1, R2 | Replaced by P1 to P9. The four `owlky.Page` / `owlky.View` panics are gone |
+| R1, R2 | Replaced by P1 to P9. The four `owlkei.Page` / `owlkei.View` panics are gone |
 | R5, R7, R10 to R12, R15 | Kept, reading "the handler's result" for `View.Data` |
 | R6 | Replaced by P7 and P14 |
 | R8 | Kept: when the response is already written, the result is ignored |
 | R9 | Removed: no name comes from a handler. A missing template is a `Create()` panic (P4) or a reload failure (P10) |
 | R13 | Replaced by P6 |
 | R14 | Kept; "`error.html`" reads "an error page"; P10 adds the template binding |
-| R16, R17 | "Page route" now means a `RENDER_` or `SUBMIT_` route; every other route of a `owlky.HTTP` controller is an API route. The public file routes (P24) and `/assets/_pages/…` answer errors as JSON (R17). R18, R19 unchanged |
+| R16, R17 | "Page route" now means a `RENDER_` or `SUBMIT_` route; every other route of a `owlkei.HTTP` controller is an API route. The public file routes (P24) and `/assets/_pages/…` answer errors as JSON (R17). R18, R19 unchanged |
 | R20 to R22 | Replaced by P17 to P21 (`error.html` → `<code>.html` → `<N>xx.html` → built-in) |
 | R23, R24 | Unchanged |
 | R25 to R29 | Kept; the form post is a `SUBMIT_` (P12 to P16) |
@@ -515,11 +515,11 @@ web/public/robots.txt      /robots.txt
 ### Public API
 
 Nothing is added. `RENDER`, `SUBMIT` and `pageAssets` are words, not identifiers. Exact lines `make api`
-removes from `api/owlky.txt` (with the six `+` lines of design 0019, any other diff is a defect):
+removes from `api/owlkei.txt` (with the six `+` lines of design 0019, any other diff is a defect):
 
 ```
--pkg owlky, type Page = common.Page
--pkg owlky, type View = common.View
+-pkg owlkei, type Page = common.Page
+-pkg owlkei, type View = common.View
 -reach common.Page, method (*common.Page) Prefix(string, ...any) *common.Page
 -reach common.View, field Data any
 -reach common.View, field Name string
@@ -553,17 +553,17 @@ type and method (`BookingPages.RENDER_bookings`); template paths are relative to
 
 | # | Rule |
 |---|---|
-| P1 | In a `owlky.HTTP` controller, a method named `RENDER` or `RENDER_<route>` is a page route: `GET` (and `HEAD`, R15) on the path design 0019 gives the same words after `READ` (resource words, `BY`, `AND`, `OF`, `PathStyle`, controller and module prefixes, `Path`). Guards, interceptors, pipes, filters and middlewares bind as on any route |
+| P1 | In a `owlkei.HTTP` controller, a method named `RENDER` or `RENDER_<route>` is a page route: `GET` (and `HEAD`, R15) on the path design 0019 gives the same words after `READ` (resource words, `BY`, `AND`, `OF`, `PathStyle`, controller and module prefixes, `Path`). Guards, interceptors, pipes, filters and middlewares bind as on any route |
 | P2 | Its template is the final path without the outer slashes, looked up among the files walked at `Create()` (compared byte for byte; no file system lookup by name): `<path>.html` or `<path>/index.html`. A parameter segment is written `{name}` in the file or directory name, with the route's parameter name. The table below lists the candidates |
 | P3 | Without `EnableRender`: `invalid render: <T>.<M> is a page route, call EnableRender before Create` |
 | P4 | No candidate exists: `invalid render: <T>.<M> needs a template: <a> or <b>` (the available candidates, one or two). Both exist: `invalid render: <T>.<M> has two templates: <a> and <b>`. No candidate is possible: `invalid render: <T>.<M> can have no template: <dir>/ is reserved` |
 | P5 | `ANY`, `VERSION` or `FILE` in a `RENDER_` or `SUBMIT_` name: `invalid route: <W> in <Name>: a page route has no wildcard` / `has no version` / `has no file extension`. A final path with a `*` segment (from `Path` or a prefix): `invalid route: <T>.<M> is a page route and its path <route> holds a wildcard` |
-| P6 | The data (`.` in the page and its layout) is the handler's only or last result after the interceptors, of any type: `owlky.Map`, a struct, a slice, `nil`. A handler with no result renders with `nil`. A post-interceptor's replacement is the data; an interceptor that answers without calling the handler supplies it |
+| P6 | The data (`.` in the page and its layout) is the handler's only or last result after the interceptors, of any type: `owlkei.Map`, a struct, a slice, `nil`. A handler with no result renders with `nil`. A post-interceptor's replacement is the data; an interceptor that answers without calling the handler supplies it |
 | P7 | The status of a `RENDER_` is 200 unless set by `c.Status(code)` or the `(int, data)` result form |
 | P8 | With `EnableVersioning`, a page route answers whatever version the request carries, and a request without one (it is registered like the asset route, under the neutral version) |
 | P9 | A `.html` file that is not a layout, a partial, an error page or the template of a route, outside `assets/` and `public/`: `invalid render: <file> has no RENDER_ route: add one, move it to partials/, or delete it`. So `error.html` and a misspelled `bookings/detial.html` stop the boot |
 | P10 | `IsReload`: a reload re-binds every page route by P2. A route whose template is now missing or doubled, a parse error, or a set that lost its `{{pageAssets}}` (P32) fails the reload as R14 does (fixed 500 HTML, `RenderReloadFailed` with `file` and `cause`, until fixed). P9 and the orphan check of P30 are **not** repeated on reload: a file added on disk without a route is ignored until the restart that adds its handler |
-| P11 | `owlky.Page` and `owlky.View` do not exist. A controller field named `Page` has no meaning to the framework |
+| P11 | `owlkei.Page` and `owlkei.View` do not exist. A controller field named `Page` has no meaning to the framework |
 
 | Final path | Candidates |
 |---|---|
@@ -584,7 +584,7 @@ Every template file therefore serves exactly one route.
 |---|---|
 | P12 | `SUBMIT` or `SUBMIT_<route>` is a page route: `POST` on the final path of the method `RENDER` / `RENDER_<route>` of the **same controller** with the same words, rendered with that route's template. `SUBMIT_new_OF_bookings` posts to `/bookings/new/` |
 | P13 | No such `RENDER_`: `invalid handler: <T>.<SUBMIT name> needs <T>.<RENDER name>: a SUBMIT_ posts to the page that shows its form` |
-| P14 | The handler redirected (`c.Redirect(url)` or the `owlky.Redirect` parameter): 303 unless a 3xx was set, and the result is ignored (R8, R27). Otherwise the result is rendered (P6) with status **422**, unless set by `c.Status(code)` or `(int, data)` |
+| P14 | The handler redirected (`c.Redirect(url)` or the `owlkei.Redirect` parameter): 303 unless a 3xx was set, and the result is ignored (R8, R27). Otherwise the result is rendered (P6) with status **422**, unless set by `c.Status(code)` or `(int, data)` |
 | P15 | A `SUBMIT_` has no path of its own: `Path` or a targeted `Prefix` naming it panics `invalid route: Path("<v>") is bound to '<Name>': a SUBMIT_ uses the path of its RENDER_` (the same text with `Prefix("<v>")`). `Path` and prefixes on its `RENDER_` move both |
 | P16 | Layers are bound per handler as for any route: `BindGuard(g, instance.RENDER_x)` covers the GET only, `BindGuard(g)` both. `PUT` on the page's path answers 405 whose `Allow` holds `GET` and `POST`. Edit and delete forms post to the page that shows them (one `SUBMIT_` per page; a submit button's `name` tells them apart); there is no `_method` override. `CREATE_`, `UPDATE_`, `DELETE_` stay API routes: JSON errors, 201, 301 |
 
@@ -695,10 +695,10 @@ Migration list (grep at `9fe673b`; counts are occurrences of `Page` / `View` / `
 | `sample/pages/pages_test.go`, `sample/pages/README.md` | The POST goes to `/bookings/new`; the new file names |
 | `README.md` › Pages (36 occurrences: "Render a page", "File conventions", "Status codes and redirects", "Error pages", "Forms", "Assets"), › "Routes from method names" (`RENDER`, `SUBMIT` rows), › Static files, the package reference (`Page`, `View` rows out) | Rewritten on this amendment; every example compiles |
 | `internal/render/README.md` (15), `internal/core/README.md` (14), `internal/common/README.md` (`Page` and `View` sections out), `internal/devtool/README.md`, `internal/trace/README.md`, `exception/README.md`, `middlewares/csrf/README.md`, `middlewares/helmet/README.md` and `README.vi.md` | The same |
-| `.owlky/routing-system.md`, `request-pipeline.md`, `handler-execution.md`, `package-reference.md`, `metadata-api-index.json`, `anti-patterns-gotchas.md` | Pages by route, error pages by status, the new panics |
+| `.owlkei/routing-system.md`, `request-pipeline.md`, `handler-execution.md`, `package-reference.md`, `metadata-api-index.json`, `anti-patterns-gotchas.md` | Pages by route, error pages by status, the new panics |
 | `CLAUDE.md` | Package map (aliases row), "Controller" and "Page" bullets, the error output paragraph, the panic list (`invalid controller:` goes; `invalid handler:` and `invalid render:` get the new messages) |
 | `docs/roadmap/backlog.md` › "Shared layout data for pages" | Wording only (`View.Data` → the handler's result) |
-| `api/owlky.txt` | `make api` (the five `-` lines) |
+| `api/owlkei.txt` | `make api` (the five `-` lines) |
 
 ### Test plan
 

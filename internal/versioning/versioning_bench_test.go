@@ -3,7 +3,7 @@ package versioning
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func BenchmarkVersion_Query(b *testing.B) {

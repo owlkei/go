@@ -65,10 +65,10 @@ list: `internal/common/README.md` › Route DSL.
 - `PathStyle` applies to resource words only: never to `Prefix` strings, `Path`, parameter names,
   versions or WebSocket events. It changes nothing at request time (`GET /user_profile` → 404 under
   kebab).
-- Set per module: `ModuleBuilder().PathStyle(owlky.PathStyleAsWritten)`. A controller takes the
+- Set per module: `ModuleBuilder().PathStyle(owlkei.PathStyleAsWritten)`. A controller takes the
   first explicit style in this order: its own module, then each importer in discovery order
   (depth first, `Imports` order, the order module prefixes stack). None → kebab. An invalid value
-  panics `invalid module: PathStyle needs owlky.PathStyleKebab or owlky.PathStyleAsWritten`.
+  panics `invalid module: PathStyle needs owlkei.PathStyleKebab or owlkei.PathStyleAsWritten`.
 - Deep nesting: put the shared part in `instance.Prefix("users/{user_id}/posts/{post_id}")`;
   prefixes may hold `{param}` segments and are never rewritten.
 
@@ -204,7 +204,7 @@ The root route's pattern is `/||/[GET]/` whether it was registered as `""` or `/
 
 **In handler**:
 ```go
-func (c UserController) READ_users_BY_id(param owlky.Param) string {
+func (c UserController) READ_users_BY_id(param owlkei.Param) string {
     return "User " + param.Get("id")
 }
 ```
@@ -229,7 +229,7 @@ directory answers its `index.html` or 404, never a listing. `core` registers rou
 
 Code: `internal/versioning`, `internal/core/http.go`. The version is **not** part of the path: it is
 read from the query, a header, the `Accept` media type or a custom extractor
-(`AppOptions.Versioning: &owlky.VersioningOptions{…}`), and each route is registered per
+(`AppOptions.Versioning: &owlkei.VersioningOptions{…}`), and each route is registered per
 (method, path, version).
 
 - `READ_users_VERSION_1` and `READ_users_VERSION_2` are two routes on `GET /users`.
@@ -303,11 +303,11 @@ HTTP controller are the page routes, and API and page routes may share a control
 
 ```go
 type UserController struct {
-    owlky.HTTP // makes this an HTTP controller
+    owlkei.HTTP // makes this an HTTP controller
     UserService  UserService
 }
 
-func (c UserController) NewController() owlky.Controller {
+func (c UserController) NewController() owlkei.Controller {
     c.Prefix("v1", c.READ_users)
     c.Path("/me", c.READ_profile)
     return c
@@ -348,7 +348,7 @@ A parameter is read by the exact text after `BY` / `AND` in the method name (or 
 
 ```go
 // READ_users_BY_user_id → GET /users/{user_id}
-func (c UserController) READ_users_BY_user_id(param owlky.Param) string {
+func (c UserController) READ_users_BY_user_id(param owlkei.Param) string {
     return param.Get("user_id") // param.Get("userId") or ("id") is ""
 }
 ```

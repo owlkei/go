@@ -2,15 +2,15 @@ package csrf_test
 
 import (
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/csrf"
+	. "go.owlkei.com/owlkei/internal/middlewares/csrf"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/middlewares/proxy"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/middlewares/proxy"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestCSRF_Table(t *testing.T) {

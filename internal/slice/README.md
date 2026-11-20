@@ -1,6 +1,6 @@
 # Slice
 
-*Package `slice` holds the generic slice helpers and the string parsers that Owlky Go uses to bind query, param, header, form and body values.*
+*Package `slice` holds the generic slice helpers and the string parsers that Owlkei Go uses to bind query, param, header, form and body values.*
 
 - [Slice](#slice)
   - [Usage](#usage)
@@ -14,7 +14,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it.
+The package is internal: only code in the Owlkei Go module can import it.
 
 ## Usage
 
@@ -24,7 +24,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/slice"
+	"go.owlkei.com/owlkei/internal/slice"
 )
 
 func main() {

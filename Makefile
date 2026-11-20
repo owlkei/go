@@ -38,11 +38,11 @@ fmt: ## Format Go sources
 	gofmt -w $$(git ls-files '*.go')
 
 .PHONY: api
-api: ## Write the public API listing api/owlky.txt
+api: ## Write the public API listing api/owlkei.txt
 	go run ./internal/apicheck -write
 
 .PHONY: api-check
-api-check: ## Fail when the public API differs from api/owlky.txt
+api-check: ## Fail when the public API differs from api/owlkei.txt
 	go run ./internal/apicheck
 
 .PHONY: check
@@ -59,13 +59,13 @@ check: ## Everything CI runs: format, vet, API, lint, tests
 BENCH_COUNT ?= 5
 
 .PHONY: bench
-bench: ## End-to-end HTTP benchmark of owlky (bench/), median of BENCH_COUNT runs
-	cd bench && go test -run '^$$' -bench 'BenchmarkOwlky' -benchmem -count $(BENCH_COUNT) ./...
+bench: ## End-to-end HTTP benchmark of owlkei (bench/), median of BENCH_COUNT runs
+	cd bench && go test -run '^$$' -bench 'BenchmarkOwlkei' -benchmem -count $(BENCH_COUNT) ./...
 
 .PHONY: bench-compare
-bench-compare: ## Same scenarios on owlky, net/http, Gin, Echo, Chi and Fiber (bench/)
+bench-compare: ## Same scenarios on owlkei, net/http, Gin, Echo, Chi and Fiber (bench/)
 	cd bench && go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./...
 
 .PHONY: load
-load: ## Load test with wrk on a release build (bench/load.sh); FRAMEWORKS="owlky gin" LOGS="on off" PROCS="1 2 all" DURATION=10s CONNECTIONS="64 256"
+load: ## Load test with wrk on a release build (bench/load.sh); FRAMEWORKS="owlkei gin" LOGS="on off" PROCS="1 2 all" DURATION=10s CONNECTIONS="64 256"
 	./bench/load.sh

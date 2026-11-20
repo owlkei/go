@@ -3,7 +3,7 @@ package ctx
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestGetTagParamIndex_NegativeIndexFallsBackToZero(t *testing.T) {

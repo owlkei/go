@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 type bindController struct{}

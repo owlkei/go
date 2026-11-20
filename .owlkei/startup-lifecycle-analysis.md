@@ -18,7 +18,7 @@ provider before work it started in a goroutine has finished, when:
 3. A client connects during that async phase
 
 The framework guarantees only that every synchronous hook has returned before the server starts.
-The tracked alternative is a module factory in `AsyncImports` that connects (with `owlky.Retry`):
+The tracked alternative is a module factory in `AsyncImports` that connects (with `owlkei.Retry`):
 the module stays `pending`, the routes that need it answer `503`, and they open only once it returned.
 
 ---
@@ -105,7 +105,7 @@ per app. Root importing A and C, both importing B: B, A, C, root.
 ```
 per entry goroutine
   ├─ wait for the entries its factory needs
-  ├─ factory(ctx)            ctx canceled at shutdown, no deadline; owlky.Retry reports attempts
+  ├─ factory(ctx)            ctx canceled at shutdown, no deadline; owlkei.Retry reports attempts
   ├─ under wireMu: OnInit, providers, controllers of each module of the unit
   ├─ gate.live.Store(...)    one atomic store opens every route and event of the module
   ├─ state ready, log ModuleReady, then OnReady (a panic is logged OnReadyPanic)
@@ -142,7 +142,7 @@ SIGINT / SIGTERM / app.Stop()
   │     a panicking hook is logged as OnShutdownPanic (module, panic) and the others still run;
   │     then the access log is stopped, a pending PanicStacksSuppressed count is logged,
   │     and the stdout log pipeline is flushed (at most 2 s) and made synchronous again
-  └─ the serving call returns nil, "owlky: shutdown timed out after <timeout>" or "owlky: serve: <err>"
+  └─ the serving call returns nil, "owlkei: shutdown timed out after <timeout>" or "owlkei: serve: <err>"
 ```
 
 `app.Stop()` on an app that is not serving runs the hooks once and marks the app stopped. Every
@@ -157,15 +157,15 @@ connections are not drained: they end when the process exits.
 ### Condition 1: Async Module Initialization ⚠️ REAL
 
 ```go
-var CacheModule = func() owlky.Module {
-	m := owlky.ModuleBuilder().Providers(CacheService{}).Build()
+var CacheModule = func() owlkei.Module {
+	m := owlkei.ModuleBuilder().Providers(CacheService{}).Build()
 	m.OnInit = func() {
 		go client.Connect("redis://...")
 	}
 	return m
 }()
 
-func (instance ChatController) SUBSCRIBE_chat(payload owlky.WSPayload) string {
+func (instance ChatController) SUBSCRIBE_chat(payload owlkei.WSPayload) string {
 	instance.CacheService.Set("key", "value")
 	return "ok"
 }
@@ -231,7 +231,7 @@ No ACK / NACK, no retry, no persistence: the broker is in memory (`memorybroker`
 
 1. **Connect in a module factory**, not in `OnInit` or `NewProvider`: it can take `ctx` and return an
    error. In `Imports`, `Create` waits for it within the startup timeout.
-2. **Use `AsyncImports` for a dependency that may be down at start**, with `owlky.Retry(ctx, …)` for
+2. **Use `AsyncImports` for a dependency that may be down at start**, with `owlkei.Retry(ctx, …)` for
    transient errors (no attempt limit); return permanent errors (bad config) at once.
 3. **Start background work in `OnReady`** (`go startWorkerPool()`): the module is built then.
 4. **Release resources in `OnShutdown`**: it runs after the last request returned, for ready modules.

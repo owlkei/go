@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-func BenchmarkOwlky(b *testing.B) { benchmarkHandler(b, NewOwlky()) }
+func BenchmarkOwlkei(b *testing.B) { benchmarkHandler(b, NewOwlkei()) }
 
-func BenchmarkOwlkyPage(b *testing.B) {
+func BenchmarkOwlkeiPage(b *testing.B) {
 	app := newPageApp(true)
 	for _, s := range []struct{ name, path string }{{"JSONList", "/json"}, {"PageList", "/bookings"}} {
 		b.Run(s.name, func(b *testing.B) {
@@ -26,7 +26,7 @@ func BenchmarkOwlkyPage(b *testing.B) {
 	}
 }
 
-func BenchmarkOwlkyPageIdleMemory(b *testing.B) {
+func BenchmarkOwlkeiPageIdleMemory(b *testing.B) {
 	for b.Loop() {
 		before := heapAfterGC()
 		withoutRender := newPageApp(false)

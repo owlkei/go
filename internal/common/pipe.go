@@ -1,7 +1,7 @@
 package common
 
 import (
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 const (

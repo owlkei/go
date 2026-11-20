@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/middlewares/origin"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/middlewares/origin"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestParse_EmptyListMatchesNothing(t *testing.T) {

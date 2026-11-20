@@ -17,7 +17,7 @@ the framework's own cost per request drops sharply and allocations follow; the r
 
 ## Steps
 Every package step is the deep dive of roadmap 0001's Next section: bugs (each proved by a failing
-test), hot / cold performance per `.owlky/conventions.md` › Performance, concurrency and security,
+test), hot / cold performance per `.owlkei/conventions.md` › Performance, concurrency and security,
 tests, benchmarks rewritten (`b.Loop`, `b.ReportAllocs`, `-count 5` + `benchstat` before and after in
 the commit), README.
 

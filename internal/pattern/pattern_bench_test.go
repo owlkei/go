@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/pattern"
+	"go.owlkei.com/owlkei/internal/pattern"
 )
 
 func BenchmarkNewPattern_Exact(b *testing.B) {

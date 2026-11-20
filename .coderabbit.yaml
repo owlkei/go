@@ -16,8 +16,8 @@ reviews:
   path_instructions:
     - path: "**/*.go"
       instructions: |
-        Owlky Go is a NestJS-style dependency injection web framework for Go. Review against CLAUDE.md
-        and .owlky/conventions.md:
+        Owlkei Go is a NestJS-style dependency injection web framework for Go. Review against CLAUDE.md
+        and .owlkei/conventions.md:
         - Correctness, concurrency (shared state needs a lock or atomic and a -race test) and security
           (limits on client-controlled input; no internal error text, stacks or secrets in responses).
         - The request path is hot: per-request fmt, reflection, regexp or defer, and avoidable

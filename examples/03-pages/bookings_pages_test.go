@@ -72,13 +72,13 @@ func TestPages_FormFlow(t *testing.T) {
 		`<td data-ok-align="right">3</td>`,
 	)
 	wantHTML(t, "detail", send(t, app, http.MethodGet, "/bookings/1", nil), http.StatusOK,
-		"<title>Booking #1 · Owlky pages</title>",
+		"<title>Booking #1 · Owlkei pages</title>",
 		"Arrives on Tuesday, 1 December 2026 for 3 nights.",
 	)
 
 	// An unknown booking is 4xx.html, inside the layout.
 	wantHTML(t, "unknown id", send(t, app, http.MethodGet, "/bookings/99", nil), http.StatusNotFound,
-		"<title>Not Found · Owlky pages</title>",
+		"<title>Not Found · Owlkei pages</title>",
 		`<div data-ok-alert-message>No booking has this number</div>`,
 	)
 }

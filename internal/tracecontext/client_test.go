@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestClientIP_UnresolvedUsesRemoteAddr(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestNewProxy_Panics_BothSet(t *testing.T) {

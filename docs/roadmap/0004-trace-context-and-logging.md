@@ -3,7 +3,7 @@
 Status: Done
 
 ## Goal
-Every log line written while Owlky Go serves something can be tied to the request (or WebSocket
+Every log line written while Owlkei Go serves something can be tied to the request (or WebSocket
 connection and message) it belongs to, with IDs in the W3C Trace Context format that any log
 library, gateway or other service can read. Logging never makes a request wait for I/O, holds a
 bounded amount of memory, and a panic flood can't flood the log.
@@ -14,7 +14,7 @@ bounded amount of memory, and a panic flood can't flood the log.
   handshake, WS message), the logger API (`From`), the asynchronous log pipeline (`log`,
   `accesslog`), panic stack sampling (`core`), `modules/httpclient` forwarding `traceparent`, the
   READMEs and the knowledge base.
-- Out: an OpenTelemetry SDK or exporter module (not planned: Owlky Go only follows the W3C format);
+- Out: an OpenTelemetry SDK or exporter module (not planned: Owlkei Go only follows the W3C format);
   the devtools sink (the devtools roadmap adds it to the pipeline); rewriting the WebSocket transport
   (own implementation, later roadmap); `span_id` per stage on log lines (later, only if measured
   worth it).
@@ -32,14 +32,14 @@ bounded amount of memory, and a panic flood can't flood the log.
 | 8 | Measure: request cost with and without a listener, log call cost (1 and 12 goroutines, fast and slow reader), pipeline memory bound, panic flood; `docs/review/http-0004.md` | light | - | 1-7 | the review file, compared with `http-0003.md` | done |
 
 ## Decisions
-- **W3C Trace Context, no OpenTelemetry dependency:** Owlky Go follows the format (trace ID, span ID,
+- **W3C Trace Context, no OpenTelemetry dependency:** Owlkei Go follows the format (trace ID, span ID,
   `traceparent`) so gateways, other services and any log library can read the IDs; no SDK and no
   exporter module.
-- **The request ID is always Owlky Go's own;** an incoming `traceparent` only continues the trace ID.
+- **The request ID is always Owlkei Go's own;** an incoming `traceparent` only continues the trace ID.
   A client can never choose the request ID.
 - **Logger API:** `s.Logger.From(ctx)` on the injected logger (no free function, no `ctx.Log()`,
   no `Info(ctx, …)` on every call); outside a request `s.Logger.Info(…)` as today. The logger only
-  knows `context.Context`; every Owlky Go context exposes one through `Context()`; the pooled
+  knows `context.Context`; every Owlkei Go context exposes one through `Context()`; the pooled
   `HTTPContext` itself is never offered as a context.
 - **IDs reach other log libraries as key-value arguments** (`trace_id`, `request`, `connection`,
   `message`…), so an adapter needs nothing new. Field names are fixed in design 0011.
@@ -111,7 +111,7 @@ wrote them (debugging from an `X-Request-Id`, and the devtools timeline of a req
   framework's wrapper only (the `WrapLogger` layer `SetLogger` already applies).
 - **Transport-free:** the logger only knows `context.Context`. Every trigger point (HTTP request,
   WebSocket handshake and message, a future `SCHEDULE_…`) puts its scope into a `context.Context`,
-  and every Owlky Go context exposes it through `Context()` (added to the `ctx.Context` interface).
+  and every Owlkei Go context exposes it through `Context()` (added to the `ctx.Context` interface).
   Passing the pooled `HTTPContext` itself as a context is not offered: it is reused after the request.
 - **Scope model:** `request` (HTTP); `connection` (= the handshake's request ID) and `message` (WS);
   `upstream` (a validated incoming `X-Request-Id` or `traceparent`, never replacing our own ID);

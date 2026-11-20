@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestStackSampler_FirstOfKeyHasStack(t *testing.T) {

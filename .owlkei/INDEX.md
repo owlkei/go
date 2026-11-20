@@ -1,6 +1,6 @@
-# Owlky Go AI Knowledge Base — Complete Index
+# Owlkei Go AI Knowledge Base — Complete Index
 
-**Purpose**: Central navigation point for comprehensive AI-friendly documentation of Owlky Go framework.
+**Purpose**: Central navigation point for comprehensive AI-friendly documentation of Owlkei Go framework.
 
 **Optimization**: Machine-readable, minimal prose, organized by access pattern.
 
@@ -8,7 +8,7 @@
 
 ## Quick Navigation by Use Case
 
-### "I need to understand how Owlky Go works"
+### "I need to understand how Owlkei Go works"
 1. Start: [architecture-core-concepts.md](architecture-core-concepts.md)
 2. Then: [request-pipeline.md](request-pipeline.md)
 3. Details: [handler-execution.md](handler-execution.md)
@@ -90,9 +90,9 @@ package-reference.md (independent API reference)
 ## Core Framework Concepts (Quick Summary)
 
 ### 1. Module → Controller → Provider Pattern
-- **Module**: Composition root (controllers, providers, imports), built with `owlky.ModuleBuilder()…Build()`
-- **Imports**: Modules and module factories (`func(ctx, deps...) (owlky.Module, error)` and two shorter shapes); `Imports` fails fast at `Create()` (startup timeout, `AppOptions.StartupTimeout`), `AsyncImports` builds in the background with `pending` / `ready` / `failed` states and `503` on the routes that need it; `owlky.Retry` for transient errors ([modules-and-providers.md](modules-and-providers.md) § 2.2-2.4, `README.md` › Module lifecycle)
-- **Controller**: HTTP/WS handler container (embeds `owlky.HTTP` and/or `owlky.WS`)
+- **Module**: Composition root (controllers, providers, imports), built with `owlkei.ModuleBuilder()…Build()`
+- **Imports**: Modules and module factories (`func(ctx, deps...) (owlkei.Module, error)` and two shorter shapes); `Imports` fails fast at `Create()` (startup timeout, `AppOptions.StartupTimeout`), `AsyncImports` builds in the background with `pending` / `ready` / `failed` states and `503` on the routes that need it; `owlkei.Retry` for transient errors ([modules-and-providers.md](modules-and-providers.md) § 2.2-2.4, `README.md` › Module lifecycle)
+- **Controller**: HTTP/WS handler container (embeds `owlkei.HTTP` and/or `owlkei.WS`)
 - **Provider**: Injected business logic, constructed once per app
 
 ### 2. Request Lifecycle (the spec: [request-pipeline.md](request-pipeline.md) § 1)
@@ -112,16 +112,16 @@ error from a guard onwards → module exception filter → global exception filt
 ### 4. WebSocket Model
 - NOT streaming: RPC-over-WS with pub/sub
 - Each message = complete request/response cycle; middlewares run only at the handshake
-- Fanout via the injected `owlky.Publisher`
+- Fanout via the injected `owlkei.Publisher`
 
 ### 5. Exception Handling
 - A panic from a guard onwards reaches the route's exception filters; a middleware panic gets the fixed error response
 - Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack, sampled: 1 stack per stack key per second, 10 per app per second)
 
 ### 6. Server and Lifecycle
-- `app.Listen()`, `app.Serve(listener)`; the whole configuration is `owlky.New(&owlky.AppOptions{…})` (`Server{Port, ShutdownTimeout, TLS{CertFile, KeyFile, Config}, IsH2C}`, `HTTP{MaxBodyBytes, ServeDirs}`, the pre-route stages `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress`), or `owlky.OptionsFromEnv()` (`OK_*`, `PORT`, `./.env`)
+- `app.Listen()`, `app.Serve(listener)`; the whole configuration is `owlkei.New(&owlkei.AppOptions{…})` (`Server{Port, ShutdownTimeout, TLS{CertFile, KeyFile, Config}, IsH2C}`, `HTTP{MaxBodyBytes, ServeDirs}`, the pre-route stages `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress`), or `owlkei.OptionsFromEnv()` (`OK_*`, `PORT`, `./.env`)
 - **Explicit protection:** nothing runs unless configured. Every pre-route stage is off by default; they run in the fixed order `loadshed` → `proxy` → `hostcheck` → `httpsredirect` → `headers` → `cors` → `csrf` → `compress`, before routing and user middlewares. One `Origins` list serves CORS, CSRF and the WebSocket handshake. `SecurityCheck` warns once at `Create` for `SUBMIT_` routes without `CSRF` or `RENDER_` routes without `Headers`. Every field with its default and `OK_*` variable, the production checklist and the behavior changes: `README.md` › Configuration
-- Sizes are `owlky.ByteSize` (`16 * owlky.KiB`; in a variable `10MiB` or `10MB`, a lower-case `b` is refused)
+- Sizes are `owlkei.ByteSize` (`16 * owlkei.KiB`; in a variable `10MiB` or `10MB`, a lower-case `b` is refused)
 - Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`: the `AsyncImports` context is canceled, requests drain, background goroutines are awaited, then `OnShutdown` hooks of ready modules in reverse order
 - One logger API: `AppOptions.Logger` (any `log.LogAdapter`), read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
 - Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
@@ -152,7 +152,7 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md#decision-tree-how-do-i-implement-this-feature)
 
 **Steps**:
-1. Embed `owlky.HTTP` in controller
+1. Embed `owlkei.HTTP` in controller
 2. Create method: `READ()` / `CREATE()` / etc.
 3. Add parameters (injected automatically)
 4. Register in `ModuleBuilder().Controllers(...)`
@@ -164,11 +164,11 @@ error from a guard onwards → module exception filter → global exception filt
 2. [routing-system.md](routing-system.md) §6.3, [request-pipeline.md](request-pipeline.md) §1.3a
 
 **Steps**:
-1. `Render: &owlky.RenderOptions{FS: web}` in `AppOptions` (`//go:embed web`)
-2. In a `owlky.HTTP` controller: `RENDER_bookings()` → `GET /bookings`, template `web/bookings/index.html` (or `bookings.html`); return the data
-3. A form: `SUBMIT_<same words>(c owlky.HTTPContext, form MyForm)` posts to the same URL; return the form to re-render with 422, or `c.Redirect(url)` for 303
+1. `Render: &owlkei.RenderOptions{FS: web}` in `AppOptions` (`//go:embed web`)
+2. In a `owlkei.HTTP` controller: `RENDER_bookings()` → `GET /bookings`, template `web/bookings/index.html` (or `bookings.html`); return the data
+3. A form: `SUBMIT_<same words>(c owlkei.HTTPContext, form MyForm)` posts to the same URL; return the form to re-render with 422, or `c.Redirect(url)` for 303
 4. Error pages: `web/404.html`, `web/4xx.html`, `web/5xx.html`; root-URL files in `web/public/`; page CSS / JS as `X.css` / `X.js` next to `X.html`, linked by `{{pageAssets}}`
-5. Set `Headers: &owlky.HeadersOptions{IsEnabled: true}` and `CSRF: &owlky.CSRFOptions{IsEnabled: true}` in `AppOptions` (a `SecurityCheck` warning at `Create` names a missing one)
+5. Set `Headers: &owlkei.HeadersOptions{IsEnabled: true}` and `CSRF: &owlkei.CSRFOptions{IsEnabled: true}` in `AppOptions` (a `SecurityCheck` warning at `Create` names a missing one)
 
 ### "I need to validate input"
 **Files to read**:
@@ -197,10 +197,10 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md)
 
 **Steps**:
-1. Set `WS: &owlky.WSOptions{Path: "/ws"}` in `AppOptions`
-2. Embed `owlky.WS` in controller
+1. Set `WS: &owlkei.WSOptions{Path: "/ws"}` in `AppOptions`
+2. Embed `owlkei.WS` in controller
 3. Create method: `SUBSCRIBE_chat_ANY()` (`chat.*`; `SUBSCRIBE_chat_ALL` for every deeper topic) (see [websocket-system.md](websocket-system.md))
-4. Inject `owlky.Publisher` for fanout
+4. Inject `owlkei.Publisher` for fanout
 5. Call `publisher.Publish(topic, data)`
 
 ### "I need to handle errors"
@@ -289,7 +289,7 @@ All `metadata-*.json` files contain structured data for AI parsing:
 ### 2026-11-18 Update (roadmap 0009)
 
 Design 0020: module factories with errors, `ctx` and a startup timeout; sibling scope and dependency
-order; `AsyncImports`, module states and the readiness gate; `owlky.Retry`; `examples/04-async-modules`. Pages
+order; `AsyncImports`, module states and the readiness gate; `owlkei.Retry`; `examples/04-async-modules`. Pages
 updated: modules-and-providers, startup-lifecycle-analysis, anti-patterns-gotchas § 13, package-reference,
 the lifecycle, concurrency and API metadata.
 
@@ -309,7 +309,7 @@ A source-verified audit found and fixed fabricated APIs (`common.REST`, `App.Set
 - `CLAUDE.md` — Framework overview, commands and workflow
 - Package READMEs (`internal/core/README.md`, `log/README.md`, `internal/trace/README.md`, `internal/accesslog/README.md`, `modules/*/README.md`, …) — per-package API docs not duplicated here
 
-**`ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILDING_WITH_OWLKY.md` do not exist anywhere in this repository** — these were referenced by earlier versions of this doc but were never real files (verified 2026-09-25). Do not tell a user to consult them.
+**`ARCHITECTURE_REVIEW_AND_ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, and `BUILDING_WITH_OWLKEI.md` do not exist anywhere in this repository** — these were referenced by earlier versions of this doc but were never real files (verified 2026-09-25). Do not tell a user to consult them.
 
 **External**:
 - Go stdlib `net/http` — HTTP fundamentals

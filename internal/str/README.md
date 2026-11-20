@@ -1,6 +1,6 @@
 # Str
 
-*Package `str` holds the string helpers that Owlky Go runs on request paths: enclosing a route path in separators, collapsing repeated bytes and removing white space.*
+*Package `str` holds the string helpers that Owlkei Go runs on request paths: enclosing a route path in separators, collapsing repeated bytes and removing white space.*
 
 - [Str](#str)
   - [Usage](#usage)
@@ -11,7 +11,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it.
+The package is internal: only code in the Owlkei Go module can import it.
 
 ## Usage
 
@@ -21,7 +21,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 func main() {

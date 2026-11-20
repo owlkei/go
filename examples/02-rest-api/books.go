@@ -1,16 +1,16 @@
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type BooksController struct {
-	owlky.HTTP
+	owlkei.HTTP
 	Catalog Catalog
 }
 
-func (c BooksController) NewController() owlky.Controller {
+func (c BooksController) NewController() owlkei.Controller {
 	return c
 }
 
@@ -20,7 +20,7 @@ func (c BooksController) READ_books() []Book {
 }
 
 // GET /books/{id}
-func (c BooksController) READ_books_BY_id(param owlky.Param) Book {
+func (c BooksController) READ_books_BY_id(param owlkei.Param) Book {
 	book, ok := c.Catalog.Find(param.Get("id"))
 	if !ok {
 		panic(bookNotFound(param.Get("id")))
@@ -34,7 +34,7 @@ func (c BooksController) CREATE_books(in BookInput) Book {
 }
 
 // PUT /books/{id}
-func (c BooksController) UPDATE_books_BY_id(param owlky.Param, in BookInput) Book {
+func (c BooksController) UPDATE_books_BY_id(param owlkei.Param, in BookInput) Book {
 	book, ok := c.Catalog.Replace(param.Get("id"), in.Book())
 	if !ok {
 		panic(bookNotFound(param.Get("id")))
@@ -43,7 +43,7 @@ func (c BooksController) UPDATE_books_BY_id(param owlky.Param, in BookInput) Boo
 }
 
 // DELETE /books/{id} answers with the book it removed.
-func (c BooksController) DELETE_books_BY_id(param owlky.Param) Book {
+func (c BooksController) DELETE_books_BY_id(param owlkei.Param) Book {
 	book, ok := c.Catalog.Remove(param.Get("id"))
 	if !ok {
 		panic(bookNotFound(param.Get("id")))
@@ -57,8 +57,8 @@ func bookNotFound(id string) exception.Exception {
 
 // NewBooksModule builds a fresh catalog each time, so every app (and every test) starts from the
 // same two books.
-func NewBooksModule() owlky.Module {
-	return owlky.ModuleBuilder().
+func NewBooksModule() owlkei.Module {
+	return owlkei.ModuleBuilder().
 		Controllers(BooksController{}).
 		Providers(NewCatalog()).
 		Build()

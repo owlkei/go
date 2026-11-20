@@ -1,7 +1,7 @@
 package compress_test
 
 import (
-	. "go.owlky.com/owlky/internal/middlewares/compress"
+	. "go.owlkei.com/owlkei/internal/middlewares/compress"
 	"net/http"
 	"testing"
 )

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func benchCtxQuery(key, val string) *ctx.HTTPContext {

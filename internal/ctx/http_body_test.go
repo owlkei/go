@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestBodySet(t *testing.T) {

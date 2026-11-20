@@ -48,7 +48,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/memorycache"
 )
 
 func main() {

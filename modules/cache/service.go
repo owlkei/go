@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"go.owlky.com/owlky/internal/core"
+	"go.owlkei.com/owlkei/internal/core"
 )
 
 type CacheService struct {

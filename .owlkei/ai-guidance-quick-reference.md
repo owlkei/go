@@ -1,6 +1,6 @@
-# AI Agent Quick Reference: Owlky Go Decision Trees
+# AI Agent Quick Reference: Owlkei Go Decision Trees
 
-**Purpose**: Rapid decision-making for common AI code generation scenarios in Owlky Go.
+**Purpose**: Rapid decision-making for common AI code generation scenarios in Owlkei Go.
 
 ---
 
@@ -10,23 +10,23 @@
 Feature Request
   │
   ├─ "I need an HTTP endpoint"
-  │   ├─ Embed owlky.HTTP in controller
+  │   ├─ Embed owlkei.HTTP in controller
   │   ├─ Create method: READ/CREATE/UPDATE/MODIFY/DELETE_BY_params
   │   ├─ Add parameters to method signature (built-in types and pipes, internal/core/README.md › Handler injection)
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Providers go in exported controller fields (injected at Create())
   │
   ├─ "I need a server-rendered HTML page"
-  │   ├─ AppOptions{Render: &owlky.RenderOptions{FS: web}}
-  │   ├─ Embed owlky.HTTP; RENDER_<route> = GET page, SUBMIT_<route> = its form POST (same words)
+  │   ├─ AppOptions{Render: &owlkei.RenderOptions{FS: web}}
+  │   ├─ Embed owlkei.HTTP; RENDER_<route> = GET page, SUBMIT_<route> = its form POST (same words)
   │   ├─ The route picks the template: web/<path>.html or web/<path>/index.html ({id} for parameters)
   │   ├─ Return the template's data (any type); SUBMIT_ re-renders with 422 or c.Redirect → 303
-  │   └─ No owlky.Page / owlky.View: they don't exist
+  │   └─ No owlkei.Page / owlkei.View: they don't exist
   │
   ├─ "I need WebSocket support"
-  │   ├─ Embed owlky.WS in controller
+  │   ├─ Embed owlkei.WS in controller
   │   ├─ Create method: SUBSCRIBE_<topic> (e.g. SUBSCRIBE_chat_ANY → chat.*, SUBSCRIBE_chat_ALL → chat.**)
-  │   ├─ Inject owlky.WSContext, *websocket.Conn, owlky.Publisher
+  │   ├─ Inject owlkei.WSContext, *websocket.Conn, owlkei.Publisher
   │   ├─ Register controller in ModuleBuilder().Controllers(...)
   │   └─ Use publisher.Publish() for fanout
   │
@@ -69,7 +69,7 @@ Feature Request
   │   └─ Logger is available everywhere
   │
   └─ "I need to send events (WebSocket)"
-      ├─ Inject owlky.Publisher into handler
+      ├─ Inject owlkei.Publisher into handler
       ├─ Call publisher.Publish(topic, data)
       ├─ All WS clients subscribed to topic receive message
       └─ Use topic patterns for selective delivery
@@ -136,33 +136,33 @@ I need access to...
   │   └─ http.ResponseWriter (HTTP only)
   │
   ├─ "Full request context with helpers"
-  │   ├─ HTTP: owlky.HTTPContext
-  │   └─ WS: owlky.WSContext
+  │   ├─ HTTP: owlkei.HTTPContext
+  │   └─ WS: owlkei.WSContext
   │
   ├─ "Request body (parsed JSON/form)"
-  │   └─ owlky.Body (HTTP only)
+  │   └─ owlkei.Body (HTTP only)
   │
   ├─ "Query parameters"
-  │   └─ owlky.Query (HTTP only)
+  │   └─ owlkei.Query (HTTP only)
   │
   ├─ "Path parameters (:id, :name, etc.)"
-  │   └─ owlky.Param (HTTP only)
+  │   └─ owlkei.Param (HTTP only)
   │
   ├─ "HTTP headers"
-  │   └─ owlky.Header (HTTP only)
+  │   └─ owlkei.Header (HTTP only)
   │
   ├─ "File uploads"
-  │   └─ owlky.File (HTTP only)
+  │   └─ owlkei.File (HTTP only)
   │
   ├─ "WebSocket connection"
   │   └─ *websocket.Conn (WS only)
   │
   ├─ "Incoming WebSocket message"
-  │   └─ owlky.WSPayload (WS only)
+  │   └─ owlkei.WSPayload (WS only)
   │
   ├─ "Send response/message"
   │   ├─ HTTP: httpCtx.JSON() or Text() method
-  │   └─ WS: owlky.Publisher for fanout
+  │   └─ WS: owlkei.Publisher for fanout
   │
   ├─ "Custom service/provider"
   │   └─ Register as Provider, inject by type
@@ -172,13 +172,13 @@ I need access to...
   │   └─ log.Logger (globally available)
   │
   ├─ "Event publisher"
-  │   └─ owlky.Publisher (for WS fanout)
+  │   └─ owlkei.Publisher (for WS fanout)
   │
   ├─ "Call next middleware"
-  │   └─ owlky.Next (function injected in middleware)
+  │   └─ owlkei.Next (function injected in middleware)
   │
   └─ "Redirect response"
-      └─ owlky.Redirect (function injected in handler)
+      └─ owlkei.Redirect (function injected in handler)
 ```
 
 ---
@@ -278,7 +278,7 @@ Architecture Question
   │
   └─ "How do I test this application?"
       ├─ Create new app instance per test
-      ├─ Modules may be shared: every owlky.New(opts) has its own routes, providers and layers
+      ├─ Modules may be shared: every owlkei.New(opts) has its own routes, providers and layers
       ├─ Mock providers via dependency injection
       ├─ Use httptest.Server for HTTP testing
       ├─ For WS: use real websocket connection or mock interface
@@ -331,19 +331,19 @@ Pattern Question
   │   └─ YES - the app keeps one instance per configuration (type + constructor + reflect.DeepEqual value)
   │       Equal configurations share one instance; different ones get their own
   │
-  ├─ "Should I set CORS: &owlky.CORSOptions{IsEnabled: true} without Origins?"
+  ├─ "Should I set CORS: &owlkei.CORSOptions{IsEnabled: true} without Origins?"
   │   └─ NO - New panics `invalid app: CORS needs Origins`; "*" never with credentials
-  │       Fix: Origins: []string{"https://app.example.com"}, CORS: &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true}
+  │       Fix: Origins: []string{"https://app.example.com"}, CORS: &owlkei.CORSOptions{IsEnabled: true, IsAllowCredentials: true}
   │
   ├─ "Should I read X-Forwarded-For / X-Real-IP for the client IP?"
-  │   └─ NO - set Proxy: &owlky.ProxyOptions{TrustedProxies: ...} and call owlky.ClientIP(c.Request)
+  │   └─ NO - set Proxy: &owlkei.ProxyOptions{TrustedProxies: ...} and call owlkei.ClientIP(c.Request)
   │
   ├─ "Should I add a CSRF token or cookie?"
-  │   └─ NO - CSRF: &owlky.CSRFOptions{IsEnabled: true} uses Sec-Fetch-Site and Origin; trusted origins come from AppOptions.Origins
+  │   └─ NO - CSRF: &owlkei.CSRFOptions{IsEnabled: true} uses Sec-Fetch-Site and Origin; trusted origins come from AppOptions.Origins
   │
   └─ "Should I assume request bodies are unlimited or add app.SetMaxBodySize(...)?"
-      └─ NO - 10 MiB cap by default; change it with AppOptions{HTTP: &owlky.HTTPOptions{MaxBodyBytes: 50 * owlky.MiB}} (negative = off)
-          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from owlky.Body()
+      └─ NO - 10 MiB cap by default; change it with AppOptions{HTTP: &owlkei.HTTPOptions{MaxBodyBytes: 50 * owlkei.MiB}} (negative = off)
+          Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from owlkei.Body()
 ```
 
 ---

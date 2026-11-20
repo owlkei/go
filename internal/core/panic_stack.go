@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/log"
 )
 
 const (

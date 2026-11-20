@@ -2,17 +2,17 @@ package hostcheck_test
 
 import (
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/hostcheck"
+	. "go.owlkei.com/owlkei/internal/middlewares/hostcheck"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/middlewares/proxy"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/middlewares/proxy"
+	"go.owlkei.com/owlkei/internal/test"
 	"golang.org/x/net/websocket"
 )
 
@@ -253,7 +253,7 @@ func TestHostCheck_DoesNotReadBody(t *testing.T) {
 func TestHostCheck_WebSocketHandshake(t *testing.T) {
 	build := func(hosts ...string) *httptest.Server {
 		app := core.New(&core.AppOptions{Logger: silentLogger{}, WS: &core.WSOptions{Path: "/ws"}, Hosts: hosts})
-		app.Create(owlky.ModuleBuilder().Build())
+		app.Create(owlkei.ModuleBuilder().Build())
 		return httptest.NewServer(app)
 	}
 	dial := func(server *httptest.Server) error {

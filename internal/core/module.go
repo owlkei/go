@@ -1,8 +1,8 @@
 package core
 
 import (
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 type Module struct {

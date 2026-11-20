@@ -1,8 +1,8 @@
 # memorybroker
 
-Internal package: applications use `owlky.Publisher` and `SUBSCRIBE_…` controller methods instead.
+Internal package: applications use `owlkei.Publisher` and `SUBSCRIBE_…` controller methods instead.
 
-*Lightweight in-process topic-based pub/sub broker for the Owlky Go framework — exact topics, prefix wildcards, global subscriptions, and complex patterns.*
+*Lightweight in-process topic-based pub/sub broker for the Owlkei Go framework — exact topics, prefix wildcards, global subscriptions, and complex patterns.*
 
 ---
 
@@ -39,7 +39,7 @@ Internal package: applications use `owlky.Publisher` and `SUBSCRIBE_…` control
 - **Panic recovery** — a panicking handler is recovered and does not affect other handlers or the broker
 - **O(1) exact and prefix matching** — complex patterns use O(n) scan only when subscribed
 
-This is an in-process message bus, not a distributed broker: no persistence, no durable queues, no consumer groups, no clustering, no bounded async worker pool. Those concerns belong to an external system (NATS, Kafka, RabbitMQ) if the application ever needs them. The public API is deliberately kept to the methods Owlky Go's own request pipeline and WebSocket layer actually use — see [Broker Interface Methods](#broker-interface-methods).
+This is an in-process message bus, not a distributed broker: no persistence, no durable queues, no consumer groups, no clustering, no bounded async worker pool. Those concerns belong to an external system (NATS, Kafka, RabbitMQ) if the application ever needs them. The public API is deliberately kept to the methods Owlkei Go's own request pipeline and WebSocket layer actually use — see [Broker Interface Methods](#broker-interface-methods).
 
 ---
 
@@ -51,7 +51,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/memorybroker"
+	"go.owlkei.com/owlkei/internal/memorybroker"
 )
 
 func main() {

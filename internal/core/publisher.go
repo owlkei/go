@@ -1,6 +1,6 @@
 package core
 
-import "go.owlky.com/owlky/internal/memorybroker"
+import "go.owlkei.com/owlkei/internal/memorybroker"
 
 type publisher struct {
 	broker memorybroker.Broker

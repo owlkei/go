@@ -11,7 +11,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it.
+The package is internal: only code in the Owlkei Go module can import it.
 
 ## Usage
 
@@ -21,7 +21,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 func main() {

@@ -280,7 +280,7 @@ generator seeded from `crypto/rand` (`math/rand/v2` ChaCha8), which would break 
 ## Security
 - **0011's guarantees hold:** every ID bit that was random still comes from `crypto/rand` (R2); the
   format, the time prefix and the uniqueness rules are untouched; the request ID is always
-  Owlky Go's (0011 S2); the trace ID a client controls is validated before it is stored (P1-P3).
+  Owlkei Go's (0011 S2); the trace ID a client controls is validated before it is stored (P1-P3).
 - **Unused random bytes** now sit in up to one source per P instead of one buffer. They are
   identifiers, not secrets (0011 Security); a source is never read by two goroutines, so no ID
   repeats.
@@ -312,8 +312,8 @@ generator seeded from `crypto/rand` (`math/rand/v2` ChaCha8), which would break 
 - **Compatibility:** none broken. The receiving service's `upstream` changes meaning if T3 stays
   (Q4).
 - **Docs (step 14):** `internal/tracecontext/README.md`, `trace/README.md`, the main README
-  (outbound calls), `.owlky/package-reference.md` (the `tracecontext` line says "one 512-byte
-  `crypto/rand` buffer behind a mutex"), `.owlky/request-pipeline.md` (outbound propagation).
+  (outbound calls), `.owlkei/package-reference.md` (the `tracecontext` line says "one 512-byte
+  `crypto/rand` buffer behind a mutex"), `.owlkei/request-pipeline.md` (outbound propagation).
   `CLAUDE.md` needs no change for these two steps.
 
 ## Test plan
@@ -386,7 +386,7 @@ Internal test packages, one function per behavior.
    allocation less, no measured time, and it depends on the size of `http.Request`.
 4. **Q4 Which span the outbound header names.** T3 follows the roadmap: each call gets its own
    span ID, whose parent is the request. But no event or log line records that span, so "parent =
-   the scope" is observable nowhere, and the receiving Owlky Go service logs an `upstream` that
+   the scope" is observable nowhere, and the receiving Owlkei Go service logs an `upstream` that
    matches nothing on our side (only `trace_id` joins the two logs). 0011 C1 sent the request's own
    span (`Scope.Traceparent()`): the receiver's `upstream` is then our `request`, the call costs one
    allocation and 64 B less, and `ChildTraceparent` is not needed. That is valid W3C for a caller

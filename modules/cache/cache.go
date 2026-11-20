@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/memorycache"
 )
 
 type Cache interface {

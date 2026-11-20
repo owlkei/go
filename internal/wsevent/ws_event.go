@@ -4,9 +4,9 @@ import (
 	"errors"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
-	ptrn "go.owlky.com/owlky/internal/pattern"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
+	ptrn "go.owlkei.com/owlkei/internal/pattern"
 )
 
 type WSEventItem struct {

@@ -11,7 +11,7 @@ most recently discussed.
 ## 1. Understand
 
 Read the target and its package tests. Read the `CLAUDE.md` sections the feature touches and the matching
-`.owlky/` page. Classify the task: **new** (does not exist) or **upgrade** (incomplete, insecure,
+`.owlkei/` page. Classify the task: **new** (does not exist) or **upgrade** (incomplete, insecure,
 untested).
 
 ## 2. Design, then wait for approval
@@ -63,7 +63,7 @@ record `go test -run='^$' -bench=. -benchmem ./<pkg>`.
   if it has none, create it by following `/doc`'s steps for that package (structure of
   `modules/config/README.md`, rules only from tests, benchmarks only from a real run); if it has one,
   update it for the new or changed API.
-- Update `CLAUDE.md` / `.owlky/` when the change alters a concept they describe
+- Update `CLAUDE.md` / `.owlkei/` when the change alters a concept they describe
   (`/kb update <package>`).
 
 ## Report

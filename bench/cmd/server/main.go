@@ -9,11 +9,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"go.owlky.com/owlky/bench"
+	"go.owlkei.com/owlkei/bench"
 )
 
 func main() {
-	framework := flag.String("framework", "owlky", "owlky, nethttp, gin, echo, chi or fiber")
+	framework := flag.String("framework", "owlkei", "owlkei, nethttp, gin, echo, chi or fiber")
 	port := flag.Int("port", 8080, "port to listen on")
 	isLogged := flag.Bool("log", false, "turn the framework's request logger on (JSON to stdout where the framework has one; net/http has none)")
 	flag.Parse()
@@ -23,10 +23,10 @@ func main() {
 	addr := fmt.Sprintf(":%d", *port)
 	var err error
 	switch *framework {
-	case "owlky":
+	case "owlkei":
 		var l net.Listener
 		if l, err = net.Listen("tcp", addr); err == nil {
-			err = pick(*isLogged, bench.NewOwlkyApp, bench.NewOwlkyAppWithLog)().Serve(l)
+			err = pick(*isLogged, bench.NewOwlkeiApp, bench.NewOwlkeiAppWithLog)().Serve(l)
 		}
 	case "nethttp":
 		err = http.ListenAndServe(addr, bench.NewNetHTTP())

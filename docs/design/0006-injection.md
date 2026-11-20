@@ -305,8 +305,8 @@ design 0002 can carry instead.
   `core/fn_bench_test.go` loses its `…_Old` copies.
 - Docs: `CLAUDE.md` › Handler Injection (the sets are the table of B1, no longer two maps in
   `app.go`; the exception note about `invokeHandlerByProviders` panicking per request goes: an
-  unresolvable argument is a `Create()` panic); `.owlky/handler-execution.md` (rewritten around the
-  plan), `.owlky/request-pipeline.md`, `.owlky/anti-patterns-gotchas.md` (results: B18, B19).
+  unresolvable argument is a `Create()` panic); `.owlkei/handler-execution.md` (rewritten around the
+  plan), `.owlkei/request-pipeline.md`, `.owlkei/anti-patterns-gotchas.md` (results: B18, B19).
 
 ### What `core/README.md` (roadmap 0003) should say about injection
 1. The parameter table of B1 for HTTP and WS, and that anything else stops `Create()`.

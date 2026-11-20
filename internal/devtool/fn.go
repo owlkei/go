@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	reflect "reflect"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func generateLayersByPattern(httpLayers []common.HTTPLayer) map[string][]*common.HTTPLayer {

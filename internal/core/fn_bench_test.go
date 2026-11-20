@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 func BenchmarkReturnHTTP_String(b *testing.B) {

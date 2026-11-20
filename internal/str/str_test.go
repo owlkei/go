@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestEnclose_Empty(t *testing.T) {

@@ -393,8 +393,8 @@ Docs: new `memorycache/README.md` (structure of `modules/config/README.md`); `mo
 rewritten from this contract (drop the 64-shard / FNV / 30 s / `common.REST` text);
 `modules/config/README.md` (format, limits, precedence, the race note removed, benchmarks
 re-measured); `CLAUDE.md` (the `invalid config:` category, the cache line of Built-in Modules);
-`.owlky/package-reference.md` (`memorycache`, `modules/cache`, `modules/config`),
-`.owlky/conventions.md` (the `Stop` example in Concurrency), `metadata-concurrency-model.json`.
+`.owlkei/package-reference.md` (`memorycache`, `modules/cache`, `modules/config`),
+`.owlkei/conventions.md` (the `Stop` example in Concurrency), `metadata-concurrency-model.json`.
 
 ## Test plan
 Time-dependent tests run inside `testing/synctest` (fake clock, no sleeps); eviction tests pick keys

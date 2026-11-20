@@ -1,16 +1,16 @@
 # 03 · Pages
 
 A small booking site rendered on the server: page routes (`RENDER_`, `SUBMIT_`), Go's `html/template`
-and [Owlky UI](https://owlky.com)'s HTML components. One Go binary serves finished pages: no JSON API
+and [Owlkei UI](https://owlkei.com)'s HTML components. One Go binary serves finished pages: no JSON API
 and no client app to build. One inline script picks the light or dark theme; `owlky.js` adds the
 components' behavior.
 
 ## What you learn
 
-- **Pages by route.** `BookingPages` embeds `owlky.HTTP`. Each `RENDER_` route renders the template its
+- **Pages by route.** `BookingPages` embeds `owlkei.HTTP`. Each `RENDER_` route renders the template its
   path names and returns the template's data. `SUBMIT_new_OF_bookings` posts to the page that shows the
   form: when it renders, it answers `422`; `ctx.Redirect("/bookings")` answers `303`.
-- **A form pipe.** `BookingForm` binds the body with `Form.Bind`, reads the `[]owlky.FieldLevel` for
+- **A form pipe.** `BookingForm` binds the body with `Form.Bind`, reads the `[]owlkei.FieldLevel` for
   missing fields and fills `Errors`; the handler returns the form, which the page shows again.
 - **File conventions.** `web/layout.html` wraps every page; pages override its `title` block.
   `web/partials/field.html` is one text field, called with `dict`. `web/4xx.html` renders the client
@@ -22,8 +22,8 @@ components' behavior.
 - **Template functions.** `{{asset "owlky.js"}}` writes `/assets/owlky.js?v=<hash>`, served with
   `Cache-Control: immutable`. `{{nonce}}` gives the inline script the request's CSP nonce, which the `Headers` stage
   adds to `script-src` and `style-src`.
-- **Security.** `html/template` escapes every value for its context; `CSRF: &owlky.CSRFOptions{IsEnabled: true}` refuses
-  cross-origin form posts; `Headers: &owlky.HeadersOptions{IsEnabled: true}` sends a strict policy with no `'unsafe-inline'`.
+- **Security.** `html/template` escapes every value for its context; `CSRF: &owlkei.CSRFOptions{IsEnabled: true}` refuses
+  cross-origin form posts; `Headers: &owlkei.HeadersOptions{IsEnabled: true}` sends a strict policy with no `'unsafe-inline'`.
   Both are off until you set them ([Configuration](../../README.md#configuration)).
 
 ## Run it
@@ -40,10 +40,10 @@ redirect) and checks how the assets are served.
 
 | Route | Handler | Template | Answers |
 |---|---|---|---|
-| `GET /bookings` | `RENDER_bookings` | `web/bookings/index.html` | The list (an Owlky table), or an info alert when it is empty |
-| `GET /bookings/new` | `RENDER_new_OF_bookings` | `web/bookings/new.html` | The form (Owlky text fields and buttons) |
+| `GET /bookings` | `RENDER_bookings` | `web/bookings/index.html` | The list (an Owlkei table), or an info alert when it is empty |
+| `GET /bookings/new` | `RENDER_new_OF_bookings` | `web/bookings/new.html` | The form (Owlkei text fields and buttons) |
 | `POST /bookings/new` | `SUBMIT_new_OF_bookings` | `web/bookings/new.html` | `422` with the form, its messages and the submitted values; or `303 See Other` to the list |
-| `GET /bookings/{id}` | `RENDER_bookings_BY_id` | `web/bookings/{id}.html` | The booking (an Owlky card); `exception.NotFoundException` → `web/4xx.html` with `404` |
+| `GET /bookings/{id}` | `RENDER_bookings_BY_id` | `web/bookings/{id}.html` | The booking (an Owlkei card); `exception.NotFoundException` → `web/4xx.html` with `404` |
 | `GET /robots.txt` | none | `web/public/robots.txt` | The file as it is, `Cache-Control: no-cache` and an `ETag` |
 
 ## Read next

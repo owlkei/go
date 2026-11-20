@@ -1,7 +1,7 @@
 package core
 
 import (
-	"go.owlky.com/owlky/log"
+	"go.owlkei.com/owlkei/log"
 	"golang.org/x/net/websocket"
 )
 

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type ConfigService struct {

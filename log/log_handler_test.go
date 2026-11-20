@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestPretty_ContainsLevelLabels(t *testing.T) {

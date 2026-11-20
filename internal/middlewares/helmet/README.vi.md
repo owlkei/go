@@ -1,6 +1,6 @@
 # Middleware Helmet
 
-> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.Headers` (`owlky.HeadersOptions`) trong `owlky.New(&owlky.AppOptions{…})`; các ví dụ `owlky.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
+> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.Headers` (`owlkei.HeadersOptions`) trong `owlkei.New(&owlkei.AppOptions{…})`; các ví dụ `owlkei.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
 
 *`helmet` đặt các HTTP security response header mà OWASP khuyến nghị, với mặc định an toàn phù hợp cho cả JSON API lẫn trang HTML render phía server.*
 
@@ -24,7 +24,7 @@
 - Một quy tắc cho mọi field: `""` là mặc định, `helmet.Disabled` tắt header, giá trị khác được gửi đúng như viết
 - `Permissions-Policy` mặc định từ chối các tính năng mạnh của trình duyệt
 - Mọi giá trị header được dựng một lần khi khởi động; không cấp phát mỗi request
-- Trang do Owlky Go render có gọi `{{nonce}}` nhận một nonce riêng cho mỗi response trong `script-src` và `style-src`, không cần option nào
+- Trang do Owlkei Go render có gọi `{{nonce}}` nhận một nonce riêng cho mỗi response trong `script-src` và `style-src`, không cần option nào
 
 ## Cách Dùng
 
@@ -32,12 +32,12 @@
 package main
 
 import (
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/middlewares/helmet"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/middlewares/helmet"
 )
 
 func main() {
-	app := owlky.New()
+	app := owlkei.New()
 
 	app.BindGlobalMiddlewares(helmet.Helmet{
 		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:",
@@ -45,7 +45,7 @@ func main() {
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -69,9 +69,9 @@ func main() {
 | `Origin-Agent-Cluster` | `?1` (luôn gửi) |
 
 `X-Download-Options` không còn được gửi (chỉ Internet Explorer đọc nó). `<style>` hoặc `<script>`
-inline chạy được khi mang `nonce="{{nonce}}"` trong trang do Owlky Go render (xem [Nonce](#nonce));
+inline chạy được khi mang `nonce="{{nonce}}"` trong trang do Owlkei Go render (xem [Nonce](#nonce));
 code inline khác, hoặc asset trên CDN, phải tự đặt policy; phục vụ asset (kể cả CSS và JavaScript
-củan Owlky) từ chính origin của bạn thì mặc định dùng được ngay.
+củan Owlkei) từ chính origin của bạn thì mặc định dùng được ngay.
 
 ## Hằng Số
 
@@ -91,7 +91,7 @@ viết. Chỉ thêm `preload` vào `StrictTransportSecurity` sau khi đã đọc
 
 ### NewMiddleware
 ```go
-func (instance Helmet) NewMiddleware() owlky.MiddlewareFn
+func (instance Helmet) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Dựng mọi giá trị header một lần; framework gọi khi `Create()`. Panic với `invalid helmet: ...` cho
@@ -99,14 +99,14 @@ giá trị có ký tự điều khiển (xuống dòng, `NUL`, `DEL`, escape).
 
 ### Use
 ```go
-func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance Helmet) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Giúp `Helmet` là một `owlky.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
+Giúp `Helmet` là một `owlkei.MiddlewareFn`. Chỉ dùng trong test; framework luôn gọi `NewMiddleware`.
 
 ## Nonce
 
-`helmet` biên dịch sẵn dạng nonce của policy trong `NewMiddleware()`. Trên trang do Owlky Go render
+`helmet` biên dịch sẵn dạng nonce của policy trong `NewMiddleware()`. Trên trang do Owlkei Go render
 (`EnableRender`: một route `RENDER_` hoặc `SUBMIT_`, hoặc một trang lỗi HTML) có gọi `{{nonce}}`,
 `Content-Security-Policy` của response mang `'nonce-<N>'`, với `<N>` đúng là giá trị 32 ký tự mà trang
 ghi ra. Mọi response khác (API route, asset, file trong `public/`, trang không có `{{nonce}}`) gửi

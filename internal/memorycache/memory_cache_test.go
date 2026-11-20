@@ -15,8 +15,8 @@ import (
 	"time"
 	"unsafe"
 
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestNewMemoryCache_Defaults(t *testing.T) {

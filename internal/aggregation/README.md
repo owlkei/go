@@ -1,8 +1,8 @@
 # Aggregation
 
-Internal package: applications use `owlky.Aggregation`, the second parameter of `Intercept`, instead.
+Internal package: applications use `owlkei.Aggregation`, the second parameter of `Intercept`, instead.
 
-*Aggregation is a part of `Owlky Go` framework: it carries an interceptor's result through the request and applies the operators the interceptor pipes over the handler's return value.*
+*Aggregation is a part of `Owlkei Go` framework: it carries an interceptor's result through the request and applies the operators the interceptor pipes over the handler's return value.*
 
 - [Aggregation](#aggregation)
   - [Key Features](#key-features)
@@ -36,10 +36,10 @@ An interceptor receives a fresh `*aggregation.Aggregation` before the handler ru
 package main
 
 import (
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/ctx"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/ctx"
 )
 
 type EnvelopeInterceptor struct{}
@@ -206,7 +206,7 @@ return a.Pipe(a.Transform(addOne), a.Transform(timesTwo))
 
 ## Framework hooks
 
-`Pipe`, `Transform`, `Tap` and `Filter` are the only methods and `Aggregation` has no exported field: what the framework needs is a package-level function, which an interceptor can't reach through the root alias `owlky.Aggregation`. Every hook except `Aggregate` is a leaf the compiler inlines.
+`Pipe`, `Transform`, `Tap` and `Filter` are the only methods and `Aggregation` has no exported field: what the framework needs is a package-level function, which an interceptor can't reach through the root alias `owlkei.Aggregation`. Every hook except `Aggregate` is a leaf the compiler inlines.
 
 ### SetMainData
 

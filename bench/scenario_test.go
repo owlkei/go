@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
-func TestScenarios_Owlky(t *testing.T) { checkScenarios(t, "owlky", NewOwlky()) }
+func TestScenarios_Owlkei(t *testing.T) { checkScenarios(t, "owlkei", NewOwlkei()) }
 
 func TestScenarios_NetHTTP(t *testing.T) { checkScenarios(t, "net/http", NewNetHTTP()) }
 

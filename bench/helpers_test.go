@@ -9,8 +9,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"go.owlky.com/owlky"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 type discardWriter struct {
@@ -76,33 +76,33 @@ var pageFiles = fstest.MapFS{
 }
 
 type pageController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (c pageController) NewController() owlky.Controller { return c }
+func (c pageController) NewController() owlkei.Controller { return c }
 
 func (c pageController) RENDER_bookings() map[string]any {
 	return map[string]any{"Rows": bookingRows()}
 }
 
 type jsonController struct {
-	owlky.HTTP
+	owlkei.HTTP
 }
 
-func (c jsonController) NewController() owlky.Controller { return c }
+func (c jsonController) NewController() owlkei.Controller { return c }
 
-func (c jsonController) READ_json() owlky.Map {
-	return owlky.Map{"rows": bookingRows()}
+func (c jsonController) READ_json() owlkei.Map {
+	return owlkei.Map{"rows": bookingRows()}
 }
 
-func newPageApp(render bool) owlky.App {
-	opts := &owlky.AppOptions{Logger: silentLogger{}, Headers: &owlky.HeadersOptions{IsEnabled: true}}
-	builder := owlky.ModuleBuilder().Controllers(jsonController{})
+func newPageApp(render bool) owlkei.App {
+	opts := &owlkei.AppOptions{Logger: silentLogger{}, Headers: &owlkei.HeadersOptions{IsEnabled: true}}
+	builder := owlkei.ModuleBuilder().Controllers(jsonController{})
 	if render {
-		opts.Render = &owlky.RenderOptions{FS: pageFiles, Dir: "."}
-		builder = owlky.ModuleBuilder().Controllers(jsonController{}, pageController{})
+		opts.Render = &owlkei.RenderOptions{FS: pageFiles, Dir: "."}
+		builder = owlkei.ModuleBuilder().Controllers(jsonController{}, pageController{})
 	}
-	app := owlky.New(opts)
+	app := owlkei.New(opts)
 	app.Create(builder.Build())
 	return app
 }

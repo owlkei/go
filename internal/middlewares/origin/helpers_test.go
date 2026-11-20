@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"testing"
 
-	"go.owlky.com/owlky/internal/middlewares/origin"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/middlewares/origin"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func mustParse(t *testing.T, entries ...string) *origin.Set {

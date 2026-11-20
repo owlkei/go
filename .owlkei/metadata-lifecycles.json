@@ -1,6 +1,6 @@
 {
   "format": "ai-metadata-v1",
-  "title": "Owlky Go Lifecycle State Machines",
+  "title": "Owlkei Go Lifecycle State Machines",
   "purpose": "Document exact state transitions for app, requests, and connections",
   "application_lifecycle": {
     "source": "internal/core/app.go (New, Create), internal/core/container.go (wire), internal/core/options.go (AppOptions, checked at New), internal/core/server.go (Listen, Serve, Stop); user contract in internal/core/README.md",
@@ -14,7 +14,7 @@
       {
         "from": "START",
         "to": "CREATED",
-        "action": "app := owlky.New(opts) (nil = defaults)",
+        "action": "app := owlkei.New(opts) (nil = defaults)",
         "effects": [
           "own HTTP router, container, memorybroker, built-in logger (log.NewLog(nil)), context pools",
           "Publisher registered in the container",
@@ -70,7 +70,7 @@
         "to": "RUNNING",
         "action": "app.Listen() / app.Serve(listener) (port, TLS and h2c from AppOptions.Server)",
         "effects": [
-          "errors returned before binding: 'owlky: Create must be called before serving', 'owlky: app is already serving', 'owlky: app is stopped', 'owlky: listen on :<port>: <err>' (TLS / IsH2C conflicts panic at New)",
+          "errors returned before binding: 'owlkei: Create must be called before serving', 'owlkei: app is already serving', 'owlkei: app is stopped', 'owlkei: listen on :<port>: <err>' (TLS / IsH2C conflicts panic at New)",
           "startup log: InstanceLoader, RouteExplorer, WebSocketEvent, ServerListening",
           "the call blocks until the server stopped"
         ]
@@ -88,7 +88,7 @@
           "waits for the AsyncImports goroutines until ShutdownTimeout since shutdown began; ModuleShutdownTimeout for each one abandoned",
           "runShutdownHooks once per app (app.shutdownOnce): OnShutdown of ready modules only, in the reverse of the order they became ready; a panicking hook is logged as OnShutdownPanic and the others run",
           "access log stopped after the hooks, suppressed panic stacks reported, stdout log pipeline flushed (at most 2 s) and synchronous again",
-          "returns nil, 'owlky: shutdown timed out after <timeout>' or 'owlky: serve: <err>'",
+          "returns nil, 'owlkei: shutdown timed out after <timeout>' or 'owlkei: serve: <err>'",
           "WebSocket connections are not drained"
         ]
       },
@@ -98,7 +98,7 @@
         "action": "app.Stop() on an app that is not serving",
         "effects": [
           "OnShutdown hooks run once",
-          "later serving calls return 'owlky: app is stopped'; ServeHTTP still answers"
+          "later serving calls return 'owlkei: app is stopped'; ServeHTTP still answers"
         ]
       }
     ],
@@ -161,7 +161,7 @@
         "stage": "handleRequest() in internal/core/http.go",
         "action": "global middleware -> module middleware -> global guard -> module guard -> global pre-interceptor -> module pre-interceptor -> handler plan (pipes, then the handler) -> module post-interceptor -> global post-interceptor",
         "effects": [
-          "spec: .owlky/request-pipeline.md section 1",
+          "spec: .owlkei/request-pipeline.md section 1",
           "a middleware without next(), a guard returning false (403 to the filters) or an interceptor without Pipe stops the chain",
           "error in a middleware: the HTTP layer's fixed error response, no filter",
           "error from a guard onwards: module filters (bound last first), global filters, built-in filter",
@@ -429,6 +429,6 @@
       "ws": "error reply code 503 'not ready: <topic>'",
       "layers": "global middlewares run first; no module layer, filter or handler"
     },
-    "retry": "owlky.Retry(ctx, *RetryOptions, fn): backoff InitialDelay 500 ms doubling to MaxDelay 30 s with jitter [d/2, d], MaxAttempts 0 = until ctx done; with an AsyncImports factory's ctx it reports attempts (ModuleRetry, devtool attempts / last_error, Retry-After)"
+    "retry": "owlkei.Retry(ctx, *RetryOptions, fn): backoff InitialDelay 500 ms doubling to MaxDelay 30 s with jitter [d/2, d], MaxAttempts 0 = until ctx done; with an AsyncImports factory's ctx it reports attempts (ModuleRetry, devtool attempts / last_error, Retry-After)"
   }
 }

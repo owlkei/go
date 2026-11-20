@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.owlky.com/owlky/internal/inspect"
+	"go.owlkei.com/owlkei/internal/inspect"
 )
 
 const (

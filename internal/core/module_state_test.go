@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 type lfWorld struct {

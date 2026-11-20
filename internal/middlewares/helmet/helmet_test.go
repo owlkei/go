@@ -2,17 +2,17 @@ package helmet_test
 
 import (
 	"fmt"
-	. "go.owlky.com/owlky/internal/middlewares/helmet"
+	. "go.owlkei.com/owlkei/internal/middlewares/helmet"
 	"net/http"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/middlewares/proxy"
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/middlewares/proxy"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestHelmet_Disabled_Constant(t *testing.T) {

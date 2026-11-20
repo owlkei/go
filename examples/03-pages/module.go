@@ -1,9 +1,9 @@
 package main
 
-import "go.owlky.com/owlky"
+import "go.owlkei.com/owlkei"
 
-func NewBookingsModule() owlky.Module {
-	return owlky.ModuleBuilder().
+func NewBookingsModule() owlkei.Module {
+	return owlkei.ModuleBuilder().
 		Providers(BookingService{}).
 		Controllers(BookingPages{}).
 		Build()

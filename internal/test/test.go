@@ -3,7 +3,7 @@ package test
 import (
 	"strings"
 
-	"go.owlky.com/owlky/internal/color"
+	"go.owlkei.com/owlkei/internal/color"
 )
 
 func DiffMessage(actual, expected any, desc string) string {

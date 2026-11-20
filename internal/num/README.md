@@ -10,7 +10,7 @@
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-The package is internal: only code in the Owlky Go module can import it.
+The package is internal: only code in the Owlkei Go module can import it.
 
 ## Usage
 
@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/num"
+	"go.owlkei.com/owlkei/internal/num"
 )
 
 func main() {

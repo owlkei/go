@@ -1,8 +1,8 @@
 # Pattern
 
-Internal package: applications name WebSocket events with `SUBSCRIBE_…` controller methods and publish with `owlky.Publisher` instead.
+Internal package: applications name WebSocket events with `SUBSCRIBE_…` controller methods and publish with `owlkei.Publisher` instead.
 
-*Package `pattern` matches dotted topic names (`user.created`, `tenant.abc.user.updated`) against glob-style patterns: `*` is one segment, a trailing `**` is one or more. Owlky Go uses it for WebSocket event names, the topics of `memorybroker`, and the log's `MaskFields`.*
+*Package `pattern` matches dotted topic names (`user.created`, `tenant.abc.user.updated`) against glob-style patterns: `*` is one segment, a trailing `**` is one or more. Owlkei Go uses it for WebSocket event names, the topics of `memorybroker`, and the log's `MaskFields`.*
 
 - [Pattern](#pattern)
   - [Key features](#key-features)
@@ -34,7 +34,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/pattern"
+	"go.owlkei.com/owlkei/internal/pattern"
 )
 
 func main() {

@@ -19,17 +19,17 @@ import (
 	"syscall"
 	"time"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/logpipe"
-	"go.owlky.com/owlky/internal/routing"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/logpipe"
+	"go.owlkei.com/owlkei/internal/routing"
 )
 
 const defaultShutdownTimeout = 30 * time.Second
 
 var (
-	errNotCreated     = errors.New("owlky: Create must be called before serving")
-	errAlreadyServing = errors.New("owlky: app is already serving")
-	errStopped        = errors.New("owlky: app is stopped")
+	errNotCreated     = errors.New("owlkei: Create must be called before serving")
+	errAlreadyServing = errors.New("owlkei: app is already serving")
+	errStopped        = errors.New("owlkei: app is stopped")
 )
 
 type serverConfig struct {
@@ -153,7 +153,7 @@ func (app *App) listenAndServe(port int) error {
 	address := net.JoinHostPort("", strconv.Itoa(port))
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("owlky: listen on %s: %w", address, err)
+		return fmt.Errorf("owlkei: listen on %s: %w", address, err)
 	}
 	defer func() { _ = l.Close() }()
 
@@ -206,7 +206,7 @@ func (app *App) serve(l net.Listener, isOwnListener bool) error {
 		deadline = app.beginShutdown(timeout)
 		app.markStopping()
 		_ = drain(server, timeout)
-		err = fmt.Errorf("owlky: serve: %w", serveErr)
+		err = fmt.Errorf("owlkei: serve: %w", serveErr)
 	}
 
 	app.runShutdownHooks(deadline)
@@ -375,7 +375,7 @@ func drain(server *http.Server, timeout time.Duration) error {
 	}
 	_ = server.Close()
 
-	return fmt.Errorf("owlky: shutdown timed out after %v", timeout)
+	return fmt.Errorf("owlkei: shutdown timed out after %v", timeout)
 }
 
 func (app *App) runShutdownHooks(deadline time.Time) {

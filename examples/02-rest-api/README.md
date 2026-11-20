@@ -8,7 +8,7 @@ the errors a client gets back.
 
 - **A module** (`books.go`) groups a controller with the provider it reads.
 - **A provider** (`catalog.go`) is injected into the controller by its type: the controller declares a
-  `Catalog` field and Owlky Go fills it. State that every copy shares sits behind a pointer.
+  `Catalog` field and Owlkei Go fills it. State that every copy shares sits behind a pointer.
 - **A pipe** (`book_input.go`) binds the JSON body and validates it before the handler runs. A
   refused body answers `422` and never reaches the handler.
 - **Exceptions** become the response: `exception.NotFoundException` answers `404` with your message.

@@ -3,9 +3,9 @@ package devtool
 import (
 	"net/http"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 type snapshotGlobalGuard struct{}

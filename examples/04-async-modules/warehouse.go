@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 var errConnectionRefused = errors.New("connection refused")
@@ -40,7 +40,7 @@ type Warehouse struct {
 	Client *warehouseClient
 }
 
-func (w Warehouse) NewProvider() owlky.Provider {
+func (w Warehouse) NewProvider() owlkei.Provider {
 	return w
 }
 
@@ -51,18 +51,18 @@ func (w Warehouse) Quantity(sku string) (int, bool) {
 // NewWarehouseModule connects to the warehouse. A bad setting is a permanent error: it is returned
 // at once and the module fails. A refused connection is transient: Retry tries again with backoff
 // until it works or the app shuts down.
-func NewWarehouseModule(ctx context.Context) (owlky.Module, error) {
+func NewWarehouseModule(ctx context.Context) (owlkei.Module, error) {
 	client, err := newWarehouseClient(os.Getenv("WAREHOUSE_URL"), os.Getenv("WAREHOUSE_DELAY"))
 	if err != nil {
 		return nil, err
 	}
 
-	backoff := &owlky.RetryOptions{InitialDelay: time.Second, MaxDelay: 10 * time.Second}
-	if err := owlky.Retry(ctx, backoff, client.ping); err != nil {
+	backoff := &owlkei.RetryOptions{InitialDelay: time.Second, MaxDelay: 10 * time.Second}
+	if err := owlkei.Retry(ctx, backoff, client.ping); err != nil {
 		return nil, fmt.Errorf("connect to the warehouse: %w", err)
 	}
 
-	return owlky.ModuleBuilder().
+	return owlkei.ModuleBuilder().
 		Providers(Warehouse{Client: client}).
 		Build(), nil
 }

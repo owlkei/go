@@ -1,6 +1,6 @@
 # Devtool
 
-Internal package: applications set `IsDevtool: true` in `owlky.AppOptions` instead.
+Internal package: applications set `IsDevtool: true` in `owlkei.AppOptions` instead.
 
 *Package `devtool` builds an in-memory snapshot of an app's HTTP routes: for each route its handler, method, path, version, the layers that run on it and the shape of its request.*
 
@@ -22,8 +22,8 @@ You don't call this package yourself: `core` builds the snapshot at `Create()` w
 package main
 
 import (
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/core"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/core"
 )
 
 type UserController struct {
@@ -126,7 +126,7 @@ module, in discovery order:
 | `State` (`state`) | `string` | `pending`, `ready` or `failed` |
 | `IsAsync` (`is_async`) | `bool` | An `AsyncImports` entry, a module of its unit, or a module not ready at `Create` |
 | `WaitingFor` (`waiting_for`) | `[]string` | While pending: the entries it waits for, or `can't resolve <T>` items |
-| `Attempts` (`attempts`) | `int` | Failed `owlky.Retry` attempts of the entry |
+| `Attempts` (`attempts`) | `int` | Failed `owlkei.Retry` attempts of the entry |
 | `LastError` (`last_error`) | `string` | The last attempt's error, or the cause once failed |
 | `ReadyAfterMs` (`ready_after_ms`) | `int64` | Milliseconds from the start of `Create` to ready |
 

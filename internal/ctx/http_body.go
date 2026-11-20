@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"go.owlky.com/owlky/exception"
+	"go.owlkei.com/owlkei/exception"
 )
 
 type Body map[string]any

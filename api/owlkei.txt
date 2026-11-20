@@ -1,0 +1,401 @@
+pkg owlkei, const GB core.ByteSize = 1000000000
+pkg owlkei, const GiB core.ByteSize = 1073741824
+pkg owlkei, const KB core.ByteSize = 1000
+pkg owlkei, const KiB core.ByteSize = 1024
+pkg owlkei, const MB core.ByteSize = 1000000
+pkg owlkei, const MiB core.ByteSize = 1048576
+pkg owlkei, const PathStyleAsWritten common.PathStyle = 2
+pkg owlkei, const PathStyleKebab common.PathStyle = 1
+pkg owlkei, const ProxyHeaderForwarded core.ProxyHeader = 1
+pkg owlkei, const ProxyHeaderXForwarded core.ProxyHeader = 0
+pkg owlkei, const VersioningCustom versioning.Type = 3
+pkg owlkei, const VersioningHeader versioning.Type = 2
+pkg owlkei, const VersioningMediaType versioning.Type = 4
+pkg owlkei, const VersioningQuery versioning.Type = 1
+pkg owlkei, func ClientHost(*http.Request) string
+pkg owlkei, func ClientIP(*http.Request) netip.Addr
+pkg owlkei, func ClientScheme(*http.Request) string
+pkg owlkei, func ModuleBuilder() *core.ModuleBuilder
+pkg owlkei, func New(*owlkei.AppOptions) owlkei.App
+pkg owlkei, func OptionsFromEnv() *owlkei.AppOptions
+pkg owlkei, func Retry(context.Context, *core.RetryOptions, func(context.Context) error) error
+pkg owlkei, func TraceTransport(http.RoundTripper) http.RoundTripper
+pkg owlkei, type Aggregation = *aggregation.Aggregation
+pkg owlkei, type App = *core.App
+pkg owlkei, type AppOptions = core.AppOptions
+pkg owlkei, type ArgumentMetadata = common.ArgumentMetadata
+pkg owlkei, type Body = ctx.Body
+pkg owlkei, type ByteSize = core.ByteSize
+pkg owlkei, type CORSOptions = core.CORSOptions
+pkg owlkei, type CSRFOptions = core.CSRFOptions
+pkg owlkei, type CompressOptions = core.CompressOptions
+pkg owlkei, type Controller = core.Controller
+pkg owlkei, type DataFile = *ctx.DataFile
+pkg owlkei, type ExceptionFilter = common.ExceptionFilter
+pkg owlkei, type FieldLevel = ctx.FieldLevel
+pkg owlkei, type File = ctx.File
+pkg owlkei, type Form = ctx.Form
+pkg owlkei, type Guard = common.Guard
+pkg owlkei, type HTTP = common.HTTP
+pkg owlkei, type HTTPContext = *ctx.HTTPContext
+pkg owlkei, type HTTPOptions = core.HTTPOptions
+pkg owlkei, type HTTPSRedirectOptions = core.HTTPSRedirectOptions
+pkg owlkei, type Header = ctx.Header
+pkg owlkei, type HeadersOptions = core.HeadersOptions
+pkg owlkei, type Interceptor = common.Interceptor
+pkg owlkei, type LoadShedOptions = core.LoadShedOptions
+pkg owlkei, type Map = ctx.Map
+pkg owlkei, type Middleware = common.Middleware
+pkg owlkei, type MiddlewareFn = common.MiddlewareFn
+pkg owlkei, type Module = *core.Module
+pkg owlkei, type Next = ctx.Next
+pkg owlkei, type Param = ctx.Param
+pkg owlkei, type PathStyle = common.PathStyle
+pkg owlkei, type Provider = core.Provider
+pkg owlkei, type ProxyHeader = core.ProxyHeader
+pkg owlkei, type ProxyOptions = core.ProxyOptions
+pkg owlkei, type Publisher = common.Publisher
+pkg owlkei, type Query = ctx.Query
+pkg owlkei, type Redirect = ctx.Redirect
+pkg owlkei, type RenderOptions = core.RenderOptions
+pkg owlkei, type RetryOptions = core.RetryOptions
+pkg owlkei, type ServerOptions = core.ServerOptions
+pkg owlkei, type TLSOptions = core.TLSOptions
+pkg owlkei, type VersioningOptions = versioning.Options
+pkg owlkei, type VersioningType = versioning.Type
+pkg owlkei, type WS = common.WS
+pkg owlkei, type WSContext = *ctx.WSContext
+pkg owlkei, type WSOptions = core.WSOptions
+pkg owlkei, type WSPayload = ctx.WSPayload
+pkg owlkei/exception, func BadGatewayException(string, ...any) exception.Exception
+pkg owlkei/exception, func BadRequestException(string, ...any) exception.Exception
+pkg owlkei/exception, func ConflictException(string, ...any) exception.Exception
+pkg owlkei/exception, func ForbiddenException(string, ...any) exception.Exception
+pkg owlkei/exception, func GatewayTimeoutException(string, ...any) exception.Exception
+pkg owlkei/exception, func GoingAwayException(string, ...any) exception.Exception
+pkg owlkei/exception, func GoneException(string, ...any) exception.Exception
+pkg owlkei/exception, func HTTPVersionNotSupportedException(string, ...any) exception.Exception
+pkg owlkei/exception, func InternalServerErrorException(string, ...any) exception.Exception
+pkg owlkei/exception, func InvalidPayloadException(string, ...any) exception.Exception
+pkg owlkei/exception, func MessageTooBigException(string, ...any) exception.Exception
+pkg owlkei/exception, func MethodNotAllowedException(string, ...any) exception.Exception
+pkg owlkei/exception, func MisdirectedRequestException(string, ...any) exception.Exception
+pkg owlkei/exception, func NewException(string, int, ...any) exception.Exception
+pkg owlkei/exception, func NotAcceptableException(string, ...any) exception.Exception
+pkg owlkei/exception, func NotFoundException(string, ...any) exception.Exception
+pkg owlkei/exception, func NotImplementedException(string, ...any) exception.Exception
+pkg owlkei/exception, func NotSubscribedException(string, ...any) exception.Exception
+pkg owlkei/exception, func PolicyViolationException(string, ...any) exception.Exception
+pkg owlkei/exception, func PreconditionFailedException(string, ...any) exception.Exception
+pkg owlkei/exception, func ProtocolErrorException(string, ...any) exception.Exception
+pkg owlkei/exception, func RequestEntityTooLargeException(string, ...any) exception.Exception
+pkg owlkei/exception, func RequestTimeoutException(string, ...any) exception.Exception
+pkg owlkei/exception, func ServiceUnavailableException(string, ...any) exception.Exception
+pkg owlkei/exception, func TeapotException(string, ...any) exception.Exception
+pkg owlkei/exception, func TooManyRequestsException(string, ...any) exception.Exception
+pkg owlkei/exception, func TopicNotFoundException(string, ...any) exception.Exception
+pkg owlkei/exception, func UnauthorizedException(string, ...any) exception.Exception
+pkg owlkei/exception, func UnprocessableEntityException(string, ...any) exception.Exception
+pkg owlkei/exception, func UnsupportedDataException(string, ...any) exception.Exception
+pkg owlkei/exception, func UnsupportedMediaTypeException(string, ...any) exception.Exception
+pkg owlkei/exception, func WSInternalErrorException(string, ...any) exception.Exception
+pkg owlkei/exception, method (exception.Exception) AppendJSON([]byte) []byte
+pkg owlkei/exception, method (exception.Exception) Code() int
+pkg owlkei/exception, method (exception.Exception) Error() string
+pkg owlkei/exception, method (exception.Exception) MarshalJSON() ([]byte, error)
+pkg owlkei/exception, method (exception.Exception) Message() string
+pkg owlkei/exception, method (exception.Exception) StatusText() string
+pkg owlkei/exception, method (exception.Exception) Unwrap() error
+pkg owlkei/exception, type Exception struct
+pkg owlkei/exception, type ExceptionOptions struct
+pkg owlkei/exception, type ExceptionOptions struct, Cause error
+pkg owlkei/exception, type ExceptionOptions struct, Description string
+pkg owlkei/guards/throttler, const StrategyFixedWindow throttler.Strategy = 0
+pkg owlkei/guards/throttler, const StrategySlidingWindow throttler.Strategy = 1
+pkg owlkei/guards/throttler, const StrategyTokenBucket throttler.Strategy = 2
+pkg owlkei/guards/throttler, method (throttler.Throttler) NewGuard() any
+pkg owlkei/guards/throttler, type Strategy int
+pkg owlkei/guards/throttler, type Throttler struct
+pkg owlkei/guards/throttler, type Throttler struct, Backend cache.Cache
+pkg owlkei/guards/throttler, type Throttler struct, KeyFunc func(*ctx.HTTPContext) string
+pkg owlkei/guards/throttler, type Throttler struct, Limit int64
+pkg owlkei/guards/throttler, type Throttler struct, Strategy throttler.Strategy
+pkg owlkei/guards/throttler, type Throttler struct, TTL time.Duration
+pkg owlkei/log, const FormatJSON log.Format = 12
+pkg owlkei/log, const FormatPretty log.Format = 13
+pkg owlkei/log, const FormatText log.Format = 11
+pkg owlkei/log, const LevelDebug slog.Level = -4
+pkg owlkei/log, const LevelError slog.Level = 8
+pkg owlkei/log, const LevelFatal slog.Level = 12
+pkg owlkei/log, const LevelInfo slog.Level = 0
+pkg owlkei/log, const LevelWarn slog.Level = 4
+pkg owlkei/log, func NewLog(*log.LogOptions) log.Logger
+pkg owlkei/log, func WrapLogger(log.LogAdapter, []string) log.Logger
+pkg owlkei/log, type Format int
+pkg owlkei/log, type LogAdapter interface
+pkg owlkei/log, type LogAdapter interface, Debug(string, ...any)
+pkg owlkei/log, type LogAdapter interface, Error(string, ...any)
+pkg owlkei/log, type LogAdapter interface, Fatal(string, ...any)
+pkg owlkei/log, type LogAdapter interface, Info(string, ...any)
+pkg owlkei/log, type LogAdapter interface, Warn(string, ...any)
+pkg owlkei/log, type LogOptions struct
+pkg owlkei/log, type LogOptions struct, Format log.Format
+pkg owlkei/log, type LogOptions struct, IsAddSource bool
+pkg owlkei/log, type LogOptions struct, Level slog.Level
+pkg owlkei/log, type LogOptions struct, MaskFields []string
+pkg owlkei/log, type Logger interface
+pkg owlkei/log, type Logger interface, Debug(string, ...any)
+pkg owlkei/log, type Logger interface, Error(string, ...any)
+pkg owlkei/log, type Logger interface, Fatal(string, ...any)
+pkg owlkei/log, type Logger interface, From(context.Context) log.Logger
+pkg owlkei/log, type Logger interface, Info(string, ...any)
+pkg owlkei/log, type Logger interface, Warn(string, ...any)
+pkg owlkei/modules/cache, func NewMemoryCache(*cache.MemoryCacheOptions) cache.Cache
+pkg owlkei/modules/cache, func Register(*cache.CacheModuleOptions) *core.Module
+pkg owlkei/modules/cache, method (*cache.CacheService) Delete(context.Context, string) error
+pkg owlkei/modules/cache, method (*cache.CacheService) Get(context.Context, string) ([]byte, bool)
+pkg owlkei/modules/cache, method (*cache.CacheService) Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg owlkei/modules/cache, method (*cache.CacheService) Keys(context.Context) []string
+pkg owlkei/modules/cache, method (*cache.CacheService) Set(context.Context, string, []byte, time.Duration) error
+pkg owlkei/modules/cache, method (*cache.CacheService) SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg owlkei/modules/cache, method (*cache.CacheService) TTL(context.Context, string) (time.Duration, bool)
+pkg owlkei/modules/cache, method (cache.CacheService) NewProvider() core.Provider
+pkg owlkei/modules/cache, type Cache interface
+pkg owlkei/modules/cache, type Cache interface, Delete(context.Context, string) error
+pkg owlkei/modules/cache, type Cache interface, Get(context.Context, string) ([]byte, bool)
+pkg owlkei/modules/cache, type Cache interface, Incr(context.Context, string, int64, time.Duration) (int64, error)
+pkg owlkei/modules/cache, type Cache interface, Keys(context.Context) []string
+pkg owlkei/modules/cache, type Cache interface, Set(context.Context, string, []byte, time.Duration) error
+pkg owlkei/modules/cache, type Cache interface, SetNX(context.Context, string, []byte, time.Duration) (bool, error)
+pkg owlkei/modules/cache, type Cache interface, TTL(context.Context, string) (time.Duration, bool)
+pkg owlkei/modules/cache, type CacheModuleOptions struct
+pkg owlkei/modules/cache, type CacheModuleOptions struct, Backend cache.Cache
+pkg owlkei/modules/cache, type CacheModuleOptions struct, IsGlobal bool
+pkg owlkei/modules/cache, type CacheModuleOptions struct, OnInit cache.CacheOnInitFn
+pkg owlkei/modules/cache, type CacheOnInitFn = func()
+pkg owlkei/modules/cache, type CacheService struct
+pkg owlkei/modules/cache, type CacheService struct, Backend cache.Cache
+pkg owlkei/modules/cache, type MemoryCacheOptions = memorycache.MemoryCacheOptions
+pkg owlkei/modules/cache, var ErrEmptyKey error
+pkg owlkei/modules/cache, var ErrEntryTooLarge error
+pkg owlkei/modules/cache, var ErrNegativeTTL error
+pkg owlkei/modules/cache, var ErrNotCounter error
+pkg owlkei/modules/config, func Register(*config.ConfigModuleOptions) *core.Module
+pkg owlkei/modules/config, method (*config.ConfigService) Get(string) any
+pkg owlkei/modules/config, method (*config.ConfigService) Set(string, any)
+pkg owlkei/modules/config, method (*config.ConfigService) Transform(any) (any, []ctx.FieldLevel)
+pkg owlkei/modules/config, method (config.ConfigService) NewProvider() core.Provider
+pkg owlkei/modules/config, type ConfigHookFn = func(config.ConfigService)
+pkg owlkei/modules/config, type ConfigLoadFn = func() map[string]any
+pkg owlkei/modules/config, type ConfigModuleOptions struct
+pkg owlkei/modules/config, type ConfigModuleOptions struct, EnvFilePaths []string
+pkg owlkei/modules/config, type ConfigModuleOptions struct, Hooks []config.ConfigHookFn
+pkg owlkei/modules/config, type ConfigModuleOptions struct, IsExpandVariables bool
+pkg owlkei/modules/config, type ConfigModuleOptions struct, IsGlobal bool
+pkg owlkei/modules/config, type ConfigModuleOptions struct, IsIgnoreEnvFile bool
+pkg owlkei/modules/config, type ConfigModuleOptions struct, IsOverride bool
+pkg owlkei/modules/config, type ConfigModuleOptions struct, Loads []config.ConfigLoadFn
+pkg owlkei/modules/config, type ConfigModuleOptions struct, OnInit config.ConfigOnInitFn
+pkg owlkei/modules/config, type ConfigOnInitFn = func()
+pkg owlkei/modules/config, type ConfigService struct
+pkg owlkei/modules/config, type ConfigService struct, State *config.configState
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Filter(func(any) bool) aggregation.Operator
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Pipe(...aggregation.Operator) any
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Tap(func(any) any) aggregation.Operator
+reach aggregation.Aggregation, method (*aggregation.Aggregation) Transform(func(any) any) aggregation.Operator
+reach common.ArgumentMetadata, field ContextType string
+reach common.ArgumentMetadata, field ParamType string
+reach common.ExceptionFilter, method (*common.ExceptionFilter) BindExceptionFilter(any, ...any) *common.ExceptionFilter
+reach common.Guard, method (*common.Guard) BindGuard(any, ...any) *common.Guard
+reach common.HTTP, method (*common.HTTP) Path(string, ...any) *common.HTTP
+reach common.HTTP, method (*common.HTTP) Prefix(string, ...any) *common.HTTP
+reach common.Interceptor, method (*common.Interceptor) BindInterceptor(any, ...any) *common.Interceptor
+reach common.Middleware, method (*common.Middleware) BindMiddleware(common.MiddlewareFn, ...any) *common.Middleware
+reach common.MiddlewareFn, method (common.MiddlewareFn) Use(*http.Request, http.ResponseWriter, ctx.Next)
+reach common.PathStyle, type int
+reach common.Publisher, method (common.Publisher) Publish(string, ...any) error
+reach core.App, method (*core.App) BindGlobalExceptionFilters(...any) *core.App
+reach core.App, method (*core.App) BindGlobalGuards(...any) *core.App
+reach core.App, method (*core.App) BindGlobalInterceptors(...any) *core.App
+reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
+reach core.App, method (*core.App) Create(*core.Module)
+reach core.App, method (*core.App) Get(core.Provider) any
+reach core.App, method (*core.App) Listen() error
+reach core.App, method (*core.App) Logger() log.Logger
+reach core.App, method (*core.App) Serve(net.Listener) error
+reach core.App, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
+reach core.App, method (*core.App) Stop()
+reach core.AppOptions, field CORS *core.CORSOptions
+reach core.AppOptions, field CSRF *core.CSRFOptions
+reach core.AppOptions, field Compress *core.CompressOptions
+reach core.AppOptions, field HTTP *core.HTTPOptions
+reach core.AppOptions, field HTTPSRedirect *core.HTTPSRedirectOptions
+reach core.AppOptions, field Headers *core.HeadersOptions
+reach core.AppOptions, field Hosts []string
+reach core.AppOptions, field IsAccessLog bool
+reach core.AppOptions, field IsDevtool bool
+reach core.AppOptions, field LoadShed *core.LoadShedOptions
+reach core.AppOptions, field Logger log.LogAdapter
+reach core.AppOptions, field Origins []string
+reach core.AppOptions, field Proxy *core.ProxyOptions
+reach core.AppOptions, field Render *core.RenderOptions
+reach core.AppOptions, field Server *core.ServerOptions
+reach core.AppOptions, field StartupTimeout time.Duration
+reach core.AppOptions, field Versioning *versioning.Options
+reach core.AppOptions, field WS *core.WSOptions
+reach core.ByteSize, method (core.ByteSize) String() string
+reach core.ByteSize, type int64
+reach core.CORSOptions, field AllowHeaders []string
+reach core.CORSOptions, field AllowMethods []string
+reach core.CORSOptions, field ExposeHeaders []string
+reach core.CORSOptions, field IsAllowCredentials bool
+reach core.CORSOptions, field IsAllowPrivateNetwork bool
+reach core.CORSOptions, field IsEnabled bool
+reach core.CORSOptions, field MaxAge time.Duration
+reach core.CSRFOptions, field IsDisabled bool
+reach core.CSRFOptions, field IsEnabled bool
+reach core.CompressOptions, field IsEnabled bool
+reach core.CompressOptions, field MinSize core.ByteSize
+reach core.Controller, method (core.Controller) NewController() core.Controller
+reach core.HTTPOptions, field MaxBodyBytes core.ByteSize
+reach core.HTTPOptions, field ServeDirs []string
+reach core.HTTPSRedirectOptions, field Host string
+reach core.HTTPSRedirectOptions, field IsEnabled bool
+reach core.HTTPSRedirectOptions, field Port int
+reach core.HeadersOptions, field ContentSecurityPolicy string
+reach core.HeadersOptions, field CrossOriginEmbedderPolicy string
+reach core.HeadersOptions, field CrossOriginOpenerPolicy string
+reach core.HeadersOptions, field CrossOriginResourcePolicy string
+reach core.HeadersOptions, field FrameOptions string
+reach core.HeadersOptions, field IsDisabled bool
+reach core.HeadersOptions, field IsEnabled bool
+reach core.HeadersOptions, field PermissionsPolicy string
+reach core.HeadersOptions, field ReferrerPolicy string
+reach core.HeadersOptions, field StrictTransportSecurity string
+reach core.LoadShedOptions, field IsEnabled bool
+reach core.LoadShedOptions, field MaxInFlight int
+reach core.LoadShedOptions, field MaxQueue int
+reach core.Module, field IsGlobal bool
+reach core.Module, field Name string
+reach core.Module, field OnInit func()
+reach core.Module, field OnReady func()
+reach core.Module, field OnShutdown func()
+reach core.Module, method (*core.Module) Prefix(string) *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) AsyncImports(...any) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Build() *core.Module
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Controllers(...core.Controller) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) PathStyle(common.PathStyle) *core.ModuleBuilder
+reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
+reach core.Provider, method (core.Provider) NewProvider() core.Provider
+reach core.ProxyHeader, type int
+reach core.ProxyOptions, field Header core.ProxyHeader
+reach core.ProxyOptions, field IsHostForwarded bool
+reach core.ProxyOptions, field TrustedHops int
+reach core.ProxyOptions, field TrustedProxies []string
+reach core.RenderOptions, field Dir string
+reach core.RenderOptions, field FS fs.FS
+reach core.RenderOptions, field IsReload bool
+reach core.RetryOptions, field InitialDelay time.Duration
+reach core.RetryOptions, field MaxAttempts int
+reach core.RetryOptions, field MaxDelay time.Duration
+reach core.ServerOptions, field IsH2C bool
+reach core.ServerOptions, field Port int
+reach core.ServerOptions, field ShutdownTimeout time.Duration
+reach core.ServerOptions, field TLS *core.TLSOptions
+reach core.TLSOptions, field CertFile string
+reach core.TLSOptions, field Config *tls.Config
+reach core.TLSOptions, field KeyFile string
+reach core.WSOptions, field Path string
+reach ctx.Body, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Body, method (ctx.Body) BindValue(any) any
+reach ctx.Body, method (ctx.Body) Del(string)
+reach ctx.Body, method (ctx.Body) Get(string) any
+reach ctx.Body, method (ctx.Body) Has(string) bool
+reach ctx.Body, method (ctx.Body) Set(string, any)
+reach ctx.Body, type map[string]any
+reach ctx.DataFile, field Dest string
+reach ctx.DataFile, field FileHeader *multipart.FileHeader embedded
+reach ctx.DataFile, field Filename string
+reach ctx.DataFile, field Index int
+reach ctx.DataFile, field Key string
+reach ctx.DataFile, field Size int64
+reach ctx.DataFile, field Total int
+reach ctx.DataFile, field Type string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Field() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Index() int
+reach ctx.FieldLevel, method (*ctx.FieldLevel) IsValue() bool
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Kind() reflect.Kind
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Namespace() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) NestedTag() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Tag() string
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Type() reflect.Type
+reach ctx.FieldLevel, method (*ctx.FieldLevel) Value() any
+reach ctx.File, method (ctx.File) Bind(any) any
+reach ctx.File, type map[string][]*multipart.FileHeader
+reach ctx.Form, method (ctx.Form) Add(string, string)
+reach ctx.Form, method (ctx.Form) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Form, method (ctx.Form) BindValue(any) any
+reach ctx.Form, method (ctx.Form) Del(string)
+reach ctx.Form, method (ctx.Form) Get(string) string
+reach ctx.Form, method (ctx.Form) Has(string) bool
+reach ctx.Form, method (ctx.Form) Set(string, string)
+reach ctx.Form, type map[string][]string
+reach ctx.HTTPContext, field Request *http.Request embedded
+reach ctx.HTTPContext, field ResponseWriter http.ResponseWriter embedded
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Body() ctx.Body
+reach ctx.HTTPContext, method (*ctx.HTTPContext) File() ctx.File
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Form() ctx.Form
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Header() ctx.Header
+reach ctx.HTTPContext, method (*ctx.HTTPContext) ID() string
+reach ctx.HTTPContext, method (*ctx.HTTPContext) JSON(any, ...any)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) JSONP(any, ...any)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Param() ctx.Param
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Query() ctx.Query
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Redirect(string)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
+reach ctx.HTTPContext, method (*ctx.HTTPContext) Text(string, ...any)
+reach ctx.Header, method (ctx.Header) Add(string, string)
+reach ctx.Header, method (ctx.Header) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Header, method (ctx.Header) BindValue(any) any
+reach ctx.Header, method (ctx.Header) Del(string)
+reach ctx.Header, method (ctx.Header) Get(string) string
+reach ctx.Header, method (ctx.Header) Has(string) bool
+reach ctx.Header, method (ctx.Header) Set(string, string)
+reach ctx.Header, type map[string][]string
+reach ctx.Map, type map[string]any
+reach ctx.Next, type = func()
+reach ctx.Param, method (ctx.Param) Add(string, string)
+reach ctx.Param, method (ctx.Param) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Param, method (ctx.Param) BindValue(any) any
+reach ctx.Param, method (ctx.Param) Del(string)
+reach ctx.Param, method (ctx.Param) Get(string) string
+reach ctx.Param, method (ctx.Param) Has(string) bool
+reach ctx.Param, method (ctx.Param) Set(string, string)
+reach ctx.Param, type map[string][]string
+reach ctx.Query, method (ctx.Query) Add(string, string)
+reach ctx.Query, method (ctx.Query) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.Query, method (ctx.Query) BindValue(any) any
+reach ctx.Query, method (ctx.Query) Del(string)
+reach ctx.Query, method (ctx.Query) Get(string) string
+reach ctx.Query, method (ctx.Query) Has(string) bool
+reach ctx.Query, method (ctx.Query) Set(string, string)
+reach ctx.Query, type map[string][]string
+reach ctx.Redirect, type = func(string)
+reach ctx.WSContext, field Conn *websocket.Conn embedded
+reach ctx.WSContext, method (*ctx.WSContext) Context() context.Context
+reach ctx.WSContext, method (*ctx.WSContext) ID() string
+reach ctx.WSContext, method (*ctx.WSContext) Send(any)
+reach ctx.WSContext, method (*ctx.WSContext) SetContext(context.Context)
+reach ctx.WSContext, method (*ctx.WSContext) WSPayload() ctx.WSPayload
+reach ctx.WSPayload, method (ctx.WSPayload) Bind(any) (any, []ctx.FieldLevel)
+reach ctx.WSPayload, method (ctx.WSPayload) BindValue(any) any
+reach ctx.WSPayload, type map[string]any
+reach memorycache.MemoryCacheOptions, field MaxBytes int64
+reach memorycache.MemoryCacheOptions, field MaxEntries int
+reach versioning.ExtractorHandler, type = func(*ctx.HTTPContext) string
+reach versioning.Options, field DefaultVersion string
+reach versioning.Options, field Extractor versioning.ExtractorHandler
+reach versioning.Options, field Key string
+reach versioning.Options, field Type versioning.Type
+reach versioning.Type, type int

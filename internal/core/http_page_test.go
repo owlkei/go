@@ -15,10 +15,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"go.owlky.com/owlky/internal/common"
-	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/internal/trace"
-	"go.owlky.com/owlky/internal/versioning"
+	"go.owlkei.com/owlkei/internal/common"
+	"go.owlkei.com/owlkei/internal/test"
+	"go.owlkei.com/owlkei/internal/trace"
+	"go.owlkei.com/owlkei/internal/versioning"
 )
 
 func TestPage_RoutesLikeHTTP(t *testing.T) {

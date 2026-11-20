@@ -6,17 +6,17 @@ package main
 import (
 	"log"
 
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
-func newApp() owlky.App {
-	stock := owlky.ModuleBuilder().
+func newApp() owlkei.App {
+	stock := owlkei.ModuleBuilder().
 		AsyncImports(NewWarehouseModule).
 		Controllers(StockController{}).
 		Build()
 
-	app := owlky.New(nil)
-	app.Create(owlky.ModuleBuilder().
+	app := owlkei.New(nil)
+	app.Create(owlkei.ModuleBuilder().
 		Imports(stock).
 		Controllers(HealthController{}).
 		Build())

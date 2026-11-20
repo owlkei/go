@@ -4,11 +4,11 @@ import (
 	"errors"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/aggregation"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/aggregation"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 type HTTPIntercept = func(*ctx.HTTPContext, *aggregation.Aggregation) any
@@ -56,7 +56,7 @@ func InjectProvidersIntoHTTPInterceptors(i *Interceptor, r *HTTP, cb func(int, r
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid interceptor: %v.%s must be func(owlky.HTTPContext, owlky.Aggregation) any to be bound as a HTTP interceptor",
+				"invalid interceptor: %v.%s must be func(owlkei.HTTPContext, owlkei.Aggregation) any to be bound as a HTTP interceptor",
 				interceptableType,
 				InterceptorMethodName,
 			)))

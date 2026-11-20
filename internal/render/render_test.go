@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"go.owlky.com/owlky/internal/test"
+	"go.owlkei.com/owlkei/internal/test"
 )
 
 func TestRender_RendersPageInLayout(t *testing.T) {

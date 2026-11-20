@@ -1,8 +1,8 @@
 package cache
 
 import (
-	"go.owlky.com/owlky/internal/core"
-	"go.owlky.com/owlky/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/core"
+	"go.owlkei.com/owlkei/internal/memorycache"
 )
 
 type CacheOnInitFn = func()

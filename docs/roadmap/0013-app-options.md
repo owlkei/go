@@ -3,7 +3,7 @@
 Status: Done
 
 ## Goal
-An app's configuration lives in one place: `owlky.New(&owlky.AppOptions{…})`, or the same struct filled
+An app's configuration lives in one place: `owlkei.New(&owlkei.AppOptions{…})`, or the same struct filled
 from `OK_*` environment variables and `.env`. Code is bound with the `Bind…` methods; running takes no
 configuration (`app.Listen()`). The eight built-in middlewares become framework stages that run in a
 fixed order, configured in `AppOptions` and off by default. One `Origins` list serves CORS, CSRF and
@@ -16,7 +16,7 @@ change it.
   package (`AppOptions` and its groups, `ByteSize`, `OptionsFromEnv`), `middlewares/*` moved to
   `internal/`, `internal/trace` (`StagePreRoute`), `modules/config` (its `.env` parser and typed binding
   moved to an internal package both use), every caller (tests, `examples/`, `bench/`), README,
-  `.owlky/`, CLAUDE.md, `api/owlky.txt`.
+  `.owlkei/`, CLAUDE.md, `api/owlkei.txt`.
 - Out: the security roadmap's work (0012: the audit, sink fixes, page caching, redirects, `RENDER_` /
   `SUBMIT_` guard coverage, static files, `gosec`); WebSocket limits (`MaxConnectionsPerIP`, message
   sizes: the WebSocket roadmap); accurate trace timings (backlog, its own work); the `OK_ENV` mode
@@ -34,7 +34,7 @@ change it.
 | 7 | Trace: the built-in stages emit `trace.StagePreRoute` (`"pre-route"`, `Name` = the stage, `Code` = the refusal status); `StageMiddleware` is for user middlewares only; the pretty access log shows a `pre-route` group | tdd | docs/design/0022-app-options.md | 4 | a refused request's trace ends at the stage that refused it | done |
 | 8 | `OptionsFromEnv()`: `OK_<PATH>` with `__` between levels and `PORT`; types from the fields (slices `a,b,c`, durations, `ByteSize`, enums); `.env` through the parser shared with `modules/config`; environment > `.env`, code assigned afterwards wins; every error stops `New` (bad value, bad element, empty value, unknown `OK_*` with the closest name); the startup log names each value's source, never a secret | tdd | docs/design/0022-app-options.md | 1-6 | an app configured only by `OK_*` variables starts the same as one configured in code; a typo stops it | done |
 | 9 | Callers: every test, `examples/`, `bench/`, README and package README example on the new API (about 370 `New()` and 600 configuration calls) | light | - | 1-8 | `make check` green; no removed name left | done |
-| 10 | Docs: a Configuration section (start here, a production checklist, one part per group, each field's default and variable), the behavior changes (built-in stages before user middlewares), CLAUDE.md's principle "Safe defaults" → "Explicit protection", `.owlky/`, `api/owlky.txt` | light | - | 9 | every `AppOptions` field is documented with its variable; the README examples compile | done |
+| 10 | Docs: a Configuration section (start here, a production checklist, one part per group, each field's default and variable), the behavior changes (built-in stages before user middlewares), CLAUDE.md's principle "Safe defaults" → "Explicit protection", `.owlkei/`, `api/owlkei.txt` | light | - | 9 | every `AppOptions` field is documented with its variable; the README examples compile | done |
 | 11 | Measure: `make bench` and the `bench/` scenarios against `docs/review/http-0009.md` | light | - | 4, 9 | no scenario slower than the noise band; `docs/review/http-0013.md` | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
@@ -45,7 +45,7 @@ Agreed with the owner on 2026-11-19 (backlog › "App options", "Less configurat
 - `AppOptions` (D-032 naming, never `Config`); groups at the top level, a feature adds a group; empty
   means off or today's default; no field depends on another; godoc on every field with its default.
 - Configuration in `New`, code in `Bind…`, running in `Listen()` / `Serve(listener)`. `Create` (wire)
-  and `Listen` (serve) stay separate; no one-line `owlky.Run`.
+  and `Listen` (serve) stay separate; no one-line `owlkei.Run`.
 - No public built-in middlewares; their internal shape stays the middleware shape unless a benchmark
   shows a flat check loop is faster (internal, free to change). User middlewares keep their API and run
   after the built-in stages.

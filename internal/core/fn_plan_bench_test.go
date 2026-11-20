@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"go.owlky.com/owlky/internal/trace"
+	"go.owlkei.com/owlkei/internal/trace"
 )
 
 func BenchmarkHTTPHandlerPlan_Invoke_NoArgs(b *testing.B) {

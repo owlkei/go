@@ -4,10 +4,10 @@ import (
 	"errors"
 	"reflect"
 
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/routing"
-	"go.owlky.com/owlky/internal/str"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/routing"
+	"go.owlkei.com/owlkei/internal/str"
 )
 
 type HTTPCanActivate = func(*ctx.HTTPContext) bool
@@ -55,7 +55,7 @@ func InjectProvidersIntoHTTPGuards(g *Guard, r *HTTP, cb func(int, reflect.Type,
 			}
 
 			panic(errors.New(color.FmtRed(
-				"invalid guard: %v.%s must be func(owlky.HTTPContext) bool to be bound as a HTTP guard",
+				"invalid guard: %v.%s must be func(owlkei.HTTPContext) bool to be bound as a HTTP guard",
 				guarderType,
 				GuardMethodName,
 			)))

@@ -1,6 +1,6 @@
 # Trace
 
-Internal package: applications use `owlky.TraceTransport` and `log.Logger.From(ctx)` instead.
+Internal package: applications use `owlkei.TraceTransport` and `log.Logger.From(ctx)` instead.
 
 *Package `trace` holds the trace events the framework emits for each request and WebSocket message, and the `Tracer` that delivers them to listeners such as the access log.*
 
@@ -28,7 +28,7 @@ package main
 import (
 	"fmt"
 
-	"go.owlky.com/owlky/internal/trace"
+	"go.owlkei.com/owlkei/internal/trace"
 )
 
 func main() {
@@ -59,7 +59,7 @@ func main() {
 | `Operation` | `string` | `complete`: the HTTP method, or the WS message type |
 | `Target` | `string` | `complete`: the URL path without the query string, or the WS topic |
 | `Code` | `int` | `complete`: the status written; a `pre-route` event: the status the stage answered with when it ended the request (`503`, `421`, `400`, `403`, `308`, `204`), `0` when it called `next()`; a `middleware` event that ended in a panic: the status of the error response; a `render` event: `500` when the render failed, `0` otherwise |
-| `ClientIP` | `netip.Addr` | `complete` of an HTTP request or handshake: the client's address as `owlky.ClientIP` resolves it (the peer of `RemoteAddr` without `AppOptions.Proxy`); the zero `Addr` on every other event and when the address is unknown |
+| `ClientIP` | `netip.Addr` | `complete` of an HTTP request or handshake: the client's address as `owlkei.ClientIP` resolves it (the peer of `RemoteAddr` without `AppOptions.Proxy`); the zero `Addr` on every other event and when the address is unknown |
 
 ## Spans
 
@@ -154,7 +154,7 @@ defer stop()
 
 A service that calls another service over HTTP continues the incoming request's trace by wrapping its
 `http.RoundTripper` with `Transport`. Any service that reads W3C Trace Context then joins your trace.
-An Owlky Go service you call logs the same `trace_id`, and its `upstream` is your request ID. To
+An Owlkei Go service you call logs the same `trace_id`, and its `upstream` is your request ID. To
 search the logs of a whole chain, see [Find the logs of a request](../../log/README.md#find-the-logs-of-a-request).
 
 `Transport` is not related to the `TransportHTTP` and `TransportWS` values of `Event.Transport`:
@@ -195,7 +195,7 @@ func (instance UserController) READ_profile(c *ctx.HTTPContext) any {
 }
 ```
 
-Build the request with the context Owlky Go gives you (`c.Context()` of an HTTP or WebSocket context,
+Build the request with the context Owlkei Go gives you (`c.Context()` of an HTTP or WebSocket context,
 or any context derived from it with `context.WithTimeout`, `WithCancel` or `WithValue`). The context
 keeps working after the request ended, for example in a goroutine you started from the handler.
 
@@ -229,7 +229,7 @@ keeps working after the request ended, for example in a goroutine you started fr
   Treat the trace ID as a correlation hint, never as proof of where a request came from, and
   don't let it decide authorization, billing or sampling quotas. Your request ID is always your
   own.
-- The value is built only from IDs that Owlky Go generated or validated (lower-case hex), so it can't
+- The value is built only from IDs that Owlkei Go generated or validated (lower-case hex), so it can't
   inject a header.
 
 ## Performance notes

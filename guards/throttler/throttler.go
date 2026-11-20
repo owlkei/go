@@ -11,13 +11,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/internal/color"
-	"go.owlky.com/owlky/internal/ctx"
-	"go.owlky.com/owlky/internal/inspect"
-	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/internal/tracecontext"
-	"go.owlky.com/owlky/modules/cache"
+	"go.owlkei.com/owlkei/exception"
+	"go.owlkei.com/owlkei/internal/color"
+	"go.owlkei.com/owlkei/internal/ctx"
+	"go.owlkei.com/owlkei/internal/inspect"
+	"go.owlkei.com/owlkei/internal/memorycache"
+	"go.owlkei.com/owlkei/internal/tracecontext"
+	"go.owlkei.com/owlkei/modules/cache"
 )
 
 type Strategy int

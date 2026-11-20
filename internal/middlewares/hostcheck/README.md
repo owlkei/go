@@ -19,7 +19,7 @@ Internal package: applications use `AppOptions.Hosts` instead; it is the `hostch
 ## Key Features
 - An allowlist of exact names, `*.` patterns and IP literals, each with an optional port
 - `421 Misdirected Request` for an unknown host, `400 Bad Request` for an empty or overlong one (RFC 9110 § 15.5.20, § 7.2)
-- Reads the host from `owlky.ClientHost`, so a forwarded host counts only behind a trusted proxy with `IsHostForwarded` on
+- Reads the host from `owlkei.ClientHost`, so a forwarded host counts only behind a trusted proxy with `IsHostForwarded` on
 - No implicit entry: `localhost` passes only when you list it
 - One map lookup per request, no allocation
 
@@ -36,17 +36,17 @@ list: `hostcheck` does it before any guard or handler runs.
 package main
 
 import (
-	"go.owlky.com/owlky"
+	"go.owlkei.com/owlkei"
 )
 
 func main() {
-	app := owlky.New(&owlky.AppOptions{
-		Proxy: &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+	app := owlkei.New(&owlkei.AppOptions{
+		Proxy: &owlkei.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 		Hosts: []string{"example.com", "*.example.com", "localhost"},
 	})
 
 	app.Create(
-		owlky.ModuleBuilder().Build(),
+		owlkei.ModuleBuilder().Build(),
 	)
 }
 ```
@@ -84,7 +84,7 @@ hostcheck.HostCheck{Hosts: []string{"example.com", "www.example.com"}}
 
 ### NewMiddleware
 ```go
-func (instance HostCheck) NewMiddleware() owlky.MiddlewareFn
+func (instance HostCheck) NewMiddleware() owlkei.MiddlewareFn
 ```
 
 Validates and compiles `Hosts` once; the framework calls it at `Create()`. It panics with
@@ -94,14 +94,14 @@ name, a `*.` pattern or an IP literal with an optional port (for example `*`, `*
 
 ### Use
 ```go
-func (instance HostCheck) Use(r *http.Request, w http.ResponseWriter, next owlky.Next)
+func (instance HostCheck) Use(r *http.Request, w http.ResponseWriter, next owlkei.Next)
 ```
 
-Makes `HostCheck` a `owlky.MiddlewareFn`. It compiles the options on every call, so use it in
+Makes `HostCheck` a `owlkei.MiddlewareFn`. It compiles the options on every call, so use it in
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules
-- The checked value is `owlky.ClientHost(r)`: the forwarded host behind a trusted `proxy` with
+- The checked value is `owlkei.ClientHost(r)`: the forwarded host behind a trusted `proxy` with
   `IsHostForwarded` on, else `r.Host`. With no `proxy` bound, no forwarding header is read.
 - A match calls the next layer; nothing else changes.
 - No match answers `421` with message `Unknown host`. An empty host, or one longer than 255 bytes,
