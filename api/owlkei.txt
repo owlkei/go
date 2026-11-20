@@ -353,6 +353,7 @@ reach ctx.HTTPContext, method (*ctx.HTTPContext) JSONP(any, ...any)
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Param() ctx.Param
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Query() ctx.Query
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Redirect(string)
+reach ctx.HTTPContext, method (*ctx.HTTPContext) RedirectExternal(string)
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Status(int) *ctx.HTTPContext
 reach ctx.HTTPContext, method (*ctx.HTTPContext) Text(string, ...any)
 reach ctx.Header, method (ctx.Header) Add(string, string)

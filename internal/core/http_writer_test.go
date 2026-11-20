@@ -670,3 +670,61 @@ func TestNonce_ErrorPageSet(t *testing.T) {
 		t.Error(test.DiffMessage(again, "another nonce", "R33: the error page draws a nonce per response"))
 	}
 }
+
+func TestHeader_NoResponseSplitting(t *testing.T) {
+	app := New(nil)
+	mustCreate(t, app, NewModuleBuilder().Controllers(secHeaderController{}).Build())
+
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+	resp, rest := secRawGet(t, srv.Listener.Addr().String(), "/h")
+	if resp.StatusCode != http.StatusOK || string(rest) != "ok" {
+		t.Error(test.DiffMessage([]any{resp.StatusCode, string(rest)}, []any{http.StatusOK, "ok"}, "H2: exactly one response over HTTP/1.1, nothing after its body"))
+	}
+	if resp.Header.Get("Set-Cookie") != "" || len(resp.Header.Values("Set-Cookie")) != 0 {
+		t.Error(test.DiffMessage(resp.Header, "no Set-Cookie", "H2: no injected header over HTTP/1.1"))
+	}
+	for name, values := range resp.Header {
+		for _, v := range values {
+			if strings.ContainsAny(v, "\r\n") || strings.ContainsAny(name, "\r\n") {
+				t.Error(test.DiffMessage(name+": "+v, "no CR or LF", "H2: HTTP/1.1"))
+			}
+		}
+	}
+
+	raw := string(secRawBytes(t, srv.Listener.Addr().String(), "/nul"))
+	if strings.Count(raw, "HTTP/1.1 ") != 1 || strings.Contains(raw, "\r\nSet-Cookie:") || !strings.HasSuffix(raw, "ok") {
+		t.Error(test.DiffMessage(raw, "one response and no injected header", "H1, H2: CR, LF and NUL in a value over HTTP/1.1"))
+	}
+
+	tls := httptest.NewUnstartedServer(app)
+	tls.EnableHTTP2 = true
+	tls.StartTLS()
+	defer tls.Close()
+	nul, err := tls.Client().Get(tls.URL + "/nul")
+	if err == nil {
+		if nul.Header.Get("Set-Cookie") != "" {
+			t.Error(test.DiffMessage(nul.Header, "no Set-Cookie", "H2: NUL and CR LF over HTTP/2"))
+		}
+		_ = nul.Body.Close()
+	}
+	h2, err := tls.Client().Get(tls.URL + "/h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = h2.Body.Close() }()
+	body, _ := io.ReadAll(h2.Body)
+	if h2.ProtoMajor != 2 || h2.StatusCode != http.StatusOK || string(body) != "ok" {
+		t.Error(test.DiffMessage([]any{h2.ProtoMajor, h2.StatusCode, string(body)}, []any{2, http.StatusOK, "ok"}, "H2: one response over HTTP/2"))
+	}
+	if h2.Header.Get("Set-Cookie") != "" {
+		t.Error(test.DiffMessage(h2.Header, "no Set-Cookie", "H2: no injected header over HTTP/2"))
+	}
+	for name, values := range h2.Header {
+		for _, v := range values {
+			if strings.ContainsAny(v, "\r\n\x00") || strings.ContainsAny(name, "\r\n\x00") {
+				t.Error(test.DiffMessage(name+": "+v, "no CR, LF or NUL", "H2: HTTP/2"))
+			}
+		}
+	}
+}

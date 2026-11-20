@@ -34,6 +34,7 @@ func AsHTTPGuard(guarder any) (HTTPCanActivate, bool) {
 
 func InjectProvidersIntoHTTPGuards(g *Guard, r *HTTP, cb func(int, reflect.Type, reflect.Value, reflect.Value), construct func(obj any, constructor string) any) []GuardItem {
 	guardItemArr := make([]GuardItem, 0, len(r.patternToFuncNameMap)*len(g.guardHandlers))
+	checkSubmitCovered(r, g.guardHandlers)
 
 	for _, guardHandler := range g.guardHandlers {
 		guarderType := reflect.TypeOf(guardHandler.guarder)

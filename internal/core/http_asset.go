@@ -7,7 +7,6 @@ import (
 
 	"go.owlkei.com/owlkei/internal/common"
 	"go.owlkei.com/owlkei/internal/routing"
-	"go.owlkei.com/owlkei/internal/str"
 	"go.owlkei.com/owlkei/internal/versioning"
 )
 
@@ -63,27 +62,48 @@ func serveAssets() {}
 
 func (http *HTTP) serveAsset(ex *httpExchange) {
 	r := ex.Request
-	urlPath := str.RemoveDup(r.URL.Path, '/')
+	urlPath := r.URL.Path
 	if !strings.HasPrefix(urlPath, assetPrefix) {
 		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 	name := urlPath[len(assetPrefix):]
-	if !fs.ValidPath(name) || name == "." || hasHiddenSegment(name) {
+	if !fs.ValidPath(name) || name == "." || !isServableName(name, http.render.IsReload()) {
 		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
 		return
 	}
 
-	h := ex.writer.Header()
 	isPage := strings.HasPrefix(name, pagesPrefix)
-	if http.assetByName == nil {
-		if isPage {
-			if _, ok := http.render.PageAsset(name[len(pagesPrefix):]); !ok {
-				serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
+	isPrivate := false
+	if isPage {
+		owner, ok := http.render.PageAssetOwner(name[len(pagesPrefix):])
+		if !ok {
+			serveAssetError(ex)
+			return
+		}
+		if route := http.routeByTemplate[owner]; owner != "" && route != nil {
+			if route.gate != nil {
+				live := route.gate.live.Load()
+				if live == nil {
+					answerGatedAsset(ex, route)
+					return
+				}
+				route = live.http[route.gateIndex]
+			}
+			if !http.runPageGuards(ex, route) {
 				return
 			}
+			isPrivate = len(route.guards) > 0
 		}
-		h[cacheControlHeader] = noCacheValue
+	}
+
+	noCache, immutable := noCacheValue, immutableValue
+	if isPrivate {
+		noCache, immutable = privateNoCacheValue, privateImmutableValue
+	}
+	h := ex.writer.Header()
+	if http.assetByName == nil {
+		h[cacheControlHeader] = noCache
 	} else {
 		entry, ok := http.assetByName[name]
 		if !ok {
@@ -93,9 +113,9 @@ func (http *HTTP) serveAsset(ex *httpExchange) {
 		isPage = entry.isPage
 		h[etagHeader] = entry.etag
 		if queryValue(r.URL.RawQuery, "v") == entry.hash {
-			h[cacheControlHeader] = immutableValue
+			h[cacheControlHeader] = immutable
 		} else {
-			h[cacheControlHeader] = noCacheValue
+			h[cacheControlHeader] = noCache
 		}
 	}
 
@@ -109,6 +129,37 @@ func (http *HTTP) serveAsset(ex *httpExchange) {
 		return
 	}
 	serveFile(ex, assets, name)
+}
+
+func answerGatedAsset(ex *httpExchange, route *httpRoute) {
+	if route.gate.state.status() == modulePending {
+		ex.writer.Header()[retryAfterHeader] = route.gate.retryAfter()
+	}
+	writeJSONError(&ex.writer, stdHTTP.StatusServiceUnavailable, serviceUnavailableBody)
+}
+
+func (http *HTTP) runPageGuards(ex *httpExchange, route *httpRoute) bool {
+	isAllowed, rec := http.tryGuards(ex, route.guards)
+	if rec != nil {
+		if e, ok := asException(rec); !ok || e.Code() >= stdHTTP.StatusInternalServerError {
+			panic(rec)
+		}
+		isAllowed = false
+	}
+	if !isAllowed {
+		serveAssetError(ex)
+	}
+	return isAllowed
+}
+
+func (http *HTTP) tryGuards(ex *httpExchange, guards []httpGuard) (isAllowed bool, rec any) {
+	defer func() { rec = recover() }()
+	for i := range guards {
+		if !http.runGuard(ex, &guards[i]) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func queryValue(rawQuery, key string) string {

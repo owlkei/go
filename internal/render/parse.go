@@ -50,6 +50,7 @@ type sources struct {
 	partialByName map[string]*unit
 	errorPages    []*unit
 	pageFiles     []string
+	skipped       []string
 }
 
 type checkError struct {
@@ -173,14 +174,23 @@ func (e *Engine) parse(isLoad bool) (*site, error) {
 	if isLoad && len(orphans) > 0 {
 		return nil, &checkError{file: orphans[0], text: orphans[0] + " belongs to no template: name it after a page or layout of its directory (X.css, X.<name>.css), or move it to assets/"}
 	}
+	if isLoad {
+		e.skipped = append(e.skipped, src.skipped...)
+	}
 	s := &site{
 		setByFile:   make(map[string]*pageSet, len(src.pages)),
 		setByRoute:  make(map[string]*pageSet, len(e.routes)),
 		errorByCode: map[int]*pageSet{},
 		pageFiles:   map[string]string{},
+		ownerByFile: map[string]string{},
 	}
-	for _, files := range filesByOwner {
+	pageNameByFile := make(map[string]string, len(src.pages))
+	for _, page := range src.pages {
+		pageNameByFile[page.file] = page.name
+	}
+	for owner, files := range filesByOwner {
 		for _, p := range files {
+			s.ownerByFile[p] = pageNameByFile[owner]
 			hash := ""
 			if !e.isReload {
 				hash, err = hashFile(e.fsys, p)
@@ -231,8 +241,12 @@ func (e *Engine) parse(isLoad bool) (*site, error) {
 
 func (e *Engine) readSources() (*sources, error) {
 	src := &sources{layoutByDir: map[string]*unit{}, partialByName: map[string]*unit{}}
-	err := walkSources(e.fsys, func(p string, _ fs.DirEntry, kind fileKind) error {
+	err := walkSources(e.fsys, func(p string, d fs.DirEntry, kind fileKind) error {
 		if kind == kindPageFile {
+			if !e.isAllowed(p, d, false) {
+				src.skipped = append(src.skipped, p)
+				return nil
+			}
 			src.pageFiles = append(src.pageFiles, p)
 			return nil
 		}

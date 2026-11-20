@@ -50,6 +50,9 @@ Internal package: applications use `owlkei.New(opts)`, `owlkei.OptionsFromEnv()`
     - [Panic stacks](#panic-stacks)
   - [No route, HEAD and versioning](#no-route-head-and-versioning)
   - [Static files](#static-files)
+    - [`HTTP.ServeDirs`](#httpservedirs)
+    - [Serving rules](#serving-rules)
+    - [Request path](#request-path)
   - [Pages](#pages)
   - [Response writer](#response-writer)
   - [Handler injection](#handler-injection)
@@ -834,15 +837,21 @@ Rate limiting stays opt-in: turn on `guards/throttler` (or limit at the proxy) i
 
 ## Static files
 
-A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`: with a handler that returns `"public"`, `GET /static/a.txt` serves `public/a.txt`, `GET /static/sub/x.txt` serves `public/sub/x.txt`, `GET /static` is the directory itself and `GET /staticzzz` answers 404.
+A `SERVE_…` handler returns the path to serve, which must lie below an entry of `HTTP.ServeDirs`. `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`: with `ServeDirs: []string{"public"}` and a handler that returns `"public"`, `GET /static/a.txt` serves `public/a.txt`, `GET /static/sub/x.txt` serves `public/sub/x.txt`, `GET /static` is the directory itself and `GET /staticzzz` answers 404. The rules live in `http_static.go`.
 
-- A file is served with `http.ServeFile` (ranges, `If-Modified-Since`, content type by extension). Under a wildcard route (`SERVE_<x>_ANY`, `SERVE_ANY_OF_<x>`) the file is opened through `os.Root` on the served directory, with `http.ServeFileFS`.
-- A directory answers its `index.html` when it exists (with the redirect to the slash-terminated URL), otherwise the 404 body. No response ever contains a directory listing.
-- A resolved path outside the served directory answers `400` `{"code":400,"error":"Bad Request","message":"Invalid URL path"}`; a missing file, or a result that is not a string, answers the 404 body.
-- Under a wildcard route, a path with a segment that starts with `.` (`.env`, `.git/config`, `css/.secret`) answers the 404 body, except `.well-known` (RFC 8615). A symbolic link is followed only when its target stays inside the served directory; otherwise the 404 body. Still serve a directory that holds only public files.
-- A handler may return `"."`: files are served from the working directory, with the same rules (dot segments answer 404, a path that leaves the directory answers 400).
-- The path a handler returns is trusted as is: dot directories in it and symbolic links above the served directory are the application's choice.
-- **Caching.** A served file (`200`, `206`, `304`, and the `index.html` of a directory) is sent with `Cache-Control: no-cache` when no layer set `Cache-Control` before: the browser keeps the file but revalidates it with `If-Modified-Since` on every use, and never guesses a lifetime (RFC 9111 § 4.2.2). A `Cache-Control` set by a middleware, guard, interceptor or the handler is kept. Mark hashed assets (`app.3f9a1c.js`) immutable in their handler:
+### `HTTP.ServeDirs`
+- At `New`, each entry is cleaned and made absolute against the working directory, read once at `New`. `New` panics `invalid app: HTTP.ServeDirs entry <q> is not a directory` (missing or a file), `invalid app: HTTP.ServeDirs entry <q> is the working directory or above it: serve a subdirectory` (`"."`, `".."`, a root), `invalid app: HTTP.ServeDirs has <n> entries, at most 64 are allowed`, `invalid app: HTTP.ServeDirs has an empty entry`. Nested and duplicate entries are allowed. `OK_HTTP__SERVE_DIRS` fills it from the environment.
+- At `Create()`, a `SERVE_` route with an empty `ServeDirs` panics `invalid app: <Controller>.<SERVE_name> serves files, but HTTP.ServeDirs is empty: list the directories it may return`, routes of async modules included.
+- Per request, the handler's result is cleaned and joined to the working directory of `New` when relative (an `os.Chdir` later moves nothing). A result that is not a string, or empty, answers the fixed 404. A root equal to or below a declared directory (byte comparison on a path boundary; the longest declared directory wins) is accepted. Any other root, or one holding a control character, is never opened: `500` `{"code":500,"error":"Internal Server Error","message":"Internal Server Error"}` without `Cache-Control`, and one `Error` `ServeRootRefused` with `route` (`<Controller>.<SERVE_name>`), `root` (at most 256 bytes) and `note`.
+- The declared directory is opened with `os.OpenRoot`, the handler's root below it with `Root.OpenRoot`, the file below that: a symbolic link that leaves the handler's root is refused, even toward another tenant of the same declared directory. A route without a wildcard (one file) opens the file below its declared directory the same way.
+
+### Serving rules
+- The request path is already canonical (see [Request path](#request-path)). The name policy runs on `<root below the declared directory>/<path after the wildcard>` before any file call. A segment that holds a control character, `\` or `:`, starts with `.` (except `.well-known`), ends with `.` or a space, holds `~` and a digit, or is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, before its first `.`, any case) answers the fixed 404. So does a forbidden file, whatever the directory: `*.go`, `go.mod`, `go.sum`, `go.work`, `go.work.sum`, `.env*`, `*.env`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`, `*~`, `*.swp`, `*.swo`, `*.bak`, `*.orig`, `*.rej`, `*.old`, `*.tmp`, `#…#`, `*.sql`, `*.sqlite`, `*.sqlite3`, `*.db`, `*.map` (ASCII case ignored). The answers are the same on every OS.
+- A directory answers its `index.html` when it exists (with a `301` to the slash-terminated URL), otherwise the fixed 404. No response ever contains a directory listing.
+- `Content-Type` is set before `http.ServeContent` runs, so nothing is sniffed: a fixed table (`.css`, `.js`, `.mjs`, `.html`, `.htm`, `.svg`, `.json`, `.map`, `.wasm`, `.xml`, `.txt`), then `mime.TypeByExtension`, then `application/octet-stream`. A type the handler or a layer set is kept. Every static response carries `X-Content-Type-Options: nosniff` (200, 206, 304), with or without the `Headers` stage.
+- A `Range` with more than one range is ignored: the full file answers `200`. One range, `If-Range`, `If-Modified-Since` and `If-None-Match` behave as in `net/http`.
+- An active file (extension `.html`, `.htm`, `.xhtml`, `.xht`, `.shtml`, `.svg`, `.svgz`, `.xml`, `.xsl`, `.xslt`, `.js`, `.mjs`, or a `Content-Type` of HTML, XHTML, SVG, XML, `+xml`, JavaScript) goes out with `Content-Disposition: attachment` and `Content-Security-Policy: sandbox; default-src 'none'`, which replaces the stage's policy for that response. The first time per route and process one `Warn` `ServeAttachment` is logged with `route`, `file` and `note`. A `Content-Disposition` already set when the handler returns (`inline` for a built site) is kept and no CSP is added.
+- **Caching.** A served file is sent with `Cache-Control: no-cache` when no layer set `Cache-Control` before, `private, no-cache` when the route has a guard (global, controller-wide or bound). A `Cache-Control` set by a middleware, guard, interceptor or the handler is kept. Mark hashed assets (`app.3f9a1c.js`) immutable in their handler:
 
   ```go
   func (c AssetsController) SERVE_ANY_OF_assets(hc *ctx.HTTPContext) string {
@@ -852,7 +861,12 @@ A `SERVE_…` handler returns the path to serve. `SERVE_static_ANY` and `SERVE_A
   ```
 
   No file name is treated as hashed automatically: a wrong guess would cache a file for a year with no way back.
-- An error a `SERVE_…` route answers itself (`404`, `400`) removes `Cache-Control` first, so an `immutable` set for assets never lands on an error. Responses of other routes are not touched.
+- An error a `SERVE_…` route answers itself (`404`, `500`) removes `Cache-Control` first, so an `immutable` set for assets never lands on an error. Responses of other routes are not touched.
+
+### Request path
+- Before the WebSocket path test, the pre-route stages and matching, a path holding a control character (after the one decoding of `net/http`: `%00`, `%0a`, `%7f`) answers `400` `Invalid URL path` (HTML with `Render.FS` and an `Accept` holding `text/html`); nothing else runs.
+- A path that is not canonical is rewritten to `path.Clean` of it, trailing slash kept (`//admin` → `/admin`, `/x/../admin` → `/admin`, `/../..` → `/`), on a copy of the request and its `URL` (`RawPath` cleared, `RequestURI` as received). Every stage, middleware, guard, handler and the router read that path. A canonical path is neither copied nor touched.
+- The path is decoded once: `%252e%252e` reaches the app as the literal `%2e%2e`. Matching stays case-sensitive.
 
 ## Pages
 
@@ -927,10 +941,10 @@ With `web/bookings/index.html` and `web/bookings/new.html`, `GET /bookings` rend
 - Every `.html` file that is not a layout, a partial, a root error page or the template of a route (outside `assets/` and `public/`) panics `invalid render: <file> has no RENDER_ route: add one, move it to partials/, or delete it`, one line per file. `error.html` is such a file.
 - A root `200.html`, `302.html`, `3xx.html` or `600.html` panics `invalid render: <file> is not an error page: use 400.html to 599.html, 4xx.html or 5xx.html`.
 - `Create()` parses every template once; a parse error, a call of a template that does not exist or an `html/template` escaping error panics `invalid render: <file path>: <error>`.
-- A page answers inside its nearest layout with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and `Cache-Control: no-cache` unless a layer or the handler set `Cache-Control`. A `RENDER_` answers 200 and a `SUBMIT_` that renders 422, unless `c.Status(code)` or the `(int, data)` result sets it. `c.Redirect(url)` (or the `ctx.Redirect` parameter) without a 3xx status answers `303 See Other` on a page route; an explicit 3xx is kept, and API routes still answer `301`. `CREATE_`, `UPDATE_` and `DELETE_` stay API routes.
+- A page answers inside its nearest layout with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and `Cache-Control: private, no-cache` unless a layer or the handler set `Cache-Control` (HTML error pages too). A `RENDER_` answers 200 and a `SUBMIT_` that renders 422, unless `c.Status(code)` or the `(int, data)` result sets it. `c.Redirect(path)` (or the `ctx.Redirect` parameter) accepts only a path of this site ([ctx › Redirect](../ctx/README.md#redirect)) and, without a 3xx status, answers `303 See Other` on a page route; an explicit 3xx is kept, and API routes still answer `301`. `CREATE_`, `UPDATE_` and `DELETE_` stay API routes.
 - The data is the handler's only or last result after the interceptors, of any type (a map, a struct, a slice, a string, `nil`); a handler with no result renders with `nil`. A post-interceptor's replacement is the data, and an interceptor that answers without calling the handler supplies it.
 - With `Versioning`, page routes answer any version and a request without one.
-- `PUT` on a page path answers 405 with an `Allow` header holding `GET` and, with a `SUBMIT_`, `POST`. A guard bound to `RENDER_x` only does not cover `SUBMIT_x`; `BindGuard(g)` covers both.
+- `PUT` on a page path answers 405 with an `Allow` header holding `GET` and, with a `SUBMIT_`, `POST`. A guard bound to `RENDER_x` of a controller that has `SUBMIT_x` must also be bound to `SUBMIT_x` (in the same or another `BindGuard` call) or controller-wide, else `Create()` panics `invalid guard: <Guard> is bound to <Controller>.RENDER_x but not to <Controller>.SUBMIT_x, which posts to the same page: bind it to both, or to the controller`. Global guards cover both. A guard on `SUBMIT_x` only needs nothing on the `RENDER_`. Middlewares, interceptors and filters bound to `RENDER_x` only stay on the `GET`.
 - Forms bind on page routes as on API routes (urlencoded and multipart, through a `Form` pipe). A malformed form body answers `400` `Invalid form body` and one over `HTTP.MaxBodyBytes` `413` `Request body too large`, as HTML errors. The `csrf` stage refuses a cross-origin form POST with a 403 in the format `Accept` picks. `HEAD` answers the status and headers with no body.
 - Values in the data are escaped for their context by `html/template`: text, attributes, URLs (a `javascript:` URL becomes `#ZgotmplZ`) and scripts.
 - When the handler already answered (`c.Redirect`, `c.Text`), the result is ignored.
@@ -957,23 +971,24 @@ With `web/bookings/index.html` and `web/bookings/new.html`, `GET /bookings` rend
 When `Dir` has an `assets` directory or a page CSS or JS file, `Create()` adds a built-in route of the `SERVE` kind at `/assets/*` that serves `FS/assets`. Link files with `{{asset "css/app.css"}}`, which writes `/assets/css/app.css?v=<16 hex>` (the first 8 bytes of the file's SHA-256, hashed once at `Create()`).
 
 #### Asset rules
-- `GET` and `HEAD /assets/<path>` serve `FS/assets/<path>` with the content type of its extension (`text/css`, `text/javascript`, `image/svg+xml`).
-- A directory, a missing file, a path with `..` or with a segment starting with `.` (except `.well-known`, which is served and hashed) answers `404` as JSON, whatever `Accept` says. Templates are not reachable through it.
+- `GET` and `HEAD /assets/<path>` serve `FS/assets/<path>` with the content type, `nosniff` and range rules of [Serving rules](#serving-rules).
+- A directory, a missing file, or a name the [name policy](#serving-rules) refuses answers the fixed `404` as JSON, whatever `Accept` says. `.map` files are served only here and only with `IsReload`. Templates are not reachable through it.
+- At `Create()`, a file of `assets/`, `public/` or a page CSS or JS file that the policy refuses, or that is a symbolic link, is not registered; one `Warn` `StaticFilesSkipped` lists `count` and the first 20 `files` (sorted, paths below `Dir`). Without `IsReload`, one `Warn` `RenderHiddenFiles` lists the hidden entries of `Dir` (a name starting with `.` other than `.well-known`; a hidden directory counts once), which `//go:embed all:` ships and nothing serves.
 - Without `IsReload`, every file answers `ETag: "<16 hex>"`. With `?v=` equal to that hash it answers `Cache-Control: public, max-age=31536000, immutable`; without `v`, or with another value, `Cache-Control: no-cache`. `If-None-Match` with the ETag answers `304`.
 - With `IsReload`, assets answer `Cache-Control: no-cache` and no `ETag`, each request reads the file from `FS` (a file changed or added after `Create()` is served), and `{{asset}}` adds no `?v=`.
 - A user route of the same shape (`SERVE_ANY_OF_assets`) panics `route conflict: …` at `Create()`. Without an `assets` directory and page CSS or JS files no route is added and `/assets/*` is free.
-- Global middlewares and global guards run for the asset route like for any route; a refusal is JSON.
+- Global middlewares run for the asset route; no guard runs for a shared asset, global guards included.
 
 ### Public files
 
 When `Dir` has a `public` directory, `Create()` adds one `GET` route per file, after the controllers' routes, at the file's path below `public`: `public/robots.txt` → `/robots.txt`, `public/.well-known/security.txt` → `/.well-known/security.txt`. The routes are named `public/<path>` in the startup route log and the devtool snapshot.
 
 #### Public file rules
-- The response has the content type of the extension, `Cache-Control: no-cache` and `ETag: "<16 hex>"` (the first 8 bytes of the SHA-256, hashed at `Create()`); `If-None-Match` with it answers `304`. `HEAD` answers the headers.
-- `.html` files are sent as they are, never parsed. A directory has no index (`public/docs/index.html` is `/docs/index.html` only). Files with a segment starting with `.` other than `.well-known` are not served.
+- The response has the content type and `nosniff` of [Serving rules](#serving-rules), `Cache-Control: no-cache` and `ETag: "<16 hex>"` (the first 8 bytes of the SHA-256, hashed at `Create()`); `If-None-Match` with it answers `304`. `HEAD` answers the headers.
+- `.html` files are sent as they are, never parsed. A directory has no index (`public/docs/index.html` is `/docs/index.html` only). Files with a segment starting with `.` other than `.well-known` are not served, nor names the policy refuses. A path holding `{`, `}` or `*` panics `invalid render: public/<path>: a public file name can't hold '{', '}' or '*', which the router reads as a parameter or a wildcard`. At `Create()`, one `Info` `PublicFiles` lists `count` and the first 50 `urls`, sorted.
 - A route of the same method and path shape panics `route conflict: public/robots.txt method is conflicted with READ_robots_txt_FILE method` (also against a `RENDER_`). With `Versioning` the routes are version-neutral.
 - With `IsReload`, `no-cache` and no `ETag`, and the file is read on each request; a file added after `Create()` answers 404 until the restart.
-- Errors on these routes are JSON; global middlewares and global guards apply. A path that matches no route follows the [error response](#error-response) rules for no route. Without a `public` directory no route is added.
+- Errors on these routes are JSON; global middlewares apply, no guard runs. A path that matches no route follows the [error response](#error-response) rules for no route. Without a `public` directory no route is added.
 
 ### Page CSS and JS
 
@@ -989,6 +1004,7 @@ When `Dir` has a `public` directory, `Create()` adds one `GET` route per file, a
 - A CSS or JS file that belongs to no template, or any under `partials/`, panics `invalid render: <file> belongs to no template: name it after a page or layout of its directory (X.css, X.<name>.css), or move it to assets/`.
 - A page set that owns a file and in which no template (layout, page, reached partial) calls `{{pageAssets}}` panics `invalid render: <page> has <file>, but no template of the page calls {{pageAssets}}: add it to <layout>`.
 - `GET` and `HEAD /assets/_pages/<path>` serve exactly these files with the asset rules below (`immutable` for a matching `?v=`, else `no-cache`, `ETag`, `304`); a template, a partial or an unowned file there answers 404 JSON. Path segments are percent-encoded in the tags (`%7Bid%7D.css`). A file or directory `assets/_pages` panics `invalid render: assets/_pages is reserved for page CSS and JS`.
+- A file owned by a page runs the guards of the `RENDER_` route bound to that page, in that route's order, before any file is opened; with `IsReload` the owner is read from the current template set. The guards see the asset URL and no route parameter. `false`, or a panicked exception below 500, answers the fixed 404 JSON; another panic answers 500. A file of a guarded page answers `private, no-cache` (`private, max-age=31536000, immutable` with a matching `?v=`). Behind an async gate that is not live, the file answers the gate's JSON 503 (`Retry-After` while pending). A file of a layout or an error page, and an unknown name, run no guard.
 - The tags are same-origin files: `{{pageAssets}}` draws no nonce. With `IsReload` the tags carry no `?v=` and follow the files.
 
 ### Render events and devtool

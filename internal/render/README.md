@@ -244,10 +244,15 @@ From the tests (`render_nonce_test.go`):
 | `PublicFiles() map[string]string` | A copy of the public files listed at `Load` (`.well-known/security.txt`) to their hash (`""` with `isReload`) |
 | `PageAssets() map[string]string` | A copy of the page CSS and JS table (`bookings/new.css`) to its hash (`""` with `isReload`) |
 | `PageAsset(p string) (string, bool)` | The hash of one page file in the current set, re-read with `isReload` |
+| `PageAssetOwner(p string) (string, bool)` | The template name (`bookings/new`) of the page that owns a page file in the current set, `""` for a file of a layout or an error page; `false` for an unknown file |
+| `Skipped() []string` | The paths below the root (`public/main.go`, `assets/link.txt`, `bookings/CON.css`), sorted, that `Load` did not register: refused by the name policy or symbolic links |
+| `Hidden() []string` | Without `isReload`, the hidden entries of `FS` (a name starting with `.`, except `.well-known`; a hidden directory once, not walked), sorted; empty with `isReload` |
 | `Files() fs.FS` | The `fs.FS` given to `New` |
 | `IsReload() bool` | The `isReload` given to `New` |
 
-`internal/core` serves the asset route (`/assets/*`, `/assets/_pages/…`) and the public file routes from them.
+`SetNamePolicy(fn func(name string, isMapAllowed bool) bool)`, called before `Load`, sets the check every file of `assets/` (`isMapAllowed` with `isReload`), `public/` and every page CSS and JS file must pass to be registered; without it every name passes. A directory entry that is a symbolic link is never registered. A `public/` path holding `{`, `}` or `*` fails `Load`: `public/<path>: a public file name can't hold '{', '}' or '*', which the router reads as a parameter or a wildcard`.
+
+`internal/core` serves the asset route (`/assets/*`, `/assets/_pages/…`) and the public file routes from them, sets the name policy and logs `Skipped` and `Hidden` at `Create()`.
 
 ### Snapshot, Counters, NonceDraws
 

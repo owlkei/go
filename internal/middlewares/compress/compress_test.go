@@ -449,7 +449,7 @@ func TestCompress_ServeFileKeepsReadFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	app := core.New(&core.AppOptions{Logger: silentLogger{}})
+	app := core.New(&core.AppOptions{Logger: silentLogger{}, HTTP: &core.HTTPOptions{ServeDirs: []string{fileRoot}}})
 	app.BindGlobalMiddlewares(Compress{})
 	app.Create(owlkei.ModuleBuilder().Controllers(fileController{}).Build())
 

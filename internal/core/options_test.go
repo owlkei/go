@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -331,7 +332,7 @@ func TestNew_IgnoresPORT(t *testing.T) {
 }
 
 func TestNew_ServeDirsDeclared(t *testing.T) {
-	dirs := []string{"public"}
+	dirs := []string{secTemp(t)}
 	app := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: dirs}, Logger: &mockLogger{}})
 	dirs[0] = "changed"
 	if app == nil {
@@ -380,4 +381,54 @@ func TestNew_TLSConfigCertificatesIndependentOfLaterWrites(t *testing.T) {
 	if got := app.server.tlsConfig.Certificates[0].Certificate; !reflect.DeepEqual(got, own.Certificate) {
 		t.Error(test.DiffMessage(len(got), len(own.Certificate), "A2: a later write to the caller's Certificates does not reach the app"))
 	}
+}
+
+func TestNew_ServeDirsChecked(t *testing.T) {
+	base := secTemp(t)
+	secWrite(t, filepath.Join(base, "a", "b"), map[string]string{"x.txt": "x"})
+	secWrite(t, base, map[string]string{"file.txt": "x"})
+	t.Chdir(base)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	volumeRoot := filepath.VolumeName(cwd) + string(filepath.Separator)
+	many := make([]string, 65)
+	for i := range many {
+		many[i] = "a"
+	}
+	prefix := "invalid app: "
+	rows := []struct {
+		note    string
+		entries []string
+		want    string
+	}{
+		{"missing", []string{"nope"}, prefix + "HTTP.ServeDirs entry " + strconv.Quote("nope") + " is not a directory"},
+		{"a file", []string{"file.txt"}, prefix + "HTTP.ServeDirs entry " + strconv.Quote("file.txt") + " is not a directory"},
+		{"dot", []string{"."}, prefix + "HTTP.ServeDirs entry " + strconv.Quote(".") + " is the working directory or above it: serve a subdirectory"},
+		{"parent", []string{".."}, prefix + "HTTP.ServeDirs entry " + strconv.Quote("..") + " is the working directory or above it: serve a subdirectory"},
+		{"absolute cwd", []string{cwd}, prefix + "HTTP.ServeDirs entry " + strconv.Quote(cwd) + " is the working directory or above it: serve a subdirectory"},
+		{"file system root", []string{volumeRoot}, prefix + "HTTP.ServeDirs entry " + strconv.Quote(volumeRoot) + " is the working directory or above it: serve a subdirectory"},
+		{"65 entries", many, prefix + "HTTP.ServeDirs has 65 entries, at most 64 are allowed"},
+		{"empty entry", []string{"a", ""}, prefix + "HTTP.ServeDirs has an empty entry"},
+	}
+	for _, row := range rows {
+		msExpectPanic(t, "D1", row.want, func() { New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: row.entries}}) })
+	}
+
+	for note, entries := range map[string][]string{
+		"relative":          {"a"},
+		"absolute":          {filepath.Join(cwd, "a")},
+		"nested":            {"a", "a/b"},
+		"duplicates":        {"a", "a", "./a"},
+		"64 entries":        many[:64],
+		"relative nested b": {"a/b"},
+	} {
+		if text, panicked := createPanicText(func() { New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: entries}}) }); panicked {
+			t.Error(test.DiffMessage(text, "no panic", "D1: "+note+" is accepted"))
+		}
+	}
+
+	envSetup(t, "", map[string]string{"OK_HTTP__SERVE_DIRS": filepath.Join(base, "a") + ", nope"})
+	msExpectPanic(t, "D1", prefix+"HTTP.ServeDirs entry "+strconv.Quote("nope")+" is not a directory", func() { New(OptionsFromEnv()) })
 }

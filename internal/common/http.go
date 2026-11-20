@@ -56,6 +56,7 @@ const (
 type HTTPLayer struct {
 	Handler         any
 	ControllerPath  string
+	ControllerName  string
 	Name            string
 	Route           string
 	Version         string
@@ -226,6 +227,10 @@ func PageOperation(fnName string) string {
 
 func RenderNameOf(submitName string) string {
 	return PageRender + strings.TrimPrefix(submitName, PageSubmit)
+}
+
+func SubmitNameOf(renderName string) string {
+	return PageSubmit + strings.TrimPrefix(renderName, PageRender)
 }
 
 func CheckExactPaths(r *HTTP) {

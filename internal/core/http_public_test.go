@@ -2,7 +2,7 @@ package core
 
 import (
 	"net/http"
-	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -139,26 +139,22 @@ func TestPublic_NoDirNoRoute(t *testing.T) {
 	}
 }
 
-func TestPublic_GlobalLayersApply(t *testing.T) {
+func TestPublic_NoGuardRuns(t *testing.T) {
+	log := &secGuardLog{}
 	app := puApp(t, puFiles(), func(app *App) {
 		app.BindGlobalMiddlewares(assetMarkMiddleware{})
-		app.BindGlobalGuards(assetDenyGuard{})
+		app.BindGlobalGuards(secLogGuard{Name: "global", Log: log, Mode: "deny"})
 	})
 
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/robots.txt", nil))
-	if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "User-agent") {
-		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "P24: a global guard refuses a public file"))
-	}
-	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Error(test.DiffMessage(ct, "application/json", "P24, R17: the refusal is JSON"))
+	w := createGet(app, "/robots.txt")
+	if w.Code != http.StatusOK || w.Body.String() != puRobots {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, puRobots}, "G4: a refusing global guard does not cover a public file"))
 	}
 	if w.Header().Get("X-Global-Middleware") != "ran" {
-		t.Error(test.DiffMessage(w.Header().Get("X-Global-Middleware"), "ran", "P24: a global middleware runs for public files"))
+		t.Error(test.DiffMessage(w.Header().Get("X-Global-Middleware"), "ran", "G4: a global middleware still runs for public files"))
 	}
-	ok := createRequest(app, http.MethodGet, "/robots.txt", "X-Allow", "yes")
-	if ok.Code != http.StatusOK || ok.Body.String() != puRobots {
-		t.Error(test.DiffMessage(ok.Code, http.StatusOK, "P24: the guard lets it through"))
+	if len(log.names) != 0 {
+		t.Error(test.DiffMessage(log.names, []string(nil), "G4: no guard runs for a public file"))
 	}
 }
 
@@ -182,5 +178,119 @@ func TestPublic_VersionNeutral(t *testing.T) {
 		if w.Code != http.StatusOK || w.Body.String() != puRobots {
 			t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, puRobots}, "P23: public files are version-neutral: "+name))
 		}
+	}
+}
+
+func TestCreate_PublicRouteSyntaxPanics(t *testing.T) {
+	for _, name := range []string{"{id}.txt", "*.txt", "a/{x}/b.txt", "a}.txt", "dir/*/x.txt"} {
+		app := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(map[string]string{"page.html": "x", "public/ok.txt": "x", "public/" + name: "x"}), Dir: "."}})
+		want := "invalid render: public/" + name + ": a public file name can't hold '{', '}' or '*', which the router reads as a parameter or a wildcard"
+		msExpectPanic(t, "P1", want, func() { app.Create(NewModuleBuilder().Controllers(secPage{}).Build()) })
+	}
+}
+
+func TestCreate_StaticFilesSkipped(t *testing.T) {
+	files := map[string]string{"page.html": "x", "public/ok.txt": "OK"}
+	for i := 0; i < 25; i++ {
+		files["public/f"+strconv.Itoa(100+i)+".go"] = "x"
+	}
+	files["public/CON"] = "x"
+	logger := &lcRecordingLogger{}
+	app := New(&AppOptions{Logger: logger, Render: &RenderOptions{FS: pgFiles(files), Dir: "."}})
+	mustCreate(t, app, NewModuleBuilder().Controllers(secPage{}).Build())
+
+	entries := logger.named("StaticFilesSkipped")
+	if len(entries) != 1 || entries[0].level != "warn" {
+		t.Fatal(test.DiffMessage(len(entries), 1, "P3: one Warn StaticFilesSkipped line"))
+	}
+	if got := lcText(entries[0].field("count")); got != "26" {
+		t.Error(test.DiffMessage(got, "26", "P3: the count holds every skipped file"))
+	}
+	listed := lcText(entries[0].field("files"))
+	if !strings.Contains(listed, "public/CON") || !strings.Contains(listed, "public/f100.go") || !strings.Contains(listed, "public/f118.go") {
+		t.Error(test.DiffMessage(listed, "the first 20 sorted paths", "P3: the list"))
+	}
+	if strings.Contains(listed, "public/f119.go") || strings.Contains(listed, "public/f124.go") {
+		t.Error(test.DiffMessage(listed, "at most 20 paths", "P3: the list is cut at 20"))
+	}
+	if strings.Contains(listed, "ok.txt") {
+		t.Error(test.DiffMessage(listed, "no served file", "P3: only skipped files"))
+	}
+
+	clean := &lcRecordingLogger{}
+	New(&AppOptions{Logger: clean, Render: &RenderOptions{FS: pgFiles(map[string]string{"page.html": "x", "public/ok.txt": "OK"}), Dir: "."}}).Create(NewModuleBuilder().Controllers(secPage{}).Build())
+	if len(clean.named("StaticFilesSkipped")) != 0 {
+		t.Error(test.DiffMessage(len(clean.named("StaticFilesSkipped")), 0, "P3: no line when nothing is skipped"))
+	}
+	hidden := &lcRecordingLogger{}
+	New(&AppOptions{Logger: hidden, Render: &RenderOptions{FS: pgFiles(map[string]string{"page.html": "x", "public/.env": "x"}), Dir: "."}}).Create(NewModuleBuilder().Controllers(secPage{}).Build())
+	if len(hidden.named("StaticFilesSkipped")) != 0 {
+		t.Error(test.DiffMessage(len(hidden.named("StaticFilesSkipped")), 0, "P3: hidden names are reported by P4, not P3"))
+	}
+}
+
+func TestCreate_HiddenFilesLogged(t *testing.T) {
+	files := map[string]string{
+		"page.html": "x", ".env": "x", ".git/HEAD": "x", ".git/refs/a": "x", "assets/.secret": "x", "public/.htpasswd": "x",
+		".well-known/x": "x", "public/.well-known/security.txt": "x", "assets/ok.txt": "x",
+	}
+	logger := &lcRecordingLogger{}
+	app := New(&AppOptions{Logger: logger, Render: &RenderOptions{FS: pgFiles(files), Dir: "."}})
+	mustCreate(t, app, NewModuleBuilder().Controllers(secPage{}).Build())
+	entries := logger.named("RenderHiddenFiles")
+	if len(entries) != 1 || entries[0].level != "warn" {
+		t.Fatal(test.DiffMessage(len(entries), 1, "P4: one Warn RenderHiddenFiles line"))
+	}
+	if got := lcText(entries[0].field("count")); got != "4" {
+		t.Error(test.DiffMessage(got, "4", "P4: a hidden directory counts once, .well-known is excluded"))
+	}
+	listed := lcText(entries[0].field("files"))
+	for _, name := range []string{".env", ".git", "assets/.secret", "public/.htpasswd"} {
+		if !strings.Contains(listed, name) {
+			t.Error(test.DiffMessage(listed, name, "P4: listed"))
+		}
+	}
+	if strings.Contains(listed, ".well-known") || strings.Contains(listed, "HEAD") {
+		t.Error(test.DiffMessage(listed, "no .well-known and no walk into .git", "P4"))
+	}
+	if note := lcText(entries[0].field("note")); note != "these ship inside the binary with //go:embed all: and are never served" {
+		t.Error(test.DiffMessage(note, "the P4 note", "P4: note"))
+	}
+
+	none := &lcRecordingLogger{}
+	New(&AppOptions{Logger: none, Render: &RenderOptions{FS: pgFiles(map[string]string{"page.html": "x", "public/ok.txt": "x"}), Dir: "."}}).Create(NewModuleBuilder().Controllers(secPage{}).Build())
+	if len(none.named("RenderHiddenFiles")) != 0 {
+		t.Error(test.DiffMessage(len(none.named("RenderHiddenFiles")), 0, "P4: no line when there are none"))
+	}
+	reload := &lcRecordingLogger{}
+	New(&AppOptions{Logger: reload, Render: &RenderOptions{FS: pgFiles(files), Dir: ".", IsReload: true}}).Create(NewModuleBuilder().Controllers(secPage{}).Build())
+	if len(reload.named("RenderHiddenFiles")) != 0 {
+		t.Error(test.DiffMessage(len(reload.named("RenderHiddenFiles")), 0, "P4: silent with IsReload"))
+	}
+}
+
+func TestCreate_PublicFilesLogged(t *testing.T) {
+	files := map[string]string{"page.html": "x"}
+	for i := 0; i < 60; i++ {
+		files["public/f"+strconv.Itoa(100+i)+".txt"] = "x"
+	}
+	logger := &lcRecordingLogger{}
+	app := New(&AppOptions{Logger: logger, Render: &RenderOptions{FS: pgFiles(files), Dir: "."}})
+	mustCreate(t, app, NewModuleBuilder().Controllers(secPage{}).Build())
+	entries := logger.named("PublicFiles")
+	if len(entries) != 1 || entries[0].level != "info" {
+		t.Fatal(test.DiffMessage(len(entries), 1, "P5: one Info PublicFiles line"))
+	}
+	if got := lcText(entries[0].field("count")); got != "60" {
+		t.Error(test.DiffMessage(got, "60", "P5: count"))
+	}
+	urls := lcText(entries[0].field("urls"))
+	if !strings.Contains(urls, "/f100.txt") || !strings.Contains(urls, "/f149.txt") || strings.Contains(urls, "/f150.txt") {
+		t.Error(test.DiffMessage(urls, "the first 50 URLs, sorted", "P5: the list is cut at 50"))
+	}
+	none := &lcRecordingLogger{}
+	New(&AppOptions{Logger: none, Render: &RenderOptions{FS: pgFiles(map[string]string{"page.html": "x"}), Dir: "."}}).Create(NewModuleBuilder().Controllers(secPage{}).Build())
+	if len(none.named("PublicFiles")) != 0 {
+		t.Error(test.DiffMessage(len(none.named("PublicFiles")), 0, "P5: no line without public files"))
 	}
 }

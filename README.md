@@ -2153,16 +2153,25 @@ data instead, such as `{{.Date.Format "2 Jan 2006"}}`.
 | A `RENDER_` handler returns | `200` |
 | A `SUBMIT_` handler returns without a redirect | `422`: the form is shown again with its errors |
 | The handler calls `c.Status(code)`, or returns `(int, data)` | That code |
-| The handler calls `c.Redirect(url)`, or the `owlkei.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
+| The handler calls `c.Redirect(path)`, or the `owlkei.Redirect` parameter, without a 3xx status | `303 See Other`, so the browser follows it with `GET` |
 | The handler set a 3xx status with `c.Status` before the redirect | That status |
 
 - A page answers with `Content-Type: text/html; charset=utf-8`, a `Content-Length` and
-  `Cache-Control: no-cache`, unless a layer or the handler set `Cache-Control`.
+  `Cache-Control: private, no-cache`, unless a layer or the handler set `Cache-Control`. HTML error
+  pages answer the same. A shared cache (a CDN, a proxy) never stores a personal page by default.
+- `c.Redirect` accepts only a path of this site: it starts with `/`, the second byte is neither `/`
+  nor `\`, and it holds no `\` and no control character. `/bookings` and `/a?next=/b` pass;
+  `https://evil.test`, `//evil.test`, `bookings` and a value with CR or LF don't. A refused target
+  redirects to `/` with the same status and logs one `Warn` record `RedirectRefused` with `method`,
+  `path` and `target` (cut at 256 bytes). `c.Redirect(form.Next)` can't send a user to another site.
+- To send a user to another site (OAuth, payment), call `c.RedirectExternal(url)`. It accepts what
+  `c.Redirect` accepts, plus an absolute `http` or `https` URL with a host and no user info.
 - After a redirect, or any response the handler wrote itself, the result is ignored.
 - `HEAD` on a page answers its status and headers with no body. `PUT` on a page's path answers
   `405` with `Allow: GET, HEAD, POST`.
 - With `Versioning` on, a page route answers every version and requests without one.
-- On an API route, `c.Redirect` still answers `301`, and `CREATE_` still answers `201`.
+- On an API route, `c.Redirect` still answers `301` and follows the same rule, and `CREATE_` still
+  answers `201`.
 
 Each mistake stops `Create()`:
 
@@ -2271,8 +2280,13 @@ A form is a pipe whose `Transform` takes `owlkei.Form`, as `BookingForm` above:
 - Set `CSRF: &owlkei.CSRFOptions{IsEnabled: true}`. It needs no token and no hidden field: it reads
   the `Sec-Fetch-Site` and `Origin` headers that browsers send. A cross-origin form post gets a
   `403` error page. See [Configuration](#configuration).
-- A layer bound to `RENDER_x` only doesn't run for `SUBMIT_x`. Bind a guard to both handlers, or
-  to the whole controller with `BindGuard(guard)`.
+- A guard bound to `RENDER_x` must also be bound to `SUBMIT_x`, which posts to the same page, or
+  `Create()` stops:
+  `invalid guard: auth.Guard is bound to AccountPages.RENDER_account but not to AccountPages.SUBMIT_account, which posts to the same page: bind it to both, or to the controller`.
+  Bind it to both handlers, or to the whole controller with `BindGuard(guard)`. A global guard
+  covers both. A guard on `SUBMIT_x` only guards the post and needs nothing on the page.
+- Middlewares, interceptors and exception filters bound to `RENDER_x` only don't run for
+  `SUBMIT_x`, and nothing checks them.
 
 ### Content Security Policy
 
@@ -2310,12 +2324,26 @@ changes when the file does.
 
 - Without `IsReload`, every file carries `ETag: "<16 hex>"`, and `If-None-Match` with it answers
   `304`.
-- The content type comes from the file's extension.
-- A directory, a missing file, or a path with `..` or a segment that starts with `.` (except
-  `.well-known`) answers `404` as JSON. Templates are not reachable through this route.
-- Global middlewares and global guards run for the asset route. A route of your own at `/assets/*`
-  stops `Create()` with `route conflict:`. Without an `assets` directory and without page CSS or
-  JS, Owlkei Go adds no route.
+- The content type comes from a fixed table (`.css`, `.js`, `.mjs`, `.html`, `.svg`, `.json`,
+  `.wasm`, `.xml`, `.txt`), then the system's table, then `application/octet-stream`. Every static
+  response carries `X-Content-Type-Options: nosniff`, so a browser never guesses the type.
+- A request with several ranges (`Range: bytes=0-0,2-2`) gets the whole file with `200`. One range
+  answers `206` as usual.
+- A directory, a missing file, or a refused name answers the same `404` as JSON. Templates are not
+  reachable through this route. Refused names, on every system: a segment that starts with `.`
+  (except `.well-known`), holds `\`, `:` or a control character, ends with `.` or a space, holds `~`
+  and a digit (`GIT~1`), or is a Windows device name (`CON`, `nul.txt`, `COM1`…); and source,
+  secret, backup and dump files: `*.go`, `go.mod`, `go.sum`, `go.work`, `.env*`, `*.env`, `*.pem`,
+  `*.key`, `*.p12`, `*.pfx`, `id_rsa`…, `*~`, `*.swp`, `*.bak`, `*.orig`, `*.old`, `*.tmp`, `#x#`,
+  `*.sql`, `*.db`, `*.sqlite`. Source maps (`*.map`) are served only here and only with `IsReload`.
+- Such a file in `assets/` is not registered: `Create()` logs one `Warn` record
+  `StaticFilesSkipped` with `count` and the first 20 `files`. A symbolic link is skipped the same
+  way. A file of such a kind that must be downloadable is sent by a `READ_` handler that writes
+  the bytes.
+- No guard runs for the asset route, global guards included: these files are the same for every
+  visitor. Global middlewares still run (`LoadShed` still covers them). A route of your own at
+  `/assets/*` stops `Create()` with `route conflict:`. Without an `assets` directory and without
+  page CSS or JS, Owlkei Go adds no route.
 - `assets/_pages` is reserved for page CSS and JS: a file or directory with that name stops
   `Create()`.
 
@@ -2325,8 +2353,8 @@ Files that need a fixed URL at the root of the site, such as `robots.txt`, `favi
 `.well-known/security.txt`, go in `Dir/public`. Each one is served by `GET` and `HEAD` at its path
 below `public`: `public/robots.txt` answers `/robots.txt`.
 
-- A response has the content type of the extension, `Cache-Control: no-cache` and
-  `ETag: "<16 hex>"`, and `If-None-Match` with it answers `304`.
+- A response has the content type of [Assets](#assets), `X-Content-Type-Options: nosniff`,
+  `Cache-Control: no-cache` and `ETag: "<16 hex>"`, and `If-None-Match` with it answers `304`.
 - Files are sent as they are: an `.html` file there is never parsed. A directory has no index, so
   `public/docs/index.html` answers `/docs/index.html` only.
 - A file whose path matches a route stops `Create()`:
@@ -2336,8 +2364,16 @@ below `public`: `public/robots.txt` answers `/robots.txt`.
   also embeds every other dotfile under `web` in the binary. Owlkei Go never serves those.
 - The list of files is fixed at `Create()`. With `IsReload`, a file is read on each request, with
   no `ETag`, and a file added later answers `404` until the restart.
-- Errors are JSON. Global middlewares and global guards run for these routes, which appear in the
-  startup route log as `public/<path>`.
+- A name the router would read as a parameter or a wildcard stops `Create()`:
+  `invalid render: public/{id}.txt: a public file name can't hold '{', '}' or '*', which the router reads as a parameter or a wildcard`.
+  A name refused by [Assets](#assets) (source, secrets, odd names, links) is not served and is
+  listed in `StaticFilesSkipped`.
+- At `Create()`, one `Info` record `PublicFiles` lists the `count` and the first 50 `urls`, so you
+  see what the site exposes. Without `IsReload`, one `Warn` record `RenderHiddenFiles` names the
+  dotfiles that `//go:embed all:` put in the binary.
+- Errors are JSON. No guard runs for these routes, global guards included: protect a file with a
+  guarded `SERVE_` route instead. Global middlewares still run. The routes appear in the startup
+  route log as `public/<path>`.
 - Each file is one route. Keep `public` to the few files that need a fixed URL, and put the rest in
   `assets`.
 
@@ -2365,8 +2401,14 @@ page's, each group sorted by file name. For `/bookings/new`, with `web/layout.cs
   So does one under `partials/`.
 - A page that has such files, while none of its templates calls `{{pageAssets}}`, stops `Create()`:
   `invalid render: bookings/new.html has bookings/new.css, but no template of the page calls {{pageAssets}}: add it to layout.html`.
-- The URLs show the template tree (`/assets/_pages/admin/…`), and these files are served without
-  the page's guards. Keep secrets out of them.
+- A file of a page runs the guards of that page's `RENDER_` route, in its order (global,
+  controller-wide, route-bound), before it is opened. A refusal answers the same `404` as a missing
+  file. The guards see the asset URL in `c.URL.Path` and no route parameter, so a guard that reads
+  `c.Param()` refuses them. A file of a guarded page answers `Cache-Control: private, no-cache`
+  (`private, max-age=31536000, immutable` with `?v=`).
+- A file of a layout or an error page is shared: no guard runs. Behind an async module that is not
+  ready, a page's file answers `503` as JSON. The URLs show the template tree
+  (`/assets/_pages/admin/…`): keep secrets out of them.
 
 ### Develop with reload
 
@@ -2605,8 +2647,8 @@ See [versioning](internal/versioning/README.md).
 
 ## Static files
 
-A `SERVE_…` handler returns the directory to serve. `SERVE_ANY_OF_assets` serves the route
-`/assets/*`:
+A `SERVE_…` handler returns the directory to serve, which must be below one of `HTTP.ServeDirs`.
+`SERVE_ANY_OF_assets` serves the route `/assets/*`:
 
 ```go
 package main
@@ -2627,7 +2669,7 @@ func (instance AssetController) SERVE_ANY_OF_assets(c owlkei.HTTPContext) string
 }
 
 func main() {
-	app := owlkei.New(nil)
+	app := owlkei.New(&owlkei.AppOptions{HTTP: &owlkei.HTTPOptions{ServeDirs: []string{"public"}}})
 	app.Create(owlkei.ModuleBuilder().Controllers(AssetController{}).Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -2637,13 +2679,29 @@ func main() {
 
 `GET /assets/app.js` serves `public/assets/app.js`.
 
-- A directory answers its `index.html`, or `404`. No response is ever a directory listing.
-- A path that leaves the directory answers `400`. A segment that starts with `.` (`.env`,
-  `.git/config`) answers `404`, except `.well-known`. A symbolic link is followed only when its
-  target stays inside the directory.
-- Files are sent with `Cache-Control: no-cache` unless a layer or the handler sets
-  `Cache-Control`, as above. Set a long lifetime only for files whose names change with their
-  content, such as `app.3f9a1c.js`.
+- A `SERVE_` route with an empty `ServeDirs` stops `Create()`:
+  `invalid app: AssetController.SERVE_ANY_OF_assets serves files, but HTTP.ServeDirs is empty: list the directories it may return`.
+- The handler's result is cleaned and made absolute against the working directory read at `New`.
+  A result outside every declared directory is never opened: the response is a fixed `500` and one
+  `Error` record `ServeRootRefused` names the route and the root. `return "uploads/" + tenant`
+  with `tenant = "../../etc"` answers `500` and reads nothing. Your app still checks that the user
+  may read the tenant it names.
+- The directory is opened with `os.Root`: no path and no symbolic link leaves the handler's
+  directory, not even toward another declared one. A directory answers its `index.html`, or
+  `404`. No response is ever a directory listing.
+- The path is cleaned before routing (`/files/a/../../x` is `/x`), and the names refused by
+  [Pages › Assets](#assets) answer the same `404` as a missing file, `*.map` included.
+- Files that run in a browser (`.html`, `.svg`, `.xml`, `.js`, `.xhtml` and their kin, or a
+  `Content-Type` of HTML, SVG, XML or JavaScript) go out as downloads, with
+  `Content-Disposition: attachment` and `Content-Security-Policy: sandbox; default-src 'none'`: an
+  uploaded `evil.html` can't run on your site. The first time a route does this, it logs one
+  `Warn` record `ServeAttachment`. For files that are yours, such as a built site, set
+  `c.ResponseWriter.Header().Set("Content-Disposition", "inline")` in the handler. Never do it for
+  uploads.
+- Files are sent with `Cache-Control: no-cache`, or `private, no-cache` when a guard covers the
+  route, unless a layer or the handler sets `Cache-Control`. Set a long lifetime only for files
+  whose names change with their content, such as `app.3f9a1c.js`. A protected file belongs behind
+  a guarded `SERVE_` route, never in `public/`.
 
 With `Render.FS` set, the `assets` directory of the templates' `FS` is served at `/assets/*` without
 a handler, with hashed URLs and immutable caching, and the files of its `public` directory at the
@@ -3043,7 +3101,7 @@ Read it with `owlkei.ClientIP(r)`, `owlkei.ClientScheme(r)` and `owlkei.ClientHo
 | Field | Default | Variable | When to change it |
 |---|---|---|---|
 | `MaxBodyBytes` | `10MiB` | `OK_HTTP__MAX_BODY_BYTES` | Lower it to the largest body you accept; raise it for uploads. A larger body answers `413`. A negative value removes the limit. |
-| `ServeDirs` | empty | `OK_HTTP__SERVE_DIRS` | Reserved: the directories a `SERVE_` handler may return. It has no effect yet. |
+| `ServeDirs` | empty | `OK_HTTP__SERVE_DIRS` | You have `SERVE_` routes: list the directories they may return (at most 64). Each must be an existing directory, never the working directory or one above it, which hold the source and `.env`. See [Static files](#static-files). |
 
 `MaxBodyBytes` is a `ByteSize`. In code, write `16 * owlkei.KiB` or `2 * owlkei.MB`. In a variable,
 write bytes (`1500`) or a whole number with a unit: `KB`, `MB`, `GB` are powers of 1000, and
@@ -3365,21 +3423,32 @@ What behaves differently:
   because it means bits.
 
 ### Security notes
-- `c.Redirect` sends the client to any URL: never pass a URL from the request unchecked
-  ([ctx › Redirect](internal/ctx/README.md#redirect)).
+- `c.Redirect` accepts only a path of this site. `c.RedirectExternal` accepts any `http(s)` URL:
+  never pass one from the request unchecked ([ctx › Redirect](internal/ctx/README.md#redirect)).
 - `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
   instead ([ctx › JSON](internal/ctx/README.md#json)).
 - `owlkei.TraceTransport` sends your trace ID and request ID to every host you call
   ([trace › Outbound calls](internal/trace/README.md#outbound-calls)).
 - Change response headers with `Header().Set`, `Add` or `Del`, never by writing into a value slice
   in place ([core › Response writer](internal/core/README.md#response-writer)).
-- A guard bound to a `RENDER_` handler doesn't cover its `SUBMIT_`: bind it to both, or to the
-  controller ([Pages › Forms](#forms)).
+- A guard bound to a `RENDER_` handler must be bound to its `SUBMIT_` too, or `Create()` stops
+  ([Pages › Forms](#forms)).
+- Pages and HTML error pages answer `Cache-Control: private, no-cache` by default.
+- A `SERVE_` handler can only return a directory below `HTTP.ServeDirs`; uploaded `.html`, `.svg`,
+  `.xml` and `.js` files are sent as downloads ([Static files](#static-files)).
+- Source, secret, backup and dump files are never served by a static route, whatever the directory
+  ([Pages › Assets](#assets)). `//go:embed all:web` ships every dotfile of `web` in the binary:
+  `Create()` names them in `RenderHiddenFiles`.
 - Turn `CSRF` on in every app with `SUBMIT_` routes or cookies: Owlkei Go doesn't add it for you.
 - Files in `public/` are sent as they are, at the root URL, with no escaping and no nonce: never
   write user content there ([Pages › Public files](#public-files)).
-- Page CSS and JS URLs show your template tree and are served without the page's guards
+- Page CSS and JS run their page's guards; files of `public/` and `assets/` run none
   ([Pages › Page CSS and JS](#page-css-and-js)).
+- A request path with a control character answers `400`; any other path is cleaned (`//admin` is
+  `/admin`) before a middleware reads it.
+- Log lines escape control characters, line separators and bidirectional controls in every
+  format: a value can't forge a second record. A logger of your own given in `AppOptions.Logger`
+  does its own escaping.
 
 ---
 

@@ -96,6 +96,9 @@ type Engine struct {
 	assetCount   int
 	routes       []string
 	pool         sync.Pool
+	isServable   func(name string, isMapAllowed bool) bool
+	skipped      []string
+	hidden       []string
 
 	nonceDraws atomic.Int64
 	renders    atomic.Int64
@@ -113,6 +116,7 @@ type site struct {
 	errorByCode  map[int]*pageSet
 	errorByClass [10]*pageSet
 	pageFiles    map[string]string
+	ownerByFile  map[string]string
 	pageOrder    []string
 	errorFiles   []string
 	partials     []string
@@ -176,11 +180,15 @@ func newPlaceholder() string {
 	return hex.EncodeToString(b[:])
 }
 
+func (e *Engine) SetNamePolicy(isServable func(name string, isMapAllowed bool) bool) {
+	e.isServable = isServable
+}
+
 func (e *Engine) Load() error {
 	if _, err := fs.Stat(e.fsys, reservedPagesPath); err == nil {
 		return &checkError{file: reservedPagesPath, text: reservedPagesPath + " is reserved for page CSS and JS"}
 	}
-	assets, err := listFiles(e.fsys, assetsDir, !e.isReload)
+	assets, err := e.listFiles(assetsDir, e.isReload)
 	if err != nil {
 		return err
 	}
@@ -189,7 +197,7 @@ func (e *Engine) Load() error {
 			return err
 		}
 	}
-	public, err := listFiles(e.fsys, publicDir, !e.isReload)
+	public, err := e.listFiles(publicDir, false)
 	if err != nil {
 		return err
 	}
@@ -202,6 +210,9 @@ func (e *Engine) Load() error {
 	e.hashByPublic = public
 	if !e.isReload {
 		e.hashByAsset = assets
+		if e.hidden, err = hiddenEntries(e.fsys); err != nil {
+			return err
+		}
 	}
 	stamp := ""
 	if e.isReload {
@@ -213,6 +224,7 @@ func (e *Engine) Load() error {
 	}
 	e.site = s
 	e.stamp = stamp
+	slices.Sort(e.skipped)
 	return nil
 }
 
@@ -376,6 +388,25 @@ func (e *Engine) PageAssets() map[string]string {
 	return nil
 }
 
+func (e *Engine) PageAssetOwner(p string) (string, bool) {
+	s, err := e.current()
+	if err != nil {
+		return "", false
+	}
+	if _, ok := s.pageFiles[p]; !ok {
+		return "", false
+	}
+	return s.ownerByFile[p], true
+}
+
+func (e *Engine) Skipped() []string {
+	return slices.Clone(e.skipped)
+}
+
+func (e *Engine) Hidden() []string {
+	return slices.Clone(e.hidden)
+}
+
 func (e *Engine) PageAsset(p string) (string, bool) {
 	s, err := e.current()
 	if err != nil {
@@ -492,13 +523,14 @@ func dict(values ...any) (map[string]any, error) {
 	return m, nil
 }
 
-func listFiles(fsys fs.FS, dir string, isHashed bool) (map[string]string, error) {
-	info, err := fs.Stat(fsys, dir)
+func (e *Engine) listFiles(dir string, isMapAllowed bool) (map[string]string, error) {
+	info, err := fs.Stat(e.fsys, dir)
 	if err != nil || !info.IsDir() {
 		return nil, nil
 	}
+	isHashed := !e.isReload
 	hashByFile := map[string]string{}
-	err = fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(e.fsys, dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return &FileError{File: p, Err: err}
 		}
@@ -511,17 +543,51 @@ func listFiles(fsys fs.FS, dir string, isHashed bool) (map[string]string, error)
 		if d.IsDir() {
 			return nil
 		}
+		name := p[len(dir)+1:]
+		if dir == publicDir && strings.ContainsAny(name, "{}*") {
+			return &checkError{file: p, text: p + ": a public file name can't hold '{', '}' or '*', which the router reads as a parameter or a wildcard"}
+		}
+		if !e.isAllowed(name, d, isMapAllowed) {
+			e.skipped = append(e.skipped, p)
+			return nil
+		}
 		hash := ""
 		if isHashed {
-			hash, err = hashFile(fsys, p)
+			hash, err = hashFile(e.fsys, p)
 			if err != nil {
 				return &FileError{File: p, Err: err}
 			}
 		}
-		hashByFile[p[len(dir)+1:]] = hash
+		hashByFile[name] = hash
 		return nil
 	})
 	return hashByFile, err
+}
+
+func (e *Engine) isAllowed(name string, d fs.DirEntry, isMapAllowed bool) bool {
+	if d.Type()&fs.ModeSymlink != 0 {
+		return false
+	}
+	return e.isServable == nil || e.isServable(name, isMapAllowed)
+}
+
+func hiddenEntries(fsys fs.FS) ([]string, error) {
+	var hidden []string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return &FileError{File: p, Err: err}
+		}
+		if p == "." || d.Name()[0] != '.' || d.Name() == wellKnown {
+			return nil
+		}
+		hidden = append(hidden, p)
+		if d.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	})
+	slices.Sort(hidden)
+	return hidden, err
 }
 
 func isHiddenAsset(p string) bool {

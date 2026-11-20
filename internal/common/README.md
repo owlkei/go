@@ -298,7 +298,7 @@ Each map is `nil` until `AddHandlerToRouterMap` adds a route.
 
 Related types:
 - `Prefix` (`Value string`, `Handlers []any`): one call of `HTTP.Prefix`.
-- `HTTPLayer` (`Handler any`, `ControllerPath`, `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, `Template`, all `string`, and `IsPage bool`): a layer bound to one route, as `core` stores it. `Template string` is the template path a page route is bound to (`bookings/{id}`); `IsPage` is set on the main handler of a page route (`RENDER_`, `SUBMIT_`).
+- `HTTPLayer` (`Handler any`, `ControllerPath`, `ControllerName` (the controller's type name, set on main handlers for log lines), `Name`, `Route`, `Version`, `Method`, `Pattern`, `MainHandlerName`, `Template`, all `string`, and `IsPage bool`): a layer bound to one route, as `core` stores it. `Template string` is the template path a page route is bound to (`bookings/{id}`); `IsPage` is set on the main handler of a page route (`RENDER_`, `SUBMIT_`).
 
 ### Prefix
 
@@ -414,7 +414,7 @@ common.AddHandlerToRouterMap(&instance.HTTP, nil, common.PathStyleKebab, "READ_i
 
 ### Page routes
 
-`RENDER` (`GET`) and `SUBMIT` (`POST`) are page operations. `PageOperation(fnName string) string` returns `"RENDER"`, `"SUBMIT"` or `""` from the first word; `RenderNameOf("SUBMIT_new_OF_bookings")` is `RENDER_new_OF_bookings`.
+`RENDER` (`GET`) and `SUBMIT` (`POST`) are page operations. `PageOperation(fnName string) string` returns `"RENDER"`, `"SUBMIT"` or `""` from the first word; `RenderNameOf("SUBMIT_new_OF_bookings")` is `RENDER_new_OF_bookings`, and `SubmitNameOf` the reverse.
 
 #### Rules
 - `ParseFuncNameToURL("RENDER_bookings", style)` returns `GET`, `/bookings/`, `""`; `SUBMIT_bookings` returns `POST` on the same path.
@@ -508,6 +508,7 @@ The seven `InjectProvidersInto…(layer, r *HTTP | ws *WS, cb func(int, reflect.
 - Handlers given: one item per handler that is a route (its name is in `FuncNameToPatternMap`) or an event (`ParseWSFuncNameToEvent` accepts it). A handler given twice yields one item.
 - A handler of the other transport binds nothing on this side, without a panic: a `SUBSCRIBE_…` method on the HTTP side, a `READ_…` method on the WS side.
 - A handler that is neither (a helper method, `nil`, a non-func value) panics: `invalid guard: <LayerType> is bound to '<name>', which is not a handler of the controller`, with `invalid middleware`, `invalid interceptor` and `invalid exception filter` for the other layers. `<name>` is the method name, or the kind of a non-func value (`'int'`, `'string'`).
+- A guard bound to `RENDER_x` of a controller that has `SUBMIT_x` must be bound to `SUBMIT_x` too (in any `BindGuard` call of the controller, by guard type) or controller-wide (a `BindGuard` without handlers); otherwise `InjectProvidersIntoHTTPGuards` panics `invalid guard: <Guard> is bound to <Controller>.RENDER_x but not to <Controller>.SUBMIT_x, which posts to the same page: bind it to both, or to the controller`. `<Controller>` is the receiver's type name. Middlewares, interceptors and exception filters are not checked.
 - A guard, interceptor or exception filter without its method, or with a wrong parameter or result type, panics.
 - Each item's `Common.Handler` is the callable method of the instance and, on HTTP, `Common.MainHandlerName` the route's method name.
 - `GuardShapeError`, `InterceptorShapeError` and `ExceptionFilterShapeError` return the error used for a global layer with no usable method; its text contains the layer's type.

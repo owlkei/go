@@ -45,6 +45,32 @@ func (app *App) initRender() {
 	if app.http.render.IsReload() {
 		app.logger.Warn("RenderReloadOn", "dir", app.renderDir, "note", "templates and assets are read from disk on every render; turn IsReload off in production")
 	}
+	app.logStaticFiles()
+}
+
+const (
+	maxListedSkipped = 20
+	maxListedPublic  = 50
+)
+
+func (app *App) logStaticFiles() {
+	engine := app.http.render
+	if skipped := engine.Skipped(); len(skipped) > 0 {
+		app.logger.Warn("StaticFilesSkipped", "count", len(skipped), "files", skipped[:min(len(skipped), maxListedSkipped)], "note", "source, secret, backup, linked or oddly named files are never served")
+	}
+	if hidden := engine.Hidden(); len(hidden) > 0 {
+		app.logger.Warn("RenderHiddenFiles", "count", len(hidden), "files", hidden[:min(len(hidden), maxListedSkipped)], "note", "these ship inside the binary with //go:embed all: and are never served")
+	}
+	public := engine.PublicFiles()
+	if len(public) == 0 {
+		return
+	}
+	urls := make([]string, 0, len(public))
+	for name := range public {
+		urls = append(urls, "/"+name)
+	}
+	slices.Sort(urls)
+	app.logger.Info("PublicFiles", "count", len(urls), "urls", urls[:min(len(urls), maxListedPublic)])
 }
 
 func (app *App) checkRenderBindings() {
@@ -66,7 +92,11 @@ func renderFS(opts *RenderOptions) (fs.FS, string) {
 		if err != nil || !info.IsDir() {
 			panic(color.FmtRed("invalid render: IsReload reads %q from disk, but there is no such directory under the working directory", dir))
 		}
-		return os.DirFS(dir), dir
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			panic(color.FmtRed("invalid render: IsReload reads %q from disk: %v", dir, err))
+		}
+		return root.FS(), dir
 	}
 	if dir == "." {
 		return opts.FS, dir
@@ -123,7 +153,7 @@ func (http *HTTP) writePage(ex *httpExchange, route *httpRoute, result reflect.V
 	h := ex.writer.Header()
 	h["Content-Type"] = textHTMLValue
 	h["Content-Length"] = []string{strconv.Itoa(buf.Len())}
-	setDefaultCacheControl(h)
+	setPrivateCacheControl(h)
 	ex.writer.WriteHeader(ctx.HTTPCode(c))
 	if c.Method != stdHTTP.MethodHead {
 		_, _ = ex.writer.Write(buf.Bytes())

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -73,17 +74,17 @@ func TestServe_WildcardServesFileUnderDirectory(t *testing.T) {
 	}
 }
 
-func TestServe_TraversalIs400(t *testing.T) {
+func TestServe_TraversalIsCleanedTo404(t *testing.T) {
 	app := newServeApp(t)
 	writeServeFile(t, filepath.Join(filepath.Dir(serveRoot), "files", "secret"), "do-not-leak")
 
 	w := serveGet(app, "/files/a/../../files/secret")
 
-	if w.Code != http.StatusBadRequest {
-		t.Error(test.DiffMessage(w.Code, http.StatusBadRequest, "S2: a resolved path outside the served directory answers 400"))
+	if w.Code != http.StatusNotFound {
+		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "N3: the path is cleaned to /files/secret, which is not below the served directory: 404"))
 	}
-	if w.Body.String() != wantInvalidURLJSON {
-		t.Error(test.DiffMessage(w.Body.String(), wantInvalidURLJSON, "S2: the 400 body is fixed"))
+	if w.Body.String() != wantNotFoundJSON {
+		t.Error(test.DiffMessage(w.Body.String(), wantNotFoundJSON, "N3: the fixed 404"))
 	}
 	if strings.Contains(w.Body.String(), "do-not-leak") {
 		t.Error(test.DiffMessage(w.Body.String(), "<no leaked file contents>", "S2: the escaped file is never read"))
@@ -214,7 +215,7 @@ func TestServe_NameAnyTraversalIsRefused(t *testing.T) {
 
 func TestServe_NameAnyConflictsWithAnyOfName(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New(nil).Create(NewModuleBuilder().Controllers(svNameAnyController{}, svAnyOfController{}).Build())
+		New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{"testdata"}}}).Create(NewModuleBuilder().Controllers(svNameAnyController{}, svAnyOfController{}).Build())
 	})
 
 	want := "route conflict:"
@@ -559,7 +560,7 @@ func TestServe_ErrorDropsCacheControl(t *testing.T) {
 		"/files/.env":                 http.StatusNotFound,
 		"/files/css/nope.css":         http.StatusNotFound,
 		"/missing.png":                http.StatusNotFound,
-		"/files/a/../../files/secret": http.StatusBadRequest,
+		"/files/a/../../files/secret": http.StatusNotFound,
 	}
 	for target, code := range cases {
 		w := scGet(app, target)
@@ -603,7 +604,7 @@ func TestServe_DefaultCacheControl_DiscardWriter(t *testing.T) {
 	}
 }
 
-func TestServe_DotRootServesFilesUnderWorkingDirectory(t *testing.T) {
+func TestServe_DotRootIsRefused(t *testing.T) {
 	file, err := os.CreateTemp(".", "serve_dot_*.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -614,33 +615,18 @@ func TestServe_DotRootServesFilesUnderWorkingDirectory(t *testing.T) {
 	}
 	_ = file.Close()
 
-	hidden, err := os.CreateTemp(".", ".serve_dot_hidden_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(hidden.Name()) })
-	if _, err := hidden.WriteString("DOT-ROOT-SECRET"); err != nil {
-		t.Fatal(err)
-	}
-	_ = hidden.Close()
-
-	app := New(nil)
+	logger := &lcRecordingLogger{}
+	app := New(&AppOptions{Logger: logger, HTTP: &HTTPOptions{ServeDirs: []string{"testdata"}}})
 	app.Create(NewModuleBuilder().Controllers(serveDotController{}).Build())
 
 	w := serveGet(app, "/dot/"+strings.TrimPrefix(file.Name(), "./"))
-	if w.Code != http.StatusOK || w.Body.String() != "DOT-ROOT-CONTENT" {
-		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, "DOT-ROOT-CONTENT"}, "L9: a static route whose handler returns \".\" serves files under the working directory"))
+	if w.Code != http.StatusInternalServerError || w.Body.String() != wantInternalErrorJSON || strings.Contains(w.Body.String(), "DOT-ROOT-CONTENT") {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusInternalServerError, wantInternalErrorJSON}, "D1, D4: a handler that returns \".\" is refused, the working directory cannot be served"))
 	}
-
-	w = serveGet(app, "/dot/"+strings.TrimPrefix(hidden.Name(), "./"))
-	if w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "DOT-ROOT-SECRET") {
-		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "L9: a dotfile under the working directory still answers 404"))
+	if len(logger.named("ServeRootRefused")) != 1 {
+		t.Error(test.DiffMessage(len(logger.named("ServeRootRefused")), 1, "D4: the refusal is logged"))
 	}
-
-	w = serveGet(app, "/dot/../go.mod")
-	if w.Code == http.StatusOK {
-		t.Error(test.DiffMessage(w.Code, "not 200", "L9: a path leaving the working directory is refused"))
-	}
+	msExpectPanic(t, "D1", "is the working directory or above it: serve a subdirectory", func() { New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{"."}}}) })
 }
 
 func TestServe_DotfilesAre404(t *testing.T) {
@@ -1647,5 +1633,114 @@ func TestPreRoute_ProxyResolutionDoesNotLeakToNextRequest(t *testing.T) {
 	preWho(app, "10.0.0.7:5000", map[string]string{"X-Forwarded-For": "198.51.100.20", "X-Forwarded-Proto": "https"})
 	if got := preWho(app, "10.0.0.7:5000", nil); got != "10.0.0.7|http|example.com" {
 		t.Error(test.DiffMessage(got, "10.0.0.7|http|example.com", "P12: a request without headers resolves to the peer, nothing is left from the previous one"))
+	}
+}
+
+func TestRedirect_SameOrigin(t *testing.T) {
+	app, logger := secRedirectApp(t)
+	for _, route := range []struct {
+		path string
+		want int
+	}{{"/land", http.StatusSeeOther}, {"/go", http.StatusMovedPermanently}} {
+		for _, target := range []string{"/", "/bookings", "/a?next=/b#top", "/a?u=https://x.test"} {
+			w := createGet(app, route.path+"?to="+url.QueryEscape(target))
+			if w.Code != route.want || w.Header().Get("Location") != target {
+				t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{route.want, target}, "R1, R3: accepted "+target+" on "+route.path))
+			}
+		}
+		before := len(logger.named("RedirectRefused"))
+		refused := []string{"", "https://evil.test", "//evil.test", "/\\evil.test", "\\\\evil.test", "/a\\b", "javascript:alert(1)", "evil.test", "bookings", "/a\r\nSet-Cookie: x=1", "/\t/evil.test"}
+		for i, target := range refused {
+			w := createGet(app, route.path+"?to="+url.QueryEscape(target))
+			if w.Code != route.want || w.Header().Get("Location") != "/" || w.Header().Get("Set-Cookie") != "" {
+				t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{route.want, "/"}, "R4: refused "+strconv.Quote(target)+" on "+route.path))
+			}
+			if got := len(logger.named("RedirectRefused")); got != before+i+1 {
+				t.Error(test.DiffMessage(got, before+i+1, "R4: one RedirectRefused line per refusal: "+strconv.Quote(target)))
+			}
+		}
+	}
+	refusals := logger.named("RedirectRefused")
+	if len(refusals) == 0 {
+		t.Fatal(test.DiffMessage(0, "RedirectRefused lines", "R4: refusals are logged"))
+	}
+	entry := refusals[0]
+	if entry.level != "warn" || lcText(entry.field("method")) != "GET" || lcText(entry.field("path")) != "/land" || lcText(entry.field("target")) != "" ||
+		lcText(entry.field("note")) != "c.Redirect accepts a path of this site; another site needs c.RedirectExternal" {
+		t.Error(test.DiffMessage(entry, "Warn with method, path, target and note", "R4: the line"))
+	}
+
+	long := "https://evil.test/" + strings.Repeat("a", 400)
+	createGet(app, "/go?to="+url.QueryEscape(long))
+	last := logger.named("RedirectRefused")
+	if len(last) == 0 {
+		t.Fatal(test.DiffMessage(0, "RedirectRefused lines", "R4: the long target is logged"))
+	}
+	if got := lcText(last[len(last)-1].field("target")); got != long[:256] {
+		t.Error(test.DiffMessage(len(got), 256, "R4: the target is cut at 256 bytes"))
+	}
+}
+
+func TestRedirect_External(t *testing.T) {
+	app, logger := secRedirectApp(t)
+	for _, target := range []string{"https://example.com", "http://example.com/cb?x=1", "HTTPS://Example.com/P", "/local"} {
+		if w := createGet(app, "/external?to="+url.QueryEscape(target)); w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != target {
+			t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{http.StatusMovedPermanently, target}, "R2: accepted "+target))
+		}
+	}
+	for _, target := range []string{"javascript:alert(1)", "data:text/html,x", "//evil.test", "https://user@evil.test", "https:///path"} {
+		if w := createGet(app, "/external?to="+url.QueryEscape(target)); w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != "/" {
+			t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{http.StatusMovedPermanently, "/"}, "R2, R4: refused "+target))
+		}
+	}
+	entries := logger.named("RedirectRefused")
+	if len(entries) != 5 || lcText(entries[0].field("note")) != "c.RedirectExternal accepts a path or an http(s) URL" {
+		t.Error(test.DiffMessage(len(entries), 5, "R4: the RedirectExternal note"))
+	}
+}
+
+func TestRedirect_Status(t *testing.T) {
+	app, _ := secRedirectApp(t)
+	if w := createGet(app, "/land?to=/x"); w.Code != http.StatusSeeOther {
+		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "R3: a page route redirects with 303"))
+	}
+	if w := createGet(app, "/go?to=/x"); w.Code != http.StatusMovedPermanently {
+		t.Error(test.DiffMessage(w.Code, http.StatusMovedPermanently, "R3: an API route redirects with 301"))
+	}
+	status := New(nil)
+	mustCreate(t, status, NewModuleBuilder().Controllers(secStatusRedirect{}).Build())
+	if w := createGet(status, "/found"); w.Code != http.StatusFound || w.Header().Get("Location") != "/x" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{http.StatusFound, "/x"}, "R3: c.Status(302) is kept"))
+	}
+	if w := createGet(status, "/found?bad=1"); w.Code != http.StatusFound || w.Header().Get("Location") != "/" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{http.StatusFound, "/"}, "R4: a refused target keeps the status"))
+	}
+}
+
+func TestRedirect_InjectedFunc(t *testing.T) {
+	app, logger := secRedirectApp(t)
+	if w := createGet(app, "/injected?to=/ok"); w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != "/ok" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{http.StatusMovedPermanently, "/ok"}, "R1: the injected owlkei.Redirect accepts a path"))
+	}
+	for _, target := range []string{"https://evil.test", "//evil.test", "evil.test"} {
+		if w := createGet(app, "/injected?to="+url.QueryEscape(target)); w.Header().Get("Location") != "/" {
+			t.Error(test.DiffMessage(w.Header().Get("Location"), "/", "R1: the injected func follows R1: "+target))
+		}
+	}
+	if len(logger.named("RedirectRefused")) != 3 {
+		t.Error(test.DiffMessage(len(logger.named("RedirectRefused")), 3, "R4: the injected func logs its refusals"))
+	}
+}
+
+func TestRedirect_NoHeaderInjection(t *testing.T) {
+	app, _ := secRedirectApp(t)
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+	resp, _ := secRawGet(t, srv.Listener.Addr().String(), "/go?to=%2Fa%0d%0aSet-Cookie:%20x=1")
+	if resp.Header.Get("Set-Cookie") != "" || resp.Header.Get("Location") != "/" {
+		t.Error(test.DiffMessage([]any{resp.Header.Get("Set-Cookie"), resp.Header.Get("Location")}, []any{"", "/"}, "R4, H1: a CR LF target never reaches a header"))
+	}
+	if len(resp.Header.Values("Set-Cookie")) != 0 {
+		t.Error(test.DiffMessage(resp.Header, "no Set-Cookie", "H1: no injected header"))
 	}
 }

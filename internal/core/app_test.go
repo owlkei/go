@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"go.owlkei.com/owlkei/exception"
 	"go.owlkei.com/owlkei/internal/aggregation"
@@ -2397,4 +2398,114 @@ func TestServeWS_LoadShedRefusalCarriesTraceHeaders(t *testing.T) {
 	<-blocked
 	hsExpect(t, resp, http.StatusServiceUnavailable, "fixture: the handshake is shed")
 	hsExpectTraceHeaders(t, resp, "P3: a 503 handshake refusal")
+}
+
+func TestPath_ControlCharacterIs400(t *testing.T) {
+	for _, accept := range []string{"", "text/html"} {
+		spy := &secPathSpy{}
+		opts := &AppOptions{}
+		if accept != "" {
+			opts.Render = &RenderOptions{FS: pgFiles(map[string]string{"page.html": "x"}), Dir: "."}
+		}
+		controllers := []Controller{secPathController{}}
+		if accept != "" {
+			controllers = append(controllers, secPage{})
+		}
+		app := New(opts)
+		app.BindGlobalMiddlewares(spy)
+		mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
+		for _, escape := range []string{"%00", "%0a", "%0d%0a", "%7f", "%09", "%1b"} {
+			for _, target := range []string{"/admin" + escape, "/files/a" + escape + "b", "/nothing" + escape + "/x", "/" + escape} {
+				w := createRequest(app, http.MethodGet, target, "Accept", accept)
+				if w.Code != http.StatusBadRequest {
+					t.Error(test.DiffMessage(w.Code, http.StatusBadRequest, "N2: "+target+" (Accept "+accept+")"))
+				}
+				if accept == "" && w.Body.String() != string(invalidURLBody) {
+					t.Error(test.DiffMessage(w.Body.String(), string(invalidURLBody), "N2: the fixed JSON body: "+target))
+				}
+				if accept != "" && !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+					t.Error(test.DiffMessage(w.Header().Get("Content-Type"), "text/html", "N2: HTML when Render.FS is set and Accept holds text/html: "+target))
+				}
+			}
+		}
+		if len(spy.paths) != 0 {
+			t.Error(test.DiffMessage(spy.paths, []string(nil), "N2: no middleware runs for a bad path"))
+		}
+	}
+}
+
+func TestPath_CanonicalBeforeMiddlewares(t *testing.T) {
+	for raw, want := range map[string]string{
+		"//admin": "/admin", "/x/../admin": "/admin", "/./admin": "/admin", "/a//b/": "/a/b/", "/../..": "/", "/a/./": "/a/", "/admin/../../admin": "/admin",
+	} {
+		app, spy := secPathApp(t, nil)
+		r := httptest.NewRequest(http.MethodGet, raw, nil)
+		callerURL := *r.URL
+		callerPtr := r.URL
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, r)
+		if len(spy.paths) != 1 || spy.paths[0] != want {
+			t.Error(test.DiffMessage(spy.paths, []string{want}, "N3: the middleware reads the canonical path of "+raw))
+		}
+		if want == "/admin" && w.Body.String() != "admin" {
+			t.Error(test.DiffMessage(w.Body.String(), "admin", "N3: the router matches the canonical path of "+raw))
+		}
+		if r.URL != callerPtr || *r.URL != callerURL || r.URL.Path != callerURL.Path {
+			t.Error(test.DiffMessage(*r.URL, callerURL, "N3: the caller's URL is untouched: "+raw))
+		}
+		if len(spy.urls) == 1 && spy.urls[0] == callerPtr {
+			t.Error(test.DiffMessage("the caller's *url.URL", "a clone", "N3: the URL is cloned before the write: "+raw))
+		}
+		if len(spy.urls) == 1 && spy.urls[0].RawPath != "" {
+			t.Error(test.DiffMessage(spy.urls[0].RawPath, "", "N3: RawPath is cleared: "+raw))
+		}
+		if r.RequestURI != raw {
+			t.Error(test.DiffMessage(r.RequestURI, raw, "N3: RequestURI is left as received"))
+		}
+	}
+
+	app, spy := secPathApp(t, nil)
+	r := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	original := r.URL.Path
+	app.ServeHTTP(httptest.NewRecorder(), r)
+	if len(spy.paths) != 1 || unsafe.StringData(spy.paths[0]) != unsafe.StringData(original) || spy.urls[0] != r.URL {
+		t.Error(test.DiffMessage(spy.paths, []string{original}, "N3: a canonical path is not touched and not copied"))
+	}
+}
+
+func TestPath_WSPathAfterNormalization(t *testing.T) {
+	app := New(&AppOptions{Logger: &mockLogger{}, WS: &WSOptions{Path: "/ws"}})
+	mustCreate(t, app, NewModuleBuilder().Build())
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+	plain, _ := secRawGet(t, srv.Listener.Addr().String(), "/ws")
+	cleaned, _ := secRawGet(t, srv.Listener.Addr().String(), "/x/../ws")
+	if plain.StatusCode == http.StatusNotFound || cleaned.StatusCode != plain.StatusCode {
+		t.Error(test.DiffMessage(cleaned.StatusCode, plain.StatusCode, "N1: /x/../ws reaches the handshake like /ws"))
+	}
+}
+
+func TestPath_DecodedOnce(t *testing.T) {
+	app, spy := secPathApp(t, nil)
+	if w := createGet(app, "/files/%252e%252e/x"); w.Code != http.StatusNotFound {
+		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "N4: /files/%2e%2e/x has no route"))
+	}
+	if w := createGet(app, "/files/%252e%252e"); w.Body.String() != "name=%2e%2e" {
+		t.Error(test.DiffMessage(w.Body.String(), "name=%2e%2e", "N4: the Param holds the literal %2e%2e"))
+	}
+	if w := createGet(app, "/files/%2e%2e/x"); w.Body.String() != "x" || spy.paths[len(spy.paths)-1] != "/x" {
+		t.Error(test.DiffMessage(w.Body.String(), "x", "N4: a single-encoded .. is cleaned"))
+	}
+}
+
+func TestPath_CaseSensitive(t *testing.T) {
+	app, _ := secPathApp(t, nil)
+	for _, target := range []string{"/Admin", "/ADMIN", "/aDmin"} {
+		if w := createGet(app, target); w.Code != http.StatusNotFound {
+			t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "N5: "+target+" does not match /admin"))
+		}
+	}
+	if w := createGet(app, "/admin"); w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "N5: /admin matches"))
+	}
 }

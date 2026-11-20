@@ -2,7 +2,13 @@ version: "2"
 
 linters:
   default: standard
+  enable:
+    - gosec
   settings:
+    gosec:
+      excludes:
+        # Unchecked errors: errcheck already runs (design 0021 X2).
+        - G104
     staticcheck:
       checks:
         - all
@@ -16,6 +22,86 @@ linters:
         - -ST1020
         - -ST1021
         - -ST1022
+  exclusions:
+    rules:
+      # Tests build fixtures with unsafe probes, unbounded reads of their own data, bounded
+      # conversions, world-readable temp files, fixed paths and commands, math/rand inputs and
+      # fixed slice indexes; none of it runs in an application.
+      - path: _test\.go
+        linters: [gosec]
+        text: "G102|G103|G110|G115|G116|G204|G301|G304|G306|G404|G602|G702|G703"
+      # The checked narrowing helpers: every conversion is preceded by its range check.
+      - path: internal/num/num\.go
+        linters: [gosec]
+        text: "G115"
+      # Counters, sizes and shard indexes bounded by the cache's own limits (64 shards, int32 slot counts).
+      - path: internal/memorycache/memory_cache\.go
+        linters: [gosec]
+        text: "G115"
+      # Bit extraction of a 64-bit random value into bytes: the low 8 bits are wanted.
+      - path: internal/tracecontext/id\.go
+        linters: [gosec]
+        text: "G115"
+      # Atomic counters of the log sink: monotonic uint64 counts far below 2^63, read as int64 for reports.
+      - path: internal/logpipe/sink\.go
+        linters: [gosec]
+        text: "G115"
+      # Window and bucket state the guard itself encodes as big-endian uint64 in the cache and decodes back.
+      - path: guards/throttler/throttler\.go
+        linters: [gosec]
+        text: "G115"
+      # ByteSize magnitudes: parse checks n against the limit before multiplying, String takes the absolute value.
+      - path: internal/core/byte_size\.go
+        linters: [gosec]
+        text: "G115"
+      # Latency samples (non-negative nanoseconds) and the concurrency limit (at least 1) packed into a uint64.
+      - path: internal/middlewares/loadshed/adaptive\.go
+        linters: [gosec]
+        text: "G115"
+      # The cgroup files are fixed paths under /sys/fs/cgroup, chosen by the framework.
+      - path: internal/middlewares/loadshed/adaptive\.go
+        linters: [gosec]
+        text: "G304"
+      # durationText formats the magnitude of a duration; the sign is handled separately.
+      - path: internal/accesslog/access_log\.go
+        linters: [gosec]
+        text: "G115"
+      # pick is set on the first iteration: the loop runs at most len(remainders) times with one free slot left.
+      - path: internal/accesslog/access_log\.go
+        linters: [gosec]
+        text: "G602"
+      # The versioning type: a small enum constant.
+      - path: internal/devtool/devtool_builder\.go
+        linters: [gosec]
+        text: "G115"
+      # Backoff jitter needs no cryptographic randomness.
+      - path: internal/core/retry\.go
+        linters: [gosec]
+        text: "G404"
+      # The .env path is the developer's (Loads, ./.env), never a request value.
+      - path: internal/dotenv/dotenv\.go
+        linters: [gosec]
+        text: "G304"
+      # A repository tool: it reads and writes api/owlkei.txt in the checkout.
+      - path: internal/apicheck/
+        linters: [gosec]
+        text: "G301|G304|G306"
+      # The page asset tags are built by the framework from file names it escaped itself.
+      - path: internal/render/parse\.go
+        linters: [gosec]
+        text: "G203"
+      # dict checks len(values)%2 == 0 first, so values[i+1] exists.
+      - path: internal/render/render\.go
+        linters: [gosec]
+        text: "G602"
+      # Reading unexported fields for log tags through reflect.NewAt, on a value the logger owns.
+      - path: log/log_tag\.go
+        linters: [gosec]
+        text: "G103"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
 
 formatters:
   enable:

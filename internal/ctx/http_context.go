@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strings"
 	"time"
 
 	"go.owlkei.com/owlkei/exception"
@@ -37,6 +39,8 @@ type HTTPContext struct {
 	code      int
 	timestamp time.Time
 	isPage    bool
+
+	onRedirectRefused func(c *HTTPContext, target, note string)
 }
 
 const (
@@ -69,7 +73,11 @@ func (c *HTTPContext) ID() string {
 func HTTPReset(c *HTTPContext) {
 	paramValues := keepCapacity(c.paramValues)
 	aggregations := keepCapacity(c.aggregations)
-	*c = HTTPContext{code: http.StatusOK, paramValues: paramValues, aggregations: aggregations}
+	*c = HTTPContext{code: http.StatusOK, paramValues: paramValues, aggregations: aggregations, onRedirectRefused: c.onRedirectRefused}
+}
+
+func HTTPSetRedirectRefused(c *HTTPContext, fn func(c *HTTPContext, target, note string)) {
+	c.onRedirectRefused = fn
 }
 
 const keptCapacityLimit = 64
@@ -177,14 +185,72 @@ func (c *HTTPContext) JSONP(data any, args ...any) {
 	_, _ = c.ResponseWriter.Write(out)
 }
 
-func (c *HTTPContext) Redirect(url string) {
+const (
+	redirectNote         = "c.Redirect accepts a path of this site; another site needs c.RedirectExternal"
+	redirectExternalNote = "c.RedirectExternal accepts a path or an http(s) URL"
+)
+
+func (c *HTTPContext) Redirect(target string) {
+	if !isLocalTarget(target) {
+		c.refuseRedirect(target, redirectNote)
+		return
+	}
+	c.redirect(target)
+}
+
+func (c *HTTPContext) RedirectExternal(target string) {
+	if !isLocalTarget(target) && !isExternalTarget(target) {
+		c.refuseRedirect(target, redirectExternalNote)
+		return
+	}
+	c.redirect(target)
+}
+
+func (c *HTTPContext) refuseRedirect(target, note string) {
+	if c.onRedirectRefused != nil {
+		c.onRedirectRefused(c, target, note)
+	}
+	c.redirect("/")
+}
+
+func (c *HTTPContext) redirect(target string) {
 	if c.code < http.StatusMultipleChoices || c.code >= http.StatusBadRequest {
 		c.code = http.StatusMovedPermanently
 		if c.isPage {
 			c.code = http.StatusSeeOther
 		}
 	}
-	http.Redirect(c.ResponseWriter, c.Request, url, c.code)
+	http.Redirect(c.ResponseWriter, c.Request, target, c.code)
+}
+
+func isLocalTarget(target string) bool {
+	if len(target) == 0 || target[0] != '/' {
+		return false
+	}
+	if len(target) > 1 && (target[1] == '/' || target[1] == '\\') {
+		return false
+	}
+	return isCleanTarget(target)
+}
+
+func isCleanTarget(target string) bool {
+	for i := 0; i < len(target); i++ {
+		if b := target[i]; b < 0x20 || b == 0x7f || b == '\\' {
+			return false
+		}
+	}
+	return true
+}
+
+func isExternalTarget(target string) bool {
+	if !isCleanTarget(target) {
+		return false
+	}
+	u, err := url.Parse(target)
+	if err != nil || u.Host == "" || u.User != nil {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
 func encodeJSON(data any, args []any) []byte {

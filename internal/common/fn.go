@@ -278,6 +278,61 @@ func httpHandlerTargets(r *HTTP, handlers []any, category string, layerType refl
 	})
 }
 
+func checkSubmitCovered(r *HTTP, guardHandlers []guardHandler) {
+	type coverage struct {
+		isWhole bool
+		names   map[string]bool
+	}
+	byType := map[reflect.Type]*coverage{}
+	for _, gh := range guardHandlers {
+		t := reflect.TypeOf(gh.guarder)
+		cov := byType[t]
+		if cov == nil {
+			cov = &coverage{names: map[string]bool{}}
+			byType[t] = cov
+		}
+		if len(gh.handlers) == 0 {
+			cov.isWhole = true
+		}
+		for _, handler := range gh.handlers {
+			if name, ok := handlerName(handler); ok {
+				cov.names[name] = true
+			}
+		}
+	}
+	for _, gh := range guardHandlers {
+		t := reflect.TypeOf(gh.guarder)
+		if byType[t].isWhole {
+			continue
+		}
+		for _, handler := range gh.handlers {
+			name, ok := handlerName(handler)
+			if !ok || PageOperation(name) != PageRender {
+				continue
+			}
+			submit := SubmitNameOf(name)
+			if _, ok := r.funcNameToPatternMap[submit]; !ok || byType[t].names[submit] {
+				continue
+			}
+			controller := controllerNameOf(handler)
+			panic(errors.New(color.FmtRed(
+				"invalid guard: %v is bound to %s.%s but not to %s.%s, which posts to the same page: bind it to both, or to the controller",
+				t, controller, name, controller, submit,
+			)))
+		}
+	}
+}
+func controllerNameOf(handler any) string {
+	name := strings.TrimSuffix(runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name(), "-fm")
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[:i]
+	}
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[i+1:]
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(name, "(*"), ")")
+}
+
 func resolveHandlerTargets(
 	handlers []any,
 	category string,

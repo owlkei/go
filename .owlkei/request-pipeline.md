@@ -106,11 +106,17 @@ response writes it and returns without `next()`.
   answers requests with or without a version. With versioning on, a request without a version to a
   route registered without one runs the global middlewares, then answers 410
   `Deprecated URL usage`.
-- `SERVE` routes never list a directory: a directory answers its `index.html` (with
-  `http.ServeFile`'s redirect to the slash-terminated URL) or 404; a path outside the served
-  directory answers 400 `Invalid URL path`. Wildcard `SERVE` routes open files through `os.Root`
-  (`serveFromRoot` in `internal/core/http.go`): dot segments other than `.well-known` and symbolic links
-  leaving the served directory answer 404.
+- Before everything (`App.ServeHTTP`, before the WebSocket path test and the stages), a path with
+  a control character answers 400 `Invalid URL path`; a non-canonical path is `path.Clean`-ed on a
+  copy of the request (design 0021 N).
+- `SERVE` routes (`internal/core/http_static.go`, design 0021 D, S, F, M, I) never list a directory:
+  a directory answers its `index.html` (301 to the slash-terminated URL) or 404. The handler's root
+  must lie below an `HTTP.ServeDirs` entry, else a fixed 500 + `ServeRootRefused`; files open
+  through `os.Root` (declared directory → handler root → file). The name policy
+  (`isServableName`, `isForbiddenFile`) refuses odd and forbidden names with the fixed 404. Every
+  static response gets `nosniff` and a framework-set `Content-Type`; multi-range is ignored; active
+  files are sent as attachments with a sandbox CSP unless the handler set `Content-Disposition`; a
+  guarded `SERVE_` route defaults to `private, no-cache`.
 
 ### 1.3a Page routes (design 0018 amendment 2)
 
@@ -125,18 +131,22 @@ template in `HTTPLayer.Template`) runs the same boxes. The differences:
   writer already has a status (redirect, direct write) nothing is written; else the only or last
   result (any type, `nil` without one) is the data of the route's template, rendered into a pooled
   `render.Buffer`: `Content-Type: text/html; charset=utf-8`, `Content-Length`, `Cache-Control:
-  no-cache` unless set, and the nonce placed into `helmet`'s precompiled CSP form. A failed render →
+  private, no-cache` unless set (HTML error pages too), and the nonce placed into `helmet`'s precompiled CSP form. A failed render →
   fixed 500 HTML + `RenderFailed` (`RenderReloadFailed` with `IsReload`). `HEAD` writes no body.
 - Page routes are version-neutral; `PUT` on a page path answers 405 with `Allow: GET, HEAD, POST`.
-  A layer bound to `RENDER_x` only does not run on `SUBMIT_x`.
+  A layer bound to `RENDER_x` only does not run on `SUBMIT_x`; a guard bound so panics at
+  `Create()` (`checkSubmitCovered` in `internal/common/fn.go`) unless the same guard type is bound
+  to `SUBMIT_x` or controller-wide.
 - With a tracer listener: one `render` stage event after `handler`, before `complete` (name = the
   template path, `404` / `4xx` for error pages, `error (built-in)`).
 - The asset route (`/assets/*`, `addAssetRoute` in `internal/core/http_asset.go`) exists when
   `Dir/assets` or a page CSS / JS file exists; it is a `SERVE` route (JSON errors), runs the global
-  middlewares and guards, answers `ETag` + `immutable` for a matching `?v=` hash, and serves
-  `/assets/_pages/<path>` (only the CSS / JS files that templates own).
+  middlewares but no guard (`addGlobalGuard` skips it), answers `ETag` + `immutable` for a matching
+  `?v=` hash, and serves `/assets/_pages/<path>` (only the CSS / JS files that templates own). A
+  page's file runs the guards of the page's `RENDER_` route (`routeByTemplate`,
+  `render.Engine.PageAssetOwner`), refusals → fixed 404, through the async gate like the route.
 - Public files: one `GET` route per file of `Dir/public` at its path below `public`
-  (`public/<path>` in the route log), `no-cache` + `ETag`, JSON errors, global middlewares and guards.
+  (`public/<path>` in the route log), `no-cache` + `ETag`, JSON errors, global middlewares, no guard.
 
 ### 1.4 Where it lives in the code
 

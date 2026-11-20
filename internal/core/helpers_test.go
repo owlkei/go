@@ -1467,7 +1467,7 @@ func (c cpSubmitMovesWithRender) SUBMIT_x(h *ctx.HTTPContext) { h.Redirect("/don
 
 func cpCreate(opts *RenderOptions, controllers ...Controller) func() {
 	return func() {
-		app := New(&AppOptions{Render: opts})
+		app := New(&AppOptions{Render: opts, HTTP: &HTTPOptions{ServeDirs: []string{"testdata"}}})
 		app.Create(NewModuleBuilder().Controllers(controllers...).Build())
 	}
 }
@@ -1604,7 +1604,7 @@ func svApp(t *testing.T) *App {
 	svWrite(t, filepath.Join(svRoot, "a.txt"), "alpha")
 	svWrite(t, filepath.Join(svRoot, "sub", "x.txt"), "nested")
 
-	app := New(nil)
+	app := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{svRoot}}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(svNameAnyController{}).Build())
 	return app
 }
@@ -1990,7 +1990,7 @@ func handlerEventNames(t *testing.T, path string) []string {
 		t.Fatal(err)
 	}
 
-	app := New(nil)
+	app := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{appServeDir}}})
 	var mu sync.Mutex
 	var names []string
 	app.tracer.Listen(func(e trace.Event) {
@@ -2884,12 +2884,6 @@ type assetMarkMiddleware struct{}
 func (assetMarkMiddleware) Use(_ *http.Request, w http.ResponseWriter, next ctx.Next) {
 	w.Header().Set("X-Global-Middleware", "ran")
 	next()
-}
-
-type assetDenyGuard struct{}
-
-func (assetDenyGuard) CanActivate(c *ctx.HTTPContext) bool {
-	return c.Request.Header.Get("X-Allow") == "yes"
 }
 
 type benchPlainController struct {
@@ -4953,7 +4947,7 @@ func scApp(t *testing.T, setup func(*App)) *App {
 	writeServeFile(t, filepath.Join(scRoot, "css", "app.css"), "body{}")
 	writeServeFile(t, filepath.Join(scRoot, "index.html"), "<p>home</p>")
 	writeServeFile(t, filepath.Join(scRoot, ".env"), "SECRET=1")
-	app := New(&AppOptions{Logger: &mockLogger{}})
+	app := New(&AppOptions{Logger: &mockLogger{}, HTTP: &HTTPOptions{ServeDirs: []string{scRoot}}})
 	if setup != nil {
 		setup(app)
 	}
@@ -5059,20 +5053,6 @@ func (c sbGuarded) RENDER_only() {}
 
 func (c sbGuarded) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
 
-type sbGuardedRenderOnly struct {
-	common.HTTP
-	common.Guard
-}
-
-func (c sbGuardedRenderOnly) NewController() Controller {
-	c.BindGuard(pgGuard{}, c.RENDER_only)
-	return c
-}
-
-func (c sbGuardedRenderOnly) RENDER_only() {}
-
-func (c sbGuardedRenderOnly) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
-
 type sbFailing struct{ common.HTTP }
 
 func (c sbFailing) NewController() Controller { return c }
@@ -5121,7 +5101,7 @@ func newServeApp(t *testing.T) *App {
 	writeServeFile(t, filepath.Join(serveRoot, "css", "app.css"), "body{}")
 	writeServeFile(t, filepath.Join(serveRoot, ".env"), "SECRET=1")
 
-	app := New(nil)
+	app := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{serveRoot}}})
 	app.Create(NewModuleBuilder().Controllers(serveController{}).Build())
 	return app
 }
@@ -7952,6 +7932,12 @@ const lfWant503JSON = `{"code":503,"error":"Service Unavailable","message":"Serv
 
 func lfGateApp(t *testing.T, files map[string]string, setup func(*App)) (*App, *Module, *lcRecordingLogger) {
 	t.Helper()
+	app, sql, _, logger, _ := lfGateAppHeld(t, files, setup)
+	return app, sql, logger
+}
+
+func lfGateAppHeld(t *testing.T, files map[string]string, setup func(*App)) (*App, *Module, *Module, *lcRecordingLogger, chan struct{}) {
+	t.Helper()
 	logger := &lcRecordingLogger{}
 	opts := &AppOptions{Logger: logger}
 	if files != nil {
@@ -7971,7 +7957,7 @@ func lfGateApp(t *testing.T, files map[string]string, setup func(*App)) (*App, *
 	root := lfNamed("root", NewModuleBuilder().Imports(gated).Controllers(lfPlainCtl{}))
 	mustCreate(t, app, root)
 	lfRelease(t, app, release)
-	return app, sql, logger
+	return app, sql, gated, logger, release
 }
 
 func lfWSApp(t *testing.T) (*App, *Module, *websocket.Conn) {
@@ -8232,4 +8218,672 @@ func x509CertPoolFromFile(t *testing.T, certFile string) *x509.CertPool {
 		t.Fatal("the certificate file holds no certificate")
 	}
 	return pool
+}
+
+const secMarker = "SECRET-MARKER-7f3a"
+
+var (
+	secServeRoot  string
+	secUploadRoot string
+)
+
+type secFixedServe struct{ common.HTTP }
+
+func (c secFixedServe) NewController() Controller { return c }
+
+func (c secFixedServe) SERVE_s_ANY() string { return secServeRoot }
+
+type secTenantServe struct{ common.HTTP }
+
+func (c secTenantServe) NewController() Controller { return c }
+
+func (c secTenantServe) SERVE_t_BY_tenant_ANY(hc *ctx.HTTPContext) string {
+	return secUploadRoot + "/" + hc.Param().Get("tenant")
+}
+
+type secFileServe struct{ common.HTTP }
+
+func (c secFileServe) NewController() Controller { return c }
+
+func (c secFileServe) SERVE_f(hc *ctx.HTTPContext) string {
+	return secServeRoot + "/" + hc.Request.URL.Query().Get("f")
+}
+
+type secQueryServe struct{ common.HTTP }
+
+func (c secQueryServe) NewController() Controller { return c }
+
+func (c secQueryServe) SERVE_q_ANY(hc *ctx.HTTPContext) string {
+	q := hc.Request.URL.Query()
+	if abs := q.Get("abs"); abs != "" {
+		return abs
+	}
+	return secUploadRoot + "/" + q.Get("tenant")
+}
+
+type secOddServe struct{ common.HTTP }
+
+func (c secOddServe) NewController() Controller { return c }
+
+func (c secOddServe) SERVE_num() int { return 42 }
+
+func (c secOddServe) SERVE_empty() string { return "" }
+
+type secInlineServe struct{ common.HTTP }
+
+func (c secInlineServe) NewController() Controller { return c }
+
+func (c secInlineServe) SERVE_inline_ANY(hc *ctx.HTTPContext) string {
+	hc.ResponseWriter.Header().Set("Content-Disposition", "inline")
+	return secServeRoot
+}
+
+type secTypedServe struct{ common.HTTP }
+
+func (c secTypedServe) NewController() Controller { return c }
+
+func (c secTypedServe) SERVE_typed_ANY(hc *ctx.HTTPContext) string {
+	hc.ResponseWriter.Header().Set("Content-Type", hc.Request.URL.Query().Get("type"))
+	return secServeRoot
+}
+
+type secOtherServe struct{ common.HTTP }
+
+func (c secOtherServe) NewController() Controller { return c }
+
+func (c secOtherServe) SERVE_o_ANY() string { return secServeRoot }
+
+type secRelServe struct{ common.HTTP }
+
+func (c secRelServe) NewController() Controller { return c }
+
+func (c secRelServe) SERVE_rel_ANY() string { return "pub" }
+
+type secPage struct{ common.HTTP }
+
+func (c secPage) NewController() Controller { return c }
+
+func (c secPage) RENDER_page() {}
+
+const secActiveBody = "<script>alert(1)</script>"
+
+func secFixture() map[string]string {
+	m := map[string]string{
+		"ok.txt":                   "OK-BODY",
+		"sub/ok.txt":               "SUB-OK",
+		".well-known/security.txt": "WELL-KNOWN",
+		"range.txt":                strings.Repeat("0123456789", 10),
+		"dir_noindex/x.txt":        "NOINDEX-X",
+		"dir_index/index.html":     "INDEX-BODY",
+		"dir_idxdir/index.html/in": "INNER",
+		"sniff/x":                  secActiveBody,
+		"sniff/x.unknown":          secActiveBody,
+		"sniff/x.png":              secActiveBody,
+		"sniff/x.txt":              secActiveBody,
+		"evil.html":                secActiveBody,
+		"evil.svg":                 secActiveBody,
+		"evil.xml":                 secActiveBody,
+		"evil.js":                  secActiveBody,
+		"evil.xhtml":               secActiveBody,
+		"EVIL.HTM":                 secActiveBody,
+		"evil.svgz":                secActiveBody,
+		"types/a.css":              "a{}",
+		"types/a.js":               "1",
+		"types/a.mjs":              "1",
+		"types/a.html":             "<p>",
+		"types/a.htm":              "<p>",
+		"types/a.svg":              "<svg/>",
+		"types/a.json":             "{}",
+		"types/a.wasm":             "\x00asm",
+		"types/a.xml":              "<a/>",
+		"types/a.txt":              "t",
+		"types/a.png":              "png",
+		"types/a.unknownext":       "u",
+		"longname_file.txt":        secMarker,
+	}
+	for _, name := range []string{
+		"secret.txt", ".env", "sub/.env", "sub/secret.go", ".git/config", "css/.secret", ".well-known/.env",
+		"main.go", "go.mod", "go.sum", "go.work", "go.work.sum", "prod.env", "server.pem", "key.pem", "tls.key", "id_rsa", "id_ed25519", "store.p12", "store.pfx",
+		"dump.sql", "app.db", "app.sqlite", "secret.key",
+		"index.html~", ".index.html.swp", "index.html.swp", "app.js.bak", "app.js.orig", "#app.js#", "config.old", "x.tmp", "x.rej",
+		"app.js.map", "sub/app.js.map",
+	} {
+		m[name] = secMarker
+	}
+	return m
+}
+
+type secKind int
+
+const (
+	secMap secKind = iota
+	secDiskReload
+	secDiskLinks
+)
+
+type secEnv struct {
+	root, serve, up, outside string
+}
+
+func secTemp(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func secWrite(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		writeServeFile(t, filepath.Join(dir, filepath.FromSlash(name)), content)
+	}
+}
+
+func secPrepare(t *testing.T) secEnv {
+	t.Helper()
+	root := secTemp(t)
+	env := secEnv{root: root, serve: filepath.Join(root, "serve"), up: filepath.Join(root, "up"), outside: filepath.Join(root, "outside")}
+	secWrite(t, env.serve, secFixture())
+	secWrite(t, filepath.Join(env.up, "acme"), secFixture())
+	secWrite(t, filepath.Join(env.up, "beta"), map[string]string{"private.txt": secMarker})
+	secWrite(t, env.outside, map[string]string{"x.txt": secMarker})
+	secWrite(t, root, map[string]string{"secret.txt": secMarker, "etc/passwd": secMarker, "other/x.txt": secMarker, "up2/x.txt": secMarker})
+	secServeRoot, secUploadRoot = env.serve, env.up
+	return env
+}
+
+func secWebFiles(extra map[string]string) map[string]string {
+	files := map[string]string{"page.html": "{{pageAssets}}PAGE", "page.css": "PAGE-CSS"}
+	for name, content := range secFixture() {
+		if name == "secret.txt" {
+			continue
+		}
+		files["assets/"+name] = content
+		files["public/"+name] = content
+	}
+	maps.Copy(files, extra)
+	return files
+}
+
+func secLink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symbolic links cannot be created here:", err)
+	}
+}
+
+func secBuild(t *testing.T, kind secKind, mutate func(*AppOptions)) (*App, *lcRecordingLogger, secEnv) {
+	t.Helper()
+	env := secPrepare(t)
+	app, logger := secBuildIn(t, env, kind, mutate)
+	return app, logger, env
+}
+
+func secBuildIn(t *testing.T, env secEnv, kind secKind, mutate func(*AppOptions)) (*App, *lcRecordingLogger) {
+	t.Helper()
+	logger := &lcRecordingLogger{}
+	opts := &AppOptions{Logger: logger, HTTP: &HTTPOptions{ServeDirs: []string{env.serve, env.up}}}
+	switch kind {
+	case secMap:
+		opts.Render = &RenderOptions{FS: pgFiles(secWebFiles(nil)), Dir: "."}
+	default:
+		web := filepath.Join(env.root, "web", strconv.Itoa(int(kind)))
+		secWrite(t, web, secWebFiles(nil))
+		if kind == secDiskLinks {
+			secLink(t, filepath.Join(env.root, "secret.txt"), filepath.Join(web, "assets", "link.txt"))
+			secLink(t, filepath.Join(env.root, "secret.txt"), filepath.Join(web, "public", "link.txt"))
+		}
+		opts.Render = &RenderOptions{FS: os.DirFS(web), Dir: ".", IsReload: kind == secDiskReload}
+	}
+	if mutate != nil {
+		mutate(opts)
+	}
+	app := New(opts)
+	mustCreate(t, app, NewModuleBuilder().Controllers(secFixedServe{}, secTenantServe{}, secFileServe{}, secQueryServe{}, secOddServe{}, secInlineServe{}, secTypedServe{}, secPage{}).Build())
+	return app, logger
+}
+
+func secApps(t *testing.T) []*App {
+	t.Helper()
+	env := secPrepare(t)
+	a, _ := secBuildIn(t, env, secMap, nil)
+	b, _ := secBuildIn(t, env, secDiskReload, nil)
+	return []*App{a, b}
+}
+
+type secWay struct {
+	name   string
+	target func(raw string) string
+	isFile bool
+}
+
+func secWays() []secWay {
+	return []secWay{
+		{"a: SERVE_ wildcard, fixed root", func(raw string) string { return "/s/" + raw }, false},
+		{"b: SERVE_ wildcard, root from a parameter", func(raw string) string { return "/t/acme/" + raw }, false},
+		{"c: SERVE_ without a wildcard", func(raw string) string { return "/f?f=" + raw }, true},
+		{"d: public/", func(raw string) string { return "/" + raw }, false},
+		{"e: /assets/*", func(raw string) string { return "/assets/" + raw }, false},
+		{"e: /assets/_pages/*", func(raw string) string { return "/assets/_pages/" + raw }, false},
+	}
+}
+
+func secExpect(t *testing.T, apps []*App, rule string, want int, raws ...string) {
+	t.Helper()
+	for i, app := range apps {
+		for _, way := range secWays() {
+			for _, raw := range raws {
+				w := createGet(app, way.target(raw))
+				desc := rule + ": " + way.name + " (app " + strconv.Itoa(i) + "), " + raw
+				if strings.Contains(w.Body.String(), secMarker) {
+					t.Error(test.DiffMessage(w.Body.String(), "no secret marker", desc+": the body leaks"))
+				}
+				if way.isFile {
+					if w.Code == http.StatusOK {
+						t.Error(test.DiffMessage(w.Code, "not 200", desc))
+					}
+					continue
+				}
+				if w.Code != want {
+					t.Error(test.DiffMessage(w.Code, want, desc))
+				}
+				if want == http.StatusNotFound && w.Body.String() != wantNotFoundJSON {
+					t.Error(test.DiffMessage(w.Body.String(), wantNotFoundJSON, desc+": the fixed 404"))
+				}
+			}
+		}
+	}
+}
+
+type secGuardLog struct {
+	mu     sync.Mutex
+	names  []string
+	paths  []string
+	params []int
+}
+
+func (l *secGuardLog) add(name, path string, params int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.names = append(l.names, name)
+	l.paths = append(l.paths, path)
+	l.params = append(l.params, params)
+}
+
+func (l *secGuardLog) take() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := l.names
+	l.names = nil
+	return out
+}
+
+type secLogGuard struct {
+	Name string
+	Log  *secGuardLog
+	Mode string
+}
+
+func (g secLogGuard) CanActivate(c *ctx.HTTPContext) bool {
+	g.Log.add(g.Name, c.URL.Path, len(c.Param()))
+	switch g.Mode {
+	case "unauthorized":
+		panic(exception.UnauthorizedException("no"))
+	case "boom":
+		panic("boom")
+	case "deny":
+		return false
+	}
+	return c.Request.Header.Get("X-Allow") == "yes"
+}
+
+type secGuardedPages struct {
+	common.HTTP
+	common.Guard
+}
+
+var secPagesLog = &secGuardLog{}
+
+func (c secGuardedPages) NewController() Controller {
+	c.BindGuard(secLogGuard{Name: "controller", Log: secPagesLog})
+	c.BindGuard(secLogGuard{Name: "route", Log: secPagesLog}, c.RENDER_dash)
+	return c
+}
+
+func (c secGuardedPages) RENDER_dash() {}
+
+func (c secGuardedPages) RENDER_open() {}
+
+func (c secGuardedPages) RENDER_item_BY_id() {}
+
+type secServeGuarded struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secServeGuarded) NewController() Controller {
+	c.BindGuard(pgGuard{})
+	return c
+}
+
+func (c secServeGuarded) SERVE_g_ANY() string { return secServeRoot }
+
+type secServeRouteGuarded struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secServeRouteGuarded) NewController() Controller {
+	c.BindGuard(pgGuard{}, c.SERVE_r_ANY)
+	return c
+}
+
+func (c secServeRouteGuarded) SERVE_r_ANY() string { return secServeRoot }
+
+type secServeKept struct{ common.HTTP }
+
+func (c secServeKept) NewController() Controller { return c }
+
+func (c secServeKept) SERVE_k_ANY(hc *ctx.HTTPContext) string {
+	hc.ResponseWriter.Header().Set("Cache-Control", "public, max-age=60")
+	return secServeRoot
+}
+
+type secPathController struct{ common.HTTP }
+
+func (c secPathController) NewController() Controller { return c }
+
+func (c secPathController) READ_admin() string { return "admin" }
+
+func (c secPathController) READ_x() string { return "x" }
+
+func (c secPathController) READ_files_BY_name(hc *ctx.HTTPContext) string {
+	return "name=" + hc.Param().Get("name")
+}
+
+type secPathSpy struct {
+	mu    sync.Mutex
+	paths []string
+	urls  []*url.URL
+}
+
+func (s *secPathSpy) Use(r *http.Request, _ http.ResponseWriter, next ctx.Next) {
+	s.mu.Lock()
+	s.paths = append(s.paths, r.URL.Path)
+	s.urls = append(s.urls, r.URL)
+	s.mu.Unlock()
+	next()
+}
+
+func secPathApp(t *testing.T, opts *AppOptions) (*App, *secPathSpy) {
+	t.Helper()
+	spy := &secPathSpy{}
+	app := New(opts)
+	app.BindGlobalMiddlewares(spy)
+	mustCreate(t, app, NewModuleBuilder().Controllers(secPathController{}).Build())
+	return app, spy
+}
+
+type secHeaderController struct{ common.HTTP }
+
+func (c secHeaderController) NewController() Controller { return c }
+
+func (c secHeaderController) READ_h(hc *ctx.HTTPContext) string {
+	h := hc.ResponseWriter.Header()
+	h.Set("X-Value", "a\r\nSet-Cookie: a=b")
+	h["X-Name\r\nSet-Cookie: n=1"] = []string{"v"}
+	return "ok"
+}
+
+func (c secHeaderController) READ_nul(hc *ctx.HTTPContext) string {
+	h := hc.ResponseWriter.Header()
+	h.Set("X-Nul", "a\x00b\r\nSet-Cookie: a=b")
+	h["X-Nul\x00Name"] = []string{"v"}
+	return "ok"
+}
+
+func (c secHeaderController) READ_go(hc *ctx.HTTPContext) string {
+	hc.Redirect(hc.Request.URL.Query().Get("to"))
+	return ""
+}
+
+func secRawBytes(t *testing.T, addr, target string) []byte {
+	t.Helper()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err := conn.Write([]byte("GET " + target + " HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(conn)
+	return raw
+}
+
+func secRawGet(t *testing.T, addr, target string) (*http.Response, []byte) {
+	t.Helper()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err := conn.Write([]byte("GET " + target + " HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	rest, _ := io.ReadAll(reader)
+	return resp, append(body, rest...)
+}
+
+type secRedirectPage struct{ common.HTTP }
+
+func (c secRedirectPage) NewController() Controller { return c }
+
+func (c secRedirectPage) RENDER_land(hc *ctx.HTTPContext) {
+	hc.Redirect(hc.Request.URL.Query().Get("to"))
+}
+
+func (c secRedirectPage) READ_injected(redirect ctx.Redirect, hc *ctx.HTTPContext) {
+	redirect(hc.Request.URL.Query().Get("to"))
+}
+
+func (c secRedirectPage) READ_external(hc *ctx.HTTPContext) {
+	hc.RedirectExternal(hc.Request.URL.Query().Get("to"))
+}
+
+func secRedirectApp(t *testing.T) (*App, *lcRecordingLogger) {
+	t.Helper()
+	return pgNew(t, pgFiles(map[string]string{"land.html": "LAND"}), secRedirectPage{}, secHeaderController{})
+}
+
+type secStatusRedirect struct{ common.HTTP }
+
+func (c secStatusRedirect) NewController() Controller { return c }
+
+func (c secStatusRedirect) READ_found(hc *ctx.HTTPContext) {
+	target := "/x"
+	if hc.Request.URL.Query().Get("bad") != "" {
+		target = "https://evil.test"
+	}
+	hc.Status(http.StatusFound).Redirect(target)
+}
+
+type secGatedServe struct {
+	common.HTTP
+	DB lfSQL
+}
+
+func (c secGatedServe) NewController() Controller { return c }
+
+func (c secGatedServe) SERVE_gs_ANY() string { return secServeRoot }
+
+type secGuardRenderOnly struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secGuardRenderOnly) NewController() Controller {
+	c.BindGuard(pgGuard{}, c.RENDER_only)
+	return c
+}
+
+func (c secGuardRenderOnly) RENDER_only() {}
+
+func (c secGuardRenderOnly) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
+
+type secGuardBoth struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secGuardBoth) NewController() Controller {
+	c.BindGuard(pgGuard{}, c.RENDER_only, c.SUBMIT_only)
+	return c
+}
+
+func (c secGuardBoth) RENDER_only() {}
+
+func (c secGuardBoth) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
+
+type secGuardWhole struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secGuardWhole) NewController() Controller {
+	c.BindGuard(pgGuard{})
+	return c
+}
+
+func (c secGuardWhole) RENDER_only() {}
+
+func (c secGuardWhole) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
+
+type secNoGuard struct{ common.HTTP }
+
+func (c secNoGuard) NewController() Controller { return c }
+
+func (c secNoGuard) RENDER_only() {}
+
+func (c secNoGuard) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
+
+type secGuardSubmitOnly struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secGuardSubmitOnly) NewController() Controller {
+	c.BindGuard(pgGuard{}, c.SUBMIT_only)
+	return c
+}
+
+func (c secGuardSubmitOnly) RENDER_only() {}
+
+func (c secGuardSubmitOnly) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
+
+type secGuardNoSubmit struct {
+	common.HTTP
+	common.Guard
+}
+
+func (c secGuardNoSubmit) NewController() Controller {
+	c.BindGuard(pgGuard{}, c.RENDER_only)
+	return c
+}
+
+func (c secGuardNoSubmit) RENDER_only() {}
+
+var secInterceptorHits atomic.Int64
+
+type secCountInterceptor struct{}
+
+func (secCountInterceptor) Intercept(_ *ctx.HTTPContext, agg *aggregation.Aggregation) any {
+	secInterceptorHits.Add(1)
+	return agg.Pipe(agg.Transform(func(d any) any { return d }))
+}
+
+type secInterceptorRenderOnly struct {
+	common.HTTP
+	common.Interceptor
+}
+
+func (c secInterceptorRenderOnly) NewController() Controller {
+	c.BindInterceptor(secCountInterceptor{}, c.RENDER_only)
+	return c
+}
+
+func (c secInterceptorRenderOnly) RENDER_only() {}
+
+func (c secInterceptorRenderOnly) SUBMIT_only(h *ctx.HTTPContext) { h.Redirect("/done") }
+
+type secOpenPages struct{ common.HTTP }
+
+func (c secOpenPages) NewController() Controller { return c }
+
+func (c secOpenPages) RENDER_free() {}
+
+func secPagesFiles() map[string]string {
+	return map[string]string{
+		"layout.html":        `{{pageAssets}}{{template "content" .}}`,
+		"layout.css":         "LAYOUT-CSS",
+		"404.html":           `NOTFOUND`,
+		"404.css":            "NF-CSS",
+		"dash.html":          `DASH`,
+		"dash.css":           "DASH-CSS",
+		"open.html":          `OPEN`,
+		"open.css":           "OPEN-CSS",
+		"item/{id}.html":     `ITEM`,
+		"item/{id}.css":      "ITEM-CSS",
+		"free.html":          `FREE`,
+		"free.css":           "FREE-CSS",
+		"assets/css/app.css": assetCSS,
+		"public/robots.txt":  "ROBOTS",
+	}
+}
+
+func secPagesApp(t *testing.T, global *secLogGuard, controllers ...Controller) *App {
+	t.Helper()
+	secPagesLog.take()
+	if len(controllers) == 0 {
+		controllers = []Controller{secGuardedPages{}, secOpenPages{}}
+	}
+	return paApp(t, secPagesFiles(), func(app *App) {
+		app.BindGlobalMiddlewares(assetMarkMiddleware{})
+		if global != nil {
+			app.BindGlobalGuards(*global)
+		}
+	}, controllers...)
+}
+
+type secCachePages struct{ common.HTTP }
+
+func (c secCachePages) NewController() Controller { return c }
+
+func (c secCachePages) RENDER_hello() ctx.Map { return ctx.Map{"Word": "hi"} }
+
+func (c secCachePages) SUBMIT_hello() ctx.Map { return nil }
+
+func (c secCachePages) RENDER_kept(hc *ctx.HTTPContext) {
+	hc.ResponseWriter.Header().Set("Cache-Control", "public, max-age=60")
+}
+
+func (c secCachePages) READ_api() string { return "api" }
+
+type secCachedFail struct{ common.HTTP }
+
+func (c secCachedFail) NewController() Controller { return c }
+
+func (c secCachedFail) RENDER_kept(hc *ctx.HTTPContext) {
+	hc.ResponseWriter.Header().Set("Cache-Control", "public, max-age=60")
+	panic(exception.NotFoundException("gone"))
 }

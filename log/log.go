@@ -77,12 +77,20 @@ type scopeFields struct {
 	suffix []byte
 }
 
+type escapeMode uint8
+
+const (
+	escapeNone escapeMode = iota
+	escapeText
+	escapeJSON
+)
+
 type encoder struct {
-	buf      []byte
-	escapeC1 bool
-	out      slog.Handler
-	fatal    slog.Handler
-	pretty   *prettyHandler
+	buf    []byte
+	escape escapeMode
+	out    slog.Handler
+	fatal  slog.Handler
+	pretty *prettyHandler
 }
 
 func NewLog(opts *LogOptions) Logger {
@@ -136,9 +144,10 @@ func newEncoderPool(format Format, addSource bool) *sync.Pool {
 		fatalOpts := &slog.HandlerOptions{AddSource: addSource, ReplaceAttr: fatalLabel}
 		switch format {
 		case FormatText:
+			e.escape = escapeText
 			e.out, e.fatal = slog.NewTextHandler(e, plainOpts), slog.NewTextHandler(e, fatalOpts)
 		case FormatJSON:
-			e.escapeC1 = true
+			e.escape = escapeJSON
 			e.out, e.fatal = slog.NewJSONHandler(e, plainOpts), slog.NewJSONHandler(e, fatalOpts)
 		}
 		return e
@@ -153,22 +162,47 @@ func fatalLabel(groups []string, a slog.Attr) slog.Attr {
 }
 
 func (e *encoder) Write(p []byte) (int, error) {
-	if e.escapeC1 && bytes.IndexByte(p, 0xc2) >= 0 {
-		e.buf = appendEscapedC1(e.buf, p)
-	} else {
+	switch {
+	case e.escape == escapeJSON && (bytes.IndexByte(p, 0xc2) >= 0 || bytes.IndexByte(p, 0x7f) >= 0 || bytes.IndexByte(p, 0xe2) >= 0):
+		e.buf = appendEscapedJSON(e.buf, p)
+	case e.escape == escapeText && bytes.IndexByte(p, 0x7f) >= 0:
+		e.buf = appendEscapedText(e.buf, p)
+	default:
 		e.buf = append(e.buf, p...)
 	}
 	return len(p), nil
 }
 
-func appendEscapedC1(dst, p []byte) []byte {
+func appendEscapedJSON(dst, p []byte) []byte {
 	for i := 0; i < len(p); i++ {
-		if p[i] == 0xc2 && i+1 < len(p) && p[i+1] >= 0x80 && p[i+1] <= 0x9f {
+		switch {
+		case p[i] == 0x7f:
+			dst = append(dst, '\\', 'u', '0', '0', '7', 'f')
+		case p[i] == 0xc2 && i+1 < len(p) && p[i+1] >= 0x80 && p[i+1] <= 0x9f:
 			dst = append(dst, '\\', 'u', '0', '0', hexDigits[p[i+1]>>4], hexDigits[p[i+1]&0x0f])
 			i++
+		case p[i] == 0xe2 && i+2 < len(p) && isBidiControl(p[i+1], p[i+2]):
+			r := rune(p[i+1]&0x3f)<<6 | rune(p[i+2]&0x3f) | 0x2000
+			dst = append(dst, '\\', 'u', '2', '0', hexDigits[(r>>4)&0x0f], hexDigits[r&0x0f])
+			i += 2
+		default:
+			dst = append(dst, p[i])
+		}
+	}
+	return dst
+}
+
+func isBidiControl(b1, b2 byte) bool {
+	return (b1 == 0x80 && b2 >= 0xaa && b2 <= 0xae) || (b1 == 0x81 && b2 >= 0xa6 && b2 <= 0xa9)
+}
+
+func appendEscapedText(dst, p []byte) []byte {
+	for _, b := range p {
+		if b == 0x7f {
+			dst = append(dst, '\\', 'x', '7', 'f')
 			continue
 		}
-		dst = append(dst, p[i])
+		dst = append(dst, b)
 	}
 	return dst
 }

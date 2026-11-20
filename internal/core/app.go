@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"path"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,11 +96,7 @@ func New(opts *AppOptions) *App {
 		broker:    memorybroker.NewMemoryBroker(),
 		container: newContainer(),
 		logger:    cfg.logger,
-		ctxPool: sync.Pool{
-			New: func() any {
-				return newHTTPExchange()
-			},
-		},
+		ctxPool:   sync.Pool{},
 		wsCtxPool: sync.Pool{
 			New: func() any {
 				return ctx.NewWSContext()
@@ -116,6 +114,13 @@ func New(opts *AppOptions) *App {
 		isCSRFSet:          cfg.isCSRFSet,
 		isHeadersSet:       cfg.isHeadersSet,
 	}
+	app.ctxPool.New = func() any {
+		ex := newHTTPExchange()
+		ctx.HTTPSetRedirectRefused(&ex.HTTPContext, app.http.logRedirectRefused)
+		return ex
+	}
+	app.http.serveDirs, app.http.workDir = cfg.serveDirs, cfg.workDir
+	app.container.hasServeDirs = len(cfg.serveDirs) > 0
 	if cfg.render != nil {
 		app.renderDir = cfg.renderDir
 		app.http.render = cfg.render
@@ -160,6 +165,14 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, app.maxBodyBytes)
 	}
 
+	isBadPath := false
+	switch checkPath(r.URL.Path) {
+	case pathBad:
+		isBadPath = true
+	case pathUnclean:
+		r = withCleanPath(r)
+	}
+
 	ex := app.ctxPool.Get().(*httpExchange)
 	ex.writer.reset(w)
 	c := &ex.HTTPContext
@@ -167,7 +180,7 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ex.scope = tracecontext.ScopeOf(c.Request.Context())
 	requestID, traceparent := ex.scope.Headers()
 
-	if app.isWSEnabled && app.ws.isWSPath(r.URL.Path) {
+	if !isBadPath && app.isWSEnabled && app.ws.isWSPath(r.URL.Path) {
 		app.serveWS(w, ex, requestID, traceparent)
 		return
 	}
@@ -176,7 +189,11 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h[ctx.RequestID] = requestID
 	h[traceparentHeader] = traceparent
 	ex.traced = app.tracer.Enabled()
-	app.http.handleRequest(ex)
+	if isBadPath {
+		app.http.refusePath(ex)
+	} else {
+		app.http.handleRequest(ex)
+	}
 	ex.writer.runHooks(ctx.HTTPTimestamp(c))
 	if ex.traced {
 		code := ex.writer.status()
@@ -188,6 +205,55 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		app.tracer.Emit(e)
 	}
 	app.releaseCtx(ex)
+}
+
+type pathState uint8
+
+const (
+	pathClean pathState = iota
+	pathUnclean
+	pathBad
+)
+
+func checkPath(p string) pathState {
+	state := pathClean
+	if p == "" || p[0] != '/' {
+		state = pathUnclean
+	}
+	for i := 0; i < len(p); i++ {
+		b := p[i]
+		if b < 0x20 || b == 0x7f {
+			return pathBad
+		}
+		if b != '/' || state == pathUnclean {
+			continue
+		}
+		rest := p[i+1:]
+		switch {
+		case len(rest) > 0 && rest[0] == '/':
+			state = pathUnclean
+		case isDotSegment(rest, 1), isDotSegment(rest, 2) && rest[1] == '.':
+			state = pathUnclean
+		}
+	}
+	return state
+}
+
+func isDotSegment(rest string, n int) bool {
+	return len(rest) >= n && rest[0] == '.' && (len(rest) == n || rest[n] == '/')
+}
+
+func withCleanPath(r *http.Request) *http.Request {
+	u := *r.URL
+	cleaned := path.Clean("/" + u.Path)
+	if strings.HasSuffix(u.Path, "/") && cleaned != "/" {
+		cleaned += "/"
+	}
+	u.Path = cleaned
+	u.RawPath = ""
+	clone := *r
+	clone.URL = &u
+	return &clone
 }
 
 func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, traceparent []string) {

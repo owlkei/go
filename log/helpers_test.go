@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"go.owlkei.com/owlkei/internal/logpipe"
 	"go.owlkei.com/owlkei/internal/test"
@@ -723,4 +724,53 @@ func chainOf(links int) *chain {
 
 func panicProbes() map[string]any {
 	return map[string]any{"Stringer": panicStringer{}, "Error": &panicError{}, "LogValuer": panicValuer{}}
+}
+
+type forbiddenSample struct {
+	name  string
+	value string
+}
+
+func forbiddenSamples() []forbiddenSample {
+	return []forbiddenSample{
+		{"LF", "a\nb"},
+		{"CR", "a\rb"},
+		{"NUL", "a\x00b"},
+		{"ESC", "a\x1b[2Jb"},
+		{"DEL", "a\x7fb"},
+		{"NEL", "a\u0085b"},
+		{"LS", "a\u2028b"},
+		{"PS", "a\u2029b"},
+		{"RLO", "a\u202eb"},
+		{"RLI", "a\u2066b"},
+		{"invalid UTF-8", "a\xffb"},
+	}
+}
+
+func forbiddenIn(out string) string {
+	if !utf8.ValidString(out) {
+		return "invalid UTF-8"
+	}
+	for _, r := range out {
+		switch {
+		case r == '\n':
+		case r < 0x20, r == 0x7f:
+			return fmt.Sprintf("control %#x", r)
+		case r >= 0x80 && r <= 0x9f:
+			return fmt.Sprintf("C1 %#x", r)
+		case r == 0x2028 || r == 0x2029, r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
+			return fmt.Sprintf("separator or bidi %#x", r)
+		}
+	}
+	return ""
+}
+
+func logPositions(v string) map[string][]any {
+	return map[string][]any{
+		"message":      nil,
+		"key":          {v, "x"},
+		"value":        {"k", v},
+		"error text":   {"k", errors.New(v)},
+		"nested value": {"k", map[string]any{"inner": v}},
+	}
 }

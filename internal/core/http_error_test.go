@@ -686,8 +686,8 @@ func TestErrorPage_DataAndLayout(t *testing.T) {
 	if w.Body.String() != want || w.Header().Get("X-Request-Id") == "" {
 		t.Error(test.DiffMessage(w.Body.String(), want, "P18: the error page inside the root layout, with its data"))
 	}
-	if w.Header().Get("Cache-Control") != "no-cache" || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
-		t.Error(test.DiffMessage([]string{w.Header().Get("Cache-Control"), w.Header().Get("Content-Type")}, []string{"no-cache", "text/html; charset=utf-8"}, "P18, R20: headers"))
+	if w.Header().Get("Cache-Control") != "private, no-cache" || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Error(test.DiffMessage([]string{w.Header().Get("Cache-Control"), w.Header().Get("Content-Type")}, []string{"private, no-cache", "text/html; charset=utf-8"}, "P18, R20: headers"))
 	}
 
 	admin := createRequest(app, http.MethodGet, "/admin/page?fail=1")
@@ -1164,8 +1164,8 @@ func TestPageError_HTMLErrorIsNotCached(t *testing.T) {
 	req.Header.Set("Accept", "text/html")
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, req)
-	if w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "no-cache" {
-		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Cache-Control")}, []any{404, "no-cache"}, "an HTML error page, which may carry a nonce, is never stored by a shared cache"))
+	if w.Code != http.StatusNotFound || w.Header().Get("Cache-Control") != "private, no-cache" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Cache-Control")}, []any{404, "private, no-cache"}, "an HTML error page, which may carry a nonce, is never stored by a shared cache"))
 	}
 }
 
@@ -1302,5 +1302,34 @@ func TestGate_405ListsGatedMethod(t *testing.T) {
 	}
 	if got := createGet(app, "/lfsql/nothing").Code; got != http.StatusNotFound {
 		t.Error(test.DiffMessage(got, http.StatusNotFound, "G11: an unknown path under a gated prefix is 404"))
+	}
+}
+
+func TestPageError_PrivateByDefault(t *testing.T) {
+	const want = "private, no-cache"
+	check := func(note string, w *httptest.ResponseRecorder, code int) {
+		t.Helper()
+		if w.Code != code || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || w.Header().Get("Cache-Control") != want {
+			t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control")}, []any{code, "text/html", want}, "C1: "+note))
+		}
+	}
+	withTemplate, _ := pgNew(t, pgFiles(map[string]string{"fail.html": "x", "404.html": "NF {{.Code}}"}), sbFailing{})
+	check("a template error page from a page route", createRequest(withTemplate, http.MethodPost, "/fail"), http.StatusNotFound)
+	check("a template 404 chosen by Accept", createRequest(withTemplate, http.MethodGet, "/nothing", "Accept", "text/html"), http.StatusNotFound)
+
+	builtIn, _ := pgNew(t, pgFiles(map[string]string{"fail.html": "x"}), sbFailing{})
+	check("the built-in page from a page route", createRequest(builtIn, http.MethodPost, "/fail"), http.StatusNotFound)
+	check("the built-in 404 chosen by Accept", createRequest(builtIn, http.MethodGet, "/nothing", "Accept", "text/html"), http.StatusNotFound)
+
+	gate, _, _ := lfGateApp(t, map[string]string{"gated.html": "x"}, nil)
+	check("the gate's 503 page", createRequest(gate, http.MethodGet, "/gated"), http.StatusServiceUnavailable)
+
+	if w := createRequest(builtIn, http.MethodGet, "/nothing", "Accept", "application/json"); w.Header().Get("Cache-Control") != "" {
+		t.Error(test.DiffMessage(w.Header().Get("Cache-Control"), "", "C4: a JSON error keeps no Cache-Control"))
+	}
+	kept := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(map[string]string{"kept.html": "x"}), Dir: "."}})
+	mustCreate(t, kept, NewModuleBuilder().Controllers(secCachedFail{}).Build())
+	if w := createRequest(kept, http.MethodGet, "/kept"); w.Header().Get("Cache-Control") != "public, max-age=60" {
+		t.Error(test.DiffMessage(w.Header().Get("Cache-Control"), "public, max-age=60", "C1: a value set before the error is kept"))
 	}
 }

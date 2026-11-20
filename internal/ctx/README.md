@@ -244,27 +244,33 @@ c.JSON(`{"greeting":"%s"}`, "hi")
 
 ### Redirect
 
-`Redirect(url string)` answers with `http.Redirect`.
+`Redirect(path string)` sends the client to a path of this site. `RedirectExternal(url string)`
+also accepts another site.
 
 #### Rules
-- The status is the status code when it is 3xx, else `301` (`303 See Other` on a page route); the status code then holds the status sent.
-- The `Location` header is the given URL.
+- `Redirect` accepts a target that is not empty, starts with `/`, whose second byte is neither `/`
+  nor `\`, and that holds no `\` and no control character: `/`, `/bookings`, `/a?next=/b#top`.
+  `https://evil.test`, `//evil.test`, `/\evil.test`, `bookings` and `/a\r\nSet-Cookie: x=1` are refused.
+- `RedirectExternal` accepts what `Redirect` accepts, plus an absolute URL: it parses, its scheme is
+  `http` or `https` (any case), its host is not empty, it has no user info, and it holds no `\` and
+  no control character. `javascript:…`, `data:…`, `//evil.test` and `https://user@evil.test` are
+  refused.
+- A refused target never reaches the `Location` header: the response redirects to `/` with the same
+  status, and the app logs one `Warn` record `RedirectRefused` with `method`, `path`, `target` (its
+  first 256 bytes) and a `note`.
+- The status is the status code when it is 3xx, else `301` (`303 See Other` on a page route); the
+  status code then holds the status sent. An accepted target is sent with `http.Redirect`.
+- The injected `owlkei.Redirect` parameter is `Redirect`.
+- `Redirect` costs one loop over the target and no allocation; `RedirectExternal` parses an absolute
+  URL once.
 
 ```go
-c.Status(http.StatusFound).Redirect("/login")
+c.Redirect(c.Query().Get("next"))
+c.Status(http.StatusFound).RedirectExternal("https://accounts.example.com/authorize?client_id=app")
 ```
 
-`Redirect` sends the client to any URL you give it, another site included. Never pass a URL from
-the request unchecked (for example the `next` query parameter of a login page): `?next=//evil.example`
-would send your users to an attacker's page (an open redirect). Accept only local paths:
-
-```go
-next := c.Query().Get("next")
-if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
-	next = "/"
-}
-c.Status(http.StatusSeeOther).Redirect(next)
-```
+`RedirectExternal` sends the client to any `http(s)` site you give it. Pass it a URL you built,
+never one from the request unchecked.
 
 ### Body
 

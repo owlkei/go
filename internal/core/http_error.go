@@ -113,7 +113,7 @@ func writeHTMLBody(w stdHTTP.ResponseWriter, code int, body []byte) {
 	delete(h, "Etag")
 	delete(h, "Last-Modified")
 	h["Content-Type"] = textHTMLValue
-	setDefaultCacheControl(h)
+	setPrivateCacheControl(h)
 	w.WriteHeader(code)
 	_, _ = w.Write(body)
 }

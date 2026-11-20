@@ -130,3 +130,13 @@ func BenchmarkReset_WithInterceptor(b *testing.B) {
 		HTTPReset(c)
 	}
 }
+
+func BenchmarkRedirect_SameOrigin(b *testing.B) {
+	c := newTestHTTPContext()
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.ResponseWriter = newDiscardResponseWriter()
+	b.ReportAllocs()
+	for b.Loop() {
+		c.Redirect("/bookings?next=/a/b#top")
+	}
+}

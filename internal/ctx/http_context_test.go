@@ -1263,3 +1263,121 @@ func TestHTTPContext_JSONNilAppenderPointerWritesNull(t *testing.T) {
 		t.Error(test.DiffMessage(w.Body.String(), "null", "JSON of a nil pointer to a JSONAppender writes null instead of panicking with runtime text"))
 	}
 }
+
+func redirectOutcome(redirect func(*HTTPContext, string), target string, isPage bool, code int) (int, string) {
+	c := newTestHTTPContext()
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	c.ResponseWriter = w
+	if isPage {
+		HTTPSetPage(c)
+	}
+	if code != 0 {
+		c.Status(code)
+	}
+	redirect(c, target)
+	return w.Code, w.Header().Get("Location")
+}
+
+func redirectLocal(c *HTTPContext, target string) { c.Redirect(target) }
+
+func redirectExternal(c *HTTPContext, target string) { c.RedirectExternal(target) }
+
+var redirectAccepted = []string{"/", "/bookings", "/a?next=/b#top", "/a?u=https://x.test"}
+
+var redirectRefused = []string{
+	"", "https://evil.test", "//evil.test", "/\\evil.test", "\\\\evil.test", "/a\\b",
+	"javascript:alert(1)", "evil.test", "bookings", "/a\r\nSet-Cookie: x=1", "/\t/evil.test", "/a\x00b", "/a\x7fb", "/a\nb",
+}
+
+func TestHTTPContext_RedirectSameOriginAccepts(t *testing.T) {
+	for _, isPage := range []bool{false, true} {
+		for _, target := range redirectAccepted {
+			_, loc := redirectOutcome(redirectLocal, target, isPage, 0)
+			if loc != target {
+				t.Error(test.DiffMessage(loc, target, "R1: c.Redirect accepts "+strconv.Quote(target)+" (page "+strconv.FormatBool(isPage)+")"))
+			}
+		}
+	}
+}
+
+func TestHTTPContext_RedirectSameOriginRefuses(t *testing.T) {
+	for _, isPage := range []bool{false, true} {
+		want := http.StatusMovedPermanently
+		if isPage {
+			want = http.StatusSeeOther
+		}
+		for _, target := range redirectRefused {
+			code, loc := redirectOutcome(redirectLocal, target, isPage, 0)
+			if loc != "/" || code != want {
+				t.Error(test.DiffMessage([]any{code, loc}, []any{want, "/"}, "R1, R4: c.Redirect refuses "+strconv.Quote(target)+" and goes to / (page "+strconv.FormatBool(isPage)+")"))
+			}
+		}
+	}
+}
+
+func TestHTTPContext_RedirectRefusalKeepsStatus(t *testing.T) {
+	code, loc := redirectOutcome(redirectLocal, "https://evil.test", false, http.StatusFound)
+	if code != http.StatusFound || loc != "/" {
+		t.Error(test.DiffMessage([]any{code, loc}, []any{http.StatusFound, "/"}, "R4: a refused target redirects to / with the same status"))
+	}
+}
+
+func TestHTTPContext_RedirectExternalAccepts(t *testing.T) {
+	targets := append([]string{"https://example.com", "http://example.com/cb?x=1&y=2#f", "HTTPS://Example.com/Path", "https://example.com:8443/a"}, redirectAccepted...)
+	for _, target := range targets {
+		_, loc := redirectOutcome(redirectExternal, target, false, 0)
+		if loc != target {
+			t.Error(test.DiffMessage(loc, target, "R2: c.RedirectExternal accepts "+strconv.Quote(target)))
+		}
+	}
+}
+
+func TestHTTPContext_RedirectExternalRefuses(t *testing.T) {
+	targets := []string{
+		"javascript:alert(1)", "data:text/html,x", "//evil.test", "https://user@evil.test", "https://user:pw@evil.test", "https:///path",
+		"ftp://example.com", "", "evil.test", "bookings", "/\\evil.test", "https://example.com/a\\b", "https://example.com/\r\nSet-Cookie: x=1", "https://exa\x00mple.com",
+	}
+	for _, target := range targets {
+		code, loc := redirectOutcome(redirectExternal, target, false, 0)
+		if loc != "/" || code != http.StatusMovedPermanently {
+			t.Error(test.DiffMessage([]any{code, loc}, []any{http.StatusMovedPermanently, "/"}, "R2, R4: c.RedirectExternal refuses "+strconv.Quote(target)))
+		}
+	}
+}
+
+func TestHTTPContext_RedirectStatus(t *testing.T) {
+	for name, row := range map[string]struct {
+		isPage bool
+		code   int
+		want   int
+	}{
+		"page":         {true, 0, http.StatusSeeOther},
+		"api":          {false, 0, http.StatusMovedPermanently},
+		"explicit 302": {true, http.StatusFound, http.StatusFound},
+		"explicit 307": {false, http.StatusTemporaryRedirect, http.StatusTemporaryRedirect},
+		"explicit 200": {true, http.StatusOK, http.StatusSeeOther},
+	} {
+		for label, redirect := range map[string]func(*HTTPContext, string){"Redirect": redirectLocal, "RedirectExternal": redirectExternal} {
+			code, loc := redirectOutcome(redirect, "/next", row.isPage, row.code)
+			if code != row.want || loc != "/next" {
+				t.Error(test.DiffMessage([]any{code, loc}, []any{row.want, "/next"}, "R3: "+label+" status, "+name))
+			}
+		}
+	}
+}
+
+func TestHTTPContext_RedirectNoHeaderInjection(t *testing.T) {
+	for _, target := range []string{"/a\r\nSet-Cookie: x=1", "https://example.com/\r\nSet-Cookie: x=1"} {
+		for _, redirect := range []func(*HTTPContext, string){redirectLocal, redirectExternal} {
+			c := newTestHTTPContext()
+			c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			w := httptest.NewRecorder()
+			c.ResponseWriter = w
+			redirect(c, target)
+			if w.Header().Get("Set-Cookie") != "" || strings.ContainsAny(w.Header().Get("Location"), "\r\n") {
+				t.Error(test.DiffMessage(w.Header(), "no injected header", "R4, H1: a CR LF target never reaches a header"))
+			}
+		}
+	}
+}

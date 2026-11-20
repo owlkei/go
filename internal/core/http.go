@@ -2,11 +2,9 @@ package core
 
 import (
 	stdHTTP "net/http"
-	"os"
-	"path"
-	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.owlkei.com/owlkei/exception"
@@ -15,7 +13,6 @@ import (
 	"go.owlkei.com/owlkei/internal/ctx"
 	"go.owlkei.com/owlkei/internal/render"
 	"go.owlkei.com/owlkei/internal/routing"
-	"go.owlkei.com/owlkei/internal/str"
 	"go.owlkei.com/owlkei/internal/trace"
 	"go.owlkei.com/owlkei/internal/tracecontext"
 	"go.owlkei.com/owlkei/internal/versioning"
@@ -32,7 +29,8 @@ var (
 	notFoundBody         = notFoundException.AppendJSON(nil)
 	methodNotAllowedBody = methodNotAllowedException.AppendJSON(nil)
 	goneBody             = goneException.AppendJSON(nil)
-	invalidURLBody       = exception.BadRequestException("Invalid URL path").AppendJSON(nil)
+	invalidURLException  = exception.BadRequestException("Invalid URL path")
+	invalidURLBody       = invalidURLException.AppendJSON(nil)
 
 	accessDeniedException = exception.ForbiddenException("Access denied")
 
@@ -81,8 +79,11 @@ type HTTP struct {
 	stacks *stackSampler
 	render *render.Engine
 
+	serveDirs          []string
+	workDir            string
 	routes             []*httpRoute
 	routeByPattern     map[string]*httpRoute
+	routeByTemplate    map[string]*httpRoute
 	assetByName        map[string]assetEntry
 	stages             []httpMiddleware
 	globalMiddlewares  []httpMiddleware
@@ -102,11 +103,14 @@ type httpRoute struct {
 	public       *publicEntry
 	template     string
 	pageRoute    string
+	name         string
 	isServe      bool
 	isPage       bool
 	isAsset      bool
 	serveIndex   int
 	gateIndex    int
+
+	isAttachmentLogged atomic.Bool
 }
 
 type httpGuard struct {
@@ -159,8 +163,9 @@ func (ex *httpExchange) reset() {
 
 func newHTTP() *HTTP {
 	return &HTTP{
-		route:          routing.NewRouter(),
-		routeByPattern: make(map[string]*httpRoute),
+		route:           routing.NewRouter(),
+		routeByPattern:  make(map[string]*httpRoute),
+		routeByTemplate: make(map[string]*httpRoute),
 	}
 }
 
@@ -180,6 +185,15 @@ func (http *HTTP) addRoute(mainHandler common.HTTPLayer, plan *httpHandlerPlan) 
 	route.isPage = mainHandler.IsPage
 	route.template = mainHandler.Template
 	route.pageRoute = strings.Trim(mainHandler.Route, "/")
+	route.name = mainHandler.MainHandlerName
+	if mainHandler.ControllerName != "" {
+		route.name = mainHandler.ControllerName + "." + mainHandler.MainHandlerName
+	}
+	if route.isPage && common.PageOperation(mainHandler.MainHandlerName) == common.PageRender {
+		if _, ok := http.routeByTemplate[route.template]; !ok {
+			http.routeByTemplate[route.template] = route
+		}
+	}
 	route.serveIndex = 0
 	if r := mainHandler.Route; route.isServe && len(r) >= 2 && r[len(r)-2:] == "*/" {
 		route.serveIndex = strings.Count(r, "/") - 1
@@ -205,6 +219,9 @@ func (http *HTTP) addGlobalGuard(name string, canActivate common.HTTPCanActivate
 	guard := httpGuard{canActivate: canActivate, name: name}
 	http.globalGuards = append(http.globalGuards, guard)
 	for _, route := range http.routes {
+		if route.isAsset || route.public != nil {
+			continue
+		}
 		route.guards = append(route.guards, guard)
 	}
 }
@@ -300,6 +317,18 @@ func (http *HTTP) handleRequest(ex *httpExchange) {
 		return
 	}
 	http.serveRoute(ex, route)
+}
+
+func (http *HTTP) refusePath(ex *httpExchange) {
+	defer http.recoverRequest(ex)
+	http.writeEarlyError(ex, &invalidURLException, invalidURLBody)
+}
+
+func (http *HTTP) logRedirectRefused(c *ctx.HTTPContext, target, note string) {
+	if http.logger == nil {
+		return
+	}
+	http.logger.From(c.Context()).Warn("RedirectRefused", "method", c.Method, "path", c.URL.Path, "target", cut(target, maxLoggedName), "note", note)
 }
 
 func (http *HTTP) runHandshake(ex *httpExchange, stages []httpMiddleware, ws *WS) (isAccepted bool) {
@@ -538,103 +567,7 @@ func (http *HTTP) writeResult(ex *httpExchange, route *httpRoute, result reflect
 	if result.IsValid() {
 		dir = result.Interface()
 	}
-	serveContent(ex, route.serveIndex, dir)
-}
-
-func serveContent(ex *httpExchange, serveIndex int, result any) {
-	dir, ok := result.(string)
-	if !ok {
-		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-		return
-	}
-
-	r := ex.Request
-	if serveIndex != 0 {
-		root := path.Clean(dir)
-		segments := strings.Split(str.RemoveDup(r.URL.Path, '/'), "/")
-		dir = root
-		if serveIndex < len(segments) {
-			dir = path.Join(root, strings.Join(segments[serveIndex:], "/"))
-		}
-		rel, ok := relativeToRoot(root, dir)
-		if !ok {
-			serveError(ex, stdHTTP.StatusBadRequest, invalidURLBody)
-			return
-		}
-		serveFromRoot(ex, root, rel)
-		return
-	}
-
-	info, err := os.Stat(dir)
-	if err != nil {
-		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-		return
-	}
-	if info.IsDir() {
-		index := filepath.Join(dir, "index.html")
-		if indexInfo, err := os.Stat(index); err != nil || indexInfo.IsDir() {
-			serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/") {
-			dir = index
-		}
-	}
-	setDefaultCacheControl(ex.writer.Header())
-	stdHTTP.ServeFile(&ex.writer, r, dir)
-}
-
-func relativeToRoot(root, dir string) (string, bool) {
-	if root == "." {
-		if dir == ".." || strings.HasPrefix(dir, "../") {
-			return "", false
-		}
-		if dir == "." {
-			return "", true
-		}
-		return dir, true
-	}
-	if dir == root {
-		return "", true
-	}
-	if !strings.HasPrefix(dir, root+"/") {
-		return "", false
-	}
-	return dir[len(root)+1:], true
-}
-
-func serveFromRoot(ex *httpExchange, rootDir, rel string) {
-	if hasHiddenSegment(rel) {
-		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-		return
-	}
-	root, err := os.OpenRoot(rootDir)
-	if err != nil {
-		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-		return
-	}
-	defer func() { _ = root.Close() }()
-	name := rel
-	if name == "" {
-		name = "."
-	}
-	info, err := root.Stat(name)
-	if err != nil {
-		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-		return
-	}
-	if info.IsDir() {
-		index := path.Join(name, "index.html")
-		if indexInfo, err := root.Stat(index); err != nil || indexInfo.IsDir() {
-			serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
-			return
-		}
-		if strings.HasSuffix(ex.Request.URL.Path, "/") {
-			name = index
-		}
-	}
-	setDefaultCacheControl(ex.writer.Header())
-	stdHTTP.ServeFileFS(&ex.writer, ex.Request, root.FS(), name)
+	http.serveContent(ex, route, dir)
 }
 
 func serveError(ex *httpExchange, code int, body []byte) {
@@ -642,9 +575,9 @@ func serveError(ex *httpExchange, code int, body []byte) {
 	writeJSONError(&ex.writer, code, body)
 }
 
-func setDefaultCacheControl(h stdHTTP.Header) {
+func setPrivateCacheControl(h stdHTTP.Header) {
 	if _, ok := h[cacheControlHeader]; !ok {
-		h[cacheControlHeader] = noCacheValue
+		h[cacheControlHeader] = privateNoCacheValue
 	}
 }
 

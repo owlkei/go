@@ -1421,3 +1421,63 @@ func TestLog_BuiltInLoggerAfterRecoveryStillWorks(t *testing.T) {
 		t.Error(test.DiffMessage(buf.String(), "a normal line", "V6: the logger keeps working after a recovered panic"))
 	}
 }
+
+func TestLog_EscapesControlCharacters(t *testing.T) {
+	for _, format := range allFormats {
+		for _, sample := range forbiddenSamples() {
+			for position, args := range logPositions(sample.value) {
+				logger, buf := newTestLog(format, LogOptions{})
+				msg := "m"
+				if position == "message" {
+					msg = sample.value
+				}
+				logger.Info(msg, args...)
+				out := plain(buf.String())
+				where := formatName(format) + ", " + sample.name + ", " + position
+
+				if bad := forbiddenIn(out); bad != "" {
+					t.Error(test.DiffMessage(bad, "no raw forbidden character", "L1, L2: "+where+": "+strconv.Quote(out)))
+				}
+				lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+				if format == FormatPretty {
+					for i, line := range lines[2:] {
+						if !strings.HasPrefix(line, "  ") {
+							t.Error(test.DiffMessage(line, "a line that starts with the tree prefix", "L1: "+where+": continuation line "+strconv.Itoa(i)))
+						}
+					}
+					continue
+				}
+				if len(lines) != 1 || !strings.HasSuffix(out, "\n") {
+					t.Error(test.DiffMessage(len(lines), 1, "L1: one record per write: "+where+": "+strconv.Quote(out)))
+				}
+			}
+		}
+	}
+}
+
+func TestLog_ForgedRecord(t *testing.T) {
+	jsonLogger, jsonBuf := newTestLog(FormatJSON, LogOptions{})
+	forged := "x\n{\"level\":\"ERROR\",\"msg\":\"forged\"}"
+	jsonLogger.Info("real", "k", forged)
+	if strings.Count(jsonBuf.String(), "\n") != 1 {
+		t.Error(test.DiffMessage(jsonBuf.String(), "one line", "L1: a JSON value cannot start a second record"))
+	}
+	line := jsonLine(t, jsonBuf.String())
+	if line["level"] != "INFO" || line["msg"] != "real" || line["k"] != forged {
+		t.Error(test.DiffMessage(line, "one INFO record holding the value as text", "L1: the forged JSON parses back as a value"))
+	}
+
+	textLogger, textBuf := newTestLog(FormatText, LogOptions{})
+	textLogger.Info("real", "k", "x\nlevel=ERROR msg=forged")
+	if strings.Count(textBuf.String(), "\n") != 1 || strings.Contains(textBuf.String(), "\nlevel=ERROR") {
+		t.Error(test.DiffMessage(textBuf.String(), "one line", "L1: a text value cannot start a second record"))
+	}
+
+	prettyLogger, prettyBuf := newTestLog(FormatPretty, LogOptions{})
+	prettyLogger.Info("real", "k", "x\nlevel=ERROR msg=forged")
+	for i, line := range strings.Split(strings.TrimSuffix(plain(prettyBuf.String()), "\n"), "\n")[2:] {
+		if !strings.HasPrefix(line, "  ") {
+			t.Error(test.DiffMessage(line, "a line that starts with the tree prefix", "L1: Pretty continuation line "+strconv.Itoa(i)))
+		}
+	}
+}

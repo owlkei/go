@@ -96,7 +96,7 @@ type TLSOptions struct {
 type HTTPOptions struct {
 	// MaxBodyBytes caps every request body; a larger body fails to read with 413. Negative: no limit. Default: 10MiB.
 	MaxBodyBytes ByteSize
-	// ServeDirs lists the directories a SERVE_ handler may return. Default: empty (enforced by roadmap 0012).
+	// ServeDirs lists the directories SERVE_ handlers may return. A SERVE_ route needs at least one. Default: empty.
 	ServeDirs []string
 }
 
@@ -211,6 +211,7 @@ type appConfig struct {
 	isH2C           bool
 	maxBodyBytes    int64
 	serveDirs       []string
+	workDir         string
 	render          *render.Engine
 	renderDir       string
 	ws              *WSOptions
@@ -362,10 +363,7 @@ func (cfg *appConfig) loadHTTP(h *HTTPOptions) {
 	case h.MaxBodyBytes > 0:
 		cfg.maxBodyBytes = int64(h.MaxBodyBytes)
 	}
-	if slices.Contains(h.ServeDirs, "") {
-		failOption("HTTP.ServeDirs", "HTTP.ServeDirs has an empty entry")
-	}
-	cfg.serveDirs = slices.Clone(h.ServeDirs)
+	cfg.serveDirs, cfg.workDir = loadServeDirs(h.ServeDirs)
 }
 
 func (cfg *appConfig) loadRender(r *RenderOptions) {
@@ -384,6 +382,7 @@ func (cfg *appConfig) loadRender(r *RenderOptions) {
 	var fsys fs.FS
 	fsys, cfg.renderDir = renderFS(r)
 	cfg.render = render.New(fsys, r.IsReload)
+	cfg.render.SetNamePolicy(isServableName)
 }
 
 func (cfg *appConfig) loadVersioning(v *versioning.Options) {

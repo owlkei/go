@@ -141,8 +141,8 @@ func TestPage_Headers(t *testing.T) {
 	if got, want := w.Header().Get("Content-Length"), strconv.Itoa(len("héllo")); got != want {
 		t.Error(test.DiffMessage(got, want, "R5: Content-Length"))
 	}
-	if got := w.Header().Get("Cache-Control"); got != "no-cache" {
-		t.Error(test.DiffMessage(got, "no-cache", "R5: Cache-Control default"))
+	if got := w.Header().Get("Cache-Control"); got != "private, no-cache" {
+		t.Error(test.DiffMessage(got, "private, no-cache", "R5: Cache-Control default"))
 	}
 }
 
@@ -882,7 +882,7 @@ func TestPageAssets_RouteWithoutAssetsDir(t *testing.T) {
 			t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Allow")}, []any{http.StatusNotFound, ""}, "R39: without an assets directory or page files there is no route: "+method))
 		}
 	}
-	free := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(map[string]string{"bookings/new.html": "NEW", "bookings/{id}.html": "ONE"}), Dir: "."}})
+	free := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{"testdata"}}, Render: &RenderOptions{FS: pgFiles(map[string]string{"bookings/new.html": "NEW", "bookings/{id}.html": "ONE"}), Dir: "."}})
 	if text, panicked := createPanicText(func() {
 		free.Create(NewModuleBuilder().Controllers(paBookings{}, assetUserServe{}).Build())
 	}); panicked {
@@ -891,7 +891,7 @@ func TestPageAssets_RouteWithoutAssetsDir(t *testing.T) {
 }
 
 func TestPageAssets_RouteConflictWithUserAssetsRoute(t *testing.T) {
-	app := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(paFiles()), Dir: "."}})
+	app := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{"testdata"}}, Render: &RenderOptions{FS: pgFiles(paFiles()), Dir: "."}})
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Controllers(paBookings{}, assetUserServe{}).Build())
 	})
@@ -901,16 +901,17 @@ func TestPageAssets_RouteConflictWithUserAssetsRoute(t *testing.T) {
 }
 
 func TestPageAssets_GlobalLayersApply(t *testing.T) {
+	log := &secGuardLog{}
 	app := paApp(t, paFiles(), func(app *App) {
 		app.BindGlobalMiddlewares(assetMarkMiddleware{})
-		app.BindGlobalGuards(assetDenyGuard{})
+		app.BindGlobalGuards(secLogGuard{Name: "global", Log: log, Mode: "deny"})
 	})
 	w := createGet(app, "/assets/_pages/layout.css")
-	if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), paLayoutCSS) || w.Header().Get("X-Global-Middleware") != "ran" {
-		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "R40: a global guard covers the page files too"))
+	if w.Code != http.StatusOK || w.Body.String() != paLayoutCSS || w.Header().Get("X-Global-Middleware") != "ran" {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "G5: a layout's file is shared, no guard runs; the middleware still does"))
 	}
-	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Error(test.DiffMessage(ct, "application/json", "R17: the refusal is JSON"))
+	if len(log.names) != 0 {
+		t.Error(test.DiffMessage(log.names, []string(nil), "G5: no guard ran for a shared page file"))
 	}
 }
 
@@ -1602,8 +1603,8 @@ func TestSubmit_Rerenders422(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Error(test.DiffMessage(ct, "text/html; charset=utf-8", "P14: Content-Type"))
 	}
-	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
-		t.Error(test.DiffMessage(cc, "no-cache", "P14: Cache-Control"))
+	if cc := w.Header().Get("Cache-Control"); cc != "private, no-cache" {
+		t.Error(test.DiffMessage(cc, "private, no-cache", "P14: Cache-Control"))
 	}
 	if strings.Contains(w.Body.String(), "<script>") {
 		t.Error(test.DiffMessage(w.Body.String(), "no raw script", "R26: submitted values are escaped"))
@@ -1653,14 +1654,106 @@ func TestSubmit_StatusOverride(t *testing.T) {
 	}
 }
 
-func TestSubmit_GuardBoundToRenderOnly(t *testing.T) {
-	app, _ := pgNew(t, pgFiles(map[string]string{"only.html": "PAGE"}), sbGuardedRenderOnly{})
-
-	if w := createGet(app, "/only"); w.Code != http.StatusForbidden {
-		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "P16: the guard bound to RENDER_only covers the GET"))
+func secSubmitApp(t *testing.T, global bool, c Controller) (*App, string) {
+	t.Helper()
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(map[string]string{"only.html": "PAGE"}), Dir: "."}})
+	if global {
+		app.BindGlobalGuards(pgGuard{})
 	}
-	if w := createRequest(app, http.MethodPost, "/only"); w.Code != http.StatusSeeOther {
-		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "P16: the guard does not run on the POST"))
+	text, _ := createPanicText(func() { app.Create(NewModuleBuilder().Controllers(c).Build()) })
+	return app, text
+}
+
+func TestSubmit_GuardOnRenderOnlyPanics(t *testing.T) {
+	_, text := secSubmitApp(t, false, secGuardRenderOnly{})
+	for _, want := range []string{
+		"invalid guard: core.pgGuard is bound to ",
+		".RENDER_only but not to ",
+		".SUBMIT_only, which posts to the same page: bind it to both, or to the controller",
+	} {
+		if !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "G1: the panic text"))
+		}
+	}
+	if strings.Count(text, "secGuardRenderOnly") != 2 {
+		t.Error(test.DiffMessage(text, "the controller named twice", "G1: <Controller>.RENDER_<x> and <Controller>.SUBMIT_<x>"))
+	}
+}
+
+func TestSubmit_GuardOnBothOK(t *testing.T) {
+	app, text := secSubmitApp(t, false, secGuardBoth{})
+	if text != "" {
+		t.Fatal(test.DiffMessage(text, "no panic", "G1: a guard bound to both handlers"))
+	}
+	if w := createGet(app, "/only"); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "G1: the GET is guarded"))
+	}
+	if w := createRequest(app, http.MethodPost, "/only"); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "G1: the POST is guarded"))
+	}
+	if w := createRequest(app, http.MethodPost, "/only", "X-Allow", "yes"); w.Code != http.StatusSeeOther {
+		t.Error(test.DiffMessage(w.Code, http.StatusSeeOther, "G1: and lets it through when it allows"))
+	}
+}
+
+func TestSubmit_GuardOnControllerOK(t *testing.T) {
+	app, text := secSubmitApp(t, false, secGuardWhole{})
+	if text != "" {
+		t.Fatal(test.DiffMessage(text, "no panic", "G1: a controller-wide guard"))
+	}
+	if w := createRequest(app, http.MethodPost, "/only"); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "G1: the controller-wide guard covers the POST"))
+	}
+}
+
+func TestSubmit_GlobalGuardOK(t *testing.T) {
+	app, text := secSubmitApp(t, true, secNoGuard{})
+	if text != "" {
+		t.Fatal(test.DiffMessage(text, "no panic", "G1: a global guard satisfies the rule"))
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		if w := createRequest(app, method, "/only"); w.Code != http.StatusForbidden {
+			t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "G1: the global guard covers "+method))
+		}
+	}
+}
+
+func TestSubmit_GuardOnSubmitOnlyOK(t *testing.T) {
+	app, text := secSubmitApp(t, false, secGuardSubmitOnly{})
+	if text != "" {
+		t.Fatal(test.DiffMessage(text, "no panic", "G3: a guard on the SUBMIT_ only needs nothing on the RENDER_"))
+	}
+	if w := createGet(app, "/only"); w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "G3: the GET is open"))
+	}
+	if w := createRequest(app, http.MethodPost, "/only"); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "G3: the POST is guarded"))
+	}
+}
+
+func TestSubmit_RenderWithoutSubmitOK(t *testing.T) {
+	app, text := secSubmitApp(t, false, secGuardNoSubmit{})
+	if text != "" {
+		t.Fatal(test.DiffMessage(text, "no panic", "G1: a guard on a RENDER_ without a SUBMIT_"))
+	}
+	if w := createGet(app, "/only"); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, http.StatusForbidden, "G1: the guard covers the GET"))
+	}
+}
+
+func TestSubmit_InterceptorOnRenderOnlyStaysGET(t *testing.T) {
+	secInterceptorHits.Store(0)
+	app, text := secSubmitApp(t, false, secInterceptorRenderOnly{})
+	if text != "" {
+		t.Fatal(test.DiffMessage(text, "no panic", "G2: an interceptor bound to a RENDER_ does not panic"))
+	}
+	createGet(app, "/only")
+	if got := secInterceptorHits.Load(); got != 1 {
+		t.Error(test.DiffMessage(got, int64(1), "G2: the interceptor runs on the GET"))
+	}
+	createRequest(app, http.MethodPost, "/only")
+	if got := secInterceptorHits.Load(); got != 1 {
+		t.Error(test.DiffMessage(got, int64(1), "G2: the interceptor does not run on the POST"))
 	}
 }
 
@@ -1967,5 +2060,21 @@ func TestPage_MultiParam_ErrorPage(t *testing.T) {
 	w := createGet(app, "/orgs/acme/members/7")
 	if w.Code != http.StatusNotFound || w.Body.String() != `<root>E404 No member 7 in acme</root>` {
 		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusNotFound, `<root>E404 No member 7 in acme</root>`}, "MP7: a multi-parameter page's NotFoundException renders 404.html in the root layout"))
+	}
+}
+
+func TestPage_PrivateByDefault(t *testing.T) {
+	app, _ := pgNew(t, pgFiles(map[string]string{"hello.html": "HELLO {{.Word}}", "kept.html": "KEPT"}), secCachePages{})
+	if w := createGet(app, "/hello"); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "private, no-cache" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Cache-Control")}, []any{http.StatusOK, "private, no-cache"}, "C1: a rendered page is private"))
+	}
+	if w := createRequest(app, http.MethodPost, "/hello"); w.Code != http.StatusUnprocessableEntity || w.Header().Get("Cache-Control") != "private, no-cache" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Cache-Control")}, []any{http.StatusUnprocessableEntity, "private, no-cache"}, "C1: a SUBMIT_ that renders is private"))
+	}
+	if w := createGet(app, "/kept"); w.Header().Get("Cache-Control") != "public, max-age=60" {
+		t.Error(test.DiffMessage(w.Header().Get("Cache-Control"), "public, max-age=60", "C1: a value set by the handler is kept"))
+	}
+	if w := createGet(app, "/api"); w.Header().Get("Cache-Control") != "" {
+		t.Error(test.DiffMessage(w.Header().Get("Cache-Control"), "", "C1: an API route is not touched"))
 	}
 }

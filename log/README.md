@@ -357,7 +357,8 @@ Rules use the syntax of the [`pattern`](../internal/pattern/README.md) package: 
 - Nesting is followed 16 levels deep; a value below that is written `[MAX_DEPTH]`. After 1,000 values inside one argument, each remaining value is written `[TRUNCATED]`. A value that contains itself ends.
 - A panic raised by a value's own `String`, `Error` or `LogValue` is recovered: the call writes one line with the original level and message and a `log_error` pair with the recovered value, and the logger keeps working.
 - In Pretty, every control character of the message and of the keys is written escaped (`\n`, `\r`, `\t`, `\x1b`, the C1 controls U+0080 to U+009F; the separators U+2028 and U+2029 and the bidirectional controls U+202A to U+202E and U+2066 to U+2069 as `\u2028`), so a value cannot forge a line, reorder the text on screen or send terminal escape codes. In string values a line feed starts a new, indented line (a stack trace stays readable); everything else is escaped.
-- JSON and Text rely on slog's escaping; JSON also escapes the C1 controls.
+- JSON and Text rely on slog's escaping, plus: JSON also writes `DEL` (`\u007f`), the C1 controls and the bidirectional controls (U+202A to U+202E, U+2066 to U+2069) escaped; Text writes `DEL` as `\x7f`. In every format one call writes one record: no message, key, value, error text or nested value holds a raw control character, line separator or bidirectional control.
+- A logger given in `AppOptions.Logger` that is not Owlkei's receives the raw arguments: its escaping is its own.
 - A logger is immutable and safe for concurrent use; it opens no file. A record longer than 64 KiB is cut (see [Output pipeline](#output-pipeline)).
 
 ## Output pipeline

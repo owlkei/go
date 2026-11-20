@@ -220,7 +220,12 @@ Design 0019 changed the route DSL; names that used to register a path now stop `
 - **A path no name can spell** goes through `instance.Path("/oauth2/token", instance.CREATE_token)`,
   never an escape inside the name (`__` is not an escape: `BY_user__id` is the parameter `user__id`).
 - **Pages are `RENDER_` / `SUBMIT_`**, not a `owlkei.Page` embed returning `owlkei.View` (both
-  removed). A guard bound to `RENDER_x` only does not cover `SUBMIT_x`.
+  removed). A guard bound to `RENDER_x` only stops `Create()` when the controller has `SUBMIT_x`:
+  bind it to both, or controller-wide.
+- **`SERVE_` needs `HTTP.ServeDirs`**, and never the working directory (`return "."` is refused).
+  Uploaded `.html` / `.svg` / `.js` go out as attachments; set `Content-Disposition: inline` only
+  for your own files. No guard runs for `public/` and shared assets: a protected file belongs
+  behind a guarded `SERVE_` route.
 
 ---
 
@@ -648,8 +653,9 @@ Each is documented once in the package README named; generated code must respect
 - **Header value slices are shared** between responses (`helmet`, `cors`, `compress`, static
   `Cache-Control`, the scope's `X-Request-Id` / `Traceparent`): change headers with `Set` / `Add` /
   `Del` or a new slice, never `h[k][0] = …` (`internal/core/README.md` › Response writer).
-- **`c.Redirect` takes any URL**: validate a URL from the request (local paths only) before
-  redirecting (`internal/ctx/README.md` › Redirect).
+- **`c.Redirect` takes a path of this site only** (a refused target goes to `/` and logs
+  `RedirectRefused`); `c.RedirectExternal` takes any `http(s)` URL, so never pass one from the
+  request unchecked (`internal/ctx/README.md` › Redirect).
 - **`c.JSON` / `c.Text` format arguments are not escaped**: pass request data in a `owlkei.Map` or a
   struct, never as a format argument or the format string (`internal/ctx/README.md` › JSON).
 - **`owlkei.TraceTransport` sends `traceparent` to every host**, and an incoming valid `traceparent`

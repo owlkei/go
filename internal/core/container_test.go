@@ -1592,3 +1592,37 @@ func TestCreate_AllNotLastPanics(t *testing.T) {
 		t.Error(test.DiffMessage(text, want, "B19: Create stops on ALL before the last word"))
 	}
 }
+
+func TestCreate_ServeNeedsServeDirs(t *testing.T) {
+	env := secPrepare(t)
+	app := New(nil)
+	text, panicked := createPanicText(func() { app.Create(NewModuleBuilder().Controllers(secFixedServe{}).Build()) })
+	for _, want := range []string{"invalid app: ", "SERVE_s_ANY serves files, but HTTP.ServeDirs is empty: list the directories it may return"} {
+		if !panicked || !strings.Contains(text, want) {
+			t.Error(test.DiffMessage(text, want, "D2: a SERVE_ route with empty ServeDirs panics at Create"))
+		}
+	}
+	if !strings.Contains(text, "secFixedServe") {
+		t.Error(test.DiffMessage(text, "the controller name", "D2: the text names the controller"))
+	}
+
+	ok := New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{env.serve}}})
+	if text, panicked := createPanicText(func() { ok.Create(NewModuleBuilder().Controllers(secFixedServe{}).Build()) }); panicked {
+		t.Error(test.DiffMessage(text, "no panic", "D2: with an entry it does not panic"))
+	}
+
+	noRoutes := New(nil)
+	if text, panicked := createPanicText(func() { noRoutes.Create(NewModuleBuilder().Controllers(secPathController{}).Build()) }); panicked {
+		t.Error(test.DiffMessage(text, "no panic", "D2: an app without SERVE_ routes needs no ServeDirs"))
+	}
+
+	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
+	release := lfHold(sql)
+	async := New(nil)
+	lfRelease(t, async, release)
+	gated := lfNamed("gated", NewModuleBuilder().AsyncImports(sql).Controllers(secGatedServe{}))
+	text = lfCreatePanic(t, async, lfNamed("root", NewModuleBuilder().Imports(gated)))
+	if !strings.Contains(text, "SERVE_gs_ANY serves files, but HTTP.ServeDirs is empty: list the directories it may return") {
+		t.Error(test.DiffMessage(text, "the D2 text", "D2: the routes of an async module are checked at Create too"))
+	}
+}

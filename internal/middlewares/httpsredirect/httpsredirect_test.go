@@ -92,6 +92,12 @@ func TestHTTPSRedirect_NoOpenRedirect(t *testing.T) {
 		r := plainRequest(http.MethodGet, "example.com", target)
 		w := serve(app, r)
 		location := w.Header().Get("Location")
+		if strings.Contains(r.URL.Path, "\r") || strings.Contains(r.URL.Path, "\n") || strings.Contains(r.URL.Path, "\t") {
+			if w.Code != http.StatusBadRequest || location != "" {
+				t.Error(test.DiffMessage([]any{w.Code, location}, []any{http.StatusBadRequest, ""}, "R3, N2: a control character answers 400 before the stage runs: "+target))
+			}
+			continue
+		}
 		if w.Code != http.StatusPermanentRedirect {
 			t.Error(test.DiffMessage(w.Code, http.StatusPermanentRedirect, "R3: "+target))
 			continue

@@ -51,6 +51,7 @@ type container struct {
 
 	render              *render.Engine
 	isVersioningEnabled bool
+	hasServeDirs        bool
 
 	moduleLifecycle
 }
@@ -417,7 +418,9 @@ func (c *container) bindHTTPController(controller Controller) {
 			planByName[name] = plan
 		}
 		c.out.httpPlanByPattern[pattern] = plan
-		c.out.httpMainHandlers = append(c.out.httpMainHandlers, httpMainHandlerOf(controllerPath, pattern, name, handler, templateByPattern[pattern]))
+		layer := httpMainHandlerOf(controllerPath, pattern, name, handler, templateByPattern[pattern])
+		layer.ControllerName = controllerType.Name()
+		c.out.httpMainHandlers = append(c.out.httpMainHandlers, layer)
 	}
 }
 
@@ -451,6 +454,9 @@ func (c *container) bindHTTPRoutes(controller Controller) (common.HTTP, map[stri
 			continue
 		}
 		isPage := common.PageOperation(methodName) != ""
+		if method, _, _ := routing.PatternToMethodRouteVersion(pattern); method == routing.SERVE && !c.hasServeDirs {
+			panic(errors.New(color.FmtRed("invalid app: %v.%v serves files, but HTTP.ServeDirs is empty: list the directories it may return", controllerType.Name(), methodName)))
+		}
 		if isPage && !c.isLateBinding {
 			c.checkPageRoute(controllerType, methodName, pattern)
 		}
