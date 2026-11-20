@@ -1,6 +1,6 @@
 # 0012: Security
 
-Status: Draft (paused 2026-11-19; runs after roadmap 0013, App options, which took the steps that change the configuration API)
+Status: Running
 
 ## Goal
 With the configuration API final (roadmap 0013), the framework is audited and hardened where the API
@@ -26,7 +26,7 @@ SSR changes.
 | 1c | Static files fixes: (a) the directories a `SERVE_` handler may return are declared in `AppOptions`; a root outside them answers 500 and is logged, never served (a tenant name such as `../../etc` can't move the root); (b) a guarded `SERVE_` route defaults to `Cache-Control: private, no-cache`; (c) `X-Content-Type-Options: nosniff` on every static response, whatever the headers stage says; (d) files that can run in a browser (`.html`, `.svg`, `.xml`, `.js` outside `assets/`) served by `SERVE_` go out as `Content-Disposition: attachment` with a CSP `sandbox` unless the route opts in; (e) source and secret files (`*.go`, `go.mod`, `go.sum`, `.env*`, `*.pem`, `*.key`, `*.map` unless enabled, editor and backup files such as `*~`, `*.swp`, `*.bak`, `*.orig`) are refused with 404 whatever the directory; (f) the startup log lists the public URLs (`public/`) | tdd | docs/design/0021-security.md | 1b | every finding of 1b of high or critical rank is fixed with its test | todo |
 | 2 | Private caching: pages and HTML error pages answer `Cache-Control: private, no-cache` unless the handler sets its own | tdd | docs/design/0021-security.md | 1 | a personal page can't be stored by a shared cache by default | todo |
 | 3 | Same-origin redirects: on page routes `c.Redirect` accepts only same-origin paths (no scheme, no `//host`, no CR/LF); another host needs an explicit call | tdd | docs/design/0021-security.md | 1 | `c.Redirect(form.Next)` can't send a user to another site | todo |
-| 5 | A layer bound to a `RENDER_` also covers its `SUBMIT_` (the POST on the same URL) | tdd | docs/design/0021-security.md | 1 | `BindGuard(auth, c.RENDER_account)` also guards `POST /account` | todo |
+| 5 | A guard bound to a `RENDER_` must also be bound to its `SUBMIT_` (the POST on the same URL), or `Create()` panics; no layer moves on its own (design 0021 G1) | tdd | docs/design/0021-security.md | 1 | `BindGuard(auth, c.RENDER_account)` alone stops `Create()` | todo |
 | 7 | Static files: a `public/` name with `{` or `*` stops `Create()`; hidden files in `Dir` are logged; the static-route guard rule (Decisions › open) | tdd | docs/design/0021-security.md | 1 | a file name can't widen a route; the guard rule holds for `public/`, `/assets/*` and page assets | todo |
 | 8 | Sink fixes found by step 1 that need code (header values with CR/LF, log control characters in every format, path normalization before matching) | tdd | docs/design/0021-security.md | 1 | every step-1 finding of high or critical rank is fixed with a test | todo |
 | 9 | CI: `gosec` with the rules that matter for a framework (G201/G202 SQL strings, G1xx, G3xx, G4xx), baseline of accepted findings with reasons | light | - | 1 | CI fails on a new `gosec` finding | todo |
@@ -52,10 +52,11 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
 - Moved to roadmap 0013 (2026-11-19): the built-in stages and their fixed order (former step 6), the
   SSR defaults (former step 4: all stages off, a `SecurityCheck` warning instead), shared `Origins` and
   the WebSocket Origin check. Steps keep their numbers; 4 and 6 are gone.
-- Open, for the owner before the design:
+- Decided 2026-11-21 (the owner approved running this roadmap with its recommendations):
   3. Static files and guards (step 7): no guard for `public/` and the shared `/assets/*`, the page's own
      guards for `/assets/_pages/<page>/…` (backlog proposal); or keep today's rule (global guards run for
      every static route). Recommended: the proposal.
 - Commits follow `.claude/commands/commit.md`: no Claude attribution or trailers.
 
 ## Log
+- 2026-11-21: design 0021 approved with every recommendation except open question 6: the owner chose explicit binding checked at `Create()` (a guard on `RENDER_x` but not on `SUBMIT_x` panics), guards only, no layer moving on its own. Run started at `01d0d5e`.
