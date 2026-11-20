@@ -8237,3 +8237,54 @@ func lfWSAsyncApp(t *testing.T) (*App, *lfAsyncWS, *websocket.Conn) {
 	}
 	return app, &lfAsyncWS{release: func() { close(hold) }, settled: app.container.settled(gated)}, conn
 }
+
+type mpOrgs struct{ common.HTTP }
+
+func (c mpOrgs) NewController() Controller { return c }
+
+func (c mpOrgs) RENDER_orgs_BY_org_id(p ctx.Param) map[string]string {
+	return map[string]string{"Org": p.Get("org_id")}
+}
+
+func (c mpOrgs) RENDER_projects_BY_project_id_OF_orgs_BY_org_id(p ctx.Param) map[string]string {
+	return map[string]string{"Org": p.Get("org_id"), "Project": p.Get("project_id")}
+}
+
+func (c mpOrgs) SUBMIT_projects_BY_project_id_OF_orgs_BY_org_id(p ctx.Param) map[string]string {
+	return map[string]string{"Org": p.Get("org_id"), "Project": p.Get("project_id")}
+}
+
+func (c mpOrgs) RENDER_reports_BY_year_AND_month(p ctx.Param) map[string]string {
+	return map[string]string{"Year": p.Get("year"), "Month": p.Get("month")}
+}
+
+func (c mpOrgs) RENDER_members_BY_member_id_OF_orgs_BY_org_id(p ctx.Param) map[string]string {
+	panic(exception.NotFoundException("No member " + p.Get("member_id") + " in " + p.Get("org_id")))
+}
+
+type mpProjects struct{ common.HTTP }
+
+func (c mpProjects) NewController() Controller { return c }
+
+func (c mpProjects) RENDER_projects_BY_project_id_OF_orgs_BY_org_id(ctx.Param) {}
+
+type mpOrg struct{ common.HTTP }
+
+func (c mpOrg) NewController() Controller { return c }
+
+func (c mpOrg) RENDER_orgs_BY_org_id(ctx.Param) {}
+
+const mpProjectCSS = "p{color:#444}"
+
+func mpFiles() map[string]string {
+	return map[string]string{
+		"layout.html":               `<root>{{template "content" .}}</root>`,
+		"404.html":                  `E{{.Code}} {{.Message}}`,
+		"orgs/{org_id}.html":        `ORG {{.Org}}`,
+		"orgs/{org_id}/layout.html": `<org>{{pageAssets}}{{template "content" .}}</org>`,
+		"orgs/{org_id}/projects/{project_id}.html": `PROJECT {{.Org}}/{{.Project}}`,
+		"orgs/{org_id}/projects/{project_id}.css":  mpProjectCSS,
+		"orgs/{org_id}/members/{member_id}.html":   `MEMBER`,
+		"reports/{year}/{month}.html":              `REPORT {{.Year}}-{{.Month}}`,
+	}
+}

@@ -1906,3 +1906,86 @@ func TestTrace_RenderEventNamesTheTemplatePath(t *testing.T) {
 		t.Error(test.DiffMessage(names, []string{"bookings/index", "bookings/{id}"}, "R41: Name is the template path without .html"))
 	}
 }
+
+func TestPage_MultiParam_NestedTemplate(t *testing.T) {
+	app := paApp(t, mpFiles(), nil, mpOrgs{})
+
+	w := createGet(app, "/orgs/acme/projects/42")
+	want := `<org><link rel="stylesheet" href="/assets/_pages/orgs/%7Borg_id%7D/projects/%7Bproject_id%7D.css?v=` + assetHash(mpProjectCSS) + `">PROJECT acme/42</org>`
+	if w.Code != http.StatusOK || w.Body.String() != want {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, want}, "MP1: two parameters pick orgs/{org_id}/projects/{project_id}.html in the nearest layout"))
+	}
+}
+
+func TestPage_MultiParam_IndexForm(t *testing.T) {
+	files := mpFiles()
+	delete(files, "orgs/{org_id}/projects/{project_id}.html")
+	delete(files, "orgs/{org_id}/projects/{project_id}.css")
+	files["orgs/{org_id}/projects/{project_id}/index.html"] = `INDEX {{.Org}}/{{.Project}}`
+	app := paApp(t, files, nil, mpOrgs{})
+
+	if w := createGet(app, "/orgs/acme/projects/42"); w.Code != http.StatusOK || w.Body.String() != `<org>INDEX acme/42</org>` {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, `<org>INDEX acme/42</org>`}, "MP1: the index.html form of a nested parameter page"))
+	}
+}
+
+func TestPage_MultiParam_And(t *testing.T) {
+	app := paApp(t, mpFiles(), nil, mpOrgs{})
+
+	if w := createGet(app, "/reports/2026/11"); w.Code != http.StatusOK || w.Body.String() != `<root>REPORT 2026-11</root>` {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, `<root>REPORT 2026-11</root>`}, "MP2: BY_year_AND_month picks reports/{year}/{month}.html"))
+	}
+}
+
+func TestPage_MultiParam_LayoutScope(t *testing.T) {
+	app := paApp(t, mpFiles(), nil, mpOrgs{})
+
+	if w := createGet(app, "/orgs/acme"); w.Body.String() != `<root>ORG acme</root>` {
+		t.Error(test.DiffMessage(w.Body.String(), `<root>ORG acme</root>`, "MP3: orgs/{org_id}.html sits in orgs/, so the root layout wraps it, not orgs/{org_id}/layout.html"))
+	}
+}
+
+func TestPage_MultiParam_PageAssetServed(t *testing.T) {
+	app := paApp(t, mpFiles(), nil, mpOrgs{})
+
+	for _, target := range []string{
+		"/assets/_pages/orgs/%7Borg_id%7D/projects/%7Bproject_id%7D.css",
+		"/assets/_pages/orgs/{org_id}/projects/{project_id}.css",
+	} {
+		if w := createGet(app, target); w.Code != http.StatusOK || w.Body.String() != mpProjectCSS {
+			t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusOK, mpProjectCSS}, "MP4: GET "+target))
+		}
+	}
+	if w := createGet(app, "/assets/_pages/orgs/%7Borg_id%7D/projects/%7Bproject_id%7D.html"); w.Code != http.StatusNotFound {
+		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "MP4: a template under a parameter directory is never served"))
+	}
+}
+
+func TestPage_MultiParam_Submit(t *testing.T) {
+	app := paApp(t, mpFiles(), nil, mpOrgs{})
+
+	w := createRequest(app, http.MethodPost, "/orgs/acme/projects/42", "Content-Type", "application/x-www-form-urlencoded")
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "PROJECT acme/42") {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusUnprocessableEntity, "PROJECT acme/42"}, "MP5: a SUBMIT_ with two parameters renders its RENDER_'s template with 422"))
+	}
+}
+
+func TestPage_MultiParam_WrongParamNamePanics(t *testing.T) {
+	files := map[string]string{"orgs/{org}/projects/{project_id}.html": "X"}
+	msExpectPanic(t, "MP6", "needs a template: orgs/{org_id}/projects/{project_id}.html or orgs/{org_id}/projects/{project_id}/index.html",
+		cpCreateWith(files, mpProjects{}))
+}
+
+func TestPage_MultiParam_TwoFormsPanics(t *testing.T) {
+	files := map[string]string{"orgs/{org_id}.html": "A", "orgs/{org_id}/index.html": "B"}
+	msExpectPanic(t, "MP6", "has two templates: orgs/{org_id}.html and orgs/{org_id}/index.html", cpCreateWith(files, mpOrg{}))
+}
+
+func TestPage_MultiParam_ErrorPage(t *testing.T) {
+	app := paApp(t, mpFiles(), nil, mpOrgs{})
+
+	w := createGet(app, "/orgs/acme/members/7")
+	if w.Code != http.StatusNotFound || w.Body.String() != `<root>E404 No member 7 in acme</root>` {
+		t.Error(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{http.StatusNotFound, `<root>E404 No member 7 in acme</root>`}, "MP7: a multi-parameter page's NotFoundException renders 404.html in the root layout"))
+	}
+}

@@ -2095,6 +2095,8 @@ the file or directory name, with the route's parameter name:
 | `RENDER_bookings` | `bookings.html` or `bookings/index.html` |
 | `RENDER_bookings_BY_id` | `bookings/{id}.html` or `bookings/{id}/index.html` |
 | `RENDER_new_OF_bookings` | `bookings/new.html` or `bookings/new/index.html` |
+| `RENDER_projects_BY_project_id_OF_orgs_BY_org_id` | `orgs/{org_id}/projects/{project_id}.html` or `orgs/{org_id}/projects/{project_id}/index.html` |
+| `RENDER_reports_BY_year_AND_month` | `reports/{year}/{month}.html` or `reports/{year}/{month}/index.html` |
 | `RENDER_users` in a module with `Prefix("admin")` | `admin/users.html` or `admin/users/index.html` |
 | `RENDER_court_bookings` | `court-bookings.html` or `court-bookings/index.html` (`court_bookings…` with `PathStyleAsWritten`) |
 | A last segment `index` or `layout` (`RENDER_layout_OF_courts`) | `courts/layout/index.html` only |
@@ -2102,7 +2104,9 @@ the file or directory name, with the route's parameter name:
 - **Page:** the whole file is the page's content. It needs no `{{define}}`.
 - **Layout:** places the page with `{{template "content" .}}`. A page replaces a layout's
   `{{block "title" .}}…{{end}}` with its own `{{define "title"}}…{{end}}`. Layouts don't nest, and
-  a page without a layout is rendered alone.
+  a page without a layout is rendered alone. A parameter directory can hold one too:
+  `orgs/{org_id}/layout.html` wraps every page below it, such as `orgs/{org_id}/projects/{project_id}.html`,
+  while `orgs/{org_id}.html` (in `orgs/`) keeps the root layout.
 - **Data:** the handler's only or last result is `.` in the page and in its layout, of any type: a
   `owlky.Map`, a struct, a slice or `nil`. A handler with no result renders with `nil`. A partial
   gets what the caller passes.

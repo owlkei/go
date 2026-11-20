@@ -336,7 +336,10 @@ Follow-ups found by the roadmap 0008 review (2026-11-18):
 
 Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
 
-## Multi-parameter page routes: tests (owner, 2026-11-19: next session, before roadmap 0013)
+## Multi-parameter page routes: tests (done 2026-11-20)
+
+Done: nine tests in `internal/core/http_page_test.go` (`TestPage_MultiParam_*`) cover the seven cases below; all passed
+with no code change. The README's template table and layout rule show a multi-parameter example.
 
 Route parsing with several parameters is tested (`internal/common`: `BY_a_AND_b`, nested `OF`, order),
 and page routes with one parameter are (`bookings/{id}.html`, `bookings/{id}/index.html`, a wrong name,
