@@ -123,6 +123,16 @@ own work on the current branch (no separate roadmap branch). Claude never pushes
 Agents run one after another in the same working tree; parallel work needs one git worktree each.
 Formats: `docs/roadmap/README.md`, `docs/design/README.md`.
 
+## Private references
+
+Reference links (upstream libraries, docs, design ideas used while working with AI) live in the private
+repository `owlkei/references`, cloned into the git-ignored `.local/`:
+`git clone git@github.com:owlkei/references.git .local`. This repository uses only `.local/go/`
+(`references.json`, key → URL); `.local/ui/` belongs to Owlkei UI. Read and write them with
+`go run scripts/references.go list | get <key> | set <key> <url>`, then commit and push inside `.local`.
+**Never publish a reference link**: not in a tracked file, commit, PR, issue, doc, the website or any
+published artifact. What gets stored there is the owner's call.
+
 ## Architecture
 
 Owlky Go is a NestJS-inspired dependency injection web framework for Go. The core pattern is **Module → Controller → Provider**.
