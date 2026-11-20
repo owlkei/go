@@ -99,9 +99,23 @@ func isServableSegment(segment string) bool {
 			return false
 		case b == '~' && i+1 < len(segment) && segment[i+1] >= '0' && segment[i+1] <= '9':
 			return false
+		case isASCIIFoldAt(segment, i):
+			return false
 		}
 	}
 	return !isDeviceName(segment)
+}
+
+func isASCIIFoldAt(s string, i int) bool {
+	switch s[i] {
+	case 0xc4:
+		return i+1 < len(s) && (s[i+1] == 0xb0 || s[i+1] == 0xb1)
+	case 0xc5:
+		return i+1 < len(s) && s[i+1] == 0xbf
+	case 0xe2:
+		return i+2 < len(s) && s[i+1] == 0x84 && s[i+2] == 0xaa
+	}
+	return false
 }
 
 func isDeviceName(segment string) bool {
@@ -389,7 +403,7 @@ func (http *HTTP) serveRootFile(ex *httpExchange, route *httpRoute, fsys fs.FS, 
 			return
 		}
 		if urlPath := ex.URL.Path; !strings.HasSuffix(urlPath, "/") {
-			redirectToSlash(ex, path.Base(urlPath)+"/")
+			redirectToSlash(ex, urlPath)
 			return
 		}
 		f, info, name = indexed, indexInfo, index
@@ -413,7 +427,12 @@ func (http *HTTP) serveRootFile(ex *httpExchange, route *httpRoute, fsys fs.FS, 
 	sendFile(ex, f, info, name)
 }
 
-func redirectToSlash(ex *httpExchange, target string) {
+func redirectToSlash(ex *httpExchange, urlPath string) {
+	if !strings.HasPrefix(urlPath, "/") || strings.HasPrefix(urlPath, "//") || strings.IndexByte(urlPath, '\\') >= 0 {
+		serveError(ex, stdHTTP.StatusNotFound, notFoundBody)
+		return
+	}
+	target := urlPath + "/"
 	if q := ex.URL.RawQuery; q != "" {
 		target += "?" + q
 	}

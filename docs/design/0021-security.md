@@ -341,6 +341,27 @@ numbered rule added to this file before its test is written (`S8`, `F4`, `H3`…
 shape goes in S1, a new leaking file kind in F1, a new header sink in H1, a new log sink in L1. A
 finding that needs a public API or changes a rule above needs a superseding design.
 
+## Amendment 1 (2026-11-21): audit findings H1 and M1
+
+Security review `docs/review/security-0012.md` (general audit of roadmap 0012 step 1, `73e9bbd`)
+found two issues of high and medium rank. Following "Room for audit findings", each one is a new
+numbered rule in its family. Neither adds a public API.
+
+- **S1.8 (finding H1).** A segment is refused (fixed 404) when it holds a code point that
+  case-insensitive file systems (APFS, NTFS) fold to an ASCII letter: U+017F LATIN SMALL LETTER LONG S
+  (`C5 BF`, folds to `s`), U+212A KELVIN SIGN (`E2 84 AA`, folds to `k`), U+0130 LATIN CAPITAL LETTER
+  I WITH DOT ABOVE (`C4 B0`) and U+0131 LATIN SMALL LETTER DOTLESS I (`C4 B1`). Without it,
+  `server.\u212Aey` passes F1 and opens `server.key` on macOS. The check is part of the S1 byte scan
+  and does not allocate. It applies everywhere S2 and S3 apply: `SERVE_`, `/assets/*`,
+  `/assets/_pages/*` and the file tables built at `Create()`. Other non-ASCII names (`café.txt`,
+  `日本.txt`, `ß.txt`) stay legal. Tests: `TestStaticName_UnicodeFold`, `TestStaticAttack_UnicodeFold`.
+- **H3 (finding M1).** The `301` that sends a `SERVE_` directory URL to its slash-terminated form
+  builds `Location` from the cleaned absolute path (N3) plus `/` and the raw query
+  (`/site/en?a=1` → `/site/en/?a=1`), never from a relative segment of the request. A path that does
+  not start with exactly one `/`, or that holds `\`, answers the fixed 404 instead. A route parameter
+  such as `%5C%5Cevil.test` can no longer produce `Location: \\evil.test/`, which browsers resolve
+  to another host. Test: `TestServe_SlashRedirectSameOrigin`. H1 gains this `Location` sink.
+
 ## Performance
 
 No rule adds work to a feature that is off; the request path gains one scan.

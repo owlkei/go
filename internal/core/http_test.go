@@ -142,8 +142,8 @@ func TestServe_DirectoryWithIndexRedirectsToSlash(t *testing.T) {
 	if w.Code != http.StatusMovedPermanently {
 		t.Error(test.DiffMessage(w.Code, http.StatusMovedPermanently, "S1: a directory URL without the slash redirects as http.ServeFile does"))
 	}
-	if got := w.Header().Get("Location"); got != "sub/" {
-		t.Error(test.DiffMessage(got, "sub/", "S1: the redirect points at the slash-terminated URL"))
+	if got := w.Header().Get("Location"); got != "/files/sub/" {
+		t.Error(test.DiffMessage(got, "/files/sub/", "S1, H3: the redirect points at the absolute slash-terminated URL on the same site"))
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"go.owlkei.com/owlkei/internal/common"
 	"go.owlkei.com/owlkei/internal/test"
 )
 
@@ -769,5 +770,81 @@ func TestServe_GuardStillRuns(t *testing.T) {
 	}
 	if w := createRequest(app, http.MethodGet, "/o/ok.txt", "X-Allow", "yes"); w.Code != http.StatusOK || w.Body.String() != "OK-BODY" {
 		t.Error(test.DiffMessage(w.Code, http.StatusOK, "G9: and serves when the guard allows"))
+	}
+}
+
+func TestStaticName_UnicodeFold(t *testing.T) {
+	refused := []string{
+		"server.Key", "SERVER.KEY", "dump.ſql", "app.ſwp", "a.İx", "a.ıx", "ſ", "d/x.K", "d.ſ/x.txt", "xK/y.txt",
+	}
+	accepted := []string{"café.txt", "日本.txt", "d/über.txt", "ß.txt", "Δ.css"}
+	for _, name := range refused {
+		if isServableName(name, false) {
+			t.Error(test.DiffMessage(true, false, "S1.8: "+strconv.Quote(name)+" is refused by the policy"))
+		}
+		for _, segment := range strings.Split(name, "/") {
+			if strings.ContainsAny(segment, "Kſİı") && isServableSegment(segment) {
+				t.Error(test.DiffMessage(true, false, "S1.8: the segment "+strconv.Quote(segment)+" is refused"))
+			}
+		}
+	}
+	for _, name := range accepted {
+		if !isServableName(name, false) {
+			t.Error(test.DiffMessage(false, true, "S1.8: "+strconv.Quote(name)+" stays a legal name"))
+		}
+	}
+	if allocs := testing.AllocsPerRun(100, func() {
+		for _, name := range refused {
+			_ = isServableName(name, false)
+		}
+	}); allocs != 0 {
+		t.Error(test.DiffMessage(allocs, 0.0, "S1.8: the scan does not allocate"))
+	}
+}
+
+func TestStaticAttack_UnicodeFold(t *testing.T) {
+	env := secPrepare(t)
+	names := []string{"secret.Key", "SECRET.KEY", "dump.ſql", "x.ſwp", "x.İdb", "x.ıdb"}
+	for _, name := range names {
+		secWrite(t, env.serve, map[string]string{name: secMarker})
+		secWrite(t, filepath.Join(env.up, "acme"), map[string]string{name: secMarker})
+	}
+	a, _ := secBuildIn(t, env, secMap, nil)
+	b, _ := secBuildIn(t, env, secDiskReload, nil)
+	raws := make([]string, len(names))
+	for i, name := range names {
+		raws[i] = (&url.URL{Path: name}).EscapedPath()
+	}
+	secExpect(t, []*App{a, b}, "S1.8, UnicodeFold", http.StatusNotFound, raws...)
+	if w := createGet(a, "/s/server.%E2%84%AAey"); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), secMarker) {
+		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "S1.8: /s/server.<KELVIN SIGN>ey is the fixed 404"))
+	}
+}
+
+type siteServe struct{ common.HTTP }
+
+func (c siteServe) NewController() Controller { return c }
+
+func (c siteServe) SERVE_site_BY_lang() string { return secServeRoot + "/dir_index" }
+
+func TestServe_SlashRedirectSameOrigin(t *testing.T) {
+	env := secPrepare(t)
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, HTTP: &HTTPOptions{ServeDirs: []string{env.serve}}})
+	mustCreate(t, app, NewModuleBuilder().Controllers(siteServe{}).Build())
+	hostile := []string{"/site/%5C%5Cevil.test", "/site/%5Cevil.test", "/site/%2F%2Fevil.test", "/site/%2Fevil.test", "/site/@evil.test", "/site/%5C%2Fevil.test", "/site/%5c%5cevil.test"}
+	for _, target := range hostile {
+		w := createGet(app, target)
+		loc := w.Header().Get("Location")
+		if w.Code >= 300 && w.Code < 400 {
+			if !strings.HasPrefix(loc, "/") || strings.HasPrefix(loc, "//") || strings.Contains(loc, "\\") {
+				t.Error(test.DiffMessage(loc, "an absolute path on the same site", "H3: Location of "+target))
+			}
+		} else if loc != "" {
+			t.Error(test.DiffMessage(loc, "", "H3: no Location on a "+strconv.Itoa(w.Code)+" for "+target))
+		}
+	}
+	w := createGet(app, "/site/en?a=1")
+	if w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != "/site/en/?a=1" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{http.StatusMovedPermanently, "/site/en/?a=1"}, "H3: the target is the absolute canonical path plus the query"))
 	}
 }

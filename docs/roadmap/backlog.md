@@ -396,6 +396,14 @@ Claude Code memory lives in the owner's home directory and is never part of the 
 5. **Know that `go get` downloads the whole module** (`docs/`, `.claude/`, `.owlkei/` included) into
    the user's module cache; small, so acceptable.
 
+## Security audit 0012: low findings (2026-11-21)
+
+`docs/review/security-0012.md` lists nine low findings left open after roadmap 0012 (its high H1 and
+medium M1 were fixed in the roadmap): gaps in the forbidden-file and Windows device-name lists, the
+`RENDER_`/`SUBMIT_` guard check matching by type only, caching of unguarded `SERVE_` files, Host and
+CSRF details, and three benchmarks the design lists but nobody wrote. Take them in the next security
+pass or one by one with `/implement`.
+
 ## Accurate trace timings (found 2026-11-19)
 
 The access log and the trace show stage times that users read as the cost of their code, so they

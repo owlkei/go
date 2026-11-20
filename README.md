@@ -2691,6 +2691,13 @@ func main() {
   `404`. No response is ever a directory listing.
 - The path is cleaned before routing (`/files/a/../../x` is `/x`), and the names refused by
   [Pages › Assets](#assets) answer the same `404` as a missing file, `*.map` included.
+- A name holding a character that macOS and Windows file systems treat as an ASCII letter
+  ignoring case (`ſ` U+017F, `K` U+212A KELVIN SIGN, `İ` U+0130, `ı` U+0131) answers the same `404`:
+  `server.Key` with a Kelvin sign would otherwise open `server.key`. Other accented and CJK names,
+  such as `café.txt` or `日本.txt`, are served.
+- A directory URL without its trailing slash is redirected with `301` to the same absolute path
+  plus `/`, query kept: `GET /site/en?a=1` → `Location: /site/en/?a=1`. A path holding `\`
+  answers `404`, so a route parameter can never redirect to another site.
 - Files that run in a browser (`.html`, `.svg`, `.xml`, `.js`, `.xhtml` and their kin, or a
   `Content-Type` of HTML, SVG, XML or JavaScript) go out as downloads, with
   `Content-Disposition: attachment` and `Content-Security-Policy: sandbox; default-src 'none'`: an
