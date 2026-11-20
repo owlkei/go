@@ -1,11 +1,9 @@
-<p align="center">
+<h1 align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo-light.svg" alt="Owlkei Go logo" width="120">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/owlkei-go-horizontal-dark.svg">
+    <img src="docs/assets/owlkei-go-horizontal-light.svg" alt="Owlkei Go" width="360">
   </picture>
-</p>
-
-<h1 align="center">Owlkei Go</h1>
+</h1>
 
 <p align="center">
   <strong>Build Go backends the way you think.</strong><br>
