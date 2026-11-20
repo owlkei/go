@@ -818,7 +818,7 @@ func TestHTTPHandlerPlan_ListenerAddedBetweenCalls(t *testing.T) {
 }
 
 func TestApp_LookalikeParameterPanicsAtCreate(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	rec := planPanicOf(func() {
 		app.Create(NewModuleBuilder().Controllers(appLookalikeController{}).Build())

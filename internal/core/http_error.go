@@ -21,8 +21,8 @@ var (
 	serviceUnavailableBody      = serviceUnavailableException.AppendJSON(nil)
 )
 
-func (http *HTTP) answerGated(ex *httpExchange, route *httpRoute) {
-	if !http.runMiddlewares(ex, route) {
+func (http *HTTP) answerGated(ex *httpExchange, route *httpRoute, run *middlewareRun) {
+	if !http.runMiddlewares(ex, route, run) {
 		return
 	}
 	if route.gate.state.status() == modulePending {

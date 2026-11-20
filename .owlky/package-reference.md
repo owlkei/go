@@ -16,7 +16,6 @@ and CI). An application imports only these paths; every other package is under `
 | `go.owlky.com/owlky` | `New`, `ModuleBuilder`, `TraceTransport`; aliases `App`, `Module`, `Controller`, `Provider`, `ServerOptions`, `WSOptions`, `RenderOptions`, `HTTP`, `WS`, `Guard`, `Interceptor`, `ExceptionFilter`, `Middleware`, `MiddlewareFn`, `ArgumentMetadata`, `Publisher`, `HTTPContext`, `WSContext`, `Body`, `Form`, `File`, `Query`, `Header`, `Param`, `WSPayload`, `Map`, `Next`, `Redirect`, `FieldLevel`, `DataFile`, `Aggregation`, `VersioningOptions`, `VersioningType`, `PathStyle`; constants `VersioningQuery`, `VersioningHeader`, `VersioningCustom`, `VersioningMediaType`, `PathStyleKebab`, `PathStyleAsWritten` |
 | `…/exception` | `Exception` (`Code`, `Message`, `StatusText`, `Error`, `Unwrap`, `AppendJSON`, `MarshalJSON`), `ExceptionOptions`, `NewException`, the 31 `<Status>Exception` constructors |
 | `…/log` | `NewLog`, `WrapLogger`, `LogOptions{Level, Format, IsAddSource, MaskFields}`, `Logger`, `LogAdapter`, `Format`, `LevelDebug`…`LevelFatal`, `FormatText`/`FormatJSON`/`FormatPretty` |
-| `…/middlewares/{compress,cors,csrf,helmet,hostcheck,httpsredirect,loadshed,proxy}` | One option struct each (`NewMiddleware`, `Use`); `helmet.Disabled`; `proxy.Header`, `HeaderXForwarded`, `HeaderForwarded`, `ClientIP`, `Host`, `Scheme` |
 | `…/modules/cache` | `Register`, `CacheModuleOptions`, `CacheService`, `Cache`, `CacheOnInitFn`, `NewMemoryCache`, `MemoryCacheOptions`, `ErrEmptyKey`, `ErrNegativeTTL`, `ErrEntryTooLarge`, `ErrNotCounter` |
 | `…/modules/config` | `Register`, `ConfigModuleOptions` (`EnvFilePaths`…), `ConfigService`, `ConfigLoadFn`, `ConfigHookFn`, `ConfigOnInitFn` |
 | `…/guards/throttler` | `Throttler`, `Strategy`, `StrategyFixedWindow`, `StrategySlidingWindow`, `StrategyTokenBucket`; `NewGuard() any` |
@@ -29,7 +28,7 @@ and CI). An application imports only these paths; every other package is under `
   package (`ctx.HTTPReset(c)`, `aggregation.SetMainData(a, d)`), never an exported method or field, because
   members stay reachable through an alias.
 - Public packages (`exception`, `log`, `middlewares/*`, `modules/*`, `guards/*`) import the engine by its
-  internal path, never the root package (D6: `core`'s tests import `middlewares/proxy`).
+  internal path, never the root package (D6).
 - Runtime errors read `owlky: …` (was `core:` / `ctx:`) and `cache: …` (was `memorycache:`).
 - The sections below are per package; the engine packages are documented by their internal name.
 
@@ -47,18 +46,18 @@ type App struct {
 }
 ```
 
-Every `core.New()` is independent (own routes, providers, layers, logger, publisher). The logger is
-set with `SetLogger` (the only way) and read with `Logger()`; `App` has no exported fields.
+Every `core.New(opts)` is independent (own routes, providers, layers, logger, publisher). The whole
+configuration is the `*AppOptions` given to `New` (design 0022); the logger is `AppOptions.Logger`, read with `Logger()`; `App` has no exported fields.
 
 **Public Methods** (all chainable, return `*App`, unless noted):
 
 | Method | Purpose |
 |--------|---------|
-| `New() *App` | Create app instance |
+| `New(opts *AppOptions) *App` | Create an app from its options (`nil` = defaults); reads `opts` once, copies what it keeps, and makes every check (panics `invalid app: <Group>.<Field> …`); compiles the pre-route stages in their fixed order |
+| `OptionsFromEnv() *AppOptions` (package function) | The same struct, every pointer group non-nil, filled from `OK_<PATH>` variables (`__` between levels, upper snake case), `PORT` (when `OK_SERVER__PORT` is unset) and `./.env` (the environment wins; code written after the call wins); never panics: `New` panics once with every recorded error (`invalid app: <n> environment errors:`) and logs one `Info AppOption` line per non-zero field with its source |
 | `Create(m *Module)` | Initialize app with module tree — call exactly once |
-| `Listen(port int, opts *ServerOptions) error` | Start the HTTP server on `:<port>` (`nil` = safe defaults), blocks until shutdown |
-| `ListenTLS(port int, certFile, keyFile string, opts *ServerOptions) error` | The same over TLS, HTTP/2 by ALPN |
-| `Serve(l net.Listener, opts *ServerOptions) error` | Serve on the caller's listener (TLS when `opts.TLSConfig` is set) |
+| `Listen() error` | Start the server on `:<Server.Port>` (3000 when 0), HTTPS with HTTP/2 when `Server.TLS` holds a certificate, `h2c` with `Server.IsH2C`; blocks until shutdown |
+| `Serve(l net.Listener) error` | Serve on the caller's listener with the same TLS and protocol rules; ignores `Server.Port` (logs `Info ServerPortIgnored` when it is set) |
 | `Stop()` | Graceful shutdown of a serving app (drain, then `OnShutdown` hooks once); on an app that is not serving, runs the hooks and marks it stopped; blocks until the hooks finished |
 | `Get(p Provider) any` | Look up an already-injected provider by type |
 | `ServeHTTP(w, r)` | HTTP handler (auto-called by Go stdlib) |
@@ -66,20 +65,20 @@ set with `SetLogger` (the only way) and read with `Logger()`; `App` has no expor
 | `BindGlobalGuards(g ...any) *App` | Register global guards |
 | `BindGlobalInterceptors(i ...any) *App` | Register global interceptors |
 | `BindGlobalExceptionFilters(f ...any) *App` | Register global exception filters |
-| `EnableWS(cfg *WSOptions, middlewares ...common.MiddlewareFn) *App` | Enable WebSocket support — **requires a `*WSOptions` argument**, not zero-arg |
-| `EnableRender(opts *RenderOptions) *App` | Server-rendered pages: `RENDER_` / `SUBMIT_` routes of `common.HTTP` controllers (design 0018 amendment 2). `RenderOptions{FS fs.FS; Dir string; IsReload bool}`: `FS` required, `Dir` the directory inside it (default `web`, `.` the root; missing → `invalid render: RenderOptions.FS has no "<dir>" directory…`), `IsReload` on an `embed.FS` reads `Dir` from disk and logs `Warn RenderReloadOn` at `Create()` (`invalid render: EnableRender needs RenderOptions.FS`), a second call panics `invalid render: EnableRender called twice`, after `Create` `invalid app: EnableRender must be called before Create`. `Create()` parses every template once (`invalid render: <file>: <error>`), binds each page route to `<path>.html` / `<path>/index.html` (panics: no template, two templates, reserved directory, error page name, an `.html` without a route), adds `/assets/*` when `Dir/assets` or a page CSS / JS file exists and one route per `Dir/public` file. File conventions, error pages by status and the four template functions (`nonce`, `asset`, `dict`, `pageAssets`): `internal/render/README.md` |
-| `EnableDevtool() *App` | Build the devtool snapshot at `Create()` (routes, layers, request schemas; no transport yet) |
-| `EnableAccessLog() *App` | Enable access logging |
-| `EnableVersioning(opts *versioning.Options) *App` | Enable API versioning; `nil` = zero options, the options are copied |
-| `SetLogger(logger log.LogAdapter) *App` | The app's logger (wrapped with `log.WrapLogger(logger, nil)`; `nil` panics `invalid app: SetLogger needs a logger`); configure the built-in one with `SetLogger(log.NewLog(&log.LogOptions{…}))` |
+| `AppOptions.WS` (`*WSOptions{Path}`) | WebSocket support, on when `Path` is set; the handshake runs the `loadshed`, `proxy` and `hostcheck` stages that are on, the `origin` check (not same-origin and not in `Origins` → `403 Origin not allowed`), then the `BindGlobalMiddlewares` |
+| `AppOptions.Render` (`*RenderOptions`) | Server-rendered pages: `RENDER_` / `SUBMIT_` routes of `common.HTTP` controllers (design 0018 amendment 2). `RenderOptions{FS fs.FS; Dir string; IsReload bool}`: on when `FS` is set (`Dir` or `IsReload` without it → `invalid app: Render.<Field> is set without Render.FS`), `Dir` the directory inside it (default `web`, `.` the root; missing → `invalid render: RenderOptions.FS has no "<dir>" directory…`), `IsReload` on an `embed.FS` reads `Dir` from disk and logs `Warn RenderReloadOn` at `Create()`. `Create()` parses every template once (`invalid render: <file>: <error>`), binds each page route to `<path>.html` / `<path>/index.html` (panics: no template, two templates, reserved directory, error page name, an `.html` without a route), adds `/assets/*` when `Dir/assets` or a page CSS / JS file exists and one route per `Dir/public` file. File conventions, error pages by status and the four template functions (`nonce`, `asset`, `dict`, `pageAssets`): `internal/render/README.md` |
+| `AppOptions.IsDevtool` | Build the devtool snapshot at `Create()` (routes, layers, request schemas, the `pre_route` stages with their `Snapshot()`; no transport yet) |
+| `AppOptions.IsAccessLog` | Enable access logging |
+| `AppOptions.Versioning` (`*versioning.Options`) | API versioning, on when `Type` is set; the options are copied |
+| `AppOptions.Logger` (`log.LogAdapter`) | The app's logger (wrapped with `log.WrapLogger(logger, nil)`); configure the built-in one with `Logger: log.NewLog(&log.LogOptions{…})` |
 | `Logger() log.Logger` | The app's logger; never `nil` (the built-in logger by default) |
-| `SetStartupTimeout(d time.Duration) *App` | The budget of `Create()` for the module factories of `Imports` (default 30 s, counted from the start of `Create()`, the deadline of a factory's `ctx`); `d <= 0` panics `invalid app: SetStartupTimeout needs a positive duration` |
+| `AppOptions.StartupTimeout` | The budget of `Create()` for the module factories of `Imports` (default 30 s, counted from the start of `Create()`, the deadline of a factory's `ctx`); negative panics `invalid app: StartupTimeout is <v>, it must be positive` |
 
-**There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `ServerOptions.MaxRequestBodyBytes` of the serving call (0 = 10 MiB, negative = no cap), stored in the unexported `atomic.Int64` `maxRequestBodyBytes` (10 MiB from `New()`) — see "HTTP Server Defaults" below.
+**There is no `SetMaxBodySize`/`SetMaxRequestBodySize` method anywhere.** The request body cap is `AppOptions.HTTP.MaxBodyBytes` (a `ByteSize`: 0 = 10 MiB, negative = no cap), stored at `New` in the unexported plain `int64` `maxBodyBytes` and applied in `ServeHTTP` to every request with a body, also when `App` runs in the user's own `http.Server` — see "HTTP Server Defaults" below.
 
 ### HTTP Server Defaults
 
-`internal/core/server.go`; the only options are the four fields of `ServerOptions` (`ShutdownTimeout` 0 = 30 s, `MaxRequestBodyBytes` 0 = 10 MiB / negative = off, `TLSConfig`, `IsH2C`). The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
+`internal/core/server.go`; the only options are the four fields of `ServerOptions` (`Port` 0 = 3000, `ShutdownTimeout` 0 = 30 s, `TLS{CertFile, KeyFile, Config}`, `IsH2C`) and `HTTPOptions.MaxBodyBytes`. The rest is internal (`serverDefaults`, set by `New()`), with no public setter and no exported constant:
 
 | Setting | Value |
 |----------|-------|
@@ -309,9 +308,9 @@ type UserController struct {
 - Equal configurations share: the constructor runs once per app and every equal bind gets the identical result. A rate limiter bound with the same options on two controllers stays one limiter.
 - Different configurations get their own instance:
 ```go
-// Controller A and B each get their own cors.CORS instance.
-c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://a.example.com"}})
-c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
+// Controller A and B each get their own TenantHeader instance.
+c.BindMiddleware(TenantHeader{Tenant: "a"})
+c.BindMiddleware(TenantHeader{Tenant: "b"})
 ```
 - Two types whose `Type().String()` is equal (`a/auth.Guard`, `b/auth.Guard`) never share; the same value built with two constructor names gets each constructor's own result.
 - Without the constructor method, the result is the value given in the first call of that configuration.
@@ -435,7 +434,7 @@ func WrapLogger(next log.LogAdapter, maskFields []string) log.Logger
 `log.LogAdapter` is the five methods (`Debug`, `Info`, `Warn`, `Error`, `Fatal`); `log.Logger` is
 `LogAdapter` plus `From(ctx context.Context) Logger` (the scope's `trace_id`, `request`, `connection`,
 `message`, `upstream` added to every line; built-in: after the arguments, adapter: before them). A type
-with the five methods only is a `LogAdapter`: pass it to `SetLogger` / `WrapLogger`, never store it in a
+with the five methods only is a `LogAdapter`: pass it as `AppOptions.Logger` / to `WrapLogger`, never store it in a
 `log.Logger` variable.
 
 ```go
@@ -769,7 +768,7 @@ type Throttler struct {
     Limit    int64                        // default 100
     TTL      time.Duration                // default time.Minute
     Strategy Strategy                     // StrategyFixedWindow (default 0) | StrategySlidingWindow | StrategyTokenBucket; unknown panics
-    KeyFunc  func(owlky.HTTPContext) string // default: proxy.ClientIP, IPv6 by /64, "unknown" for the zero Addr
+    KeyFunc  func(owlky.HTTPContext) string // default: the client IP (owlky.ClientIP), IPv6 by /64, "unknown" for the zero Addr
     Backend  cache.Cache                  // default: one memorycache per guard, MaxEntries 32,768 (CLOCK eviction)
 }
 func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, inspect.Snapshotter)
@@ -777,7 +776,7 @@ func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, in
 
 - Bind the `Throttler` value (`BindGuard(throttler.Throttler{...})`); `construct` calls `NewGuard` once.
   Equal options share one compiled guard and one budget (layer cache).
-- No request header is read for the default key; trust goes through `proxy` (design 0014 T1).
+- No request header is read for the default key; trust goes through `AppOptions.Proxy` (design 0014 T1).
 - Keys over 128 bytes become `h:` + 16 hex digits of a per-guard `maphash` (T2).
 - Fixed window: one `Incr` per request (counts refusals too). Sliding window (one 24-byte entry per
   key: window id, previous and current count; refusals not stored) and token bucket (16 bytes) run
@@ -789,7 +788,11 @@ func (instance Throttler) NewGuard() any // the compiled *guard (CanActivate, in
 - Memory: idle about 14 KiB (the store's shards + 512 B of mutexes); about 150 B per entry (IPv4 key), 280 B (128-byte key); full store about 4.7 MiB (IPv4),
   5.2 MiB (IPv6), 8.7 MiB with 128-byte custom keys. Per request 6 allocs (fixed window), 8 (the others).
 
-### `middlewares/proxy` (design 0014)
+### Pre-route stages (`internal/middlewares/*`, designs 0014 and 0022)
+
+Not importable: each package below is compiled by `core.New` from its `AppOptions` group (`Compile(&pkg.Options…)`, no reflection) and runs as a pre-route stage in the fixed order `loadshed` → `proxy` → `hostcheck` → `httpsredirect` → `headers` (`helmet`) → `cors` → `csrf` → `compress`. A stage is off until configured: `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress` by `IsEnabled`; `Proxy` by `TrustedProxies` or `TrustedHops`; `hostcheck` by a non-empty `Hosts`. `cors` and `csrf` read one origin set compiled from `AppOptions.Origins` (`internal/middlewares/origin`), which also backs the WebSocket handshake check. Option checks panic at `New` as `invalid app: <Group>.<Field> …` (the `invalid <pkg>:` texts below, rewritten). Users read the client with `owlky.ClientIP` / `ClientScheme` / `ClientHost`. The structs below are the internal option types; their public forms are `owlky.ProxyOptions`, `LoadShedOptions`, `HTTPSRedirectOptions`, `HeadersOptions`, `CORSOptions`, `CSRFOptions`, `CompressOptions` (`MinSize` a `ByteSize`).
+
+### `internal/middlewares/proxy` (design 0014)
 
 ```go
 type Header int
@@ -808,7 +811,7 @@ func Host(r *http.Request) string
 
 Exactly one of `TrustedProxies` / `TrustedHops` (else panic `invalid proxy: set TrustedProxies or TrustedHops[, not both]`). Without `proxy` bound, nothing in Owlky Go reads `X-Forwarded-*`, `Forwarded` or `X-Real-IP`: the client is `r.RemoteAddr`, the scheme `r.TLS != nil`, the host `r.Host`. Trusted-proxies mode: entries right to left, client = first untrusted, at most 16 entries of 512 bytes, invalid entry ends the walk. Scheme and host are read only when the client came from a header entry. `X-Forwarded-Proto`: the last value only (last line, after its last comma), whatever the counts; `Forwarded`: `proto` of the client's element or the nearest one to its right. The host (`X-Forwarded-Host` last value, or `host=`) is read only with `IsHostForwarded` (security review M2, design 0014 Revision 2026-11-17); no count rule. Snapshot field `hostForwarded`. The result is written into the request's `tracecontext.Scope` (`ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet`); the request is never changed. Bind it first.
 
-### `middlewares/hostcheck`, `middlewares/httpsredirect`
+### `internal/middlewares/hostcheck`, `internal/middlewares/httpsredirect`
 
 ```go
 type HostCheck struct { Hosts []string }             // "example.com", "api.example.com:8443", "*.example.com", "127.0.0.1", "[::1]"
@@ -817,7 +820,7 @@ type HTTPSRedirect struct { Host string; Port int }  // fixed target host (no po
 
 `hostcheck` checks `proxy.Host(r)`: no match → `421 Unknown host`, empty or > 255 bytes → `400 Invalid host`; no implicit `localhost`. `httpsredirect`: `proxy.Scheme(r) == "https"` → next; else `308` to `https://<Host or request host without port><:Port><path>?<query>`, no body; an invalid request host (with no `Host` set) → `400 Invalid host`.
 
-### `middlewares/csrf` (rebuilt, design 0014)
+### `internal/middlewares/csrf` (rebuilt, design 0014)
 
 ```go
 type CSRF struct { TrustedOrigins []string } // scheme://host[:port], at most 64
@@ -825,7 +828,7 @@ type CSRF struct { TrustedOrigins []string } // scheme://host[:port], at most 64
 
 Wraps `http.CrossOriginProtection` (Go 1.25+): safe methods pass; `Sec-Fetch-Site` `same-origin`/`none` pass; any other value → `TrustedOrigins` or `403 Cross-origin request refused`; no `Sec-Fetch-Site` and no `Origin` → pass (not a browser); `Origin` host equal to the host → pass. `Origin` > 256 bytes refused. No token, no cookie, no context value, no body read. **`TrustedOrigins` is the only field and the package exports nothing else: do not generate token fields or helpers.** Server-rendered forms need nothing more (no token, no hidden field); a refusal is a 403 HTML page when `Accept` holds `text/html` and `EnableRender` is on, else JSON.
 
-### `middlewares/cors` (changed, design 0014)
+### `internal/middlewares/cors` (changed, design 0014)
 
 ```go
 type CORS struct {
@@ -842,7 +845,7 @@ func (instance CORS) NewMiddleware() common.MiddlewareFn
 
 **Panics at `Create()`**: empty `AllowOrigins` (`invalid cors: AllowOrigins is empty` — the zero value allows nothing), `"*"` with other entries or with `IsAllowCredentials`, an origin that is not lower-case `scheme://host[:port]` or `scheme://*.host[:port]`, `null`, more than 256 origins or 64 list entries, a name that is not an RFC 9110 token. `Vary: Origin` on every response with a list. Preflight is exactly `OPTIONS` + `Origin` + `Access-Control-Request-Method` (`204`); any other `OPTIONS` reaches its `PREFLIGHT_…` route. A non-matching origin gets no CORS header but is still served. A WebSocket upgrade from a non-matching `Origin` → `403 Origin not allowed`. **The seven fields listed above are the only options; origins are exact strings or `*.` patterns.**
 
-### `middlewares/helmet` (changed, design 0014)
+### `internal/middlewares/helmet` (changed, design 0014)
 
 ```go
 const Disabled = "-"
@@ -855,7 +858,7 @@ type Helmet struct {
 
 Each field: `""` = default, `helmet.Disabled` = not sent, else sent as written (control characters panic). HSTS (`max-age=63072000; includeSubDomains`) only when `proxy.Scheme(r) == "https"`. COEP not sent by default. Always sent: `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 0`, `X-DNS-Prefetch-Control: off`, `X-Permitted-Cross-Domain-Policies: none`, `Origin-Agent-Cluster: ?1`. **The eight string fields above are the only options; the always-sent headers can't be configured.** On pages rendered by Owlky Go that call `{{nonce}}`, the CSP carries `'nonce-<N>'` in `script-src` / `style-src` (inserted after `default-src` when absent) and in `script-src-elem` / `style-src-elem` when present; directives with `'unsafe-inline'` or `'none'` are untouched; no new field (design 0018 R30-R35). Snapshot adds `nonce_directives`.
 
-### `middlewares/compress`
+### `internal/middlewares/compress`
 
 ```go
 type Compress struct { MinSize int } // default 1024
@@ -863,7 +866,7 @@ type Compress struct { MinSize int } // default 1024
 
 gzip at `BestSpeed` for candidates (not `HEAD`, no `Range`, no `Upgrade`, `Accept-Encoding` names gzip with q ≠ 0 in its first 256 bytes) whose response is compressible text, at least `MinSize`, not encoded, not `204`/`206`/`304`, no `no-transform`. `Vary: Accept-Encoding` on every response. At most 8 writers per instance (pooled, design-approved `sync.Pool`); none free → sent uncompressed. Uses `internal/httphook` to wrap the writer and finish at the end of the exchange.
 
-### `middlewares/loadshed` (new, design 0014)
+### `internal/middlewares/loadshed` (new, design 0014)
 
 ```go
 type LoadShed struct {
@@ -874,15 +877,15 @@ type LoadShed struct {
 
 Bounds requests between admission and the end of their exchange (released through an `internal/httphook` `OnDone` hook, also on panic, 404, abort and at the WS handshake). Over the limit, FIFO queue of `MaxQueue` for 100 ms (`enqueue` first hands free slots to the listed waiters in order, then checks full, then retries for itself only when the list is empty: a request never joins ahead of a waiter; one that arrives at the instant a slot frees, before the slot reaches a waiter, may take it: design 0014 revision 3, amended L2), then `503` + `Retry-After: 1`, message `Server is busy` (`panic(&busy)`); a request whose context ends while waiting gets nothing. Adaptive mode: bounds read once in `NewMiddleware` (`min` = `GOMAXPROCS`, `max` = smallest of `GOMEMLIMIT` / cgroup `memory.max` / v1 `memory.limit_in_bytes` ÷ 4 MiB, else 256 × `GOMAXPROCS`, clamped 64-4,096; start 8 × `GOMAXPROCS`); windows of 4 × the current limit samples (sum in units of 64 ns and count packed in one atomic word, design 0014 M4); a sample is `elapsed` minus the queue wait and minus the time inside `r.Body.Read`, capped at 32 × the baseline once one is known; baseline: `learned` from quiet samples (≥ 8 per window) and probes (blended `(learned + input) / 2`, refreshes the age), a faster window lowers the working baseline to `max(avg, learned / 1.5)` without touching `learned` or the age; the limit moves only at the close of a window under pressure (a request queued or refused: one `atomic.Bool`) with a baseline and no probe during it: `useful = limit × min(1.5 × baseline / avg, 1)`, `next = 0.8 × limit + 0.2 × (useful + √useful)`; no growth when `avg < baseline / 2`; floor `max(min, ceil(earned / 2))` where `earned` is the highest integer limit reached by a raise (the start limit is not earned); a close below the floor holds the limit there and marks "held by the floor"; then clamp `min`-`max`; probe when under pressure, the baseline is unknown, older than 30 s or the floor held, and no probe started in the last 30 s: an unexported record per probe (`adaptive.current`, an `atomic.Pointer`, stored before `admit` goes to `-min`; `held`, `sum`, `count`, `finished`), at most `min` of its own requests in flight (`held`) and the total within `limit`, so it admits beside long-held requests from before it; a probe request remembers `finished` at admission and is a probe sample only when no request the probe did not admit finished meanwhile (overlap filter); ends after 8 probe samples or at the first admission after 1 s; a probe with samples is a learning, sets `earned = min(earned, limit)` and clears the hold; an empty probe changes nothing. A probe request without a body carries a 16 B ticket (record, mark); waiters and the body wrapper carry them in their own fields. Long-held acceptance L14 (`TestAdaptive_LongHeld_*`, skipped with `-short` and `-race`); known limit: each long-held request (SSE, download, long poll) holds a slot for its life, in both modes. Body time: in adaptive mode an admitted request with a body (not `nil`, not `http.NoBody`) gets `r.Body` replaced by an unexported wrapper (forwards `Read` / `Close` unchanged, `atomic.Int64` read time, also its `OnDone` hook; 64 B, created at the three admission points); refused requests and fixed mode keep `r.Body`. Clock of the rule: unexported `adaptive.now` (default `time.Now`; tests inject a fake), read only at a window close and during a probe. Known limit: a CPU-bound handler that never reaches the scheduler hides overload from any in-flight limit (`BenchmarkLoadShed_L12_CPUBoundNoYield_5x`); L12 tests use a handler that yields. A queued request's sample excludes its wait in loadshed's own queue (measured when a slot is handed to it). No goroutine, no timer while idle; admitted request: 0 allocations (1 with a body in adaptive mode, 1 of 16 B when a probe admits it). `max` bounds the count in flight, not memory. Steering acceptance L13 (`TestAdaptive_Steering_*`, skipped with `-short`); `BenchmarkLoadShed_L13_SlowRouteTuned` reports the residual (known limit). Implements `inspect.Snapshotter` (`mode`, `limit`, `queue`, `wait`, `retry_after`, `in_flight`, `waiting`, `refused_*`, and in adaptive mode `min`, `max`, `probes`, `probing`, `baseline`, `average`).
 
-Recommended order (production checklist): `loadshed`, `proxy`, `hostcheck`, `httpsredirect`, `helmet`, `cors`, `csrf`, `compress`.
+Order (fixed by `New`, design 0022 P1): `loadshed`, `proxy`, `hostcheck`, `httpsredirect`, `headers`, `cors`, `csrf`, `compress`.
 
 ---
 
 ## Supporting Packages (brief — not exhaustively cataloged here)
 
-- `internal/render` — the template engine behind `EnableRender` (design 0018): `New(fsys, isReload) *Engine`, `Load`, `Bind(route) (string, error)`, `CheckBindings`, `Render(route, data) (*Buffer, error)`, `RenderError(code, data)`, `ErrorTemplate(code)`, `Release`, `Assets`, `AssetHashes`, `Public`, `PublicFiles`, `PageAssets`, `PageAsset`, `Files`, `IsReload`, `Snapshot`, `Counters`, `NonceDraws`; `Buffer{Bytes, Len, Nonce}`, `FileError{File, Err}`, `ErrNoTemplate`, `ErrTwoTemplates`, `ErrReservedDir`, `ErrErrorPageName`, `ErrPageTooLarge`, `ErrNoErrorPage`. Pooled buffers (256 KiB retention, 8 MiB limit), the nonce placeholder overwritten in place. Not for users.
+- `internal/render` — the template engine behind `AppOptions.Render` (design 0018): `New(fsys, isReload) *Engine`, `Load`, `Bind(route) (string, error)`, `CheckBindings`, `Render(route, data) (*Buffer, error)`, `RenderError(code, data)`, `ErrorTemplate(code)`, `Release`, `Assets`, `AssetHashes`, `Public`, `PublicFiles`, `PageAssets`, `PageAsset`, `Files`, `IsReload`, `Snapshot`, `Counters`, `NonceDraws`; `Buffer{Bytes, Len, Nonce}`, `FileError{File, Err}`, `ErrNoTemplate`, `ErrTwoTemplates`, `ErrReservedDir`, `ErrErrorPageName`, `ErrPageTooLarge`, `ErrNoErrorPage`. Pooled buffers (256 KiB retention, 8 MiB limit), the nonce placeholder overwritten in place. Not for users.
 - `devtool` — `Devtool{}` (embeds `GetConfigurationResponse`: `Controller.Http []*HTTPComponent` with route, method, layers by scope, versioning, request schemas and `kind: "page"` for page routes; `Render` (`render`: `is_reload`, `pages` (with `route` and `assets`), `partials`, `error_templates`, `assets`, `public`, `renders`, `failures`) with `EnableRender`; plain Go structs with JSON tags) and `GetConfiguration(...)`. There is no transport yet. `EnableDevtool()` on `App` builds it at `Create()`.
-- `accesslog` — `NewAccessLog(cfg *AccessLogOptions) *AccessLog` (`AccessLogOptions{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `App.EnableAccessLog()`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
+- `accesslog` — `NewAccessLog(cfg *AccessLogOptions) *AccessLog` (`AccessLogOptions{Tracer *trace.Tracer; Logger log.LogAdapter}`), `(*AccessLog).Stop()`; wired in via `AppOptions.IsAccessLog`, stopped once at shutdown after the `OnShutdown` hooks. No goroutine: the line is logged on the request goroutine; each stage's value is one string (`"CORS 40µs (4%), CSRF 60µs (6%)"`). Bounded: 64 stages per request, 16,384 pending requests; with the built-in logger the line is an Info record of the log pipeline (dropped and counted in `LogDropped` under overload). Line keys start `trace_id`, then `request` (HTTP) or `connection` + `message` (WS), then `ip` for HTTP when the client address is known (`trace.Event.ClientIP`, filled on `complete` from `tracecontext.ClientIP`); there is no `id` key.
 - `versioning` (`internal/versioning`) — `Options{Type, Key, DefaultVersion, Extractor}`, `type Type int` (`TypeQuery`, `TypeHeader`, `TypeCustom`, `TypeMediaType` = 1–4), hooks `TypeString(o) string` / `Version(o, c *ctx.HTTPContext) string`; users write `app.EnableVersioning(&owlky.VersioningOptions{Type: owlky.VersioningHeader, …})`.
 - `internal/tracecontext` — W3C trace context (design 0011): `NewSpanID`, `NewTraceID`, `ParseTraceparent`, `NewRequest`, `NewMessage`, `With`, `ScopeOf`, `Scope` (`TraceID`, `Request`, `Connection`, `Message`, `Upstream`, `Parent`, `LogSlot`, and the client fields `ClientIP`, `ClientHost`, `IsClientHTTPS`, `IsClientSet` written by `proxy`; `AppendArgs`, `Traceparent`, `SpanID`, `Headers`); `ClientIP` / `IsHTTPS` / `Host(r)` (what `proxy.ClientIP` / `Scheme` / `Host` return) and the shared host syntax helpers `RemoteIP`, `IsValidHost`, `HostName`, `SplitHostPort`, `IsPort`.
 - `internal/httphook` — `Hook{Done(elapsed)}`, `Writer{Inner, SetInner, OnDone}`, `Of(w)`, `CSP{Value, Parts}` + `CSPWriter{SetCSP}` (helmet's nonce form, design 0018): the framework's response writer lets a built-in middleware put a writer in front and run code when the exchange ends (after the lifecycle and before the `complete` event, at the WS handshake's end, before `http.ErrAbortHandler` is re-panicked). One length check per request when unused. Not for users.

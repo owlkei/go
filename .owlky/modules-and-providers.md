@@ -111,7 +111,7 @@ panics `dependency injection: can't resolve argument of '<func>' …`; two or mo
 argument is constructed then, after the `OnInit` of its module (that hook then does not run again).
 
 **Startup timeout**: every factory of the sync set runs on a helper goroutine; `Create()` waits for its
-return, its panic or the deadline of `app.SetStartupTimeout(d)` (default 30 s, one budget from the start
+return, its panic or the deadline of `AppOptions.StartupTimeout` (default 30 s, one budget from the start
 of `Create()`, also the deadline of the `ctx` it passes, canceled when `Create()` returns). An error, a
 panic, a nil module or the deadline panics `invalid module: module factory '<label>' …`.
 

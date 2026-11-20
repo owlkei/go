@@ -11,8 +11,7 @@ import (
 )
 
 func TestPublisher_SharesBrokerWithWSConnmgr(t *testing.T) {
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	app.Create(NewModuleBuilder().Build())
 
 	if *app.ws.connmgr.Broker != app.broker {
@@ -21,8 +20,7 @@ func TestPublisher_SharesBrokerWithWSConnmgr(t *testing.T) {
 }
 
 func TestPublisher_HTTPHandlerFansOutToWSSubscriber(t *testing.T) {
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	app.Create(NewModuleBuilder().Controllers(publisherTestController{}).Build())
 
 	server := httptest.NewServer(app)
@@ -68,8 +66,7 @@ func TestPublisher_HTTPHandlerFansOutToWSSubscriber(t *testing.T) {
 }
 
 func TestPublisher_WSHandlerFansOutToOtherWSSubscriber(t *testing.T) {
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	app.Create(NewModuleBuilder().Controllers(publisherWSTestController{}).Build())
 
 	server := httptest.NewServer(app)

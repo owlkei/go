@@ -437,8 +437,7 @@ func TestTokenBucket_RetryAfterNeverZeroOnRefusal(t *testing.T) {
 }
 
 func TestPageError_ThrottlerFollowsRoute(t *testing.T) {
-	app := core.New()
-	app.EnableRender(&core.RenderOptions{FS: fstest.MapFS{"page/hit.html": &fstest.MapFile{Data: []byte("OK")}}, Dir: "."})
+	app := core.New(&core.AppOptions{Render: &core.RenderOptions{FS: fstest.MapFS{"page/hit.html": &fstest.MapFile{Data: []byte("OK")}}, Dir: "."}})
 	app.Create(core.NewModuleBuilder().Controllers(pagedPage{}, pagedAPI{}).Build())
 
 	if w := pagedGet(app, "/page/hit", "application/json"); w.Code != http.StatusOK || w.Body.String() != "OK" {

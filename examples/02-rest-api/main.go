@@ -9,13 +9,13 @@ import (
 )
 
 func newApp() owlky.App {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(NewBooksModule())
 	return app
 }
 
 func main() {
-	if err := newApp().Listen(3000, nil); err != nil {
+	if err := newApp().Listen(); err != nil {
 		log.Fatal(err)
 	}
 }

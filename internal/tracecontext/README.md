@@ -333,7 +333,7 @@ func IsHTTPS(r *http.Request) bool
 func Host(r *http.Request) string
 ```
 
-The client of a request, as `proxy.ClientIP`, `proxy.Scheme` and `proxy.Host` show it to users.
+The client of a request, as `owlky.ClientIP`, `owlky.ClientScheme` and `owlky.ClientHost` show it to users.
 
 #### Rules
 - A scope with `IsClientSet` decides: its `ClientIP`, `IsClientHTTPS` and `ClientHost` (or `r.Host`

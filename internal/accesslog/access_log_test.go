@@ -1073,3 +1073,40 @@ func TestAccessLog_IPOmittedWhenUnknown_BuiltinJSON(t *testing.T) {
 		t.Error(test.DiffMessage(parsed, "<no ip>", "A1: the zero Addr is omitted by the built-in logger too"))
 	}
 }
+
+func TestAccessLog_PreRouteGroup(t *testing.T) {
+	tr, logger, _ := setup(t)
+	tr.Emit(stageEvent("r1", trace.StagePreRoute, "headers", 23*time.Microsecond))
+	tr.Emit(stageEvent("r1", trace.StagePreRoute, "csrf", 422*time.Nanosecond))
+	tr.Emit(stageEvent("r1", trace.StageMiddleware, "M1", time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageHandler, "H1", 3*time.Millisecond))
+	tr.Emit(completeEvent("r1", 200, "/users", 10*time.Millisecond))
+
+	lines := logger.lines()
+	if len(lines) != 1 {
+		t.Fatal(test.DiffMessage(len(lines), 1, "T5: one line"))
+	}
+	var keys []string
+	for i := 0; i+1 < len(lines[0].args); i += 2 {
+		keys = append(keys, lines[0].args[i].(string))
+	}
+	pre, mw := slices.Index(keys, "pre-route"), slices.Index(keys, "middleware")
+	if pre < 0 || mw < 0 || pre > mw {
+		t.Fatal(test.DiffMessage(keys, "pre-route before middleware", "T5: the line carries a pre-route attribute before middleware"))
+	}
+	text, _ := argValue(t, lines[0].args, "pre-route").(string)
+	if !strings.HasPrefix(text, "headers 23") || !strings.Contains(text, ", csrf 422ns (") {
+		t.Error(test.DiffMessage(text, "headers 23µs (n%), csrf 422ns (n%)", "T5: stage events grouped by Stage"))
+	}
+}
+
+func TestAccessLog_PrettyPreRouteGroup(t *testing.T) {
+	tr, out := builtinAccessLog(t, 2)
+	tr.Emit(stageEvent("r1", trace.StagePreRoute, "headers", 20*time.Millisecond))
+	tr.Emit(stageEvent("r1", trace.StageHandler, "h.READ_ping", 75*time.Millisecond))
+	tr.Emit(completeEvent("r1", 200, "/ping", 100*time.Millisecond))
+	plain := ansiPattern.ReplaceAllString(out.String(), "")
+	if !strings.Contains(plain, "── pre-route") || !strings.Contains(plain, "── headers ") {
+		t.Error(test.DiffMessage(plain, "a pre-route group with a headers child", "T5: the pretty log shows a pre-route group"))
+	}
+}

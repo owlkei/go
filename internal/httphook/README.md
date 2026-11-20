@@ -88,7 +88,7 @@ type CSP struct {
 }
 ```
 
-The nonce form of a `Content-Security-Policy`, built once by `helmet.NewMiddleware()`.
+The nonce form of a `Content-Security-Policy`, built once when the `headers` stage is compiled (`helmet.Compile`).
 
 | Member | Meaning |
 |---|---|

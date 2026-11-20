@@ -110,7 +110,7 @@ own work on the current branch (no separate roadmap branch). Claude never pushes
 
 | Agent | Model | Writes | Role |
 |---|---|---|---|
-| `go-architect` | Opus by default; overridden to Fable for complex work and in the 48 hours before Fable's weekly reset (`CLAUDE.local.md`), back to Opus when Fable is unavailable | `docs/design/` only | designs, and the call when the builder fails twice |
+| `go-architect` | Opus by default; overridden to Fable for complex work and in the 24 hours before Fable's weekly reset (`CLAUDE.local.md`), back to Opus when Fable is unavailable | `docs/design/` only | designs, and the call when the builder fails twice |
 | `go-tester` | Sonnet | `*_test.go` only | failing tests from an approved design (TDD red) |
 | `go-builder` | Opus | code, README, docs; never `*_test.go` | make the tests pass, then refactor (green); the orchestrator checks that no test file changed |
 | `go-reviewer` | Opus | nothing | review against the designs and `CLAUDE.md` |
@@ -127,19 +127,20 @@ Owlky Go is a NestJS-inspired dependency injection web framework for Go. The cor
 
 | Path | Holds | Importable by applications |
 |---|---|---|
-| `/` (package `owlky`: `aliases.go`, `trace.go`) | `New`, `ModuleBuilder`, `TraceTransport` and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `RenderOptions`, `PathStyle`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
-| `exception`, `log`, `middlewares/*`, `modules/*`, `guards/*` | exceptions, the logger and `log.Logger` / `log.LogAdapter`, built-in middlewares, modules and the throttler guard | yes |
+| `/` (package `owlky`: `aliases.go`, `options.go`, `trace.go`) | `New`, `OptionsFromEnv`, `ModuleBuilder`, `TraceTransport`, `ClientIP` / `ClientScheme` / `ClientHost`, `AppOptions` with its groups and `ByteSize`, and the aliases of every engine type users name (`App`, `Module`, `HTTP`, `RenderOptions`, `PathStyle`, `Guard`, `HTTPContext`, `Body`, `Aggregation`, `VersioningOptions`…) | yes |
+| `exception`, `log`, `modules/*`, `guards/*` | exceptions, the logger and `log.Logger` / `log.LogAdapter`, modules and the throttler guard | yes |
 | `internal/core`, `internal/common`, `internal/ctx` | the container and server, the controller embeds and layers, the request contexts | no (root aliases) |
-| `internal/render` | the `html/template` engine behind `EnableRender`: template sets, pooled buffers, the nonce, the asset table (design 0018) | no |
+| `internal/middlewares/*` (`loadshed`, `proxy`, `hostcheck`, `httpsredirect`, `helmet`, `cors`, `csrf`, `compress`, `origin`), `internal/dotenv` | the pre-route stages `New` builds from `AppOptions`, in that fixed order (`origin`: the shared `Origins` set and the WebSocket handshake check), and the `.env` parser shared by `modules/config` and `OptionsFromEnv` (design 0022) | no |
+| `internal/render` | the `html/template` engine behind `AppOptions.Render`: template sets, pooled buffers, the nonce, the asset table (design 0018) | no |
 | `internal/routing`, `pattern`, `wsevent`, `memorybroker`, `memorycache`, `aggregation`, `versioning`, `trace`, `accesslog`, `devtool` | the engine's other parts | no |
 | `internal/apicheck`, `color`, `crypto`, `ds`, `httphook`, `inspect`, `logpipe`, `num`, `slice`, `str`, `test`, `tracecontext` | tools and utilities | no |
 | `examples/`, `bench/` | five example apps in learning order, each its own module with `replace go.owlky.com/owlky => ../..` (`make examples` vets and tests them; roadmap 0011), and the framework benchmarks | no |
 
 - Applications (and `examples/`, every README example) import only the root package plus `exception`,
-  `log`, `middlewares/*`, `modules/*`, `guards/*`. `api/owlky.txt` is the exact public API; `make api-check` fails on any
+  `log`, `modules/*`, `guards/*`. `api/owlky.txt` is the exact public API; `make api-check` fails on any
   other importable package or an unreviewed change.
 - The public packages import the engine by its internal path (`internal/core`, `internal/ctx`…), never the
-  root package: `internal/core`'s tests import `middlewares/proxy`, so that would be a cycle.
+  root package (`guards/throttler` reads the client with `tracecontext.ClientIP`, not `owlky.ClientIP`).
 - Hook rule: what the framework needs from a type users see is a package function of the internal package
   (`ctx.HTTPReset(c)`, `aggregation.SetMainData(a, d)`), never an exported method or field, which an alias
   would expose.
@@ -148,7 +149,7 @@ Owlky Go is a NestJS-inspired dependency injection web framework for Go. The cor
   `owlky.WSContext`, `owlky.Aggregation`. Runtime errors start with `owlky:` (`cache:` for the memory store).
 - Naming: settings structs `XxxOptions` passed as `opts *XxxOptions` (`nil` = defaults); option booleans
   `Is…`; accessors without `Get` (`Code()`, `ID()`); enum-like constants `<Type><Value>` (`log.LevelDebug`,
-  `log.FormatJSON`, `throttler.StrategyFixedWindow`, `proxy.HeaderXForwarded`, `owlky.VersioningHeader`, `owlky.PathStyleKebab`).
+  `log.FormatJSON`, `throttler.StrategyFixedWindow`, `owlky.ProxyHeaderXForwarded`, `owlky.VersioningHeader`, `owlky.PathStyleKebab`).
 
 ### DI Container (`internal/core/`)
 
@@ -156,9 +157,9 @@ Written as an application writes it (root aliases):
 
 - **Provider**: any struct implementing `NewProvider() owlky.Provider`. Providers are injected into other providers and controllers via struct field types (reflection-based, no tags needed).
 - **Controller**: any struct implementing `NewController() owlky.Controller`. Must embed `owlky.HTTP` (API and page routes) and/or `owlky.WS` (WebSocket) to register routes. There is no `REST` embed.
-- **Page** (design 0018 amendment 2, `README.md` › Pages, `internal/core/README.md` › Pages): `app.EnableRender(&owlky.RenderOptions{FS: web, IsReload: dev})` (`Dir` defaults to `web`; with an `embed.FS`, `IsReload` reads it from disk) before `Create`. In a `owlky.HTTP` controller, `RENDER_<route>` is a GET page and `SUBMIT_<route>` the POST on the same path; the route picks the template (`<path>.html` or `<path>/index.html` after prefixes and `PathStyle`, `{id}` for parameters), the handler's result is the data. Files in `Dir`: `layout.html` per directory tree, top-level `partials/`, root `<400–599>.html` / `4xx.html` / `5xx.html` error pages, `assets/` (served at `/assets/*`), `public/` (served at the root URL), `X.css` / `X.js` next to `X.html` (linked by `{{pageAssets}}`, served at `/assets/_pages/…`); an `.html` without a route stops `Create`. Fixed template functions `nonce`, `asset`, `dict`, `pageAssets` (no user `FuncMap`). `RENDER_` answers 200, a `SUBMIT_` that renders 422, `c.Redirect` → 303. Forms: a `Form` pipe (exported fields only) + `Bind` + `FieldLevel`. `html/template` strips JavaScript comments in inline scripts.
+- **Page** (design 0018 amendment 2, `README.md` › Pages, `internal/core/README.md` › Pages): `Render: &owlky.RenderOptions{FS: web, IsReload: dev}` in `AppOptions` (`Dir` defaults to `web`; with an `embed.FS`, `IsReload` reads it from disk). In a `owlky.HTTP` controller, `RENDER_<route>` is a GET page and `SUBMIT_<route>` the POST on the same path; the route picks the template (`<path>.html` or `<path>/index.html` after prefixes and `PathStyle`, `{id}` for parameters), the handler's result is the data. Files in `Dir`: `layout.html` per directory tree, top-level `partials/`, root `<400–599>.html` / `4xx.html` / `5xx.html` error pages, `assets/` (served at `/assets/*`), `public/` (served at the root URL), `X.css` / `X.js` next to `X.html` (linked by `{{pageAssets}}`, served at `/assets/_pages/…`); an `.html` without a route stops `Create`. Fixed template functions `nonce`, `asset`, `dict`, `pageAssets` (no user `FuncMap`). `RENDER_` answers 200, a `SUBMIT_` that renders 422, `c.Redirect` → 303. Forms: a `Form` pipe (exported fields only) + `Bind` + `FieldLevel`. `html/template` strips JavaScript comments in inline scripts.
 - **Module**: built with `owlky.ModuleBuilder().Imports(...).Controllers(...).Providers(...).Build()` (inside the engine: `core.NewModuleBuilder()`); `.PathStyle(owlky.PathStyleAsWritten)` keeps `_` in its URLs and those of its imports (default `owlky.PathStyleKebab`; inherited like `Prefix`, an explicit setting wins). Modules compose the app tree. Set the built module's `IsGlobal` field to `true` to make its providers available everywhere; hooks are the `OnInit`, `OnReady` and `OnShutdown` fields (`internal/core/README.md` › Modules and lifecycle). `.AsyncImports(...)` builds entries in the background (see Modules and module factories below).
-- **App**: created via `owlky.New()`, wired by `app.Create(rootModule)`, started with `app.Listen(port, nil)` (or `ListenTLS` / `Serve`; options in `owlky.ServerOptions`: `ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`; `internal/core/README.md` › Server).
+- **App**: created via `owlky.New(opts *owlky.AppOptions)` (`nil` = defaults; `owlky.OptionsFromEnv()` fills the same struct from `OK_*` variables, `PORT` and `./.env`), wired by `app.Create(rootModule)`, started with `app.Listen()` (or `app.Serve(listener)`). The whole configuration is in `AppOptions`, read and checked once at `New` (design 0022): `Logger`, `StartupTimeout`, `IsAccessLog`, `IsDevtool`, `Server` (`Port`, `ShutdownTimeout`, `TLS`, `IsH2C`), `HTTP` (`MaxBodyBytes` as a `ByteSize`, `ServeDirs`), `Render`, `WS`, `Versioning`, and the pre-route stages `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress` (off until configured; fixed order loadshed → proxy → hostcheck → httpsredirect → headers → cors → csrf → compress, before routing and user middlewares). There are no `Enable…` / `Set…` methods and no public built-in middlewares.
 
 ### REST Route Convention
 
@@ -183,7 +184,7 @@ their code and message; anything else answers a fixed 500 and is logged. A cause
 the client (the status text is sent, the cause logged at Debug), and a 500 exception sends the fixed
 `Internal Server Error` text (design 0018 R24).
 
-Error output: JSON without `EnableRender`. With it, a matched page route (`RENDER_`, `SUBMIT_`) from its first
+Error output: JSON without `Render.FS`. With it, a matched page route (`RENDER_`, `SUBMIT_`) from its first
 guard on answers HTML (`<code>.html`, then `<N>xx.html` in the root layout, else a built-in page); an API,
 `SERVE`, public-file or asset route answers JSON; before any guard (middleware refusals, 404, 405, 410) HTML only when an `Accept`
 value contains `text/html`, with `Vary: Accept`.
@@ -220,7 +221,7 @@ These are the root aliases of `internal/ctx` and `internal/common` types (`alias
 Two kinds, passed to `Imports(...)` or `AsyncImports(...)`: a **Module** (a `owlky.Module` value: `owlky.ModuleBuilder()....Build()`, or what a function such as `config.Register(&config.ConfigModuleOptions{...})` returns; `Register` is only a name) and a **Module factory** (a function value returning a `owlky.Module`, whose parameters are injected; the framework calls it once per app). **Global** (`IsGlobal`) is a property of either, not a kind; async is how a module is imported. Design 0020; user guide `README.md` › Module lifecycle, rules `internal/core/README.md` › Module factories / AsyncImports and module states / Retry.
 
 - Factory shapes: `func(deps...) Module`, `func(deps...) (Module, error)`, `func(ctx, deps...) (Module, error)`; any other panics at `Build()`. Parameters resolve from siblings (the other entries of the same `Imports` / `AsyncImports`), then globals, then `log.Logger` / `Publisher`; factories run in dependency order whatever their position.
-- `Imports` fails fast: a factory error, panic or `app.SetStartupTimeout(d)` deadline (default 30 s, one budget for `Create`, in `ctx`) stops `Create()`. `AsyncImports` never stops the app: entries build in the background (one goroutine each, `ctx` canceled at shutdown), modules that inject their providers are `pending` → `ready` | `failed` (one way); their routes stay registered behind a gate and answer `503` (`Retry-After` = seconds to the next `Retry` attempt, else 5; none when failed; `503.html` on pages), WS events reply `not ready: <topic>`. `OnShutdown` only for `ready` modules.
+- `Imports` fails fast: a factory error, panic or `AppOptions.StartupTimeout` deadline (default 30 s, one budget for `Create`, in `ctx`) stops `Create()`. `AsyncImports` never stops the app: entries build in the background (one goroutine each, `ctx` canceled at shutdown), modules that inject their providers are `pending` → `ready` | `failed` (one way); their routes stay registered behind a gate and answer `503` (`Retry-After` = seconds to the next `Retry` attempt, else 5; none when failed; `503.html` on pages), WS events reply `not ready: <topic>`. `OnShutdown` only for `ready` modules.
 - Refused: controllers in a module an async factory returns (entry fails); one entry in both lists; a `NewController` that uses injected providers (gated controllers run it twice: a probe at `Create()`, then for real); app-wide layers injecting async providers; an `Imports` factory needing an async module.
 - `owlky.Retry(ctx, *owlky.RetryOptions, fn)`: backoff with jitter until `ctx` is done or `MaxAttempts`; with an async factory's `ctx` it reports `ModuleRetry`, devtool `attempts` / `last_error`, `Retry-After`. Transient errors: retry without a limit; permanent ones (bad config): return the error.
 - Example app: `examples/04-async-modules`.
@@ -237,7 +238,7 @@ There is no HTTP client or persistence module: outbound calls use `net/http` wit
 
 ### WebSocket
 
-Controllers embed `owlky.WS` (alongside or instead of `owlky.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_ANY` → `chat.*`, `SUBSCRIBE_chat_ALL` → `chat.**`); enable the endpoint with `app.EnableWS(&owlky.WSOptions{Path: "ws"}, middlewares...)`. The framework handles the `websocket.Conn` lifecycle; handlers receive `owlky.WSPayload` for incoming events and fan out through `owlky.Publisher`.
+Controllers embed `owlky.WS` (alongside or instead of `owlky.HTTP`). Handler names start with `SUBSCRIBE` and map to event names (e.g. `SUBSCRIBE_chat_ANY` → `chat.*`, `SUBSCRIBE_chat_ALL` → `chat.**`); enable the endpoint with `WS: &owlky.WSOptions{Path: "ws"}` in `AppOptions`; the handshake runs the loadshed, proxy and hostcheck stages that are on, the Origin check (an `Origin` that is neither same-origin nor in `Origins` gets 403), then the `BindGlobalMiddlewares`. The framework handles the `websocket.Conn` lifecycle; handlers receive `owlky.WSPayload` for incoming events and fan out through `owlky.Publisher`.
 
 ### Bootstrap-time Error Convention
 
@@ -248,9 +249,9 @@ Message format is `"<category>: <detail>"`:
 - `"event conflict: ..."` (`internal/core/container.go`, per app)
 - `"invalid handler: ..."` (`internal/routing/router.go`; `internal/core/container.go`: a `SUBMIT_` without the `RENDER_` of the same words in its controller)
 - `"invalid route: ..."` (`internal/routing/router.go`: a partial parameter segment such as `/files/{name}.json`, a literal `$` segment, or more than 64 segments; `internal/common`: an upper-case word that is not a route word, `BY` / `AND` without a name, a word after the parameters, `OF` with nothing on one side, `FILE` without a name and an extension, `ALL` not last, `ANY`, `VERSION` or `FILE` in a page route name, a `Path` without a handler, bound to a non-route, set twice or holding `?` / `#`, `Path` or `Prefix` bound to a `SUBMIT_`; `internal/core/container.go`: a page route whose path holds a wildcard)
-- `"invalid render: ..."` (`internal/core/app.go`, `container.go`, `http_page.go`: `EnableRender` without `FS` or called twice, a `RENDER_` / `SUBMIT_` without `EnableRender`, a page route with no template, two templates, a reserved directory or an error page name, an `.html` file without a route, an unusable error page name, a CSS or JS file that belongs to no template, a page set with such files and no `{{pageAssets}}`, `assets/_pages`, a template that fails to parse, calls a missing template or fails to escape, with its file path)
+- `"invalid render: ..."` (`internal/core/app.go`, `container.go`, `http_page.go`: a `Render.FS` without its `Dir` directory (at `New`), a `RENDER_` / `SUBMIT_` without `Render.FS`, a page route with no template, two templates, a reserved directory or an error page name, an `.html` file without a route, an unusable error page name, a CSS or JS file that belongs to no template, a page set with such files and no `{{pageAssets}}`, `assets/_pages`, a template that fails to parse, calls a missing template or fails to escape, with its file path)
 - `"invalid module: ..."` (`internal/core/module_builder.go`: an import that is not a module or a module factory, one entry in both `Imports` and `AsyncImports`, `PathStyle` with another value than the two constants; `Create(nil)` in `internal/core/app.go`; `internal/core/module_factory.go`: a module factory that failed, panicked, returned a nil module, did not return within the startup timeout, or is in `Imports` and needs an async module; `internal/core/module_state.go`: an entry imported with both lists by two modules, async modules that need each other, a probed `NewController` that panicked)
-- `"invalid app: ..."` (`internal/core/app.go`: `Create` called twice, a configuration method (`EnableRender`, `SetStartupTimeout` too) or `SetLogger` after `Create`, `SetLogger(nil)`, `SetStartupTimeout` with a duration of zero or less)
+- `"invalid app: ..."` (`internal/core/options.go`, at `New`: every bad `AppOptions` value, as `<Group>.<Field> …` (design 0022 A3), and the errors `OptionsFromEnv` recorded, `invalid app: <n> environment errors:` with one per line; `internal/core/app.go`: `Create` called twice, a `BindGlobal…` call after `Create`)
 - `"invalid retry: ..."` (`internal/core/retry.go`: `Retry` without a function; called by module code, not only at `Create()`)
 - `"dependency injection: ..."` (`internal/core/fn.go`, `internal/core/fn_plan.go`, `internal/core/container.go`; `internal/core/module_factory.go`: factories that can't be ordered; `internal/core/module_state.go`: an app-wide layer that injects an async provider)
 - `"invalid config: ..."` (`modules/config`: a bad `.env` file or line with its path and line number, never a value; contradicting options; too deeply nested `Loads`; `Set` on a zero `ConfigService`)

@@ -471,9 +471,9 @@ about 6 ns; a line through it costs what a plain line does (`log/README.md` › 
 
 ### 8.1 GOTCHA: State Shared Between Tests Outside the Framework
 
-Every `owlky.New()` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module factory.
+Every `owlky.New(opts)` is independent: routes, providers, layers, logger and publisher belong to the app, so two tests may give the same module value to two apps. What is shared is what you created once yourself: a package-level `var X = some.Register(…)` that built a backend (a cache), or state captured in a module factory.
 
-**Rule**: A new `owlky.New()` per test; build modules that hold resources per test when the tests must not share them
+**Rule**: A new `owlky.New(opts)` per test; build modules that hold resources per test when the tests must not share them
 
 ---
 
@@ -481,7 +481,7 @@ Every `owlky.New()` is independent: routes, providers, layers, logger and publis
 
 Between the end of `Create` and shutdown, built-in log lines reach stdout a moment after the call
 (asynchronous pipeline). A test that reads stdout stops the app first (`app.Stop()` flushes), or gives
-the app a logger of its own with `SetLogger`.
+the app a logger of its own with `AppOptions.Logger`.
 
 ### 8.3 GOTCHA: Testing WebSocket Without Actual Connection
 
@@ -569,9 +569,9 @@ brokerB.Unsubscribe(subA)  // returns ErrForeignSubscription, no-op on both brok
 
 Binding one Middleware/Guard/Interceptor/ExceptionFilter type with **different** configuration gives one instance per configuration:
 ```go
-// Controller A and controller B each get their own cors.CORS instance.
-c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://a.example.com"}})
-c.BindMiddleware(cors.CORS{AllowOrigins: []string{"https://b.example.com"}})
+// Controller A and controller B each get their own TenantHeader instance.
+c.BindMiddleware(TenantHeader{Tenant: "a"})
+c.BindMiddleware(TenantHeader{Tenant: "b"})
 ```
 
 **The gotcha**: the app's layer cache (`(*container).construct` in `internal/core/container.go`, behind every `Bind…`, global or per-controller, HTTP and WS) shares one instance, inside one app, between bindings whose values are **deeply equal** (same `reflect.Type`, same constructor name, `reflect.DeepEqual`). Two `throttler` guards bound with the same options on two controllers are one limiter with one shared budget, not two. A value holding a non-nil func or a different channel is never equal to another, so it is never shared.
@@ -593,38 +593,38 @@ func (c UploadController) CREATE(body owlky.Body) any {
 }
 ```
 
-**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless the serving call sets `ServerOptions.MaxRequestBodyBytes` (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `owlky.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
+**Why It's Wrong**: Every request body is wrapped in `http.MaxBytesReader` at the app's cap: 10 MiB unless `AppOptions.HTTP.MaxBodyBytes` is set (negative = no cap). Do not generate `app.SetMaxBodySize(...)`, it does not exist. A body over the cap causes `owlky.Body()` to panic `exception.RequestEntityTooLargeException` (413) instead of parsing.
 
-**RIGHT**: Raise the cap for the whole app with `app.Listen(port, &owlky.ServerOptions{MaxRequestBodyBytes: 50 << 20})`; there is no per-route cap.
+**RIGHT**: Raise the cap for the whole app with `owlky.New(&owlky.AppOptions{HTTP: &owlky.HTTPOptions{MaxBodyBytes: 50 * owlky.MiB}})`; there is no per-route cap.
 
 **Rule**: Any handler that accepts uploads must account for the app-wide cap and the 413 it produces; don't assume an unlimited body size.
 
 ## 12. CORS, CSRF and Client IP Gotchas
 
-### 12.1 GOTCHA: `cors.CORS{}` With No Origin List
+### 12.1 GOTCHA: CORS With No `Origins`
 
 **WRONG**:
 ```go
-cors.CORS{}                           // panics at Create(): invalid cors: AllowOrigins is empty
-cors.CORS{AllowOrigins: []string{"*"}, IsAllowCredentials: true} // panics: * never with credentials
+owlky.AppOptions{CORS: &owlky.CORSOptions{IsEnabled: true}} // panics at New: invalid app: CORS needs Origins
+owlky.AppOptions{Origins: []string{"*"}, CORS: &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true}} // panics: * never with credentials
 ```
 
 **Why It's Wrong**: the zero value allows nothing (design 0014) and `*` with credentials would give every site credentialed access. The fields are exactly `AllowOrigins`, `AllowMethods`, `AllowHeaders`, `ExposeHeaders`, `MaxAge`, `IsAllowCredentials`, `IsAllowPrivateNetwork`; origins are exact strings or `*.` patterns, never patterns of another syntax.
 
 **RIGHT**:
 ```go
-cors.CORS{AllowOrigins: []string{"https://app.example.com", "https://*.example.com"}, IsAllowCredentials: true}
+owlky.AppOptions{Origins: []string{"https://app.example.com", "https://*.example.com"}, CORS: &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true}}
 ```
 
 **Rule**: list lower-case `scheme://host[:port]` origins or `scheme://*.host[:port]` patterns; `*` only alone and only without credentials.
 
 ### 12.2 GOTCHA: CSRF Tokens
 
-**WRONG**: generating CSRF token fields or helpers on `csrf.CSRF`, or front-end code that reads a CSRF cookie and sends a token header.
+**WRONG**: generating CSRF token fields or helpers, or front-end code that reads a CSRF cookie and sends a token header.
 
 **Why It's Wrong**: `csrf` now wraps `http.CrossOriginProtection` (Fetch Metadata + `Origin`): there is no token, no cookie and no context value. The only option is `TrustedOrigins`.
 
-**RIGHT**: `csrf.CSRF{}` or `csrf.CSRF{TrustedOrigins: []string{"https://app.example.com"}}`; keep `GET` free of state changes.
+**RIGHT**: `CSRF: &owlky.CSRFOptions{IsEnabled: true}`, with `Origins: []string{"https://app.example.com"}` for trusted cross-origin pages; keep `GET` free of state changes.
 
 ### 12.3 GOTCHA: Reading the Client IP From Headers
 
@@ -636,7 +636,7 @@ ip := c.Request.Header.Get("X-Real-IP")
 
 **Why It's Wrong**: a client writes these headers itself: one new value per request bypasses a rate limit and fakes the log. Behind a proxy, `r.RemoteAddr` is the proxy.
 
-**RIGHT**: bind `proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}` first, then read `proxy.ClientIP(c.Request)`, `proxy.Scheme(c.Request)` and `proxy.Host(c.Request)` everywhere (handlers, guards, a throttler `KeyFunc`).
+**RIGHT**: set `Proxy: &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}}` in `AppOptions`, then read `owlky.ClientIP(c.Request)`, `owlky.ClientScheme(c.Request)` and `owlky.ClientHost(c.Request)` everywhere (handlers, guards, a throttler `KeyFunc`).
 
 **Rule**: never parse a forwarding header yourself; without `proxy` bound the client is the connection's peer, by design.
 
@@ -655,7 +655,7 @@ Each is documented once in the package README named; generated code must respect
 - **`owlky.TraceTransport` sends `traceparent` to every host**, and an incoming valid `traceparent`
   sets the trace ID and flags: never authorize by a trace ID (`internal/trace/README.md` › Security).
 - **`proxy` hops mode (`TrustedHops`) doesn't check the peer**: only when the app is unreachable
-  except through the proxies (`middlewares/proxy/README.md` › Security).
+  except through the proxies (`internal/middlewares/proxy/README.md` › Security).
 - **Throttler**: a client with an IPv6 /48 can evict its own /64 counters from the 32,768-entry
   default store; `SlidingWindow` / `TokenBucket` are exact within one process only, even with a
   shared `Backend` (`guards/throttler/README.md` › Known limits).

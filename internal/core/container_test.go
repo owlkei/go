@@ -18,7 +18,7 @@ import (
 )
 
 func TestApp_SameGuardTypeDifferentConfig(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(roleAlphaController{}, roleBetaController{}).Build())
 
 	cases := []struct {
@@ -38,7 +38,7 @@ func TestApp_SameGuardTypeDifferentConfig(t *testing.T) {
 }
 
 func TestApp_GuardBoundToNonRoutePanics(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var rec any
 	func() {
@@ -56,7 +56,7 @@ func TestApp_GuardBoundToNonRoutePanics(t *testing.T) {
 }
 
 func TestContainer_InterfaceKeysAreReflected(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	got, ok := app.container.interfaceFor(genFieldKey(reflect.TypeFor[log.Logger]()))
@@ -94,7 +94,7 @@ func TestContainer_NoImportPathLiteralKeys(t *testing.T) {
 
 func TestCreate_Characterization_Routes(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
-		app := New()
+		app := New(nil)
 		app.Create(NewModuleBuilder().Controllers(z1Controller{}).Build())
 
 		cases := []struct {
@@ -123,8 +123,7 @@ func TestCreate_Characterization_Routes(t *testing.T) {
 
 func TestCreate_Characterization_Versions(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
-		app := New()
-		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
+		app := New(&AppOptions{Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}})
 		app.Create(NewModuleBuilder().Controllers(z1VersionedController{}).Build())
 
 		cases := []struct {
@@ -157,7 +156,7 @@ func TestCreate_Characterization_NestedPrefixes(t *testing.T) {
 		root := NewModuleBuilder().Imports(child).Controllers(z1OwnController{}).Build()
 		root.Prefix("api")
 
-		app := New()
+		app := New(nil)
 		app.Create(root)
 
 		cases := []struct {
@@ -185,7 +184,7 @@ func TestCreate_Characterization_NestedPrefixes(t *testing.T) {
 
 func TestCreate_Characterization_LayerOrderPerRoute(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
-		app := New()
+		app := New(nil)
 		app.BindGlobalMiddlewares(z1Middleware{Name: "g1"}, z1Middleware{Name: "g2"})
 		app.BindGlobalGuards(z1Guard{Name: "g1"})
 		app.BindGlobalInterceptors(z1Interceptor{Name: "g1"})
@@ -210,7 +209,7 @@ func TestCreate_Characterization_ProviderConstructionOrder(t *testing.T) {
 		modB := NewModuleBuilder().Imports(shared).Providers(z1ProvLeafB{}).Build()
 		root := NewModuleBuilder().Imports(modA, modB).Providers(z1ProvRoot{}, z1ProvRootDep{}).Build()
 
-		New().Create(root)
+		New(nil).Create(root)
 
 		want := "[shared leafA leafB root rootDep]"
 		if got := sprint(z1Built.list()); got != want {
@@ -222,7 +221,7 @@ func TestCreate_Characterization_ProviderConstructionOrder(t *testing.T) {
 func TestCreate_SameShapeDifferentParamNamesConflicts(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			New().Create(NewModuleBuilder().Controllers(cfByIDController{}).Build())
+			New(nil).Create(NewModuleBuilder().Controllers(cfByIDController{}).Build())
 		})
 		if !panicked || !strings.Contains(text, "route conflict") || !strings.Contains(text, "READ_cf_BY_id") || !strings.Contains(text, "READ_cf_BY_name") {
 			t.Error(test.DiffMessage(text, "route conflict: READ_cf_BY_… ... READ_cf_BY_…", "I6: two routes that differ only in parameter names conflict at bootstrap"))
@@ -233,7 +232,7 @@ func TestCreate_SameShapeDifferentParamNamesConflicts(t *testing.T) {
 func TestCreate_DifferentShapesDoNotConflict(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			New().Create(NewModuleBuilder().Controllers(cfShapesController{}).Build())
+			New(nil).Create(NewModuleBuilder().Controllers(cfShapesController{}).Build())
 		})
 		if panicked {
 			t.Error(test.DiffMessage(text, "no panic", "I6: routes with a different shape, method or static segment do not conflict"))
@@ -243,7 +242,7 @@ func TestCreate_DifferentShapesDoNotConflict(t *testing.T) {
 
 func TestHooks_OnInitDependenciesFirst(t *testing.T) {
 	rec := &createRecorder{}
-	mustCreate(t, New(), hkDiamond(rec))
+	mustCreate(t, New(nil), hkDiamond(rec))
 
 	got := sprint(hkFilter(rec.list(), "init:"))
 	if want := "[B A C root]"; got != want {
@@ -253,7 +252,7 @@ func TestHooks_OnInitDependenciesFirst(t *testing.T) {
 
 func TestHooks_DiamondImportOnce(t *testing.T) {
 	rec := &createRecorder{}
-	mustCreate(t, New(), hkDiamond(rec))
+	mustCreate(t, New(nil), hkDiamond(rec))
 
 	for _, name := range []string{"B", "A", "C", "root"} {
 		if got := rec.count("init:" + name); got != 1 {
@@ -272,7 +271,7 @@ func TestHooks_OnInitBeforeOwnProviders(t *testing.T) {
 	child.OnInit = func() { hkEvents.add("init:child") }
 	root := NewModuleBuilder().Imports(child).Build()
 	root.OnInit = func() { hkEvents.add("init:root") }
-	mustCreate(t, New(), root)
+	mustCreate(t, New(nil), root)
 
 	got := sprint(hkEvents.list())
 	if want := "[init:child provider init:root]"; got != want {
@@ -286,7 +285,7 @@ func TestHooks_OnInitPanicStopsCreate(t *testing.T) {
 	child.OnInit = func() { panic("init boom") }
 	root := hkModule(rec, "root", child)
 
-	value, panicked := createPanicValue(func() { New().Create(root) })
+	value, panicked := createPanicValue(func() { New(nil).Create(root) })
 
 	if !panicked || value != "init boom" {
 		t.Error(test.DiffMessage(value, "init boom", "K3: a panic in OnInit reaches the caller unchanged"))
@@ -300,9 +299,9 @@ func TestHooks_SharedModuleHooksPerApp(t *testing.T) {
 	rec := &createRecorder{}
 	shared := hkModule(rec, "shared")
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, shared)
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, shared)
 	appA.Stop()
 	appB.Stop()
@@ -315,9 +314,9 @@ func TestHooks_SharedModuleHooksPerApp(t *testing.T) {
 }
 
 func TestTwoApps_EachAnswersItsRoutes(t *testing.T) {
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Controllers(isoAlphaController{}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Controllers(isoBetaController{}).Build())
 
 	isoExpect(t, appA, "/alpha", http.StatusOK, "I1: the first app answers its route")
@@ -327,11 +326,11 @@ func TestTwoApps_EachAnswersItsRoutes(t *testing.T) {
 }
 
 func TestTwoApps_PrefixNotDoubled(t *testing.T) {
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, isoPrefixedRoot())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, isoPrefixedRoot())
-	appC := New()
+	appC := New(nil)
 	mustCreate(t, appC, isoPrefixedRoot())
 
 	for name, app := range map[string]*App{"first": appA, "second": appB, "third": appC} {
@@ -344,8 +343,8 @@ func TestTwoApps_PrefixNotDoubled(t *testing.T) {
 func TestTwoApps_ProvidersConstructedPerApp(t *testing.T) {
 	isoBuilt.Store(0)
 
-	mustCreate(t, New(), NewModuleBuilder().Providers(isoStateProvider{}).Build())
-	mustCreate(t, New(), NewModuleBuilder().Providers(isoStateProvider{}).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Providers(isoStateProvider{}).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Providers(isoStateProvider{}).Build())
 
 	if got := isoBuilt.Load(); got != 2 {
 		t.Error(test.DiffMessage(got, int64(2), "I2: NewProvider runs once per app for a provider type present in both"))
@@ -353,9 +352,9 @@ func TestTwoApps_ProvidersConstructedPerApp(t *testing.T) {
 }
 
 func TestTwoApps_ProviderStateNotShared(t *testing.T) {
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Providers(isoStateProvider{}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Providers(isoStateProvider{}).Build())
 
 	a, okA := appA.Get(isoStateProvider{}).(isoStateProvider)
@@ -379,9 +378,9 @@ func TestTwoApps_SameRootModule(t *testing.T) {
 	isoControllerBuilt.Store(0)
 	root := NewModuleBuilder().Controllers(isoCountedController{}).Build()
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, root)
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, root)
 
 	isoExpect(t, appA, "/counted", http.StatusOK, "I3: the first app answers the shared root's route")
@@ -394,9 +393,9 @@ func TestTwoApps_SameRootModule(t *testing.T) {
 func TestTwoApps_SharedImportedModuleValue(t *testing.T) {
 	shared := NewModuleBuilder().Controllers(isoAlphaController{}).Build()
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Imports(shared).Controllers(isoBetaController{}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Imports(shared).Build())
 
 	isoExpect(t, appA, "/alpha", http.StatusOK, "I3: the first app answers the shared module's route")
@@ -412,13 +411,13 @@ func TestTwoApps_ModuleFuncCalledOncePerApp(t *testing.T) {
 		return NewModuleBuilder().Controllers(isoAlphaController{}).Build()
 	}
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Imports(moduleFunc).Build())
 	if got := calls.Load(); got != 1 {
 		t.Error(test.DiffMessage(got, int64(1), "I3: the module func is called once by the first app"))
 	}
 
-	appB := New()
+	appB := New(nil)
 	left := NewModuleBuilder().Imports(moduleFunc).Build()
 	right := NewModuleBuilder().Imports(moduleFunc).Build()
 	mustCreate(t, appB, NewModuleBuilder().Imports(left, right).Build())
@@ -439,7 +438,7 @@ func TestCreate_DoesNotWriteModule(t *testing.T) {
 	beforeRoot := createDump(reflect.ValueOf(root))
 	beforeChild := createDump(reflect.ValueOf(child))
 
-	mustCreate(t, New(), root)
+	mustCreate(t, New(nil), root)
 
 	if afterRoot := createDump(reflect.ValueOf(root)); afterRoot != beforeRoot {
 		t.Error(test.DiffMessage(afterRoot, beforeRoot, "I3: Create does not write to the root module"))
@@ -452,11 +451,9 @@ func TestCreate_DoesNotWriteModule(t *testing.T) {
 func TestTwoApps_LoggerInjectedPerApp(t *testing.T) {
 	recA, recB := &createLogger{}, &createLogger{}
 
-	appA := New()
-	appA.SetLogger(recA)
+	appA := New(&AppOptions{Logger: recA})
 	mustCreate(t, appA, NewModuleBuilder().Providers(isoLogProvider{}).Build())
-	appB := New()
-	appB.SetLogger(recB)
+	appB := New(&AppOptions{Logger: recB})
 	mustCreate(t, appB, NewModuleBuilder().Providers(isoLogProvider{}).Build())
 
 	if got := len(recA.named("provider-ready")); got != 1 {
@@ -470,9 +467,9 @@ func TestTwoApps_LoggerInjectedPerApp(t *testing.T) {
 func TestTwoApps_PublisherPerApp(t *testing.T) {
 	var seenA, seenB atomic.Int64
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Controllers(isoPubController{}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Controllers(isoPubController{}).Build())
 
 	if _, err := appA.broker.Subscribe("iso.topic", func(*memorybroker.Message) { seenA.Add(1) }); err != nil {
@@ -498,10 +495,10 @@ func TestTwoApps_PublisherPerApp(t *testing.T) {
 }
 
 func TestTwoApps_GlobalProviderNotVisibleAcross(t *testing.T) {
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "a"}).Build())
 
-	appB := New()
+	appB := New(nil)
 	text, panicked := createPanicText(func() {
 		appB.Create(NewModuleBuilder().Providers(isoNeedsGlobalProvider{}).Build())
 	})
@@ -515,8 +512,8 @@ func TestTwoApps_GlobalProviderNotVisibleAcross(t *testing.T) {
 }
 
 func TestTwoApps_SameRouteNoConflict(t *testing.T) {
-	appA := New()
-	appB := New()
+	appA := New(nil)
+	appB := New(nil)
 
 	text, panicked := createPanicText(func() {
 		appA.Create(NewModuleBuilder().Controllers(isoDupController{}).Build())
@@ -532,8 +529,7 @@ func TestTwoApps_SameRouteNoConflict(t *testing.T) {
 func TestTwoApps_SameEventNoConflict(t *testing.T) {
 	text, panicked := createPanicText(func() {
 		for range 2 {
-			app := New()
-			app.EnableWS(&WSOptions{Path: "/ws"})
+			app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 			app.Create(NewModuleBuilder().Controllers(isoWSController{}).Build())
 		}
 	})
@@ -545,7 +541,7 @@ func TestTwoApps_SameEventNoConflict(t *testing.T) {
 func TestCreate_RouteConflictInsideOneApp(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			New().Create(NewModuleBuilder().Controllers(isoConflictA{}, isoConflictB{}).Build())
+			New(nil).Create(NewModuleBuilder().Controllers(isoConflictA{}, isoConflictB{}).Build())
 		})
 		want := "route conflict: READ_clash method is conflicted with READ_clash method"
 		if !panicked || !strings.Contains(text, want) {
@@ -557,8 +553,7 @@ func TestCreate_RouteConflictInsideOneApp(t *testing.T) {
 func TestCreate_EventConflictInsideOneApp(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		text, panicked := createPanicText(func() {
-			app := New()
-			app.EnableWS(&WSOptions{Path: "/ws"})
+			app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 			app.Create(NewModuleBuilder().Controllers(isoEventA{}, isoEventB{}).Build())
 		})
 		want := "event conflict: SUBSCRIBE_clash event is conflicted with SUBSCRIBE_clash event"
@@ -571,9 +566,9 @@ func TestCreate_EventConflictInsideOneApp(t *testing.T) {
 func TestTwoApps_LayersConstructedPerApp(t *testing.T) {
 	isoGuardBuilt.Store(0)
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Controllers(isoGuardedController{}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Controllers(isoGuardedController{}).Build())
 
 	if got := isoGuardBuilt.Load(); got != 2 {
@@ -585,7 +580,7 @@ func TestTwoApps_GlobalLayersConstructedPerApp(t *testing.T) {
 	isoGuardBuilt.Store(0)
 
 	for range 2 {
-		app := New()
+		app := New(nil)
 		app.BindGlobalGuards(isoGuard{Role: "iso-global-per-app"})
 		mustCreate(t, app, NewModuleBuilder().Build())
 	}
@@ -599,7 +594,7 @@ func TestCreate_EqualLayerConfigurationsShareInstance(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
 		isoGuardBuilt.Store(0)
 
-		New().Create(NewModuleBuilder().Controllers(isoGuardedSame{}, isoGuardedOther{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(isoGuardedSame{}, isoGuardedOther{}).Build())
 
 		if got := isoGuardBuilt.Load(); got != 2 {
 			t.Error(test.DiffMessage(got, int64(2), "I7: inside one app equal configurations share one instance and different ones get their own"))
@@ -623,7 +618,7 @@ func TestCreate_TwoAppsConcurrently_NoRace(t *testing.T) {
 			if i%2 == 1 {
 				module = other
 			}
-			app := New()
+			app := New(nil)
 			if text, panicked := createPanicText(func() { app.Create(module) }); panicked {
 				t.Error(test.DiffMessage(text, "no panic", "I8: concurrent Create of apps from shared modules"))
 				return
@@ -704,7 +699,7 @@ func TestLayers_ValuesWithDifferentChannelsAreNeverShared(t *testing.T) {
 }
 
 func TestPath_ReplacesNamePath(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(pathTokenController{}).Build())
 
 	w := createRequest(app, http.MethodPost, "/oauth2/token")
@@ -718,8 +713,7 @@ func TestPath_ReplacesNamePath(t *testing.T) {
 }
 
 func TestPath_KeepsPrefixesMethodVersion(t *testing.T) {
-	app := New()
-	app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
+	app := New(&AppOptions{Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(pathPrefixController{}).Build().Prefix("api"))
 
 	if w := createRequest(app, http.MethodPost, "/api/v1/oauth2/token"); w.Body.String() != "token" {
@@ -737,7 +731,7 @@ func TestPath_KeepsPrefixesMethodVersion(t *testing.T) {
 }
 
 func TestPath_NotRewrittenByStyle(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(pathStyleController{}).Build())
 
 	w := createGet(app, "/a_b/7")
@@ -748,7 +742,7 @@ func TestPath_NotRewrittenByStyle(t *testing.T) {
 }
 
 func TestPath_RootPath(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(pathRootController{}).Build())
 
 	if w := createGet(app, "/"); w.Body.String() != "home" {
@@ -759,7 +753,7 @@ func TestPath_RootPath(t *testing.T) {
 func TestPath_NameStillChecked(t *testing.T) {
 	want := "invalid route: FB in READ_orgs_FB is upper case but not a route word"
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(pathBadNameController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(pathBadNameController{}).Build())
 	})
 	if !panicked || !strings.Contains(text, want) {
 		t.Error(test.DiffMessage(text, want, "B23: a handler with an exact path is still parsed"))
@@ -782,7 +776,7 @@ func TestPath_Panics(t *testing.T) {
 	}
 	for _, c := range cases {
 		text, panicked := createPanicText(func() {
-			New().Create(NewModuleBuilder().Controllers(c.controller).Build())
+			New(nil).Create(NewModuleBuilder().Controllers(c.controller).Build())
 		})
 		if !panicked || !strings.Contains(text, c.want) {
 			t.Error(test.DiffMessage(text, c.want, "B24: "+c.name))
@@ -791,7 +785,7 @@ func TestPath_Panics(t *testing.T) {
 }
 
 func TestPath_TwoOperationsOnePath(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(pathTwoOpsController{}).Build())
 
 	if w := createGet(app, "/token"); w.Body.String() != "read" {
@@ -804,7 +798,7 @@ func TestPath_TwoOperationsOnePath(t *testing.T) {
 
 func TestPath_SameOperationTwiceConflicts(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(pathSameOpController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(pathSameOpController{}).Build())
 	})
 	if !panicked || !strings.Contains(text, "route conflict") {
 		t.Error(test.DiffMessage(text, "route conflict: …", "B25: one operation twice on one path"))
@@ -813,7 +807,7 @@ func TestPath_SameOperationTwiceConflicts(t *testing.T) {
 
 func TestPath_ConflictWithAnotherNameStillDetected(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(pathNameConflictController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(pathNameConflictController{}).Build())
 	})
 	if !panicked || !strings.Contains(text, "route conflict") {
 		t.Error(test.DiffMessage(text, "route conflict: …", "security: two spellings of one URL"))
@@ -822,7 +816,7 @@ func TestPath_ConflictWithAnotherNameStillDetected(t *testing.T) {
 
 func TestPath_LayersAndTargetedPrefix(t *testing.T) {
 	pathGuardCalls = 0
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(pathLayerController{}).Build())
 
 	w := createRequest(app, http.MethodPost, "/v1/oauth2/token")
@@ -836,9 +830,9 @@ func TestPath_LayersAndTargetedPrefix(t *testing.T) {
 }
 
 func TestPath_RoutesAreSeparatePerApp(t *testing.T) {
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Controllers(pathTokenController{}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Controllers(pathTokenController{}).Build())
 
 	for name, app := range map[string]*App{"first": appA, "second": appB} {
@@ -849,7 +843,7 @@ func TestPath_RoutesAreSeparatePerApp(t *testing.T) {
 }
 
 func TestPathStyle_DefaultKebab(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(psRootController{}).Build())
 
 	psExpect(t, app, "B17b", "/root-page", http.StatusOK)
@@ -857,7 +851,7 @@ func TestPathStyle_DefaultKebab(t *testing.T) {
 }
 
 func TestPathStyle_OldSpellingIs404(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(psRootController{}).Build())
 
 	psExpect(t, app, "B12: the route exists under its kebab spelling", "/root-page", http.StatusOK)
@@ -867,7 +861,7 @@ func TestPathStyle_OldSpellingIs404(t *testing.T) {
 func TestPathStyle_RootAsWrittenReachesImports(t *testing.T) {
 	leaf := NewModuleBuilder().Controllers(psLeafController{}).Build()
 	dynamic := func() *Module { return NewModuleBuilder().Controllers(psDynamicController{}).Build() }
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().
 		PathStyle(common.PathStyleAsWritten).
 		Imports(leaf, dynamic).
@@ -884,7 +878,7 @@ func TestPathStyle_RootAsWrittenReachesImports(t *testing.T) {
 
 func TestPathStyle_ExplicitKebabWins(t *testing.T) {
 	leaf := NewModuleBuilder().PathStyle(common.PathStyleKebab).Controllers(psLeafController{}).Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().
 		PathStyle(common.PathStyleAsWritten).
 		Imports(leaf).
@@ -898,7 +892,7 @@ func TestPathStyle_ExplicitKebabWins(t *testing.T) {
 
 func TestPathStyle_ExplicitAsWrittenInsideKebabRoot(t *testing.T) {
 	leaf := NewModuleBuilder().PathStyle(common.PathStyleAsWritten).Controllers(psLeafController{}).Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().
 		PathStyle(common.PathStyleKebab).
 		Imports(leaf).
@@ -912,7 +906,7 @@ func TestPathStyle_ExplicitAsWrittenInsideKebabRoot(t *testing.T) {
 func TestPathStyle_NearestSettingWins(t *testing.T) {
 	leaf := NewModuleBuilder().Controllers(psLeafController{}).Build()
 	mid := NewModuleBuilder().PathStyle(common.PathStyleKebab).Imports(leaf).Controllers(psMidController{}).Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().
 		PathStyle(common.PathStyleAsWritten).
 		Imports(mid).
@@ -927,7 +921,7 @@ func TestPathStyle_NearestSettingWins(t *testing.T) {
 
 func TestPathStyle_ModuleStyleAppliesToItsOwnControllersOnly(t *testing.T) {
 	styled := NewModuleBuilder().PathStyle(common.PathStyleAsWritten).Controllers(psLeafController{}).Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Imports(styled).Controllers(psRootController{}).Build())
 
 	psExpect(t, app, "B17b", "/leaf_page", http.StatusOK)
@@ -954,20 +948,19 @@ func TestPathStyle_TwoParentsRegisterTheRouteOnce(t *testing.T) {
 
 func TestPathStyle_PrefixNotRewritten(t *testing.T) {
 	kebab := NewModuleBuilder().Controllers(psPrefixController{}).Build().Prefix("pay_ments")
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, kebab)
 	psExpect(t, app, "B11", "/pay_ments/my_ctl/root-page", http.StatusOK)
 
 	written := NewModuleBuilder().PathStyle(common.PathStyleAsWritten).Controllers(psPrefixController{}).Build().Prefix("my-api")
-	app = New()
+	app = New(nil)
 	mustCreate(t, app, written)
 	psExpect(t, app, "B11", "/my-api/my_ctl/root_page", http.StatusOK)
 }
 
 func TestPathStyle_OnlyResourceWords(t *testing.T) {
 	for _, style := range []common.PathStyle{common.PathStyleKebab, common.PathStyleAsWritten} {
-		app := New()
-		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
+		app := New(&AppOptions{Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}})
 		builder := NewModuleBuilder().PathStyle(style).Controllers(psParamController{})
 		mustCreate(t, app, builder.Build())
 
@@ -987,8 +980,7 @@ func TestPathStyle_OnlyResourceWords(t *testing.T) {
 }
 
 func TestPathStyle_DoesNotTouchEvents(t *testing.T) {
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().PathStyle(common.PathStyleAsWritten).Controllers(psWSController{}).Build())
 	})
@@ -1008,11 +1000,11 @@ func TestTwoApps_PathStyleNotShared(t *testing.T) {
 	asWritten := NewModuleBuilder().PathStyle(common.PathStyleAsWritten).Imports(leaf).Build()
 	plain := NewModuleBuilder().Imports(leaf).Build()
 
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, asWritten)
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, plain)
-	appC := New()
+	appC := New(nil)
 	mustCreate(t, appC, asWritten)
 
 	psExpect(t, appA, "B17g", "/leaf_page", http.StatusOK)
@@ -1025,7 +1017,7 @@ func TestTwoApps_PathStyleNotShared(t *testing.T) {
 func TestCreate_UpperCaseRoutePanics(t *testing.T) {
 	want := "invalid route: FB in READ_orgs_FB is upper case but not a route word; write it in lower case or camelCase"
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(psUpperController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(psUpperController{}).Build())
 	})
 	if !panicked || !strings.Contains(text, want) {
 		t.Error(test.DiffMessage(text, want, "B9: Create stops on READ_orgs_FB"))
@@ -1033,7 +1025,7 @@ func TestCreate_UpperCaseRoutePanics(t *testing.T) {
 }
 
 func TestCreate_NonRouteMethodIsNeverChecked(t *testing.T) {
-	app := New()
+	app := New(nil)
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Controllers(psHelperController{}).Build())
 	})
@@ -1046,7 +1038,7 @@ func TestCreate_NonRouteMethodIsNeverChecked(t *testing.T) {
 func TestCreate_MalformedRoutePanics(t *testing.T) {
 	want := "invalid route: BY in READ_users_BY has no parameter name"
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(psMalformedController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(psMalformedController{}).Build())
 	})
 	if !panicked || !strings.Contains(text, want) {
 		t.Error(test.DiffMessage(text, want, "B13: Create stops on a malformed name"))
@@ -1059,7 +1051,7 @@ func TestProviders_ConstructedOncePerApp(t *testing.T) {
 	shared := NewModuleBuilder().Providers(pvOnceProvider{}).Build()
 	left := NewModuleBuilder().Imports(shared).Providers(pvOnceProvider{}).Build()
 	right := NewModuleBuilder().Imports(shared).Providers(pvOnceProvider{}).Build()
-	mustCreate(t, New(), NewModuleBuilder().Imports(left, right).Providers(pvOnceProvider{}).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(left, right).Providers(pvOnceProvider{}).Build())
 
 	if got := pvBuilt.Load(); got != 1 {
 		t.Error(test.DiffMessage(got, int64(1), "P1: a provider type is constructed once per app, however many modules list it"))
@@ -1069,7 +1061,7 @@ func TestProviders_ConstructedOncePerApp(t *testing.T) {
 func TestProviders_DependenciesFirst_SameModule(t *testing.T) {
 	pvSeen = createRecorder{}
 
-	mustCreate(t, New(), NewModuleBuilder().Providers(pvTagReader{}, pvTagProvider{}).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Providers(pvTagReader{}, pvTagProvider{}).Build())
 
 	if got := sprint(pvSeen.list()); got != "[reader:built]" {
 		t.Error(test.DiffMessage(got, "[reader:built]", "P2: a dependency declared later is constructed first and injected as built"))
@@ -1082,7 +1074,7 @@ func TestProviders_DependenciesFirst_AcrossModules(t *testing.T) {
 	leaf := NewModuleBuilder().Providers(pvChainA{}).Build()
 	middle := NewModuleBuilder().Imports(leaf).Providers(pvChainB{}).Build()
 	root := NewModuleBuilder().Imports(middle).Providers(pvChainC{}).Build()
-	mustCreate(t, New(), root)
+	mustCreate(t, New(nil), root)
 
 	if got := sprint(pvChain.list()); got != "[A B C]" {
 		t.Error(test.DiffMessage(got, "[A B C]", "P2: dependencies in imported modules are constructed before their dependents"))
@@ -1095,7 +1087,7 @@ func TestProviders_GlobalInjectedConstructed(t *testing.T) {
 	user := NewModuleBuilder().Providers(pvGlobalUser{}).Build()
 	global := NewModuleBuilder().Providers(pvGlobalDep{}).Build()
 	global.IsGlobal = true
-	mustCreate(t, New(), NewModuleBuilder().Imports(user, global).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(user, global).Build())
 
 	if got := sprint(pvGlobalSeen.list()); got != "[user:built]" {
 		t.Error(test.DiffMessage(got, "[user:built]", "P3: a global provider injected into a module that does not import it is the constructed one"))
@@ -1106,7 +1098,7 @@ func TestProviders_RootProviderInjectedConstructed(t *testing.T) {
 	pvGlobalSeen = createRecorder{}
 
 	user := NewModuleBuilder().Providers(pvGlobalUser{}).Build()
-	mustCreate(t, New(), NewModuleBuilder().Imports(user).Providers(pvGlobalDep{}).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(user).Providers(pvGlobalDep{}).Build())
 
 	if got := sprint(pvGlobalSeen.list()); got != "[user:built]" {
 		t.Error(test.DiffMessage(got, "[user:built]", "P3: a root provider injected into an imported module is the constructed one"))
@@ -1122,7 +1114,7 @@ func TestProviders_GlobalAtDepthTwo(t *testing.T) {
 	user := NewModuleBuilder().Providers(pvDeepUser{}).Build()
 
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Imports(holder, user).Build())
+		New(nil).Create(NewModuleBuilder().Imports(holder, user).Build())
 	})
 	if panicked {
 		t.Fatal(test.DiffMessage(text, "no panic", "P4: a global module imported below the root is visible to every module"))
@@ -1134,7 +1126,7 @@ func TestProviders_GlobalAtDepthTwo(t *testing.T) {
 
 func TestProviders_UnresolvedPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Providers(pvUnresolvedUser{}).Build())
+		New(nil).Create(NewModuleBuilder().Providers(pvUnresolvedUser{}).Build())
 	})
 
 	want := "dependency injection: can't resolve dependency 'core.pvUnresolvedDep' of the provider"
@@ -1145,7 +1137,7 @@ func TestProviders_UnresolvedPanics(t *testing.T) {
 
 func TestProviders_UnexportedFieldPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Providers(pvHiddenUser{}, pvUnresolvedDep{}).Build())
+		New(nil).Create(NewModuleBuilder().Providers(pvHiddenUser{}, pvUnresolvedDep{}).Build())
 	})
 
 	want := "dependency injection: can't set value to unexported 'hidden' field of the core.pvHiddenUser provider"
@@ -1278,7 +1270,7 @@ func TestCreate_ProviderHoisting_DependencyConstructedBeforeDependent(t *testing
 		Providers(mtOrderedProviderB{}, mtOrderedProviderA{}).
 		Build()
 
-	mustCreate(t, New(), m)
+	mustCreate(t, New(nil), m)
 
 	if len(mtConstructOrder) != 2 || mtConstructOrder[0] != "A" || mtConstructOrder[1] != "B" {
 		t.Error(test.DiffMessage(mtConstructOrder, []string{"A", "B"}, "a provider's dependency must construct before the dependent, regardless of declaration order"))
@@ -1293,7 +1285,7 @@ func TestCreate_ProviderConstructedOnce_AcrossDuplicateStaticImports(t *testing.
 	parentB := NewModuleBuilder().Imports(child).Build()
 	root := NewModuleBuilder().Imports(parentA, parentB).Build()
 
-	mustCreate(t, New(), root)
+	mustCreate(t, New(nil), root)
 
 	if mtOnceConstructCount != 1 {
 		t.Error(test.DiffMessage(mtOnceConstructCount, 1, "a provider reachable via two static-module paths must construct exactly once"))
@@ -1306,7 +1298,7 @@ func TestCreate_StaticSubmoduleGlobalProvider_VisibleToOtherModules(t *testing.T
 	consumer := NewModuleBuilder().Providers(mtGlobalSubConsumer{}).Build()
 	root := NewModuleBuilder().Imports(global, consumer).Build()
 
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, root)
 
 	got, ok := app.Get(mtGlobalSubConsumer{}).(mtGlobalSubConsumer)
@@ -1326,13 +1318,13 @@ func TestCreate_ModuleFactory_MissingGlobalDependencyPanics(t *testing.T) {
 	}()
 
 	root := NewModuleBuilder().Imports(mtModuleFactoryNeedingProvider).Build()
-	New().Create(root)
+	New(nil).Create(root)
 }
 
 func TestCreate_ProviderInjection_UnexportedFieldPanics(t *testing.T) {
 	m := NewModuleBuilder().Providers(mtUnexportedFieldProvider{}).Build()
 
-	text, panicked := createPanicText(func() { New().Create(m) })
+	text, panicked := createPanicText(func() { New(nil).Create(m) })
 	if !panicked || !strings.Contains(text, "dependency injection: can't set value to unexported 'hidden' field") {
 		t.Error(test.DiffMessage(text, "can't set value to unexported 'hidden' field", "a provider with an unexported field should panic during injection"))
 	}
@@ -1344,7 +1336,7 @@ func TestCreate_StaticModuleControllerDedup_AcrossSharedImport(t *testing.T) {
 	parentB := NewModuleBuilder().Imports(child).Build()
 	root := NewModuleBuilder().Imports(parentA, parentB).Build()
 
-	app := New()
+	app := New(nil)
 	text, panicked := createPanicText(func() { app.Create(root) })
 	if panicked {
 		t.Fatal(test.DiffMessage(text, "no panic", "a controller reachable via two static-module paths is registered once, so its routes do not conflict"))
@@ -1358,7 +1350,7 @@ func TestCreate_HTTPMainHandler_RegisteredWithModulePrefix(t *testing.T) {
 	m := NewModuleBuilder().Controllers(mtPrefixedController{}).Build()
 	m.Prefix("v1")
 
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, m)
 
 	if w := createGet(app, "/v1/mtprefixtarget"); w.Code != http.StatusOK || w.Body.String() != "ok" {
@@ -1373,7 +1365,7 @@ func TestCreate_HTTPGuardInjection_PriorityChain(t *testing.T) {
 	mtPriorityGuardSeen = mtPriorityGuard{}
 
 	root, _ := mtPriorityRoot(mtGuardPriorityController{})
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, root)
 
 	if w := createGet(app, "/mtguardpriority"); w.Code != http.StatusOK {
@@ -1384,7 +1376,7 @@ func TestCreate_HTTPGuardInjection_PriorityChain(t *testing.T) {
 
 func TestCreate_HTTPGuardInjection_UnexportedFieldPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(mtGuardUnexportedController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(mtGuardUnexportedController{}).Build())
 	})
 	if !panicked {
 		t.Error(test.DiffMessage(text, "panic", "guard with an unexported field should panic during injection"))
@@ -1393,7 +1385,7 @@ func TestCreate_HTTPGuardInjection_UnexportedFieldPanics(t *testing.T) {
 
 func TestCreate_HTTPGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(mtGuardUnresolvedController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(mtGuardUnresolvedController{}).Build())
 	})
 	if !panicked {
 		t.Error(test.DiffMessage(text, "panic", "guard field with an unresolved provider dependency should panic"))
@@ -1407,7 +1399,7 @@ func TestCreate_HTTPMiddlewareInjection_LocalProviderRegistered(t *testing.T) {
 		Providers(mtLocalProvider{}).
 		Controllers(mtMiddlewareController{}).
 		Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, m)
 
 	w := createGet(app, "/mtmiddleware")
@@ -1426,7 +1418,7 @@ func TestCreate_HTTPInterceptorInjection_LocalProviderRegistered(t *testing.T) {
 		Providers(mtLocalProvider{}).
 		Controllers(mtInterceptorController{}).
 		Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, m)
 	createGet(app, "/mtinterceptor")
 
@@ -1442,7 +1434,7 @@ func TestCreate_HTTPExceptionFilter_SingleController_Registered(t *testing.T) {
 		Providers(mtLocalProvider{}).
 		Controllers(mtExFilterSingleController{}).
 		Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, m)
 	createGet(app, "/mtexfiltersingle")
 
@@ -1458,7 +1450,7 @@ func TestCreate_HTTPExceptionFilter_TwoControllers_CorrectFieldIndex(t *testing.
 		Providers(mtLocalProvider{}).
 		Controllers(mtExFilterMultiController0{}, mtExFilterMultiController1{}).
 		Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, m)
 	createGet(app, "/mtexfilterbugc0")
 	createGet(app, "/mtexfilterbugc1")
@@ -1491,8 +1483,7 @@ func TestCreate_WSGuardInjection_PriorityChain(t *testing.T) {
 
 func TestCreate_WSGuardInjection_UnexportedFieldPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		app := New()
-		app.EnableWS(&WSOptions{Path: "/ws"})
+		app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 		app.Create(NewModuleBuilder().Controllers(mtWSGuardUnexportedController{}).Build())
 	})
 	if !panicked {
@@ -1502,8 +1493,7 @@ func TestCreate_WSGuardInjection_UnexportedFieldPanics(t *testing.T) {
 
 func TestCreate_WSGuardInjection_UnresolvedDependencyPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		app := New()
-		app.EnableWS(&WSOptions{Path: "/ws"})
+		app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 		app.Create(NewModuleBuilder().Controllers(mtWSGuardUnresolvedController{}).Build())
 	})
 	if !panicked {
@@ -1552,7 +1542,7 @@ func TestCreate_ConcurrentInvocation_NoDataRace(t *testing.T) {
 				Providers(mtConcurrentProvider{}).
 				Controllers(mtConcurrentController{}).
 				Build()
-			if text, panicked := createPanicText(func() { New().Create(m) }); panicked {
+			if text, panicked := createPanicText(func() { New(nil).Create(m) }); panicked {
 				t.Error(test.DiffMessage(text, "no panic", "concurrent Create"))
 			}
 		}()
@@ -1568,7 +1558,7 @@ func TestCreate_Hooks_ReachNestedModuleAndFactoryImportsAtAnyDepth(t *testing.T)
 	child := hkModule(rec, "child", grandchild, dynamicChild)
 	root := hkModule(rec, "root", child)
 
-	mustCreate(t, New(), root)
+	mustCreate(t, New(nil), root)
 
 	for _, name := range []string{"root", "child", "grandchild", "dynamic"} {
 		if got := rec.count("ready:" + name); got != 1 {
@@ -1585,7 +1575,7 @@ func TestCreate_Hooks_SharedImportRunsOnce(t *testing.T) {
 	childB := hkModule(rec, "b", shared)
 	root := hkModule(rec, "root", childA, childB)
 
-	mustCreate(t, New(), root)
+	mustCreate(t, New(nil), root)
 
 	if got := rec.count("ready:shared"); got != 1 {
 		t.Error(test.DiffMessage(got, 1, "a module imported by two different parents should only be initialized once"))
@@ -1593,8 +1583,7 @@ func TestCreate_Hooks_SharedImportRunsOnce(t *testing.T) {
 }
 
 func TestCreate_AllNotLastPanics(t *testing.T) {
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	want := "invalid route: ALL in SUBSCRIBE_chat_ALL_x must be the last word"
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Controllers(wsAllNotLastController{}).Build())

@@ -75,7 +75,7 @@ func (dbProvider DBProvider) NewProvider() owlky.Provider {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 
 	app.Create(
 		owlky.ModuleBuilder().

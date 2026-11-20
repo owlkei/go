@@ -55,7 +55,6 @@ import (
 	"go.owlky.com/owlky/internal/tracecontext"
 	"go.owlky.com/owlky/internal/versioning"
 	"go.owlky.com/owlky/log"
-	"go.owlky.com/owlky/middlewares/proxy"
 	"golang.org/x/net/websocket"
 )
 
@@ -165,8 +164,7 @@ func (c bodyLimitController) CREATE(body ctx.Body) any {
 func newBodyLimitApp(t *testing.T, limit int64) *App {
 	t.Helper()
 
-	app := New()
-	app.maxRequestBodyBytes.Store(limit)
+	app := New(&AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: ByteSize(limit)}})
 	app.Create(NewModuleBuilder().Controllers(bodyLimitController{}).Build())
 
 	return app
@@ -895,7 +893,7 @@ func lyRun(t *testing.T, setup func(app *App)) {
 	lyRec = createRecorder{}
 	lyBuilt.Store(0)
 
-	app := New()
+	app := New(nil)
 	setup(app)
 	mustCreate(t, app, NewModuleBuilder().Controllers(lyController{}).Build())
 	if w := createGet(app, "/ly"); w.Code != http.StatusOK {
@@ -915,7 +913,7 @@ func msExpectPanic(t *testing.T, rule, want string, fn func()) {
 }
 
 func msCreated() *App {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 	return app
 }
@@ -1141,7 +1139,7 @@ func psTwoParents(first, second string) *App {
 	a := NewModuleBuilder().PathStyle(common.PathStyleAsWritten).Imports(m).Build()
 	b := NewModuleBuilder().PathStyle(common.PathStyleKebab).Imports(m).Build()
 	byName := map[string]*Module{"A": a, "B": b}
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Imports(byName[first], byName[second]).Build())
 	return app
 }
@@ -1467,16 +1465,9 @@ func (c cpSubmitMovesWithRender) RENDER_x() {}
 
 func (c cpSubmitMovesWithRender) SUBMIT_x(h *ctx.HTTPContext) { h.Redirect("/done") }
 
-func cpFS() fstest.MapFS {
-	return fstest.MapFS{"x.html": {Data: []byte("x")}}
-}
-
 func cpCreate(opts *RenderOptions, controllers ...Controller) func() {
 	return func() {
-		app := New()
-		if opts != nil {
-			app.EnableRender(opts)
-		}
+		app := New(&AppOptions{Render: opts})
 		app.Create(NewModuleBuilder().Controllers(controllers...).Build())
 	}
 }
@@ -1517,7 +1508,7 @@ func rvFuncModule(seen *createRecorder) func(d rvDep) *Module {
 
 func rvCreate(t *testing.T, root *Module, rule string) {
 	t.Helper()
-	if text, panicked := createPanicText(func() { New().Create(root) }); panicked {
+	if text, panicked := createPanicText(func() { New(nil).Create(root) }); panicked {
 		t.Fatal(test.DiffMessage(text, "no panic", rule))
 	}
 }
@@ -1613,7 +1604,7 @@ func svApp(t *testing.T) *App {
 	svWrite(t, filepath.Join(svRoot, "a.txt"), "alpha")
 	svWrite(t, filepath.Join(svRoot, "sub", "x.txt"), "nested")
 
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(svNameAnyController{}).Build())
 	return app
 }
@@ -1903,12 +1894,11 @@ func dvrKinds(t *testing.T, snapshot map[string]any) map[string]any {
 
 func dvrApp(t *testing.T, files map[string]string, controllers ...Controller) *App {
 	t.Helper()
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableDevtool()
+	opts := &AppOptions{Logger: &lcRecordingLogger{}, IsDevtool: true}
 	if files != nil {
-		app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
+		opts.Render = &RenderOptions{FS: pgFiles(files), Dir: "."}
 	}
+	app := New(opts)
 	mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
 	return app
 }
@@ -1972,7 +1962,7 @@ func (c appResultController) READ_wrongpipe(p nilPipe) string {
 
 func serveResult(t *testing.T, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(appResultController{}).Build())
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
@@ -2000,7 +1990,7 @@ func handlerEventNames(t *testing.T, path string) []string {
 		t.Fatal(err)
 	}
 
-	app := New()
+	app := New(nil)
 	var mu sync.Mutex
 	var names []string
 	app.tracer.Listen(func(e trace.Event) {
@@ -2875,9 +2865,7 @@ func assetHash(content string) string {
 
 func assetApp(t *testing.T, files fstest.MapFS, setup func(*App)) *App {
 	t.Helper()
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: files, Dir: "."}})
 	if setup != nil {
 		setup(app)
 	}
@@ -2949,8 +2937,7 @@ func benchServe(b *testing.B, app *App, method, target string) {
 }
 
 func benchApp(controllers ...Controller) *App {
-	app := New()
-	app.SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}})
 	app.Create(NewModuleBuilder().Controllers(controllers...).Build())
 	return app
 }
@@ -2973,7 +2960,7 @@ func (ctl bodyProbeController) READ_probe(c *ctx.HTTPContext) string {
 
 func bodyProbe(t *testing.T, mutate func(*http.Request)) string {
 	t.Helper()
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(bodyProbeController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/probe", nil)
@@ -3015,12 +3002,11 @@ func (c *clientIPEvents) complete(t *testing.T) trace.Event {
 
 func clientIPApp(t *testing.T, events *clientIPEvents, withProxy bool) *App {
 	t.Helper()
-	return lcNewApp(t, lcConfig{setup: func(app *App) {
-		app.tracer.Listen(events.listen)
-		if withProxy {
-			app.BindGlobalMiddlewares(proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}})
-		}
-	}})
+	cfg := lcConfig{setup: func(app *App) { app.tracer.Listen(events.listen) }}
+	if withProxy {
+		cfg.proxy = &ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}}
+	}
+	return lcNewApp(t, cfg)
 }
 
 func clientIPServe(app *App, remote string, headers ...string) {
@@ -3644,16 +3630,14 @@ func (ctl lcMethodController) CREATE_postonly(c *ctx.HTTPContext) any {
 type lcConfig struct {
 	noGlobalFilters bool
 	logger          log.LogAdapter
+	proxy           *ProxyOptions
 	setup           func(*App)
 }
 
 func lcNewApp(t *testing.T, cfg lcConfig) *App {
 	t.Helper()
 	lcReset(t)
-	app := New()
-	if cfg.logger != nil {
-		app.SetLogger(cfg.logger)
-	}
+	app := New(&AppOptions{Logger: cfg.logger, Proxy: cfg.proxy})
 	if cfg.setup != nil {
 		cfg.setup(app)
 	}
@@ -3848,9 +3832,7 @@ func paApp(t *testing.T, files map[string]string, setup func(*App), controllers 
 	if len(controllers) == 0 {
 		controllers = []Controller{paBookings{}}
 	}
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(files), Dir: "."}})
 	if setup != nil {
 		setup(app)
 	}
@@ -4054,12 +4036,17 @@ func peDo(app *App, method, target string, headers ...string) *httptest.Response
 
 func peApp(t *testing.T, files map[string]string, setup func(*App), controllers ...Controller) (*App, *lcRecordingLogger) {
 	t.Helper()
+	return peAppOptions(t, files, &AppOptions{}, setup, controllers...)
+}
+
+func peAppOptions(t *testing.T, files map[string]string, opts *AppOptions, setup func(*App), controllers ...Controller) (*App, *lcRecordingLogger) {
+	t.Helper()
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
+	opts.Logger = logger
 	if files != nil {
-		app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
+		opts.Render = &RenderOptions{FS: pgFiles(files), Dir: "."}
 	}
+	app := New(opts)
 	if setup != nil {
 		setup(app)
 	}
@@ -4453,9 +4440,7 @@ func rlApp(t *testing.T, fsys fs.FS, isReload bool, controllers ...Controller) (
 		controllers = []Controller{rlOne{}}
 	}
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
-	app.EnableRender(&RenderOptions{FS: fsys, Dir: ".", IsReload: isReload})
+	app := New(&AppOptions{Logger: logger, Render: &RenderOptions{FS: fsys, Dir: ".", IsReload: isReload}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
 	return app, logger
 }
@@ -4674,9 +4659,7 @@ func pgPageFiles(extra map[string]string) fstest.MapFS {
 func pgNew(t *testing.T, fsys fs.FS, controllers ...Controller) (*App, *lcRecordingLogger) {
 	t.Helper()
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
-	app.EnableRender(&RenderOptions{FS: fsys, Dir: "."})
+	app := New(&AppOptions{Logger: logger, Render: &RenderOptions{FS: fsys, Dir: "."}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
 	return app, logger
 }
@@ -4755,12 +4738,17 @@ func puFiles() fstest.MapFS {
 
 func puApp(t *testing.T, files fstest.MapFS, setup func(*App), controllers ...Controller) *App {
 	t.Helper()
+	return puAppOptions(t, files, &AppOptions{}, setup, controllers...)
+}
+
+func puAppOptions(t *testing.T, files fstest.MapFS, opts *AppOptions, setup func(*App), controllers ...Controller) *App {
+	t.Helper()
 	if len(controllers) == 0 {
 		controllers = []Controller{puAPI{}}
 	}
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	opts.Logger = &lcRecordingLogger{}
+	opts.Render = &RenderOptions{FS: files, Dir: "."}
+	app := New(opts)
 	if setup != nil {
 		setup(app)
 	}
@@ -4892,9 +4880,7 @@ func (c rnAssetsName) RENDER_assets() ctx.Map { return ctx.Map{"Who": "assets"} 
 
 func rnServe(t *testing.T, files map[string]string, build func() *Module, target string) *httpResult {
 	t.Helper()
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(files), Dir: "."}})
 	mustCreate(t, app, build())
 	w := createGet(app, target)
 	return &httpResult{code: w.Code, body: w.Body.String()}
@@ -4967,8 +4953,7 @@ func scApp(t *testing.T, setup func(*App)) *App {
 	writeServeFile(t, filepath.Join(scRoot, "css", "app.css"), "body{}")
 	writeServeFile(t, filepath.Join(scRoot, "index.html"), "<p>home</p>")
 	writeServeFile(t, filepath.Join(scRoot, ".env"), "SECRET=1")
-	app := New()
-	app.SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}})
 	if setup != nil {
 		setup(app)
 	}
@@ -5136,7 +5121,7 @@ func newServeApp(t *testing.T) *App {
 	writeServeFile(t, filepath.Join(serveRoot, "css", "app.css"), "body{}")
 	writeServeFile(t, filepath.Join(serveRoot, ".env"), "SECRET=1")
 
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(serveController{}).Build())
 	return app
 }
@@ -5174,8 +5159,7 @@ func (ctl verController) READ_plain() string { return "plain" }
 func verApp(t *testing.T, defaultVersion string) *App {
 	t.Helper()
 	lcReset(t)
-	app := New()
-	app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version", DefaultVersion: defaultVersion})
+	app := New(&AppOptions{Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version", DefaultVersion: defaultVersion}})
 	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
 	app.Create(NewModuleBuilder().Controllers(verController{}).Build())
 	return app
@@ -6327,8 +6311,7 @@ func mtWSSend(t *testing.T, app *App, topic string) {
 
 func mtWSApp(t *testing.T, root *Module) *App {
 	t.Helper()
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	mustCreate(t, app, root)
 	return app
 }
@@ -6548,9 +6531,7 @@ func (c rdX) RENDER_x() {}
 func rdApp(t *testing.T, opts *RenderOptions) (*App, *lcRecordingLogger) {
 	t.Helper()
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
-	app.EnableRender(opts)
+	app := New(&AppOptions{Logger: logger, Render: opts})
 	mustCreate(t, app, NewModuleBuilder().Controllers(rdX{}).Build())
 	return app, logger
 }
@@ -6831,8 +6812,7 @@ func newSrv(t *testing.T, tweak ...func(*App)) *srvHarness {
 		sigs: make(chan os.Signal, 4),
 		done: make(chan error, 1),
 	}
-	h.app = New()
-	h.app.SetLogger(h.log)
+	h.app = New(&AppOptions{Logger: h.log})
 	h.app.notifySignals = func() (<-chan os.Signal, func()) {
 		h.regs.Add(1)
 		return h.sigs, func() { h.stops.Add(1) }
@@ -6881,36 +6861,6 @@ func (h *srvHarness) startWith(f func() error) {
 	}
 }
 
-// startOnFreePort starts serve on a free port and returns it. Another process may take the port
-// between srvFreePort and the bind, so a bind that fails with "address already in use" is retried
-// on a new port.
-func (h *srvHarness) startOnFreePort(serve func(port int) error) int {
-	h.t.Helper()
-	h.started = true
-	for attempt := 1; ; attempt++ {
-		port := srvFreePort(h.t)
-		go func() { h.done <- serve(port) }()
-		select {
-		case <-h.log.seen("ServerListening"):
-			return port
-		case err := <-h.done:
-			if attempt < 5 && err != nil && strings.Contains(err.Error(), "address already in use") {
-				continue
-			}
-			h.waited = true
-			h.t.Fatalf("the serving call returned before it was serving: %v", err)
-		case <-time.After(srvWait):
-			h.t.Fatal("the server did not start")
-		}
-		return port
-	}
-}
-
-func (h *srvHarness) start(opts *ServerOptions) {
-	h.t.Helper()
-	h.startWith(func() error { return h.app.Serve(h.ln, opts) })
-}
-
 func (h *srvHarness) wait() error {
 	h.t.Helper()
 	select {
@@ -6942,33 +6892,29 @@ func serveOnce(t *testing.T, app *App) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
-	if err := app.Serve(ln, nil); err != nil {
+	if err := app.Serve(ln); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func srvFreePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
+	for attempt := 0; ; attempt++ {
+		l, err := net.Listen("tcp", ":0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := l.Addr().(*net.TCPAddr).Port
+		_ = l.Close()
+		again, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(port)))
+		if err == nil {
+			_ = again.Close()
+			return port
+		}
+		if attempt == 20 {
+			t.Fatal(err)
+		}
 	}
-	port := l.Addr().(*net.TCPAddr).Port
-	_ = l.Close()
-	return port
-}
-
-// srvHeldPort returns a port that stays bound by the test until it ends. A call that must fail
-// before binding returns its own error on it; one that binds first gets "address already in use"
-// instead. Unlike checking afterwards that the port is free, another process can't take it meanwhile.
-func srvHeldPort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = l.Close() })
-	return l.Addr().(*net.TCPAddr).Port
 }
 
 func srvListenerOpen(ln net.Listener) bool {
@@ -7162,13 +7108,11 @@ func traceRenderApp(t *testing.T, files map[string]string, listen bool, controll
 		controllers = []Controller{pgPages{}}
 		files = pgPageFileMap(files)
 	}
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(files), Dir: "."}})
 	var rec *traceRecorder
 	if listen {
 		rec = newTraceRecorder(app)
 	}
-	app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
 	mustCreate(t, app, NewModuleBuilder().Controllers(controllers...).Build())
 	return app, rec
 }
@@ -7227,8 +7171,7 @@ func (ctl spanController) READ_boom(*ctx.HTTPContext) any {
 func newSpanApp(t *testing.T) (*App, *traceRecorder) {
 	t.Helper()
 	lcReset(t)
-	app := New()
-	app.SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}})
 	rec := newTraceRecorder(app)
 	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
 	app.BindGlobalGuards(lcGuard{Name: "g1"})
@@ -7524,10 +7467,9 @@ func newWSScopeEnv(t *testing.T, middlewares ...common.MiddlewareFn) *wsScopeEnv
 	lcReset(t)
 	wsScopeSetHook(nil)
 	t.Cleanup(func() { wsScopeSetHook(nil) })
-	app := New()
-	app.SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}, WS: &WSOptions{Path: "/ws"}})
 	rec := newTraceRecorder(app)
-	app.EnableWS(&WSOptions{Path: "/ws"}, middlewares...)
+	app.BindGlobalMiddlewares(middlewares...)
 	app.Create(NewModuleBuilder().Controllers(wsScopeController{}, traceWSAllController{}).Build())
 	server := httptest.NewServer(app)
 	t.Cleanup(server.Close)
@@ -7929,12 +7871,6 @@ func lfStatus(app *App, m *Module) moduleStatus { return app.container.status(m)
 
 func lfCode(app *App, path string) int { return createGet(app, path).Code }
 
-func lfLogger(app *App) *lcRecordingLogger {
-	l := &lcRecordingLogger{}
-	app.SetLogger(l)
-	return l
-}
-
 type lfListenLogger struct {
 	*lcRecordingLogger
 	listening chan struct{}
@@ -7952,7 +7888,7 @@ func (l *lfListenLogger) Info(msg string, args ...any) {
 	}
 }
 
-func lfServe(t *testing.T, app *App, timeout time.Duration, logger *lfListenLogger) chan error {
+func lfServe(t *testing.T, app *App, logger *lfListenLogger) chan error {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -7960,7 +7896,7 @@ func lfServe(t *testing.T, app *App, timeout time.Duration, logger *lfListenLogg
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 	done := make(chan error, 1)
-	go func() { done <- app.Serve(ln, &ServerOptions{ShutdownTimeout: timeout}) }()
+	go func() { done <- app.Serve(ln) }()
 	lfWait(t, logger.listening, "ServerListening")
 	return done
 }
@@ -8017,11 +7953,11 @@ const lfWant503JSON = `{"code":503,"error":"Service Unavailable","message":"Serv
 func lfGateApp(t *testing.T, files map[string]string, setup func(*App)) (*App, *Module, *lcRecordingLogger) {
 	t.Helper()
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
+	opts := &AppOptions{Logger: logger}
 	if files != nil {
-		app.EnableRender(&RenderOptions{FS: pgFiles(files), Dir: "."})
+		opts.Render = &RenderOptions{FS: pgFiles(files), Dir: "."}
 	}
+	app := New(opts)
 	if setup != nil {
 		setup(app)
 	}
@@ -8046,9 +7982,7 @@ func lfWSApp(t *testing.T) (*App, *Module, *websocket.Conn) {
 	gated := lfNamed("gated", NewModuleBuilder().AsyncImports(sql).Controllers(lfWSGate{}))
 	root := lfNamed("root", NewModuleBuilder().Imports(gated).Controllers(lfWSOpen{}))
 
-	app := New()
-	lfLogger(app)
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, WS: &WSOptions{Path: "/ws"}})
 	mustCreate(t, app, root)
 	lfRelease(t, app, release)
 
@@ -8219,9 +8153,7 @@ func lfWSAsyncApp(t *testing.T) (*App, *lfAsyncWS, *websocket.Conn) {
 	gated := lfNamed("gated", NewModuleBuilder().AsyncImports(sql).Controllers(lfWSGate{}))
 	root := lfNamed("root", NewModuleBuilder().Imports(gated).Controllers(lfWSOpen{}))
 
-	app := New()
-	lfLogger(app)
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, WS: &WSOptions{Path: "/ws"}})
 	mustCreate(t, app, root)
 	lfRelease(t, app, hold)
 
@@ -8287,4 +8219,17 @@ func mpFiles() map[string]string {
 		"orgs/{org_id}/members/{member_id}.html":   `MEMBER`,
 		"reports/{year}/{month}.html":              `REPORT {{.Year}}-{{.Month}}`,
 	}
+}
+
+func x509CertPoolFromFile(t *testing.T, certFile string) *x509.CertPool {
+	t.Helper()
+	data, err := os.ReadFile(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(data) {
+		t.Fatal("the certificate file holds no certificate")
+	}
+	return pool
 }

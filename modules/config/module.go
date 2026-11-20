@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"go.owlky.com/owlky/internal/color"
 	"go.owlky.com/owlky/internal/core"
+	"go.owlky.com/owlky/internal/dotenv"
 )
 
 type (
@@ -92,9 +94,9 @@ func Register(opts *ConfigModuleOptions) *core.Module {
 	envs := make([]map[string]any, 0, len(configOptions.EnvFilePaths)+len(configOptions.Loads))
 
 	for _, path := range configOptions.EnvFilePaths {
-		dotENVMap, err := loadDotEnv(path, configOptions.IsExpandVariables)
+		dotENVMap, err := dotenv.Load(path, configOptions.IsExpandVariables)
 		if err != nil {
-			failConfig(err.Error())
+			panic(color.FmtRed(err.Error()))
 		}
 		envs = append(envs, dotENVMap)
 	}

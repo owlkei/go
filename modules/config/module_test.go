@@ -276,7 +276,7 @@ func TestRegister_HooksShareState(t *testing.T) {
 		t.Error(test.DiffMessage(seenByLater, "from-first", "E14: the second hook sees the first one's Set"))
 	}
 
-	app := core.New()
+	app := core.New(nil)
 	app.Create(module)
 	injected, ok := app.Get(ConfigService{}).(ConfigService)
 	if !ok {
@@ -295,7 +295,7 @@ func TestRegister_OnInitAndGlobal(t *testing.T) {
 	if !module.IsGlobal || module.OnInit == nil {
 		t.Fatal(test.DiffMessage(module.IsGlobal, true, "IsGlobal and OnInit are copied to the module"))
 	}
-	core.New().Create(module)
+	core.New(nil).Create(module)
 	if inits != 1 {
 		t.Error(test.DiffMessage(inits, 1, "OnInit runs once"))
 	}

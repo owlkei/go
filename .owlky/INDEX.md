@@ -91,7 +91,7 @@ package-reference.md (independent API reference)
 
 ### 1. Module → Controller → Provider Pattern
 - **Module**: Composition root (controllers, providers, imports), built with `owlky.ModuleBuilder()…Build()`
-- **Imports**: Modules and module factories (`func(ctx, deps...) (owlky.Module, error)` and two shorter shapes); `Imports` fails fast at `Create()` (startup timeout, `SetStartupTimeout`), `AsyncImports` builds in the background with `pending` / `ready` / `failed` states and `503` on the routes that need it; `owlky.Retry` for transient errors ([modules-and-providers.md](modules-and-providers.md) § 2.2-2.4, `README.md` › Module lifecycle)
+- **Imports**: Modules and module factories (`func(ctx, deps...) (owlky.Module, error)` and two shorter shapes); `Imports` fails fast at `Create()` (startup timeout, `AppOptions.StartupTimeout`), `AsyncImports` builds in the background with `pending` / `ready` / `failed` states and `503` on the routes that need it; `owlky.Retry` for transient errors ([modules-and-providers.md](modules-and-providers.md) § 2.2-2.4, `README.md` › Module lifecycle)
 - **Controller**: HTTP/WS handler container (embeds `owlky.HTTP` and/or `owlky.WS`)
 - **Provider**: Injected business logic, constructed once per app
 
@@ -119,11 +119,11 @@ error from a guard onwards → module exception filter → global exception filt
 - Only exceptions reach the client with their code and message; any other value answers a fixed 500 and is logged (`UnhandledPanic`, with at most 4 KiB of stack, sampled: 1 stack per stack key per second, 10 per app per second)
 
 ### 6. Server and Lifecycle
-- `app.Listen(port, nil)`, `app.ListenTLS(port, cert, key, nil)`, `app.Serve(listener, nil)`; options in `*owlky.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`, `IsH2C`)
+- `app.Listen()`, `app.Serve(listener)`; the whole configuration is `owlky.New(&owlky.AppOptions{…})` (`Server{Port, ShutdownTimeout, TLS{CertFile, KeyFile, Config}, IsH2C}`, `HTTP{MaxBodyBytes, ServeDirs}`, the pre-route stages `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress`), or `owlky.OptionsFromEnv()` (`OK_*`, `PORT`, `./.env`)
 - Graceful shutdown on SIGINT / SIGTERM / `app.Stop()`: the `AsyncImports` context is canceled, requests drain, background goroutines are awaited, then `OnShutdown` hooks of ready modules in reverse order
-- One logger API: `app.SetLogger(l)` (any `log.LogAdapter`) before `Create`, read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
+- One logger API: `AppOptions.Logger` (any `log.LogAdapter`), read with `app.Logger()`; inside a request use `logger.From(c.Context())` so the line carries `trace_id` and `request`
 - Built-in log lines are synchronous during `Create` and after shutdown, asynchronous (bounded 1 MiB queue, one writer, Debug/Info dropped first, `LogDropped` reports) while the app serves; `log/README.md` › Output pipeline
-- Request tracing: one internal `trace.Tracer` per app; `EnableAccessLog()` is its only listener
+- Request tracing: one internal `trace.Tracer` per app; `AppOptions.IsAccessLog` turns on its only listener
 - Details: `internal/core/README.md`, [startup-lifecycle-analysis.md](startup-lifecycle-analysis.md)
 
 ---
@@ -162,11 +162,11 @@ error from a guard onwards → module exception filter → global exception filt
 2. [routing-system.md](routing-system.md) §6.3, [request-pipeline.md](request-pipeline.md) §1.3a
 
 **Steps**:
-1. `app.EnableRender(&owlky.RenderOptions{FS: web})` before `Create` (`//go:embed web`)
+1. `Render: &owlky.RenderOptions{FS: web}` in `AppOptions` (`//go:embed web`)
 2. In a `owlky.HTTP` controller: `RENDER_bookings()` → `GET /bookings`, template `web/bookings/index.html` (or `bookings.html`); return the data
 3. A form: `SUBMIT_<same words>(c owlky.HTTPContext, form MyForm)` posts to the same URL; return the form to re-render with 422, or `c.Redirect(url)` for 303
 4. Error pages: `web/404.html`, `web/4xx.html`, `web/5xx.html`; root-URL files in `web/public/`; page CSS / JS as `X.css` / `X.js` next to `X.html`, linked by `{{pageAssets}}`
-5. Bind `helmet.Helmet{}` and `csrf.CSRF{}` globally
+5. Set `Headers: &owlky.HeadersOptions{IsEnabled: true}` and `CSRF: &owlky.CSRFOptions{IsEnabled: true}` in `AppOptions` (a `SecurityCheck` warning at `Create` names a missing one)
 
 ### "I need to validate input"
 **Files to read**:
@@ -195,7 +195,7 @@ error from a guard onwards → module exception filter → global exception filt
 2. [ai-guidance-quick-reference.md](ai-guidance-quick-reference.md)
 
 **Steps**:
-1. Call `app.EnableWS(&owlky.WSOptions{Path: "/ws"})` before `app.Create()`
+1. Set `WS: &owlky.WSOptions{Path: "/ws"}` in `AppOptions`
 2. Embed `owlky.WS` in controller
 3. Create method: `SUBSCRIBE_chat_ANY()` (`chat.*`; `SUBSCRIBE_chat_ALL` for every deeper topic) (see [websocket-system.md](websocket-system.md))
 4. Inject `owlky.Publisher` for fanout
@@ -293,7 +293,7 @@ the lifecycle, concurrency and API metadata.
 
 ### 2026-11-16 Update (roadmap 0003)
 
-Designs 0007-0010: the request lifecycle is a written spec; `Listen(port, opts)`, `ListenTLS`, `Serve`, `Stop` and `ServerOptions`; graceful shutdown; modules, providers, layers and routes are per app (two apps in one process are independent); `SetLogger` / `Logger()` are the only logger API; `trace.Tracer` is the tracing primitive. Pages rewritten against the code: startup-lifecycle-analysis, modules-and-providers, the lifecycle and API metadata, and the provider / panic sections of every other page.
+Designs 0007-0010: the request lifecycle is a written spec; `Listen`, `Serve`, `Stop` and `ServerOptions` (since design 0022: `Listen()`, `Serve(listener)`, configuration in `AppOptions`); graceful shutdown; modules, providers, layers and routes are per app (two apps in one process are independent); `SetLogger` / `Logger()` are the only logger API; `trace.Tracer` is the tracing primitive. Pages rewritten against the code: startup-lifecycle-analysis, modules-and-providers, the lifecycle and API metadata, and the provider / panic sections of every other page.
 
 ### 2026-09-25 Correction Pass
 

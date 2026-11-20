@@ -54,7 +54,7 @@ check: ## Everything CI runs: format, vet, API, lint, tests
 	go test ./... -cover -race
 	$(MAKE) examples
 	go test ./internal/core -run '^TestTrace_(NoListenerGeneratesOneID|ListenerGeneratesOneIDPerStage)$$' -count 1
-	go test ./middlewares/loadshed -run '^TestAdaptive_(Stable|NoRefusalBelowCapacity|RecoversWhenHandlerSlows|Steering|LongHeld)_' -count 1 -p 1 -timeout 30m
+	go test ./internal/middlewares/loadshed -run '^TestAdaptive_(Stable|NoRefusalBelowCapacity|RecoversWhenHandlerSlows|Steering|LongHeld)_' -count 1 -p 1 -timeout 30m
 
 BENCH_COUNT ?= 5
 

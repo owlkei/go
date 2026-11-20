@@ -103,9 +103,7 @@ func TestPublic_ETag304(t *testing.T) {
 func TestPublic_Reload(t *testing.T) {
 	swap := &rlSwapFS{}
 	swap.set(fstest.MapFS{"public/robots.txt": {Data: []byte("v1")}})
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: swap, Dir: ".", IsReload: true})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: swap, Dir: ".", IsReload: true}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(puAPI{}).Build())
 
 	w := createGet(app, "/robots.txt")
@@ -133,8 +131,7 @@ func TestPublic_NoDirNoRoute(t *testing.T) {
 			t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Allow")}, []any{http.StatusNotFound, ""}, "P25: no public directory, no route: "+method))
 		}
 	}
-	free := New()
-	free.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	free := New(&AppOptions{Render: &RenderOptions{FS: files, Dir: "."}})
 	if text, panicked := createPanicText(func() {
 		free.Create(NewModuleBuilder().Controllers(puRobotsRoute{}).Build())
 	}); panicked {
@@ -166,23 +163,19 @@ func TestPublic_GlobalLayersApply(t *testing.T) {
 }
 
 func TestPublic_RouteConflict(t *testing.T) {
-	app := New()
-	app.EnableRender(&RenderOptions{FS: puFiles(), Dir: "."})
+	app := New(&AppOptions{Render: &RenderOptions{FS: puFiles(), Dir: "."}})
 	msExpectPanic(t, "P23", "route conflict: public/robots.txt method is conflicted with READ_robots_txt_FILE method", func() {
 		app.Create(NewModuleBuilder().Controllers(puRobotsRoute{}).Build())
 	})
 
-	page := New()
-	page.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{"about.html": "ABOUT", "public/about": "FILE"}), Dir: "."})
+	page := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(map[string]string{"about.html": "ABOUT", "public/about": "FILE"}), Dir: "."}})
 	msExpectPanic(t, "P23", "route conflict: public/about method is conflicted with RENDER_about method", func() {
 		page.Create(NewModuleBuilder().Controllers(puAbout{}).Build())
 	})
 }
 
 func TestPublic_VersionNeutral(t *testing.T) {
-	app := puApp(t, puFiles(), func(app *App) {
-		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
-	}, puVersioned{})
+	app := puAppOptions(t, puFiles(), &AppOptions{Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}}, nil, puVersioned{})
 
 	for name, headers := range map[string][]string{"a version": {"X-Version", "2"}, "another version": {"X-Version", "9"}, "no version": nil} {
 		w := createRequest(app, http.MethodGet, "/robots.txt", headers...)

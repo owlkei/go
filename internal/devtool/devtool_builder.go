@@ -30,8 +30,9 @@ type devtoolBuilder struct {
 
 	httpMainHandlers []common.HTTPLayer
 
-	render  *Render
-	modules func() []*ModuleStatus
+	render   *Render
+	modules  func() []*ModuleStatus
+	preRoute []*PreRouteStage
 }
 
 func DevtoolBuilder() *devtoolBuilder {
@@ -96,6 +97,12 @@ func (devtoolBuilder *devtoolBuilder) AddHTTPMainHandlers(httpMainHandlers []com
 
 func (devtoolBuilder *devtoolBuilder) AddRender(render *Render) *devtoolBuilder {
 	devtoolBuilder.render = render
+
+	return devtoolBuilder
+}
+
+func (devtoolBuilder *devtoolBuilder) AddPreRoute(stages []*PreRouteStage) *devtoolBuilder {
+	devtoolBuilder.preRoute = stages
 
 	return devtoolBuilder
 }
@@ -197,6 +204,7 @@ func (devtoolBuilder *devtoolBuilder) createModuleHTTPLayers(moduleHandlerPatter
 func (devtoolBuilder *devtoolBuilder) Build() *Devtool {
 	devtool := &Devtool{
 		GetConfigurationResponse: GetConfigurationResponse{
+			PreRoute: devtoolBuilder.preRoute,
 			Controller: &Controller{
 				Http: []*HTTPComponent{},
 			},

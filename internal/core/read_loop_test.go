@@ -825,8 +825,7 @@ func TestReadLoop_RespondsToClientPing(t *testing.T) {
 }
 
 func TestWS_AllHandlesDeepTopic(t *testing.T) {
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	app.Create(NewModuleBuilder().Controllers(wsAllController{}).Build())
 
 	server := httptest.NewServer(app)

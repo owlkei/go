@@ -103,8 +103,11 @@ any time: it builds a new value from atomic loads when called, and nothing calls
 path. Returned slices are copies.
 
 ```go
-mw := proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}.NewMiddleware()
-if s, ok := mw.(inspect.Snapshotter); ok {
+mw, err := proxy.Compile(&proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}})
+if err != nil {
+	return err
+}
+if s, ok := any(mw).(inspect.Snapshotter); ok {
 	fmt.Println(s.Snapshot().Name)
 }
 ```

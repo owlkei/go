@@ -1,17 +1,28 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"go.owlky.com/owlky/exception"
+	"go.owlky.com/owlky/internal/common"
 	"go.owlky.com/owlky/internal/ctx"
 	"go.owlky.com/owlky/internal/test"
+	"go.owlky.com/owlky/internal/trace"
+	"go.owlky.com/owlky/internal/tracecontext"
 )
 
 func TestServe_NonStringResultIs404(t *testing.T) {
@@ -137,7 +148,7 @@ func TestServe_DirectoryWithIndexRedirectsToSlash(t *testing.T) {
 
 func TestApp_FilterRethrowKeepsCode(t *testing.T) {
 	rethrowCalls = 0
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(rethrowController{}).Build())
 
 	w := httptest.NewRecorder()
@@ -203,7 +214,7 @@ func TestServe_NameAnyTraversalIsRefused(t *testing.T) {
 
 func TestServe_NameAnyConflictsWithAnyOfName(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().Create(NewModuleBuilder().Controllers(svNameAnyController{}, svAnyOfController{}).Build())
+		New(nil).Create(NewModuleBuilder().Controllers(svNameAnyController{}, svAnyOfController{}).Build())
 	})
 
 	want := "route conflict:"
@@ -237,8 +248,7 @@ func TestServeHTTP_StaticRouteAllocations(t *testing.T) {
 }
 
 func TestServeHTTP_ConcurrentAllPaths_NoRace(t *testing.T) {
-	app := New()
-	app.SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}})
 	app.Create(NewModuleBuilder().Controllers(ccController{}).Build())
 
 	cases := []ccCase{
@@ -283,9 +293,7 @@ func TestMultipart_TempFilesRemovedAfterRequest(t *testing.T) {
 	for _, route := range []string{"/ok", "/boom", "/abort"} {
 		dir := t.TempDir()
 		t.Setenv("TMPDIR", dir)
-		app := New()
-		app.SetLogger(quietLogger{})
-		app.maxRequestBodyBytes.Store(64 << 20)
+		app := New(&AppOptions{Logger: quietLogger{}, HTTP: &HTTPOptions{MaxBodyBytes: 64 * MiB}})
 		app.Create(NewModuleBuilder().Controllers(multipartController{}).Build())
 
 		body, contentType := largeMultipart(t)
@@ -616,7 +624,7 @@ func TestServe_DotRootServesFilesUnderWorkingDirectory(t *testing.T) {
 	}
 	_ = hidden.Close()
 
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(serveDotController{}).Build())
 
 	w := serveGet(app, "/dot/"+strings.TrimPrefix(file.Name(), "./"))
@@ -840,11 +848,804 @@ func TestErrorAfterResponse_Sampled(t *testing.T) {
 }
 
 func TestHTTP_AnyAfterParamServes(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Controllers(httpAnyAfterParamController{}).Build())
 
 	w := createGet(app, "/files/a/b/c")
 	if w.Code != 200 || w.Body.String() != "name=a" {
 		t.Error(test.DiffMessage(w.Body.String(), "name=a", "B20: GET /files/a/b/c reaches READ_files_BY_name_ANY with name = a"))
+	}
+}
+
+type preController struct{ common.HTTP }
+
+func (c preController) NewController() Controller { return c }
+
+func (c preController) READ_hello() string { return "hello" }
+
+func (c preController) READ_big() string { return strings.Repeat("a", 4096) }
+
+func (c preController) CREATE_echo(body ctx.Body) any { return body }
+
+func preApp(t *testing.T, opts *AppOptions, mws ...common.MiddlewareFn) *App {
+	t.Helper()
+	if opts == nil {
+		opts = &AppOptions{}
+	}
+	opts.Logger = &mockLogger{}
+	app := New(opts)
+	if len(mws) > 0 {
+		app.BindGlobalMiddlewares(mws...)
+	}
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	return app
+}
+
+func preDo(app *App, method, target string, header map[string]string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, target, nil)
+	for k, v := range header {
+		if k == "Host" {
+			r.Host = v
+			continue
+		}
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+	return w
+}
+
+type preSpy struct {
+	mu       sync.Mutex
+	ip       string
+	frame    string
+	called   int
+	override func(r *http.Request, w http.ResponseWriter, next ctx.Next)
+}
+
+func (s *preSpy) Use(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+	s.mu.Lock()
+	s.called++
+	s.ip = tracecontext.ClientIP(r).String()
+	s.frame = w.Header().Get("X-Frame-Options")
+	s.mu.Unlock()
+	if s.override != nil {
+		s.override(r, w, next)
+		return
+	}
+	next()
+}
+
+func TestPreRoute_FixedOrder(t *testing.T) {
+	spy := &preSpy{}
+	app := preApp(t, &AppOptions{
+		Proxy:    &ProxyOptions{TrustedProxies: []string{"192.0.2.1"}},
+		Headers:  &HeadersOptions{IsEnabled: true},
+		LoadShed: &LoadShedOptions{IsEnabled: true},
+		Compress: &CompressOptions{IsEnabled: true, MinSize: 1},
+	}, spy)
+
+	w := preDo(app, http.MethodGet, "/big", map[string]string{"X-Forwarded-For": "203.0.113.9", "Accept-Encoding": "gzip"})
+
+	if spy.ip != "203.0.113.9" {
+		t.Error(test.DiffMessage(spy.ip, "203.0.113.9", "P1: proxy ran before the user middleware"))
+	}
+	if spy.frame != "DENY" {
+		t.Error(test.DiffMessage(spy.frame, "DENY", "P1: headers ran before the user middleware"))
+	}
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Encoding"), "gzip", "P1: compress wraps the pipeline"))
+	}
+}
+
+func TestPreRoute_FixedOrderIgnoresBindingOrder(t *testing.T) {
+	app := preApp(t, &AppOptions{Hosts: []string{"a.com"}, Headers: &HeadersOptions{IsEnabled: true}})
+	w := preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "b.com"})
+	if w.Code != http.StatusMisdirectedRequest || w.Header().Get("X-Frame-Options") != "" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("X-Frame-Options")}, []any{421, ""}, "P1: hostcheck refuses before the headers stage runs"))
+	}
+	w = preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "a.com"})
+	if w.Code != http.StatusOK || w.Header().Get("X-Frame-Options") != "DENY" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("X-Frame-Options")}, []any{200, "DENY"}, "P1: headers runs after hostcheck passes"))
+	}
+}
+
+func TestPreRoute_UserMiddlewareRefusalCarriesHeaders(t *testing.T) {
+	spy := &preSpy{override: func(_ *http.Request, w http.ResponseWriter, _ ctx.Next) { w.WriteHeader(http.StatusTeapot) }}
+	app := preApp(t, &AppOptions{Headers: &HeadersOptions{IsEnabled: true}}, spy)
+	w := preDo(app, http.MethodGet, "/hello", nil)
+	if w.Code != http.StatusTeapot || w.Header().Get("X-Frame-Options") != "DENY" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("X-Frame-Options")}, []any{418, "DENY"}, "P7: a user middleware's own refusal carries the security headers"))
+	}
+}
+
+func TestPreRoute_CompressCompressesUserMiddlewareOutput(t *testing.T) {
+	spy := &preSpy{override: func(_ *http.Request, w http.ResponseWriter, _ ctx.Next) {
+		_, _ = w.Write([]byte(strings.Repeat("a", 4096)))
+	}}
+	app := preApp(t, &AppOptions{Compress: &CompressOptions{IsEnabled: true, MinSize: 1}}, spy)
+	w := preDo(app, http.MethodGet, "/hello", map[string]string{"Accept-Encoding": "gzip"})
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Encoding"), "gzip", "P7: compress covers what user middlewares write"))
+	}
+}
+
+func TestPreRoute_NoneConfiguredNoStage(t *testing.T) {
+	app := preApp(t, nil)
+	w := preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "anything.example", "Accept-Encoding": "gzip"})
+	if w.Code != http.StatusOK || w.Header().Get("X-Frame-Options") != "" || w.Header().Get("Content-Encoding") != "" || w.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error(test.DiffMessage(w.Header(), "no stage header", "P1: nothing configured, no stage runs"))
+	}
+}
+
+func TestPreRoute_RefusalBeats404(t *testing.T) {
+	app := preApp(t, &AppOptions{Hosts: []string{"a.com"}})
+	w := preDo(app, http.MethodGet, "/nothing-here", map[string]string{"Host": "b.com"})
+	if w.Code != http.StatusMisdirectedRequest {
+		t.Error(test.DiffMessage(w.Code, 421, "P2: a stage's refusal comes before the 404"))
+	}
+}
+
+func TestPreRoute_RefusalBeats405(t *testing.T) {
+	app := preApp(t, &AppOptions{Hosts: []string{"a.com"}})
+	w := preDo(app, http.MethodDelete, "/hello", map[string]string{"Host": "b.com"})
+	if w.Code != http.StatusMisdirectedRequest {
+		t.Error(test.DiffMessage(w.Code, 421, "P2: a stage's refusal comes before the 405"))
+	}
+}
+
+func TestPreRoute_RefusalBeatsGate503(t *testing.T) {
+	release := make(chan struct{})
+	factory := func(c context.Context) (*Module, error) {
+		<-release
+		return lfNamed("storage", NewModuleBuilder().Providers(lfSQL{})), nil
+	}
+	user := lfNamed("user", NewModuleBuilder().AsyncImports(factory).Controllers(lfSQLCtl{}))
+	app := New(&AppOptions{Hosts: []string{"a.com"}, Logger: &mockLogger{}})
+	lfRelease(t, app, release)
+	lfCreate(t, app, NewModuleBuilder().Imports(user).Build())
+
+	w := preDo(app, http.MethodGet, "/lfsql/hello", map[string]string{"Host": "b.com"})
+	if w.Code != http.StatusMisdirectedRequest {
+		t.Error(test.DiffMessage(w.Code, 421, "P2: a stage's refusal comes before the async gate's 503"))
+	}
+	w = preDo(app, http.MethodGet, "/lfsql/hello", map[string]string{"Host": "a.com"})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Error(test.DiffMessage(w.Code, 503, "P2: an allowed request still meets the gate"))
+	}
+	close(release)
+}
+
+func TestPreRoute_RefusalIsJSONOrHTML(t *testing.T) {
+	app := preApp(t, &AppOptions{Hosts: []string{"a.com"}})
+	w := preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "b.com"})
+	if !strings.Contains(w.Header().Get("Content-Type"), "json") {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Type"), "application/json", "P3: a refusal is the fixed early JSON error"))
+	}
+	w = preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "b.com", "Accept": "text/html"})
+	if !strings.Contains(w.Header().Get("Content-Type"), "json") {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Type"), "application/json", "P3: without Render the refusal stays JSON"))
+	}
+}
+
+func TestPreRoute_LoadShedFromOptions(t *testing.T) {
+	srvReset()
+	defer srvCur.open()
+	app := New(&AppOptions{Logger: &mockLogger{}, LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}})
+	app.Create(NewModuleBuilder().Controllers(srvController{}).Build())
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	res := srvFetchAsync(srvClient(), server.URL+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	r := srvFetch(srvClient(), http.MethodGet, server.URL+"/ok", "", false)
+	if r.err != nil || r.status != http.StatusServiceUnavailable {
+		t.Error(test.DiffMessage([]any{r.status, r.err}, 503, "P3: LoadShed refuses over MaxInFlight"))
+	}
+	srvCur.open()
+	<-res
+	r = srvFetch(srvClient(), http.MethodGet, server.URL+"/ok", "", false)
+	if r.status != http.StatusOK {
+		t.Error(test.DiffMessage(r.status, 200, "P3: LoadShed passes under the cap"))
+	}
+}
+
+func TestPreRoute_ProxyFromOptions(t *testing.T) {
+	spy := &preSpy{}
+	app := preApp(t, &AppOptions{Proxy: &ProxyOptions{TrustedProxies: []string{"192.0.2.1"}}}, spy)
+	preDo(app, http.MethodGet, "/hello", map[string]string{"X-Forwarded-For": "203.0.113.9"})
+	if spy.ip != "203.0.113.9" {
+		t.Error(test.DiffMessage(spy.ip, "203.0.113.9", "P3: a trusted peer's X-Forwarded-For is the client"))
+	}
+	app = preApp(t, &AppOptions{Proxy: &ProxyOptions{TrustedProxies: []string{"10.0.0.1"}}}, spy)
+	preDo(app, http.MethodGet, "/hello", map[string]string{"X-Forwarded-For": "203.0.113.9"})
+	if spy.ip != "192.0.2.1" {
+		t.Error(test.DiffMessage(spy.ip, "192.0.2.1", "P3: an untrusted peer is the client"))
+	}
+}
+
+func TestPreRoute_HostCheckFromOptions(t *testing.T) {
+	app := preApp(t, &AppOptions{Hosts: []string{"a.com"}})
+	if w := preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "a.com"}); w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, 200, "P3: a listed host passes"))
+	}
+	if w := preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "b.com"}); w.Code != http.StatusMisdirectedRequest {
+		t.Error(test.DiffMessage(w.Code, 421, "P3: another host gets 421"))
+	}
+}
+
+func TestPreRoute_HTTPSRedirectFromOptions(t *testing.T) {
+	app := preApp(t, &AppOptions{HTTPSRedirect: &HTTPSRedirectOptions{IsEnabled: true}})
+	w := preDo(app, http.MethodGet, "/hello?x=1", map[string]string{"Host": "a.com"})
+	if w.Code != http.StatusPermanentRedirect || w.Header().Get("Location") != "https://a.com/hello?x=1" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Location")}, []any{308, "https://a.com/hello?x=1"}, "P3: plain HTTP is redirected"))
+	}
+	r := httptest.NewRequest(http.MethodGet, "https://a.com/hello", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Error(test.DiffMessage(rec.Code, 200, "P3: HTTPS passes"))
+	}
+}
+
+func TestPreRoute_HeadersFromOptions(t *testing.T) {
+	app := preApp(t, &AppOptions{Headers: &HeadersOptions{IsEnabled: true, FrameOptions: "SAMEORIGIN", ReferrerPolicy: "-"}})
+	w := preDo(app, http.MethodGet, "/hello", nil)
+	if w.Header().Get("X-Frame-Options") != "SAMEORIGIN" || w.Header().Get("Content-Security-Policy") == "" {
+		t.Error(test.DiffMessage(w.Header(), "SAMEORIGIN and a CSP", "P3: headers from options"))
+	}
+	if _, ok := w.Header()["Referrer-Policy"]; ok {
+		t.Error(test.DiffMessage(w.Header().Get("Referrer-Policy"), "omitted", `P3: "-" omits a header`))
+	}
+}
+
+func TestPreRoute_CORSFromOptions(t *testing.T) {
+	app := preApp(t, &AppOptions{Origins: []string{"https://a.com"}, CORS: &CORSOptions{IsEnabled: true}})
+	w := preDo(app, http.MethodOptions, "/hello", map[string]string{"Origin": "https://a.com", "Access-Control-Request-Method": "GET"})
+	if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "https://a.com" {
+		t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Access-Control-Allow-Origin")}, []any{204, "https://a.com"}, "P3: a listed origin's preflight"))
+	}
+	w = preDo(app, http.MethodOptions, "/hello", map[string]string{"Origin": "https://evil.com", "Access-Control-Request-Method": "GET"})
+	if w.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error(test.DiffMessage(w.Header().Get("Access-Control-Allow-Origin"), "", "P3: another origin gets no CORS header"))
+	}
+}
+
+func TestPreRoute_CSRFFromOptions(t *testing.T) {
+	app := preApp(t, &AppOptions{Origins: []string{"https://a.com"}, CSRF: &CSRFOptions{IsEnabled: true}})
+	if w := preDo(app, http.MethodPost, "/echo", map[string]string{"Origin": "https://evil.com", "Content-Type": "application/json", "Host": "a.com"}); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, 403, "P3: a cross-site POST is refused"))
+	}
+	if w := preDo(app, http.MethodPost, "/echo", map[string]string{"Origin": "https://a.com", "Content-Type": "application/json", "Host": "other.com"}); w.Code == http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, "not 403", "P3: a listed origin passes"))
+	}
+	if w := preDo(app, http.MethodGet, "/hello", map[string]string{"Origin": "https://evil.com"}); w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, 200, "P3: GET is safe"))
+	}
+}
+
+func TestPreRoute_CompressFromOptions(t *testing.T) {
+	app := preApp(t, &AppOptions{Compress: &CompressOptions{IsEnabled: true, MinSize: 1 * KiB}})
+	w := preDo(app, http.MethodGet, "/big", map[string]string{"Accept-Encoding": "gzip"})
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Encoding"), "gzip", "P3: a body over MinSize is compressed"))
+	}
+	w = preDo(app, http.MethodGet, "/hello", map[string]string{"Accept-Encoding": "gzip"})
+	if w.Header().Get("Content-Encoding") != "" {
+		t.Error(test.DiffMessage(w.Header().Get("Content-Encoding"), "", "P3: a body under MinSize is not"))
+	}
+}
+
+func TestOrigins_SharedByCORSAndCSRF(t *testing.T) {
+	app := preApp(t, &AppOptions{Origins: []string{"https://a.com"}, CORS: &CORSOptions{IsEnabled: true}, CSRF: &CSRFOptions{IsEnabled: true}})
+	w := preDo(app, http.MethodOptions, "/echo", map[string]string{"Origin": "https://a.com", "Access-Control-Request-Method": "POST"})
+	if w.Header().Get("Access-Control-Allow-Origin") != "https://a.com" {
+		t.Error(test.DiffMessage(w.Header().Get("Access-Control-Allow-Origin"), "https://a.com", "P4: CORS reads Origins"))
+	}
+	if w := preDo(app, http.MethodPost, "/echo", map[string]string{"Origin": "https://a.com", "Host": "other.com", "Content-Type": "application/json"}); w.Code == http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, "not 403", "P4: CSRF reads the same Origins"))
+	}
+}
+
+func TestCSRF_WildcardOrigin(t *testing.T) {
+	app := preApp(t, &AppOptions{Origins: []string{"https://*.a.com"}, CSRF: &CSRFOptions{IsEnabled: true}})
+	if w := preDo(app, http.MethodPost, "/echo", map[string]string{"Origin": "https://app.a.com", "Host": "api.a.com:81", "Content-Type": "application/json"}); w.Code == http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, "not 403", "P4: a wildcard entry passes CSRF"))
+	}
+	if w := preDo(app, http.MethodPost, "/echo", map[string]string{"Origin": "https://evil.com", "Host": "api.a.com:81", "Content-Type": "application/json"}); w.Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(w.Code, 403, "P4: another origin is refused"))
+	}
+}
+
+func TestCSRF_ExactOriginEqualsTrustedOrigin(t *testing.T) {
+	cop := http.NewCrossOriginProtection()
+	if err := cop.AddTrustedOrigin("https://a.com"); err != nil {
+		t.Fatal(err)
+	}
+	app := preApp(t, &AppOptions{Origins: []string{"https://a.com"}, CSRF: &CSRFOptions{IsEnabled: true}})
+	origins := []string{"", "https://a.com", "https://b.com", "null", "http://a.com", "https://a.com:444"}
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodGet} {
+		for _, origin := range origins {
+			r := httptest.NewRequest(method, "/echo", nil)
+			r.Host = "site.com"
+			if origin != "" {
+				r.Header.Set("Origin", origin)
+			}
+			want := cop.Check(r) != nil
+			w := httptest.NewRecorder()
+			app.ServeHTTP(w, r)
+			got := w.Code == http.StatusForbidden
+			if got != want {
+				t.Error(test.DiffMessage(got, want, "P4: "+method+" Origin "+origin+" equals AddTrustedOrigin"))
+			}
+		}
+	}
+}
+
+func TestServeHTTP_MaxBodyBytesInOwnServer(t *testing.T) {
+	app := preApp(t, &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: 1 * KiB}})
+	server := httptest.NewServer(app)
+	defer server.Close()
+	post := func(n int) int {
+		body := `{"k":"` + strings.Repeat("a", n) + `"}`
+		resp, err := http.Post(server.URL+"/echo", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		return resp.StatusCode
+	}
+	if got := post(2048); got != http.StatusRequestEntityTooLarge {
+		t.Error(test.DiffMessage(got, 413, "S5: 2KiB over a 1KiB limit"))
+	}
+	if got := post(900); got != http.StatusCreated {
+		t.Error(test.DiffMessage(got, 201, "S5: a body under the limit passes"))
+	}
+}
+
+func TestServeHTTP_MaxBodyBytesDefault(t *testing.T) {
+	app := preApp(t, nil)
+	body := `{"k":"` + strings.Repeat("a", 10*1024*1024) + `"}`
+	w := optServe(app, http.MethodPost, "/echo", body, map[string]string{"Content-Type": "application/json"})
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Error(test.DiffMessage(w.Code, 413, "S5: 0 means 10MiB"))
+	}
+}
+
+func TestServeHTTP_MaxBodyBytesNegativeNoLimit(t *testing.T) {
+	app := preApp(t, &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: -1}})
+	body := `{"k":"` + strings.Repeat("a", 11*1024*1024) + `"}`
+	w := optServe(app, http.MethodPost, "/echo", body, map[string]string{"Content-Type": "application/json"})
+	if w.Code != http.StatusCreated {
+		t.Error(test.DiffMessage(w.Code, 201, "S5: negative means no limit"))
+	}
+}
+
+func TestPreRoute_ConcurrentRequests(t *testing.T) {
+	app := preApp(t, &AppOptions{Hosts: []string{"a.com"}, Headers: &HeadersOptions{IsEnabled: true}, LoadShed: &LoadShedOptions{IsEnabled: true}})
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 20 {
+				preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "a.com"})
+				preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "b.com"})
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func preTraceApp(t *testing.T, opts *AppOptions, mws ...common.MiddlewareFn) (*App, *traceRecorder) {
+	t.Helper()
+	if opts == nil {
+		opts = &AppOptions{}
+	}
+	opts.Logger = &mockLogger{}
+	app := New(opts)
+	if len(mws) > 0 {
+		app.BindGlobalMiddlewares(mws...)
+	}
+	rec := newTraceRecorder(app)
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	return app, rec
+}
+
+func preEventNames(events []trace.Event, stage string) []string {
+	var out []string
+	for _, e := range events {
+		if e.Stage == stage {
+			out = append(out, e.Name)
+		}
+	}
+	return out
+}
+
+func TestTrace_PreRouteStageConstant(t *testing.T) {
+	if trace.StagePreRoute != "pre-route" {
+		t.Error(test.DiffMessage(trace.StagePreRoute, "pre-route", "T1: the stage constant"))
+	}
+}
+
+func TestTrace_PreRouteEvents(t *testing.T) {
+	app, rec := preTraceApp(t, &AppOptions{
+		Origins:       []string{"https://a.com"},
+		LoadShed:      &LoadShedOptions{IsEnabled: true},
+		Proxy:         &ProxyOptions{TrustedHops: 1},
+		Hosts:         []string{"example.com"},
+		HTTPSRedirect: &HTTPSRedirectOptions{IsEnabled: true},
+		Headers:       &HeadersOptions{IsEnabled: true},
+		CORS:          &CORSOptions{IsEnabled: true},
+		CSRF:          &CSRFOptions{IsEnabled: true},
+		Compress:      &CompressOptions{IsEnabled: true},
+	})
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/hello", nil)
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	app.ServeHTTP(httptest.NewRecorder(), r)
+	rec.waitComplete(t, "/hello")
+
+	events := traceStages(rec.all(), trace.StagePreRoute)
+	got := preEventNames(events, trace.StagePreRoute)
+	want := []string{"loadshed", "proxy", "hostcheck", "httpsredirect", "headers", "cors", "csrf", "compress"}
+	if !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "T1: one event per stage, in order"))
+	}
+	for _, e := range events {
+		if e.Transport != trace.TransportHTTP || e.Code != 0 {
+			t.Error(test.DiffMessage([]any{e.Transport, e.Code}, []any{"HTTP", 0}, "T1: Transport HTTP, Code 0 when the stage passes ("+e.Name+")"))
+		}
+	}
+}
+
+func TestTrace_PreRouteOffStageEmitsNothing(t *testing.T) {
+	app, rec := preTraceApp(t, &AppOptions{Headers: &HeadersOptions{IsEnabled: true}})
+	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/hello", nil))
+	rec.waitComplete(t, "/hello")
+	if got := preEventNames(rec.all(), trace.StagePreRoute); !slices.Equal(got, []string{"headers"}) {
+		t.Error(test.DiffMessage(got, []string{"headers"}, "T4: a stage that is off emits nothing"))
+	}
+}
+
+func TestTrace_RefusedRequestEndsAtStage(t *testing.T) {
+	type row struct {
+		name   string
+		opts   *AppOptions
+		method string
+		target string
+		header map[string]string
+		code   int
+	}
+	rows := []row{
+		{"hostcheck", &AppOptions{Hosts: []string{"a.com"}}, http.MethodGet, "http://b.com/hello", nil, 421},
+		{"httpsredirect", &AppOptions{HTTPSRedirect: &HTTPSRedirectOptions{IsEnabled: true}}, http.MethodGet, "http://a.com/hello", nil, 308},
+		{"cors", &AppOptions{Origins: []string{"https://a.com"}, CORS: &CORSOptions{IsEnabled: true}}, http.MethodOptions, "http://a.com/hello", map[string]string{"Origin": "https://a.com", "Access-Control-Request-Method": "GET"}, 204},
+		{"csrf", &AppOptions{Origins: []string{"https://a.com"}, CSRF: &CSRFOptions{IsEnabled: true}}, http.MethodPost, "http://a.com/echo", map[string]string{"Origin": "https://evil.com"}, 403},
+		{"hostcheck", &AppOptions{Hosts: []string{"a.com"}}, http.MethodGet, "http://a.com/hello", map[string]string{"Host": "bad host"}, 421},
+		{"hostcheck", &AppOptions{Hosts: []string{"a.com"}}, http.MethodGet, "http://a.com/hello", map[string]string{"Host": strings.Repeat("a", 256)}, 400},
+	}
+	for _, c := range rows {
+		spy := &preSpy{}
+		app, rec := preTraceApp(t, c.opts, spy)
+		r := httptest.NewRequest(c.method, c.target, nil)
+		for k, v := range c.header {
+			if k == "Host" {
+				r.Host = v
+				continue
+			}
+			r.Header.Set(k, v)
+		}
+		app.ServeHTTP(httptest.NewRecorder(), r)
+		rec.waitComplete(t, r.URL.Path)
+
+		events := rec.all()
+		var stage *trace.Event
+		for i := range events {
+			if events[i].Stage == trace.StagePreRoute && events[i].Name == c.name {
+				stage = &events[i]
+			}
+		}
+		if stage == nil || stage.Code != c.code {
+			t.Error(test.DiffMessage(stage, "a pre-route event with code "+strconv.Itoa(c.code), "T1/T2: "+c.name+" "+strconv.Itoa(c.code)))
+		}
+		last := events[len(events)-1]
+		beforeLast := events[len(events)-2]
+		if last.Stage != trace.StageComplete || beforeLast.Stage != trace.StagePreRoute {
+			t.Error(test.DiffMessage([]string{beforeLast.Stage, last.Stage}, []string{"pre-route", "complete"}, "T2: the trace ends at the stage, then complete ("+c.name+")"))
+		}
+		if spy.called != 0 || len(preEventNames(events, trace.StageMiddleware))+len(preEventNames(events, trace.StageHandler))+len(preEventNames(events, trace.StageGuard)) != 0 {
+			t.Error(test.DiffMessage(events, "no later event", "T2: nothing runs after a refusing stage ("+c.name+")"))
+		}
+	}
+}
+
+func TestTrace_LoadShedRefusalCode(t *testing.T) {
+	srvReset()
+	defer srvCur.open()
+	app := New(&AppOptions{Logger: &mockLogger{}, LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}})
+	rec := newTraceRecorder(app)
+	app.Create(NewModuleBuilder().Controllers(srvController{}).Build())
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	res := srvFetchAsync(srvClient(), server.URL+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	srvFetch(srvClient(), http.MethodGet, server.URL+"/ok", "", false)
+	srvCur.open()
+	<-res
+
+	rec.waitComplete(t, "/ok")
+	found := false
+	for _, e := range traceStages(rec.all(), trace.StagePreRoute) {
+		if e.Name == "loadshed" && e.Code == http.StatusServiceUnavailable {
+			found = true
+		}
+	}
+	if !found {
+		t.Error(test.DiffMessage(rec.all(), "a loadshed event with code 503", "T1: a refusal's code"))
+	}
+}
+
+func TestTrace_LoadShedDurationIncludesWait(t *testing.T) {
+	srvReset()
+	defer srvCur.open()
+	app := New(&AppOptions{Logger: &mockLogger{}, LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: 4}})
+	rec := newTraceRecorder(app)
+	app.Create(NewModuleBuilder().Controllers(srvController{}).Build())
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	res := srvFetchAsync(srvClient(), server.URL+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	waiter := srvFetchAsync(srvClient(), server.URL+"/ok")
+	srvCur.open()
+	<-res
+	<-waiter
+
+	rec.waitComplete(t, "/ok")
+	var longest time.Duration
+	for _, e := range traceStages(rec.all(), trace.StagePreRoute) {
+		longest = max(longest, e.Duration)
+	}
+	if longest <= 0 {
+		t.Error(test.DiffMessage(longest, ">0", "T1: loadshed's duration includes the queue wait"))
+	}
+}
+
+func TestTrace_UserMiddlewareStillMiddleware(t *testing.T) {
+	app, rec := preTraceApp(t, &AppOptions{Headers: &HeadersOptions{IsEnabled: true}}, &preSpy{})
+	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/hello", nil))
+	rec.waitComplete(t, "/hello")
+	events := rec.all()
+	if got := preEventNames(events, trace.StageMiddleware); len(got) != 1 || strings.Contains(got[0], "elmet") || strings.Contains(got[0], "headers") {
+		t.Error(test.DiffMessage(got, "only the user middleware", "T3: StageMiddleware is for user middlewares only"))
+	}
+}
+
+func TestTrace_NoListenerNoEvent(t *testing.T) {
+	app := New(&AppOptions{Logger: &mockLogger{}, Headers: &HeadersOptions{IsEnabled: true}})
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	if app.tracer.Enabled() {
+		t.Fatal(test.DiffMessage(true, false, "T4: no listener, tracer off"))
+	}
+	w := preDo(app, http.MethodGet, "/hello", nil)
+	if w.Code != http.StatusOK || w.Header().Get("X-Frame-Options") != "DENY" {
+		t.Error(test.DiffMessage(w.Code, 200, "T4: the stage still works untraced"))
+	}
+}
+
+func TestDevtool_PreRouteSnapshot(t *testing.T) {
+	app := New(&AppOptions{
+		Logger: &mockLogger{}, IsDevtool: true,
+		Hosts:   []string{"a.com"},
+		Headers: &HeadersOptions{IsEnabled: true},
+	})
+	app.BindGlobalMiddlewares(&preSpy{})
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	preDo(app, http.MethodGet, "/hello", map[string]string{"Host": "b.com"})
+
+	encoded, err := json.Marshal(app.devtool.GetConfigurationResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(encoded, &doc); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := doc["pre_route"].([]any)
+	var names []string
+	for _, row := range rows {
+		if m, ok := row.(map[string]any); ok {
+			names = append(names, fmt.Sprint(m["name"]))
+		}
+	}
+	if !slices.Equal(names, []string{"hostcheck", "headers"}) {
+		t.Error(test.DiffMessage(names, []string{"hostcheck", "headers"}, "P8: pre_route lists the stages in order with their Snapshot"))
+	}
+	if strings.Contains(string(encoded), `"hostcheck"`) && strings.Count(string(encoded), `"hostcheck"`) > 1 {
+		t.Error(test.DiffMessage(string(encoded), "hostcheck only in pre_route", "P8: middlewares no longer lists the stages"))
+	}
+}
+
+func TestPreRoute_LoadShedReleasedOnEveryOutcome(t *testing.T) {
+	spy := &preSpy{override: func(r *http.Request, w http.ResponseWriter, next ctx.Next) {
+		switch r.Header.Get("X-Mode") {
+		case "panic":
+			panic("boom")
+		case "refuse":
+			panic(exception.ForbiddenException("refused by a later middleware"))
+		case "abort":
+			panic(http.ErrAbortHandler)
+		case "stop":
+			w.WriteHeader(http.StatusTeapot)
+		default:
+			next()
+		}
+	}}
+	app := preApp(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}}, spy)
+	check := func(desc string) {
+		t.Helper()
+		w := preDo(app, http.MethodGet, "/hello", nil)
+		if w.Code != http.StatusOK || w.Body.String() != "hello" {
+			t.Fatal(test.DiffMessage([]any{w.Code, w.Body.String()}, []any{200, "hello"}, "L4: the slot was released after "+desc))
+		}
+	}
+	check("nothing happened")
+	check("the first check")
+
+	preDo(app, http.MethodGet, "/hello", map[string]string{"X-Mode": "panic"})
+	check("a handler panic")
+	preDo(app, http.MethodGet, "/hello", map[string]string{"X-Mode": "refuse"})
+	check("a refusal by a later middleware")
+	preDo(app, http.MethodGet, "/hello", map[string]string{"X-Mode": "stop"})
+	check("a middleware that answered itself")
+	if w := preDo(app, http.MethodGet, "/missing", nil); w.Code != http.StatusNotFound {
+		t.Fatal(test.DiffMessage(w.Code, http.StatusNotFound, "fixture: no route"))
+	}
+	check("a 404")
+	func() {
+		defer func() { _ = recover() }()
+		preDo(app, http.MethodGet, "/hello", map[string]string{"X-Mode": "abort"})
+	}()
+	check("http.ErrAbortHandler")
+}
+
+func TestPreRoute_LoadShedBurst(t *testing.T) {
+	const capacity = 2
+	var current, peak atomic.Int64
+	spy := &preSpy{override: func(_ *http.Request, _ http.ResponseWriter, next ctx.Next) {
+		now := current.Add(1)
+		for {
+			seen := peak.Load()
+			if now <= seen || peak.CompareAndSwap(seen, now) {
+				break
+			}
+		}
+		for i := 0; i < 5; i++ {
+			runtime.Gosched()
+		}
+		current.Add(-1)
+		next()
+	}}
+	app := preApp(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: capacity}}, spy)
+	var wg sync.WaitGroup
+	var ok, busy, other atomic.Int64
+	for i := 0; i < 50*capacity; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := preDo(app, http.MethodGet, "/hello", nil)
+			switch {
+			case w.Code == http.StatusOK && w.Body.String() == "hello":
+				ok.Add(1)
+			case w.Code == http.StatusServiceUnavailable && strings.Contains(w.Body.String(), "Server is busy"):
+				busy.Add(1)
+			default:
+				other.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if other.Load() != 0 {
+		t.Error(test.DiffMessage(other.Load(), int64(0), "L3: every response is 2xx or 503"))
+	}
+	if peak.Load() > capacity {
+		t.Error(test.DiffMessage(peak.Load(), "<= 2", "L1: the count in flight never exceeds the maximum"))
+	}
+	if ok.Load() == 0 {
+		t.Error(test.DiffMessage(ok.Load(), "> 0", "L2: the server keeps serving during the burst"))
+	}
+	if current.Load() != 0 {
+		t.Error(test.DiffMessage(current.Load(), int64(0), "L4: the count in flight returns to 0"))
+	}
+	if w := preDo(app, http.MethodGet, "/hello", nil); w.Code != http.StatusOK {
+		t.Error(test.DiffMessage(w.Code, http.StatusOK, "L4: after the burst every slot is free"))
+	}
+}
+
+func TestPreRoute_LoadShedRefusalIsHTTPLayerResponse(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	spy := &preSpy{override: func(r *http.Request, _ http.ResponseWriter, next ctx.Next) {
+		if r.Header.Get("X-Hold") != "" {
+			entered <- struct{}{}
+			<-release
+		}
+		next()
+	}}
+	app := preApp(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}}, spy)
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- preDo(app, http.MethodGet, "/hello", map[string]string{"X-Hold": "1"}) }()
+	<-entered
+	w := preDo(app, http.MethodGet, "/hello", nil)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Error(test.DiffMessage(w.Code, http.StatusServiceUnavailable, "G1: a request over the limit: status"))
+	}
+	if want := `{"code":503,"error":"Service Unavailable","message":"Server is busy"}`; w.Body.String() != want {
+		t.Error(test.DiffMessage(w.Body.String(), want, "G1: a request over the limit: body"))
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Error(test.DiffMessage(got, "application/json", "G1: a request over the limit: Content-Type"))
+	}
+	if got := w.Header().Get("Retry-After"); got != "1" {
+		t.Error(test.DiffMessage(got, "1", "L3: Retry-After: 1"))
+	}
+	close(release)
+	if held := <-done; held.Code != http.StatusOK {
+		t.Error(test.DiffMessage(held.Code, http.StatusOK, "the held request completes"))
+	}
+}
+
+type preWhoController struct{ common.HTTP }
+
+func (c preWhoController) NewController() Controller { return c }
+
+func (c preWhoController) READ_who(hc *ctx.HTTPContext) string {
+	return tracecontext.ClientIP(hc.Request).String() + "|" + preScheme(hc.Request) + "|" + tracecontext.Host(hc.Request)
+}
+
+func preScheme(r *http.Request) string {
+	if tracecontext.IsHTTPS(r) {
+		return "https"
+	}
+	return "http"
+}
+
+func preWho(app *App, remoteAddr string, header map[string]string) string {
+	r := httptest.NewRequest(http.MethodGet, "/who", nil)
+	r.RemoteAddr = remoteAddr
+	for k, v := range header {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+	return w.Body.String()
+}
+
+func TestPreRoute_ProxyHandlerReadsClient(t *testing.T) {
+	app := New(&AppOptions{Logger: &mockLogger{}, Proxy: &ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}, IsHostForwarded: true}})
+	app.Create(NewModuleBuilder().Controllers(preWhoController{}).Build())
+
+	got := preWho(app, "10.0.0.7:5000", map[string]string{
+		"X-Forwarded-For":   "198.51.100.20, 10.0.0.2",
+		"X-Forwarded-Proto": "https",
+		"X-Forwarded-Host":  "app.example.com",
+	})
+	if got != "198.51.100.20|https|app.example.com" {
+		t.Error(test.DiffMessage(got, "198.51.100.20|https|app.example.com", "P4, P8, P9: a handler reads the resolved client through the app"))
+	}
+	got = preWho(app, "203.0.113.5:5000", map[string]string{"X-Forwarded-For": "198.51.100.20"})
+	if got != "203.0.113.5|http|example.com" {
+		t.Error(test.DiffMessage(got, "203.0.113.5|http|example.com", "P3: an untrusted peer resolves to the connection through the app"))
+	}
+}
+
+func TestPreRoute_ProxyResolutionDoesNotLeakToNextRequest(t *testing.T) {
+	app := New(&AppOptions{Logger: &mockLogger{}, Proxy: &ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}}})
+	app.Create(NewModuleBuilder().Controllers(preWhoController{}).Build())
+
+	preWho(app, "10.0.0.7:5000", map[string]string{"X-Forwarded-For": "198.51.100.20", "X-Forwarded-Proto": "https"})
+	if got := preWho(app, "10.0.0.7:5000", nil); got != "10.0.0.7|http|example.com" {
+		t.Error(test.DiffMessage(got, "10.0.0.7|http|example.com", "P12: a request without headers resolves to the peer, nothing is left from the previous one"))
 	}
 }

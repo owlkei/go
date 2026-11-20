@@ -7,15 +7,15 @@ shuts down without dropping requests.
 
 ## What you learn
 
-- **Global middlewares, in order.** `loadshed` first, so a request refused under overload costs as
-  little as possible; then `helmet` for the security headers and `cors` for the browser origin you
-  allow. Behind a load balancer, add `proxy` right after `loadshed` so the rate limit sees the real
-  client address.
+- **Protections in `AppOptions`, in a fixed order.** Load shedding runs first, so a request refused
+  under overload costs as little as possible; then the security headers and CORS for the browser
+  origin you allow. Behind a load balancer, set `Proxy` so the rate limit sees the real client
+  address.
 - **Two rate limits.** A global `throttler` guard gives every client 100 requests a minute. The
   controller binds a tighter one, 5 posts a minute, to `CREATE_feedback` only.
-- **Server options.** `MaxRequestBodyBytes` refuses a body over 16 KiB with `413`.
+- **A body limit.** `HTTP.MaxBodyBytes` refuses a body over 16 KiB with `413`.
   `ShutdownTimeout` gives running requests 10 seconds to finish after `SIGINT` or `SIGTERM`.
-- **An access log.** `app.EnableAccessLog()` writes one line per request.
+- **An access log.** `IsAccessLog: true` writes one line per request.
 - **Bounded memory.** Anyone can post, so the inbox keeps the newest 500 notes: a flood of posts can't
   fill a small server's memory.
 - **What Owlky Go already does for you.** Server timeouts, a fixed `500` for any panic that is not an
@@ -36,7 +36,7 @@ curl -X POST localhost:3000/feedback -H 'Content-Type: application/json' \
 
 Post six times within a minute: the sixth answers `429` with `Retry-After`.
 
-`Strict-Transport-Security` is sent only over HTTPS: serve with `ListenTLS`, or put the app behind a
+`Strict-Transport-Security` is sent only over HTTPS: serve with `Server.TLS`, or put the app behind a
 proxy that terminates TLS.
 
 `go test ./...` checks the headers, the CORS preflight, the body limit, the post limit and a clean

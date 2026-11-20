@@ -26,13 +26,13 @@ func (c GreetingController) READ_hello_BY_name(param owlky.Param) owlky.Map {
 }
 
 func newApp() owlky.App {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(GreetingController{}).Build())
 	return app
 }
 
 func main() {
-	if err := newApp().Listen(3000, nil); err != nil {
+	if err := newApp().Listen(); err != nil {
 		log.Fatal(err)
 	}
 }

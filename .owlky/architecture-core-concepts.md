@@ -143,7 +143,7 @@ The order is fixed (comment on `App.Create` in `internal/core/app.go`); the walk
 ```
 container.addInterface(log.Logger)
 container.wire(root)       modules discovered, OnInit + providers per module, controllers injected
-initWS()                   only when EnableWS was called
+initWS()                   only when AppOptions.WS.Path is set
 initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(), initInterceptors(), initMainHandlers()
 app.http.finishRoutes()    one immutable route struct per route, fixed 404 / 405 bodies
 initDevtool(), initAccessLog()
@@ -446,7 +446,7 @@ any // bound as any, matched by its method:
 5. **Module Initialization**:
    - Module tree is immutable after `app.Create()`
    - Providers and controllers are constructed once per app
-   - Every `core.New()` is independent: no package-level registry
+   - Every `core.New(opts)` is independent: no package-level registry
 
 6. **WebSocket**:
    - Each message is a complete request/response (not streaming)
@@ -460,7 +460,7 @@ any // bound as any, matched by its method:
 
 8. **Request Body Size**:
    - Every request body is capped at 10 MiB by default, enforced via `http.MaxBytesReader` in `App.ServeHTTP` (internal/core/app.go)
-   - The only way to change it is `ServerOptions.MaxRequestBodyBytes` of the serving call (negative = no cap); the `atomic.Int64` field `app.maxRequestBodyBytes` is written when that call starts
+   - The only way to change it is `AppOptions.HTTP.MaxBodyBytes` (negative = no cap); the plain `int64` field `app.maxBodyBytes` is written once in `New` and applies in `ServeHTTP`, also when `App` runs in the user's own `http.Server`
    - Exceeding the cap surfaces as a 413 `exception.RequestEntityTooLargeException` from `ctx.Body()`, not a raw panic (internal/ctx/http_body.go)
 
 9. **Cross-Cutting Concern Instances** (Guard/Middleware/Interceptor/ExceptionFilter):

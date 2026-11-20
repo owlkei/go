@@ -1,6 +1,6 @@
 # Devtool
 
-Internal package: applications use `app.EnableDevtool()` instead.
+Internal package: applications set `IsDevtool: true` in `owlky.AppOptions` instead.
 
 *Package `devtool` builds an in-memory snapshot of an app's HTTP routes: for each route its handler, method, path, version, the layers that run on it and the shape of its request.*
 
@@ -16,7 +16,7 @@ Internal package: applications use `app.EnableDevtool()` instead.
 
 ## Usage
 
-You don't call this package yourself: `core` builds the snapshot at `Create()` when `EnableDevtool()` was called.
+You don't call this package yourself: `core` builds the snapshot at `Create()` when `AppOptions.IsDevtool` is true.
 
 ```go
 package main
@@ -39,8 +39,7 @@ func (instance UserController) READ_users() string {
 }
 
 func main() {
-	app := core.New()
-	app.EnableDevtool()
+	app := core.New(&core.AppOptions{IsDevtool: true})
 	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
 }
 ```
@@ -66,12 +65,13 @@ The snapshot is built in memory only: no server, port or goroutine is started.
 | Method | Adds |
 |---|---|
 | `AddExceptionFilters([]any, []common.HTTPLayer)` | global and per-route exception filters |
-| `AddMiddlewares([]common.MiddlewareFn, []common.HTTPLayer)` | global and per-route middlewares |
+| `AddPreRoute([]*PreRouteStage)` | the `pre_route` array: the built-in stages in their run order, each with its `name` and the `fields` of its `Snapshot()` (counters included, read when the snapshot is marshaled) |
+| `AddMiddlewares([]common.MiddlewareFn, []common.HTTPLayer)` | global and per-route user middlewares |
 | `AddGuarders([]any, []common.HTTPLayer)` | global and per-route guards |
 | `AddInterceptors([]any, []common.HTTPLayer)` | global and per-route interceptors |
 | `AddVersioning(*versioning.Options)` | the app's versioning, or `nil` without versioning |
 | `AddHTTPMainHandlers([]common.HTTPLayer)` | the routes, sorted by path |
-| `AddRender(*Render)` | the render section, or `nil` without `EnableRender` |
+| `AddRender(*Render)` | the render section, or `nil` without `Render.FS` |
 | `AddModules(func() []*ModuleStatus)` | the module states, read at each `GetConfiguration` call |
 
 ### Build
@@ -97,7 +97,7 @@ snapshot := devtool.DevtoolBuilder().
 
 ## Render
 
-With `EnableRender`, `core` adds a `render` section (JSON keys in parentheses); without it the key is
+With `Render.FS` set, `core` adds a `render` section (JSON keys in parentheses); without it the key is
 omitted:
 
 | Field | Type | Description |

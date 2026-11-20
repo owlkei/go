@@ -1,6 +1,6 @@
 # Access Log
 
-Internal package: applications use `app.EnableAccessLog()` instead.
+Internal package: applications set `IsAccessLog: true` in `owlky.AppOptions` instead.
 
 *Package `accesslog` writes one log line per HTTP request or WebSocket message, with the time each middleware, guard, interceptor, pipe, handler and filter took. The line is formatted and logged on the request goroutine (a few microseconds), with no worker, queue or timer of its own.*
 
@@ -20,7 +20,7 @@ Internal package: applications use `app.EnableAccessLog()` instead.
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- One switch: `app.EnableAccessLog()`. The app creates and stops the access log.
+- One switch: `AppOptions.IsAccessLog`. The app creates and stops the access log.
 - `total` is the wall-clock time of the request; each stage shows its time and its share.
 - Bounded memory whatever arrives: 64 stages per request, 16,384 pending requests.
 - No goroutine, no ticker, no queue: with the built-in logger the line goes through the log's output pipeline, so a slow stdout never slows a request and lines dropped under overload are counted in `LogDropped`.
@@ -38,11 +38,13 @@ import (
 )
 
 func main() {
-	app := core.New()
-	app.SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON}))
-	app.EnableAccessLog()
+	app := core.New(&core.AppOptions{
+		Logger:      log.NewLog(&log.LogOptions{Format: log.FormatJSON}),
+		IsAccessLog: true,
+		Server:      &core.ServerOptions{Port: 8080},
+	})
 	app.Create(core.NewModuleBuilder().Build())
-	_ = app.Listen(8080, nil)
+	_ = app.Listen()
 }
 ```
 
@@ -60,7 +62,7 @@ One `Logger.Info` call per request, made by the goroutine that emitted the `comp
 | `transport` | `HTTP` or `WS` |
 | `code` | the status written (an `int`; `0` for WebSocket messages) |
 | `operation` | the HTTP method, or the WebSocket message type |
-| one key per stage | `middleware`, `guard`, `pre_interceptor`, `pipe`, `handler`, `post_interceptor`, `exception_filter`, in the order their first event arrived; the value is one string with one `<name> <duration> (<percent>%)` entry per event, in arrival order, joined by `, ` (`"CORS 40µs (4%), CSRF 60µs (6%)"`). The name is the part after the last `.` (`cors.CORS` → `CORS`) |
+| one key per stage | `pre-route` (the built-in stages of `AppOptions`: `headers 23.05µs (7%), csrf 422ns (0%)`), `middleware`, `guard`, `pre_interceptor`, `pipe`, `handler`, `post_interceptor`, `exception_filter`, in the order their first event arrived; the value is one string with one `<name> <duration> (<percent>%)` entry per event, in arrival order, joined by `, ` (`"CORS 40µs (4%), CSRF 60µs (6%)"`). The name is the part after the last `.` (`cors.CORS` → `CORS`) |
 | `stages_dropped` | only when a request had more than 64 stage events: how many were not kept |
 | `total` | the wall-clock time of the request |
 
@@ -103,7 +105,7 @@ The logger that receives the lines. `core` passes the app's logger. A logger fro
 
 ### NewAccessLog
 
-Listens to the tracer; it starts no goroutine. Users never call it: `app.EnableAccessLog()` does.
+Listens to the tracer; it starts no goroutine. Users never call it: `AppOptions.IsAccessLog` does.
 
 #### Parameters
 - 1st parameter: `*AccessLogOptions`

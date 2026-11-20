@@ -75,7 +75,7 @@ This directory (`.owlky/`) contains complete AI-friendly documentation of the Ow
 ### Concurrency
 - HTTP: Each request is independent (thread-safe)
 - WebSocket: Each connection is single-threaded (2 goroutines: read + write)
-- App state: read-only after app.Create(); every `owlky.New()` is independent
+- App state: read-only after app.Create(); every `owlky.New(opts)` is independent
 
 ### Performance
 - A static route through `ServeHTTP` is about 0.6 µs and 6 allocations (`internal/core/README.md` › Benchmarks)
@@ -288,7 +288,7 @@ Measured numbers: `internal/core/README.md` › Benchmarks.
 - Global memorybroker thread-safe (single RWMutex, no sharding)
 
 **App State**:
-- Each `owlky.New()` has its own (no package-level registry)
+- Each `owlky.New(opts)` has its own (no package-level registry)
 - Read-only after app.Create()
 
 ---

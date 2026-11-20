@@ -1,17 +1,34 @@
+pkg owlky, const GB core.ByteSize = 1000000000
+pkg owlky, const GiB core.ByteSize = 1073741824
+pkg owlky, const KB core.ByteSize = 1000
+pkg owlky, const KiB core.ByteSize = 1024
+pkg owlky, const MB core.ByteSize = 1000000
+pkg owlky, const MiB core.ByteSize = 1048576
 pkg owlky, const PathStyleAsWritten common.PathStyle = 2
 pkg owlky, const PathStyleKebab common.PathStyle = 1
+pkg owlky, const ProxyHeaderForwarded core.ProxyHeader = 1
+pkg owlky, const ProxyHeaderXForwarded core.ProxyHeader = 0
 pkg owlky, const VersioningCustom versioning.Type = 3
 pkg owlky, const VersioningHeader versioning.Type = 2
 pkg owlky, const VersioningMediaType versioning.Type = 4
 pkg owlky, const VersioningQuery versioning.Type = 1
+pkg owlky, func ClientHost(*http.Request) string
+pkg owlky, func ClientIP(*http.Request) netip.Addr
+pkg owlky, func ClientScheme(*http.Request) string
 pkg owlky, func ModuleBuilder() *core.ModuleBuilder
-pkg owlky, func New() owlky.App
+pkg owlky, func New(*owlky.AppOptions) owlky.App
+pkg owlky, func OptionsFromEnv() *owlky.AppOptions
 pkg owlky, func Retry(context.Context, *core.RetryOptions, func(context.Context) error) error
 pkg owlky, func TraceTransport(http.RoundTripper) http.RoundTripper
 pkg owlky, type Aggregation = *aggregation.Aggregation
 pkg owlky, type App = *core.App
+pkg owlky, type AppOptions = core.AppOptions
 pkg owlky, type ArgumentMetadata = common.ArgumentMetadata
 pkg owlky, type Body = ctx.Body
+pkg owlky, type ByteSize = core.ByteSize
+pkg owlky, type CORSOptions = core.CORSOptions
+pkg owlky, type CSRFOptions = core.CSRFOptions
+pkg owlky, type CompressOptions = core.CompressOptions
 pkg owlky, type Controller = core.Controller
 pkg owlky, type DataFile = *ctx.DataFile
 pkg owlky, type ExceptionFilter = common.ExceptionFilter
@@ -21,8 +38,12 @@ pkg owlky, type Form = ctx.Form
 pkg owlky, type Guard = common.Guard
 pkg owlky, type HTTP = common.HTTP
 pkg owlky, type HTTPContext = *ctx.HTTPContext
+pkg owlky, type HTTPOptions = core.HTTPOptions
+pkg owlky, type HTTPSRedirectOptions = core.HTTPSRedirectOptions
 pkg owlky, type Header = ctx.Header
+pkg owlky, type HeadersOptions = core.HeadersOptions
 pkg owlky, type Interceptor = common.Interceptor
+pkg owlky, type LoadShedOptions = core.LoadShedOptions
 pkg owlky, type Map = ctx.Map
 pkg owlky, type Middleware = common.Middleware
 pkg owlky, type MiddlewareFn = common.MiddlewareFn
@@ -31,12 +52,15 @@ pkg owlky, type Next = ctx.Next
 pkg owlky, type Param = ctx.Param
 pkg owlky, type PathStyle = common.PathStyle
 pkg owlky, type Provider = core.Provider
+pkg owlky, type ProxyHeader = core.ProxyHeader
+pkg owlky, type ProxyOptions = core.ProxyOptions
 pkg owlky, type Publisher = common.Publisher
 pkg owlky, type Query = ctx.Query
 pkg owlky, type Redirect = ctx.Redirect
 pkg owlky, type RenderOptions = core.RenderOptions
 pkg owlky, type RetryOptions = core.RetryOptions
 pkg owlky, type ServerOptions = core.ServerOptions
+pkg owlky, type TLSOptions = core.TLSOptions
 pkg owlky, type VersioningOptions = versioning.Options
 pkg owlky, type VersioningType = versioning.Type
 pkg owlky, type WS = common.WS
@@ -126,63 +150,6 @@ pkg owlky/log, type Logger interface, Fatal(string, ...any)
 pkg owlky/log, type Logger interface, From(context.Context) log.Logger
 pkg owlky/log, type Logger interface, Info(string, ...any)
 pkg owlky/log, type Logger interface, Warn(string, ...any)
-pkg owlky/middlewares/compress, method (compress.Compress) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/compress, method (compress.Compress) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/compress, type Compress struct
-pkg owlky/middlewares/compress, type Compress struct, MinSize int
-pkg owlky/middlewares/cors, method (cors.CORS) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/cors, method (cors.CORS) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/cors, type CORS struct
-pkg owlky/middlewares/cors, type CORS struct, AllowHeaders []string
-pkg owlky/middlewares/cors, type CORS struct, AllowMethods []string
-pkg owlky/middlewares/cors, type CORS struct, AllowOrigins []string
-pkg owlky/middlewares/cors, type CORS struct, ExposeHeaders []string
-pkg owlky/middlewares/cors, type CORS struct, IsAllowCredentials bool
-pkg owlky/middlewares/cors, type CORS struct, IsAllowPrivateNetwork bool
-pkg owlky/middlewares/cors, type CORS struct, MaxAge time.Duration
-pkg owlky/middlewares/csrf, method (csrf.CSRF) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/csrf, method (csrf.CSRF) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/csrf, type CSRF struct
-pkg owlky/middlewares/csrf, type CSRF struct, TrustedOrigins []string
-pkg owlky/middlewares/helmet, const Disabled untyped string = "-"
-pkg owlky/middlewares/helmet, method (helmet.Helmet) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/helmet, method (helmet.Helmet) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/helmet, type Helmet struct
-pkg owlky/middlewares/helmet, type Helmet struct, ContentSecurityPolicy string
-pkg owlky/middlewares/helmet, type Helmet struct, CrossOriginEmbedderPolicy string
-pkg owlky/middlewares/helmet, type Helmet struct, CrossOriginOpenerPolicy string
-pkg owlky/middlewares/helmet, type Helmet struct, CrossOriginResourcePolicy string
-pkg owlky/middlewares/helmet, type Helmet struct, FrameOptions string
-pkg owlky/middlewares/helmet, type Helmet struct, PermissionsPolicy string
-pkg owlky/middlewares/helmet, type Helmet struct, ReferrerPolicy string
-pkg owlky/middlewares/helmet, type Helmet struct, StrictTransportSecurity string
-pkg owlky/middlewares/hostcheck, method (hostcheck.HostCheck) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/hostcheck, method (hostcheck.HostCheck) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/hostcheck, type HostCheck struct
-pkg owlky/middlewares/hostcheck, type HostCheck struct, Hosts []string
-pkg owlky/middlewares/httpsredirect, method (httpsredirect.HTTPSRedirect) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/httpsredirect, method (httpsredirect.HTTPSRedirect) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/httpsredirect, type HTTPSRedirect struct
-pkg owlky/middlewares/httpsredirect, type HTTPSRedirect struct, Host string
-pkg owlky/middlewares/httpsredirect, type HTTPSRedirect struct, Port int
-pkg owlky/middlewares/loadshed, method (loadshed.LoadShed) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/loadshed, method (loadshed.LoadShed) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/loadshed, type LoadShed struct
-pkg owlky/middlewares/loadshed, type LoadShed struct, MaxInFlight int
-pkg owlky/middlewares/loadshed, type LoadShed struct, MaxQueue int
-pkg owlky/middlewares/proxy, const HeaderForwarded proxy.Header = 1
-pkg owlky/middlewares/proxy, const HeaderXForwarded proxy.Header = 0
-pkg owlky/middlewares/proxy, func ClientIP(*http.Request) netip.Addr
-pkg owlky/middlewares/proxy, func Host(*http.Request) string
-pkg owlky/middlewares/proxy, func Scheme(*http.Request) string
-pkg owlky/middlewares/proxy, method (proxy.Proxy) NewMiddleware() common.MiddlewareFn
-pkg owlky/middlewares/proxy, method (proxy.Proxy) Use(*http.Request, http.ResponseWriter, ctx.Next)
-pkg owlky/middlewares/proxy, type Header int
-pkg owlky/middlewares/proxy, type Proxy struct
-pkg owlky/middlewares/proxy, type Proxy struct, Header proxy.Header
-pkg owlky/middlewares/proxy, type Proxy struct, IsHostForwarded bool
-pkg owlky/middlewares/proxy, type Proxy struct, TrustedHops int
-pkg owlky/middlewares/proxy, type Proxy struct, TrustedProxies []string
 pkg owlky/modules/cache, func NewMemoryCache(*cache.MemoryCacheOptions) cache.Cache
 pkg owlky/modules/cache, func Register(*cache.CacheModuleOptions) *core.Module
 pkg owlky/modules/cache, method (*cache.CacheService) Delete(context.Context, string) error
@@ -252,21 +219,62 @@ reach core.App, method (*core.App) BindGlobalGuards(...any) *core.App
 reach core.App, method (*core.App) BindGlobalInterceptors(...any) *core.App
 reach core.App, method (*core.App) BindGlobalMiddlewares(...common.MiddlewareFn) *core.App
 reach core.App, method (*core.App) Create(*core.Module)
-reach core.App, method (*core.App) EnableAccessLog() *core.App
-reach core.App, method (*core.App) EnableDevtool() *core.App
-reach core.App, method (*core.App) EnableRender(*core.RenderOptions) *core.App
-reach core.App, method (*core.App) EnableVersioning(*versioning.Options) *core.App
-reach core.App, method (*core.App) EnableWS(*core.WSOptions, ...common.MiddlewareFn) *core.App
 reach core.App, method (*core.App) Get(core.Provider) any
-reach core.App, method (*core.App) Listen(int, *core.ServerOptions) error
-reach core.App, method (*core.App) ListenTLS(int, string, string, *core.ServerOptions) error
+reach core.App, method (*core.App) Listen() error
 reach core.App, method (*core.App) Logger() log.Logger
-reach core.App, method (*core.App) Serve(net.Listener, *core.ServerOptions) error
+reach core.App, method (*core.App) Serve(net.Listener) error
 reach core.App, method (*core.App) ServeHTTP(http.ResponseWriter, *http.Request)
-reach core.App, method (*core.App) SetLogger(log.LogAdapter) *core.App
-reach core.App, method (*core.App) SetStartupTimeout(time.Duration) *core.App
 reach core.App, method (*core.App) Stop()
+reach core.AppOptions, field CORS *core.CORSOptions
+reach core.AppOptions, field CSRF *core.CSRFOptions
+reach core.AppOptions, field Compress *core.CompressOptions
+reach core.AppOptions, field HTTP *core.HTTPOptions
+reach core.AppOptions, field HTTPSRedirect *core.HTTPSRedirectOptions
+reach core.AppOptions, field Headers *core.HeadersOptions
+reach core.AppOptions, field Hosts []string
+reach core.AppOptions, field IsAccessLog bool
+reach core.AppOptions, field IsDevtool bool
+reach core.AppOptions, field LoadShed *core.LoadShedOptions
+reach core.AppOptions, field Logger log.LogAdapter
+reach core.AppOptions, field Origins []string
+reach core.AppOptions, field Proxy *core.ProxyOptions
+reach core.AppOptions, field Render *core.RenderOptions
+reach core.AppOptions, field Server *core.ServerOptions
+reach core.AppOptions, field StartupTimeout time.Duration
+reach core.AppOptions, field Versioning *versioning.Options
+reach core.AppOptions, field WS *core.WSOptions
+reach core.ByteSize, method (core.ByteSize) String() string
+reach core.ByteSize, type int64
+reach core.CORSOptions, field AllowHeaders []string
+reach core.CORSOptions, field AllowMethods []string
+reach core.CORSOptions, field ExposeHeaders []string
+reach core.CORSOptions, field IsAllowCredentials bool
+reach core.CORSOptions, field IsAllowPrivateNetwork bool
+reach core.CORSOptions, field IsEnabled bool
+reach core.CORSOptions, field MaxAge time.Duration
+reach core.CSRFOptions, field IsDisabled bool
+reach core.CSRFOptions, field IsEnabled bool
+reach core.CompressOptions, field IsEnabled bool
+reach core.CompressOptions, field MinSize core.ByteSize
 reach core.Controller, method (core.Controller) NewController() core.Controller
+reach core.HTTPOptions, field MaxBodyBytes core.ByteSize
+reach core.HTTPOptions, field ServeDirs []string
+reach core.HTTPSRedirectOptions, field Host string
+reach core.HTTPSRedirectOptions, field IsEnabled bool
+reach core.HTTPSRedirectOptions, field Port int
+reach core.HeadersOptions, field ContentSecurityPolicy string
+reach core.HeadersOptions, field CrossOriginEmbedderPolicy string
+reach core.HeadersOptions, field CrossOriginOpenerPolicy string
+reach core.HeadersOptions, field CrossOriginResourcePolicy string
+reach core.HeadersOptions, field FrameOptions string
+reach core.HeadersOptions, field IsDisabled bool
+reach core.HeadersOptions, field IsEnabled bool
+reach core.HeadersOptions, field PermissionsPolicy string
+reach core.HeadersOptions, field ReferrerPolicy string
+reach core.HeadersOptions, field StrictTransportSecurity string
+reach core.LoadShedOptions, field IsEnabled bool
+reach core.LoadShedOptions, field MaxInFlight int
+reach core.LoadShedOptions, field MaxQueue int
 reach core.Module, field IsGlobal bool
 reach core.Module, field Name string
 reach core.Module, field OnInit func()
@@ -280,6 +288,11 @@ reach core.ModuleBuilder, method (*core.ModuleBuilder) Imports(...any) *core.Mod
 reach core.ModuleBuilder, method (*core.ModuleBuilder) PathStyle(common.PathStyle) *core.ModuleBuilder
 reach core.ModuleBuilder, method (*core.ModuleBuilder) Providers(...core.Provider) *core.ModuleBuilder
 reach core.Provider, method (core.Provider) NewProvider() core.Provider
+reach core.ProxyHeader, type int
+reach core.ProxyOptions, field Header core.ProxyHeader
+reach core.ProxyOptions, field IsHostForwarded bool
+reach core.ProxyOptions, field TrustedHops int
+reach core.ProxyOptions, field TrustedProxies []string
 reach core.RenderOptions, field Dir string
 reach core.RenderOptions, field FS fs.FS
 reach core.RenderOptions, field IsReload bool
@@ -287,9 +300,12 @@ reach core.RetryOptions, field InitialDelay time.Duration
 reach core.RetryOptions, field MaxAttempts int
 reach core.RetryOptions, field MaxDelay time.Duration
 reach core.ServerOptions, field IsH2C bool
-reach core.ServerOptions, field MaxRequestBodyBytes int64
+reach core.ServerOptions, field Port int
 reach core.ServerOptions, field ShutdownTimeout time.Duration
-reach core.ServerOptions, field TLSConfig *tls.Config
+reach core.ServerOptions, field TLS *core.TLSOptions
+reach core.TLSOptions, field CertFile string
+reach core.TLSOptions, field Config *tls.Config
+reach core.TLSOptions, field KeyFile string
 reach core.WSOptions, field Path string
 reach ctx.Body, method (ctx.Body) Bind(any) (any, []ctx.FieldLevel)
 reach ctx.Body, method (ctx.Body) BindValue(any) any

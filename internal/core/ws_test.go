@@ -2,13 +2,16 @@ package core
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"go.owlky.com/owlky/exception"
 	"go.owlky.com/owlky/internal/common"
 	"go.owlky.com/owlky/internal/ctx"
 	"go.owlky.com/owlky/internal/str"
@@ -577,5 +580,235 @@ func TestWS_HandshakeEventsOwnTrace(t *testing.T) {
 	root := env.waitCompletes(t, "/ws", 1)[0]
 	if root.ID != connected.ID || root.ParentID != "" || len(root.TraceID) != 32 || root.SpanID != root.ID {
 		t.Error(test.DiffMessage(root, "<own trace, no parent, SpanID = ID>", "E2: without a traceparent the root has no parent"))
+	}
+}
+
+type hsServer struct {
+	app *App
+	url string
+	rec *traceRecorder
+}
+
+func newHandshake(t *testing.T, opts *AppOptions, mws ...common.MiddlewareFn) *hsServer {
+	t.Helper()
+	lcReset(t)
+	srvReset()
+	if opts == nil {
+		opts = &AppOptions{}
+	}
+	opts.Logger = &mockLogger{}
+	if opts.WS == nil {
+		opts.WS = &WSOptions{Path: "/ws"}
+	}
+	app := New(opts)
+	if len(mws) > 0 {
+		app.BindGlobalMiddlewares(mws...)
+	}
+	rec := newTraceRecorder(app)
+	app.Create(NewModuleBuilder().Controllers(wsScopeController{}, srvController{}).Build())
+	server := httptest.NewServer(app)
+	t.Cleanup(func() {
+		srvCur.open()
+		server.Close()
+	})
+	return &hsServer{app: app, url: server.URL, rec: rec}
+}
+
+func (s *hsServer) handshake(t *testing.T, header map[string]string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, s.url+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	for k, v := range header {
+		if k == "Host" {
+			req.Host = v
+			continue
+		}
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+func (s *hsServer) host() string { return strings.TrimPrefix(s.url, "http://") }
+
+func hsExpect(t *testing.T, resp *http.Response, want int, what string) {
+	t.Helper()
+	if resp.StatusCode != want {
+		t.Error(test.DiffMessage(resp.StatusCode, want, what))
+	}
+}
+
+func TestWSOrigin_NoOriginPasses(t *testing.T) {
+	s := newHandshake(t, nil)
+	hsExpect(t, s.handshake(t, nil), http.StatusSwitchingProtocols, "W2: no Origin header passes")
+}
+
+func TestWSOrigin_SameOriginPasses(t *testing.T) {
+	s := newHandshake(t, nil)
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "http://" + s.host()}), http.StatusSwitchingProtocols, "W3: same origin")
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "HTTP://" + strings.ToUpper(s.host())}), http.StatusSwitchingProtocols, "W3: the Origin is lower-cased")
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "http://example.com", "Host": "example.com:80"}), http.StatusSwitchingProtocols, "W3: default port dropped from the host")
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "http://example.com:80", "Host": "example.com"}), http.StatusSwitchingProtocols, "W3: default port dropped from the origin")
+}
+
+func TestWSOrigin_SameOriginPassesBehindProxy(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Proxy: &ProxyOptions{TrustedProxies: []string{"127.0.0.1"}, IsHostForwarded: true}})
+	header := map[string]string{"X-Forwarded-For": "203.0.113.9", "X-Forwarded-Proto": "https", "X-Forwarded-Host": "example.com:443", "Origin": "https://example.com"}
+	hsExpect(t, s.handshake(t, header), http.StatusSwitchingProtocols, "W3: scheme and host come from ClientScheme and ClientHost")
+}
+
+func TestWSOrigin_SchemeMismatchRefused(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Proxy: &ProxyOptions{TrustedProxies: []string{"127.0.0.1"}, IsHostForwarded: true}})
+	header := map[string]string{"X-Forwarded-For": "203.0.113.9", "X-Forwarded-Proto": "https", "X-Forwarded-Host": "example.com", "Origin": "http://example.com"}
+	hsExpect(t, s.handshake(t, header), http.StatusForbidden, "W5: an http:// origin on an HTTPS request")
+}
+
+func TestWSOrigin_ListedPasses(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Origins: []string{"https://app.example.com"}})
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "https://app.example.com"}), http.StatusSwitchingProtocols, "W4: a listed origin")
+}
+
+func TestWSOrigin_WildcardPasses(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Origins: []string{"https://*.example.com"}})
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "https://app.example.com"}), http.StatusSwitchingProtocols, "W4: a wildcard entry")
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "https://evil.com"}), http.StatusForbidden, "W5: outside the wildcard")
+}
+
+func TestWSOrigin_StarPasses(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Origins: []string{"*"}, CORS: &CORSOptions{IsEnabled: true}})
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "https://anything.example"}), http.StatusSwitchingProtocols, "W4: * passes every origin")
+}
+
+func TestWSOrigin_OtherSiteRefused403(t *testing.T) {
+	s := newHandshake(t, nil)
+	resp := s.handshake(t, map[string]string{"Origin": "https://evil.com"})
+	hsExpect(t, resp, http.StatusForbidden, "W5: another site is refused")
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "Origin not allowed") {
+		t.Error(test.DiffMessage(string(body), "…Origin not allowed…", "W5: the body says why"))
+	}
+}
+
+func TestWSOrigin_NullRefused(t *testing.T) {
+	s := newHandshake(t, nil)
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "null"}), http.StatusForbidden, "W5: Origin null is refused")
+}
+
+func TestWSOrigin_TooLongRefused(t *testing.T) {
+	s := newHandshake(t, nil)
+	hsExpect(t, s.handshake(t, map[string]string{"Origin": "https://" + strings.Repeat("a", 300) + ".com"}), http.StatusForbidden, "W5: an Origin over 256 bytes")
+}
+
+func TestWSOrigin_RefusedCounterGrows(t *testing.T) {
+	s := newHandshake(t, &AppOptions{IsDevtool: true})
+	s.handshake(t, map[string]string{"Origin": "https://evil.com"})
+	events := traceStages(s.rec.all(), trace.StagePreRoute)
+	var got []trace.Event
+	for _, e := range events {
+		if e.Name == "origin" {
+			got = append(got, e)
+		}
+	}
+	if len(got) != 1 || got[0].Code != http.StatusForbidden {
+		t.Error(test.DiffMessage(got, "one origin event with code 403", "W5: the stage reports its refusal"))
+	}
+}
+
+func TestHandshake_StagesRun(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Hosts: []string{"127.0.0.1"}})
+	resp := s.handshake(t, map[string]string{"Host": "evil.example"})
+	hsExpect(t, resp, http.StatusMisdirectedRequest, "P5: hostcheck refuses the handshake")
+	hsExpect(t, s.handshake(t, nil), http.StatusSwitchingProtocols, "P5: an allowed host passes")
+}
+
+func TestHandshake_LoadShedRefuses(t *testing.T) {
+	s := newHandshake(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}})
+	res := srvFetchAsync(srvClient(), s.url+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	hsExpect(t, s.handshake(t, nil), http.StatusServiceUnavailable, "P5: loadshed refuses the handshake when full")
+	srvCur.open()
+	<-res
+}
+
+func TestHandshake_SkipsHeadersCSRFCompressRedirect(t *testing.T) {
+	s := newHandshake(t, &AppOptions{
+		Headers:       &HeadersOptions{IsEnabled: true},
+		HTTPSRedirect: &HTTPSRedirectOptions{IsEnabled: true},
+		Compress:      &CompressOptions{IsEnabled: true},
+		CSRF:          &CSRFOptions{IsEnabled: true},
+		Origins:       []string{"https://a.com"},
+	})
+	resp := s.handshake(t, map[string]string{"Accept-Encoding": "gzip"})
+	hsExpect(t, resp, http.StatusSwitchingProtocols, "P5: no redirect, no csrf refusal on the handshake")
+	if resp.Header.Get("X-Frame-Options") != "" || resp.Header.Get("Content-Encoding") != "" {
+		t.Error(test.DiffMessage(resp.Header, "no headers or compress", "P5: headers and compress do not run"))
+	}
+	names := map[string]bool{}
+	for _, e := range traceStages(s.rec.all(), trace.StagePreRoute) {
+		names[e.Name] = true
+	}
+	for _, skipped := range []string{"headers", "csrf", "compress", "httpsredirect", "cors"} {
+		if names[skipped] {
+			t.Error(test.DiffMessage(skipped, "no event", "P5: stage "+skipped+" does not run on the handshake"))
+		}
+	}
+}
+
+func TestHandshake_GlobalMiddlewaresRunAfterStages(t *testing.T) {
+	var order []string
+	var mu sync.Mutex
+	mark := func(name string) common.MiddlewareFn {
+		return &preSpy{override: func(_ *http.Request, _ http.ResponseWriter, next ctx.Next) {
+			mu.Lock()
+			order = append(order, name)
+			mu.Unlock()
+			next()
+		}}
+	}
+	s := newHandshake(t, &AppOptions{Hosts: []string{"127.0.0.1"}}, mark("first"), mark("second"))
+	snapshot := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), order...)
+	}
+	hsExpect(t, s.handshake(t, nil), http.StatusSwitchingProtocols, "W6: middlewares let the handshake through")
+	if got := snapshot(); !slices.Equal(got, []string{"first", "second"}) {
+		t.Error(test.DiffMessage(got, []string{"first", "second"}, "W6: in bind order, once per connection"))
+	}
+	hsExpect(t, s.handshake(t, map[string]string{"Host": "evil.example"}), http.StatusMisdirectedRequest, "W6: a stage refusal")
+	if got := snapshot(); len(got) != 2 {
+		t.Error(test.DiffMessage(got, []string{"first", "second"}, "W6: user middlewares run after the stages, not on a refused handshake"))
+	}
+}
+
+func TestHandshake_MiddlewareWithoutNextRefuses(t *testing.T) {
+	deny := &preSpy{override: func(_ *http.Request, w http.ResponseWriter, _ ctx.Next) { w.WriteHeader(http.StatusTeapot) }}
+	s := newHandshake(t, nil, deny)
+	hsExpect(t, s.handshake(t, nil), http.StatusTeapot, "W6: a middleware that does not call next refuses the connection")
+}
+
+func TestHandshake_LoadShedReleasedWhenHandshakeEnds(t *testing.T) {
+	s := newHandshake(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}})
+	hsExpect(t, s.handshake(t, nil), http.StatusSwitchingProtocols, "fixture: the first connection is open")
+	hsExpect(t, s.handshake(t, nil), http.StatusSwitchingProtocols, "L4: the slot is released when the handshake ends, not when the connection closes")
+}
+
+func TestHandshake_LoadShedReleasedWhenMiddlewareRefuses(t *testing.T) {
+	spy := &preSpy{override: func(*http.Request, http.ResponseWriter, ctx.Next) {
+		panic(exception.ForbiddenException("no"))
+	}}
+	s := newHandshake(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}}, spy)
+	for i := 0; i < 3; i++ {
+		hsExpect(t, s.handshake(t, nil), http.StatusForbidden, "L4: a handshake refused by a middleware releases its slot")
 	}
 }

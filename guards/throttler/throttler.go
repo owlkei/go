@@ -16,7 +16,7 @@ import (
 	"go.owlky.com/owlky/internal/ctx"
 	"go.owlky.com/owlky/internal/inspect"
 	"go.owlky.com/owlky/internal/memorycache"
-	"go.owlky.com/owlky/middlewares/proxy"
+	"go.owlky.com/owlky/internal/tracecontext"
 	"go.owlky.com/owlky/modules/cache"
 )
 
@@ -140,7 +140,7 @@ func (g *guard) CanActivate(c *ctx.HTTPContext) bool {
 
 func (g *guard) appendKey(dst []byte, c *ctx.HTTPContext) []byte {
 	if g.keyFunc == nil {
-		return appendClientIP(dst, proxy.ClientIP(c.Request))
+		return appendClientIP(dst, tracecontext.ClientIP(c.Request))
 	}
 	key := g.keyFunc(c)
 	if len(key) <= maxKeyLength {

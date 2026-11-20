@@ -35,7 +35,7 @@ func BenchmarkServeHTTP_MultiInterceptor(b *testing.B) {
 }
 
 func BenchmarkServeHTTP_PanicFlood(b *testing.B) {
-	app := New().SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}})
 	app.Create(NewModuleBuilder().Controllers(panicBenchController{}).Build())
 	defer app.Stop()
 	r := httptest.NewRequest(http.MethodGet, "/boom", nil)
@@ -48,7 +48,7 @@ func BenchmarkServeHTTP_PanicFlood(b *testing.B) {
 }
 
 func BenchmarkServeHTTP_PanicFlood_Parallel(b *testing.B) {
-	app := New().SetLogger(&mockLogger{})
+	app := New(&AppOptions{Logger: &mockLogger{}})
 	app.Create(NewModuleBuilder().Controllers(panicBenchController{}).Build())
 	defer app.Stop()
 	b.ReportAllocs()
@@ -60,4 +60,50 @@ func BenchmarkServeHTTP_PanicFlood_Parallel(b *testing.B) {
 			app.ServeHTTP(w, r)
 		}
 	})
+}
+
+func BenchmarkPreRoute_None(b *testing.B) {
+	app := New(&AppOptions{Logger: &mockLogger{}})
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	r := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	w := &benchDiscardWriter{header: http.Header{}}
+	b.ReportAllocs()
+	for b.Loop() {
+		app.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkPreRoute_All(b *testing.B) {
+	app := New(&AppOptions{
+		Logger:        &mockLogger{},
+		Origins:       []string{"https://a.com"},
+		LoadShed:      &LoadShedOptions{IsEnabled: true},
+		Proxy:         &ProxyOptions{TrustedProxies: []string{"192.0.2.1"}},
+		Hosts:         []string{"example.com"},
+		HTTPSRedirect: &HTTPSRedirectOptions{IsEnabled: true},
+		Headers:       &HeadersOptions{IsEnabled: true},
+		CORS:          &CORSOptions{IsEnabled: true},
+		CSRF:          &CSRFOptions{IsEnabled: true},
+		Compress:      &CompressOptions{IsEnabled: true},
+	})
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/hello", nil)
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	w := &benchDiscardWriter{header: http.Header{}}
+	b.ReportAllocs()
+	for b.Loop() {
+		app.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkPreRoute_LoadShed(b *testing.B) {
+	app := New(&AppOptions{Logger: &mockLogger{}, LoadShed: &LoadShedOptions{IsEnabled: true}})
+	app.Create(NewModuleBuilder().Controllers(preController{}).Build())
+	r := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	w := &benchDiscardWriter{header: http.Header{}}
+	b.ReportAllocs()
+	for b.Loop() {
+		clear(w.header)
+		app.ServeHTTP(w, r)
+	}
 }

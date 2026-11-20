@@ -15,7 +15,6 @@ var targetPackages = []string{
 	".",
 	"exception",
 	"log",
-	"middlewares/*",
 	"modules/*",
 	"guards/*",
 }

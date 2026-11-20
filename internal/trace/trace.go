@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	StagePreRoute        = "pre-route"
 	StageMiddleware      = "middleware"
 	StageGuard           = "guard"
 	StagePreInterceptor  = "pre_interceptor"

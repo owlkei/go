@@ -84,13 +84,13 @@ func (instance SearchController) READ_search(c *ctx.HTTPContext, q ctx.Query) ct
 }
 
 func main() {
-	app := core.New()
+	app := core.New(nil)
 	app.Create(
 		core.NewModuleBuilder().
 			Controllers(SearchController{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		panic(err)
 	}
 }

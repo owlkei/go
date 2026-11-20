@@ -24,7 +24,7 @@
   - [Benchmarks](#benchmarks)
 
 ## Key Features
-- Safe by default: the client is its IP address as resolved by `proxy`; no request header is read
+- Safe by default: the client is its IP address as resolved by the proxy stage (`AppOptions.Proxy`); no request header is read
   by the throttler, so a client cannot buy a new budget by sending a new `X-Forwarded-For`
 - IPv6 clients are limited per /64 network, since one end site holds at least a /64 (RFC 6177)
 - Exact under concurrency: with `Limit: 100`, 100 requests pass, never 101, whatever the number of
@@ -74,13 +74,13 @@ func (instance LoginController) CREATE_login() string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(&owlky.AppOptions{Server: &owlky.ServerOptions{Port: 8080}})
 	app.Create(
 		owlky.ModuleBuilder().
 			Controllers(LoginController{}).
 			Build(),
 	)
-	app.Listen(8080, nil)
+	app.Listen()
 }
 ```
 
@@ -92,18 +92,16 @@ groups separate budgets, give them different options (for example a different `L
 ## Behind a proxy or load balancer
 
 Behind a proxy every request arrives from the proxy's address, so every client would share one
-budget. Bind the `proxy` middleware with the addresses of your proxies; the throttler then limits
-the real client:
+budget. List your proxies in `AppOptions.Proxy`; the throttler then limits the real client:
 
 ```go
-app.BindGlobalMiddlewares(proxy.Proxy{
-	TrustedProxies: []string{"10.0.0.0/8"},
+app := owlky.New(&owlky.AppOptions{
+	Proxy: &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 })
 ```
 
-`proxy` reads `X-Forwarded-For` (or `Forwarded`) only from the peers you list, and only the entries
-your proxies wrote. Without `proxy`, the client is the connection's address (`r.RemoteAddr`). See
-`middlewares/proxy/README.md`.
+The proxy stage reads `X-Forwarded-For` (or `Forwarded`) only from the peers you list, and only the
+entries your proxies wrote. Without `Proxy`, the client is the connection's address (`r.RemoteAddr`).
 
 ## `Throttler` Struct
 
@@ -161,7 +159,7 @@ Required: `false`
 
 Returns the identity to charge, for example a user or an API key. A key longer than 128 bytes is
 stored as `h:` and 16 hex digits of a hash of it, so a client cannot store large keys. Read the
-client address with `proxy.ClientIP(c.Request)`, never from a request header yourself: a header is
+client address with `owlky.ClientIP(c.Request)`, never from a request header yourself: a header is
 whatever the client sends.
 
 ```go
@@ -170,7 +168,7 @@ throttler.Throttler{
 		if user := c.Request.Header.Get("X-User-ID"); user != "" {
 			return "user:" + user
 		}
-		return proxy.ClientIP(c.Request).String()
+		return owlky.ClientIP(c.Request).String()
 	},
 }
 ```
@@ -251,8 +249,8 @@ A refusal is `429 Too Many Requests` with the fixed message `Too Many Requests`.
 
 ## How the client is identified
 
-The default key is `proxy.ClientIP(c.Request)`: the connection's address, or the client that
-`proxy` resolved from the headers of a trusted proxy.
+The default key is `owlky.ClientIP(c.Request)`: the connection's address, or the client that
+the proxy stage (`AppOptions.Proxy`) resolved from the headers of a trusted proxy.
 
 - **IPv4:** the address, without the port.
 - **IPv6:** the /64 network (`2001:db8:1:2::`). Providers hand every customer a /64 or more, so one
@@ -293,9 +291,9 @@ refusing new clients, which a flood of new keys would otherwise lock out.
 ## Throttler or loadshed
 
 The throttler limits **each client**: it protects you from one client that asks too much, and it
-answers `429`. `middlewares/loadshed` limits **the whole server**: it refuses work when the server
+answers `429`. `AppOptions.LoadShed` limits **the whole server**: it refuses work when the server
 is overloaded, whoever sends it, and answers `503`. They solve different problems and work
-together: bind `loadshed` to keep the server healthy, and the throttler on routes that one client
+together: turn `LoadShed` on to keep the server healthy, and the throttler on routes that one client
 must not abuse.
 
 ## Benchmarks

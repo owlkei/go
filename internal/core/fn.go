@@ -178,12 +178,16 @@ func setStatusCode(c *ctx.HTTPContext, statusCode reflect.Value) {
 }
 
 type httpMiddleware struct {
-	use  common.Use
-	name string
+	use        common.Use
+	name       string
+	isPreRoute bool
 }
 
 func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provider, c *container) httpMiddleware {
 	name := reflect.TypeOf(m).String()
+	if reflect.TypeOf(m).Kind() != reflect.Struct {
+		return httpMiddleware{use: m.Use, name: name}
+	}
 	injected, err := injectDependencies(m, "middleware", injectedProviders, c)
 	if err != nil {
 		panic(err)
@@ -193,7 +197,11 @@ func newHTTPMiddleware(m common.MiddlewareFn, injectedProviders map[string]Provi
 }
 
 func (m *httpMiddleware) emit(ev *trace.Tracer, scope *tracecontext.Scope, id string, duration time.Duration, code int) {
-	e := stageEvent(scope, id, trace.StageMiddleware, m.name, trace.TransportHTTP, duration)
+	stage := trace.StageMiddleware
+	if m.isPreRoute {
+		stage = trace.StagePreRoute
+	}
+	e := stageEvent(scope, id, stage, m.name, trace.TransportHTTP, duration)
 	e.Code = code
 	ev.Emit(e)
 }

@@ -62,9 +62,9 @@ func (instance UserController) READ() string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(UserController{}).Build())
-	app.Listen(3000, nil)
+	app.Listen()
 }
 ```
 

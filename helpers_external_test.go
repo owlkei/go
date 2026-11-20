@@ -170,8 +170,7 @@ func (instance injectedController) READ_fields() string {
 func injectedApp(t *testing.T) (owlky.App, log.Logger) {
 	t.Helper()
 	logger := log.NewLog(&log.LogOptions{Level: log.LevelError})
-	app := owlky.New()
-	app.SetLogger(logger)
+	app := owlky.New(&owlky.AppOptions{Logger: logger})
 	app.Create(owlky.ModuleBuilder().Providers(loggerProvider{}).Controllers(injectedController{}).Build())
 	return app, logger
 }

@@ -9,7 +9,12 @@ in `internal/core/http.go` follows it arrow by arrow and `internal/core/http_lif
 
 ```
 request
-  │  (the WebSocket path leaves here: handshake middlewares, then the upgrade)
+  │  (the WebSocket path leaves here: loadshed ► proxy ► hostcheck ► origin, the global
+  │   middlewares, then the upgrade)
+  ▼
+pre-route stages ───── a stage refuses ─────────► its answer (HTTP layer; never 404, 405, 410 or
+  │  loadshed ► proxy ► hostcheck ► httpsredirect ►      the gate's 503)
+  │  headers ► cors ► csrf ► compress (only the stages AppOptions turns on; design 0022 P1-P2)
   ▼
 global middleware ──── no route ────────────────► 405 or 404   (HTTP layer)
   ▼
@@ -44,7 +49,7 @@ error from a guard onwards       ► module exception filter ► global exceptio
 - A filter that returns has handled the error. A filter that panics passes what it panicked with to
   the next filter. The built-in filter is always last and writes the HTTP layer's error format.
 - Once a response has been written, the framework writes nothing more: a later error is only logged.
-- **Middleware is an HTTP concept.** A WebSocket connection runs the middlewares given to `EnableWS`
+- **Middleware is an HTTP concept.** A WebSocket handshake runs the pre-route stages that apply (`loadshed`, `proxy`, `hostcheck`, `origin`) and then the `BindGlobalMiddlewares`
   once, at the handshake; no middleware runs per message.
 
 ### 1.1 Stopping and errors per layer
@@ -64,7 +69,7 @@ One writer for the HTTP layer, `recoverRequest`, `answerNoRoute` and the built-i
 (`internal/core/http_error.go`); users cannot change it (no hook). A middleware that wants its own
 response writes it and returns without `next()`.
 
-- Format: JSON without `EnableRender`. With it: a page route from its first guard on is HTML
+- Format: JSON without `Render.FS`. With it: a page route from its first guard on is HTML
   (`ctx.HTTPIsPage`), an API / `SERVE` / asset / public file route JSON; before any guard (middlewares, 404, 405, 410)
   HTML when an `Accept` value contains `text/html`, else JSON, plus `Vary: Accept`.
 - JSON body `{"code":<int>,"error":<string>,"message":<string>}`, `Content-Type: application/json`;
@@ -192,7 +197,7 @@ func (m LogMiddleware) Use(r *http.Request, w http.ResponseWriter, next owlky.Ne
 - `next()` only says "continue": the next layer starts after `Use` returns, so code after `next()`
   runs before the next layer, not after the handler. Work after the handler belongs in an
   interceptor's `Pipe` operators. Calling `next()` twice equals once.
-- Middleware is HTTP only: a WebSocket connection runs only the middlewares given to `EnableWS`,
+- Middleware is HTTP only: a WebSocket handshake runs the pre-route stages that apply and the `BindGlobalMiddlewares` (not a controller's `BindMiddleware`),
   once, at the handshake (a missing `next()` or a panic refuses it); none runs per message. The
   per-event WS middleware API was removed.
 
@@ -220,6 +225,9 @@ func (c UserController) NewController() Controller {
 
 ### 2.3 Middleware Execution Order
 
+0. The pre-route stages of `AppOptions` (fixed order `loadshed`, `proxy`, `hostcheck`, `httpsredirect`,
+   `headers`, `cors`, `csrf`, `compress`; before route matching, the async gate and every user
+   middleware; trace stage `pre-route`)
 1. Global middlewares (bind order), also for a request that matches no route
 2. Module middlewares (bind order)
 3. Then guards, interceptors, handler (section 1)
@@ -243,7 +251,7 @@ request. Unused, it costs one length check. The lifecycle order does not change;
 ### 2.5 Built-in HTTP middlewares and the client
 
 `proxy` writes the resolved client (IP, scheme, host) into the request's `tracecontext.Scope`;
-`proxy.ClientIP` / `Scheme` / `Host` (backed by `tracecontext.ClientIP` / `IsHTTPS` / `Host`) are the
+`owlky.ClientIP` / `ClientScheme` / `ClientHost` (backed by `tracecontext.ClientIP` / `IsHTTPS` / `Host`) are the
 only readers, used by `hostcheck`, `httpsredirect`, `helmet` (HSTS), `csrf` (forwarded host, only with `proxy.IsHostForwarded`), the
 throttler and the `complete` event (`trace.Event.ClientIP`, printed as `ip` by the access log).
 No middleware of design 0014 copies the request, replaces its context or reads its body; refusals
@@ -537,7 +545,7 @@ the route's filters receive ForbiddenException("Access denied")
 the built-in filter answers 403 {"code":403,"error":"Forbidden","message":"Access denied"} unless a user filter handles it
 ```
 
-On a page route (`RENDER_`, `SUBMIT_`, with `EnableRender`) the same 403 is the HTML error page (`403.html`, `4xx.html` or the built-in page).
+On a page route (`RENDER_`, `SUBMIT_`, with `Render.FS`) the same 403 is the HTML error page (`403.html`, `4xx.html` or the built-in page).
 
 ### 7.3 Timeout Handling
 

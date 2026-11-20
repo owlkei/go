@@ -52,12 +52,11 @@ type User struct {
 }
 
 func main() {
-	app := owlky.New()
-	app.SetLogger(log.NewLog(&log.LogOptions{
+	app := owlky.New(&owlky.AppOptions{Logger: log.NewLog(&log.LogOptions{
 		Level:      log.LevelDebug,
 		Format:     log.FormatJSON,
 		MaskFields: []string{"password"},
-	}))
+	})})
 	app.Create(owlky.ModuleBuilder().Build())
 
 	app.Logger().Info("SignedIn", "user", User{Name: "duoc", Password: "secret"})
@@ -116,7 +115,7 @@ The level is written `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL` in all three fo
 | `FormatText` | `time=2026-11-16T10:00:00.000+07:00 level=INFO msg=SignedIn user=map[name:duoc]` |
 | `FormatPretty` | an empty line, the colored level label, the time (`2006-01-02 15:04:05`, local), the message in brackets, then one row per argument as a tree (map keys sorted, `null` for nil) |
 
-Output is stdout, through the [output pipeline](#output-pipeline). To write elsewhere, bring a logger with `app.SetLogger(myLogger)` (or `log.WrapLogger(myLogger, fields)` to add mask rules).
+Output is stdout, through the [output pipeline](#output-pipeline). To write elsewhere, bring a logger with `AppOptions.Logger` (`Logger: myLogger`, or `log.WrapLogger(myLogger, fields)` to add mask rules).
 
 ## Find the logs of a request
 
@@ -147,7 +146,7 @@ Use them as follows:
 - A client that sends a valid `traceparent` continues its own trace, so several requests can share
   one `trace_id` (a retry, or a client that reuses a value). The pair `trace_id` and `request`
   still names exactly one request.
-- The access log (`app.EnableAccessLog()`) writes one line per request with the same keys, so the
+- The access log (`IsAccessLog: true`) writes one line per request with the same keys, so the
   access line and your own lines of a request match on the same query.
 
 With the JSON format, filter the lines with `jq`:
@@ -295,9 +294,9 @@ The built-in JSON logger writes `{"time":"…","level":"INFO","msg":"SignedIn","
 
 ## Logger and LogAdapter
 
-`LogAdapter` is the five methods a log library implements to be the app's logger: `Debug`, `Info`, `Warn`, `Error`, `Fatal`, each `(msg string, args ...any)`. `app.SetLogger` and `WrapLogger` take one.
+`LogAdapter` is the five methods a log library implements to be the app's logger: `Debug`, `Info`, `Warn`, `Error`, `Fatal`, each `(msg string, args ...any)`. `AppOptions.Logger` and `WrapLogger` take one.
 
-`Logger` is the leveled logger a controller, provider or layer asks for with an exported field of type `log.Logger`: a `LogAdapter` plus `From(ctx context.Context) Logger`. The field receives the app's logger, the one given to `SetLogger`. Only `Owlky Go` implements it (`NewLog`, `WrapLogger`, `app.Logger()`): a type with the five methods and no `From` is a `LogAdapter`, not a `Logger`.
+`Logger` is the leveled logger a controller, provider or layer asks for with an exported field of type `log.Logger`: a `LogAdapter` plus `From(ctx context.Context) Logger`. The field receives the app's logger, the one given in `AppOptions.Logger`. Only `Owlky Go` implements it (`NewLog`, `WrapLogger`, `app.Logger()`): a type with the five methods and no `From` is a `LogAdapter`, not a `Logger`.
 
 ```go
 type UserService struct {
@@ -375,7 +374,7 @@ Every logger from `NewLog` writes to one process-wide stdout pipeline, so lines 
 - **Shutdown:** the app flushes the pipeline (at most 2 seconds) after its `OnShutdown` hooks; `Fatal` flushes before it exits.
 - **What can be lost:** lines still queued when the process dies without shutdown or `Fatal` (an unrecovered panic in a goroutine, `os.Exit` in your code, `SIGKILL`): at most 1 MiB, in practice the last batch plus up to about 1 ms of lines still waiting for the writer (below 16 KiB). Bytes you write to `os.Stdout` yourself are not ordered with log lines while the app serves. When stdout is stuck and the shutdown flush timed out, lines logged afterwards block their caller until stdout accepts a write again; `Fatal` stays bounded (it waits at most 2 seconds, then exits).
 - **Memory:** about 300 B while unused; two buffers of at most 64 KiB each and one stopped timer (about 100 B) once the queue is empty again; at most two 1 MiB buffers and one goroutine with stdout stuck.
-- Loggers given to `app.SetLogger` are not part of the pipeline: they are called directly.
+- Loggers given in `AppOptions.Logger` are not part of the pipeline: they are called directly.
 
 ## Other exported names
 

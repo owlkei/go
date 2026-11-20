@@ -194,8 +194,8 @@ func TestRetry_DelayBounds(t *testing.T) {
 func lfRetryEntry(t *testing.T, factory func(context.Context) (*Module, error)) (*App, *lfWatchLog, *Module) {
 	t.Helper()
 	user := lfNamed("user", NewModuleBuilder().AsyncImports(factory).Controllers(lfSQLCtl{}))
-	app, logger := lfWatchApp(t)
-	app.EnableDevtool()
+	logger := newLFWatchLog()
+	app := New(&AppOptions{Logger: logger, IsDevtool: true})
 	lfRelease(t, app)
 	lfCreate(t, app, NewModuleBuilder().Imports(user).Build())
 	return app, logger, user

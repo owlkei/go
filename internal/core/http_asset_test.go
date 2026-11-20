@@ -169,8 +169,7 @@ func TestAsset_Reload(t *testing.T) {
 }
 
 func TestAsset_RouteConflict(t *testing.T) {
-	app := New()
-	app.EnableRender(&RenderOptions{FS: assetFiles(), Dir: "."})
+	app := New(&AppOptions{Render: &RenderOptions{FS: assetFiles(), Dir: "."}})
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Controllers(assetPages{}, assetUserServe{}).Build())
 	})
@@ -181,9 +180,7 @@ func TestAsset_RouteConflict(t *testing.T) {
 
 func TestAsset_NoDirNoRoute(t *testing.T) {
 	files := pgFiles(map[string]string{"x.html": "X"})
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: files, Dir: "."}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(assetPlain{}).Build())
 
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
@@ -193,8 +190,7 @@ func TestAsset_NoDirNoRoute(t *testing.T) {
 		}
 	}
 
-	other := New()
-	other.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	other := New(&AppOptions{Render: &RenderOptions{FS: files, Dir: "."}})
 	text, panicked := createPanicText(func() {
 		other.Create(NewModuleBuilder().Controllers(assetPlain{}, assetUserServe{}).Build())
 	})

@@ -28,7 +28,7 @@ the table and **wait**. On approval set `Status: Approved` and continue with `de
 Run `go-architect` **once** for all the steps that need a design (split into two or three calls
 only when the steps share no code). Give it the roadmap file and its Decisions section, so it does not
 reopen them. Model: the rules of `/feature` step 1, applied to the whole batch (`fable` if any step is
-complex or the weekly reset is near, else `opus`; fall back to `opus`).
+complex or the weekly reset is less than 24 hours away, else `opus`; fall back to `opus`).
 
 Show the user the design files, their public APIs and open questions, and **wait**. Apply their
 changes, set each design to `Status: Approved` and the roadmap to `Designed`.

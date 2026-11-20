@@ -66,9 +66,9 @@ func (instance UserController) READ() string {
 }
 
 func main() {
-	app := core.New()
+	app := core.New(nil)
 	app.Create(core.NewModuleBuilder().Controllers(UserController{}).Build())
-	app.Listen(3000, nil)
+	app.Listen()
 }
 ```
 

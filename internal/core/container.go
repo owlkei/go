@@ -489,7 +489,7 @@ func (c *container) checkPageRoute(controllerType reflect.Type, methodName, patt
 		}
 	}
 	if c.render == nil {
-		panic(errors.New(color.FmtRed("invalid render: %v is a page route, call EnableRender before Create", handlerName)))
+		panic(errors.New(color.FmtRed("invalid render: %v is a page route, set Render.FS in AppOptions", handlerName)))
 	}
 	if _, route, _ := routing.PatternToMethodRouteVersion(pattern); strings.ContainsRune(route, '*') {
 		panic(errors.New(color.FmtRed("invalid route: %v is a page route and its path %v holds a wildcard", handlerName, route)))

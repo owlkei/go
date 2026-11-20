@@ -72,7 +72,7 @@ With the log on, each framework writes one line per request to stdout, which goe
 
 | Framework | Request logger |
 |---|---|
-| Owlky Go | the built-in logger in JSON with the access log (`EnableAccessLog`) |
+| Owlky Go | the built-in logger in JSON with the access log (`IsAccessLog: true`) |
 | Gin | `gin.LoggerWithConfig` with a JSON formatter |
 | Echo | `middleware.RequestLoggerWithConfig` writing through `slog`'s JSON handler |
 | Chi | `middleware.Logger` (text lines: Chi has no JSON logger) |

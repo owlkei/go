@@ -418,11 +418,10 @@ func TestLifecycle_NoRouteMethodNotAllowedRunsGlobalMiddlewares(t *testing.T) {
 	lcExpectResponse(t, w, http.StatusMethodNotAllowed, wantMethodNotAllowedJSON, "L23: the answer is N2's")
 }
 
-func TestLifecycle_WSHandshakeRunsOnlyWSMiddlewares(t *testing.T) {
+func TestLifecycle_WSHandshakeRunsGlobalMiddlewares(t *testing.T) {
 	lcReset(t)
-	app := New()
-	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
-	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"}, lcMiddleware{Name: "w2"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
+	app.BindGlobalMiddlewares(lcMiddleware{Name: "w1"}, lcMiddleware{Name: "w2"})
 	app.Create(NewModuleBuilder().Controllers(lcBareController{}).Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -433,14 +432,13 @@ func TestLifecycle_WSHandshakeRunsOnlyWSMiddlewares(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	lcExpectEntries(t, lcEntries("mw:"), []string{"mw:w1", "mw:w2"}, "L24: only the middlewares given to EnableWS run, once, at the handshake")
+	lcExpectEntries(t, lcEntries("mw:"), []string{"mw:w1", "mw:w2"}, "L24: the global middlewares run once, in bind order, at the handshake")
 }
 
 func TestLifecycle_WSHandshakeRefusedWithoutNext(t *testing.T) {
 	lcReset(t)
-	app := New()
-	app.BindGlobalMiddlewares(lcMiddleware{Name: "g1"})
-	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"}, lcMiddleware{Name: "w2"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
+	app.BindGlobalMiddlewares(lcMiddleware{Name: "w1"}, lcMiddleware{Name: "w2"})
 	app.Create(NewModuleBuilder().Controllers(lcBareController{}).Build())
 	lcSetMiddleware("w1", func(http.ResponseWriter, *http.Request, ctx.Next) {})
 	server := httptest.NewServer(app)
@@ -451,13 +449,13 @@ func TestLifecycle_WSHandshakeRefusedWithoutNext(t *testing.T) {
 		_ = conn.Close()
 		t.Error(test.DiffMessage(nil, "a refused handshake", "L24: a middleware that does not call next() refuses the handshake"))
 	}
-	lcExpectEntries(t, lcEntries("mw:"), []string{"mw:w1"}, "L24: no later middleware runs, and no global middleware")
+	lcExpectEntries(t, lcEntries("mw:"), []string{"mw:w1"}, "L24: no later middleware runs")
 }
 
 func TestLifecycle_WSHandshakeRefusedByPanic(t *testing.T) {
 	lcReset(t)
-	app := New()
-	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"})
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
+	app.BindGlobalMiddlewares(lcMiddleware{Name: "w1"})
 	app.Create(NewModuleBuilder().Controllers(lcBareController{}).Build())
 	lcSetMiddleware("w1", lcPanicMiddleware("secret"))
 	server := httptest.NewServer(app)

@@ -10,26 +10,21 @@ import (
 
 	"go.owlky.com/owlky"
 	"go.owlky.com/owlky/guards/throttler"
-	"go.owlky.com/owlky/middlewares/cors"
-	"go.owlky.com/owlky/middlewares/helmet"
-	"go.owlky.com/owlky/middlewares/loadshed"
 )
 
-var serverOptions = &owlky.ServerOptions{
-	ShutdownTimeout:     10 * time.Second,
-	MaxRequestBodyBytes: 16 << 10,
-}
-
 func newApp(webOrigin string) owlky.App {
-	app := owlky.New()
-	// loadshed comes first: a request refused under overload should cost as little as possible.
-	app.BindGlobalMiddlewares(
-		loadshed.LoadShed{},
-		helmet.Helmet{},
-		cors.CORS{AllowOrigins: []string{webOrigin}},
-	)
+	// The protections run before routing, in a fixed order: load shedding first, so a request
+	// refused under overload costs as little as possible.
+	app := owlky.New(&owlky.AppOptions{
+		IsAccessLog: true,
+		Server:      &owlky.ServerOptions{ShutdownTimeout: 10 * time.Second},
+		HTTP:        &owlky.HTTPOptions{MaxBodyBytes: 16 * owlky.KiB},
+		Origins:     []string{webOrigin},
+		LoadShed:    &owlky.LoadShedOptions{IsEnabled: true},
+		Headers:     &owlky.HeadersOptions{IsEnabled: true},
+		CORS:        &owlky.CORSOptions{IsEnabled: true},
+	})
 	app.BindGlobalGuards(throttler.Throttler{Limit: 100, TTL: time.Minute})
-	app.EnableAccessLog()
 	app.Create(NewFeedbackModule())
 	return app
 }
@@ -39,7 +34,7 @@ func main() {
 	if origin == "" {
 		origin = "http://localhost:5173"
 	}
-	if err := newApp(origin).Listen(3000, serverOptions); err != nil {
+	if err := newApp(origin).Listen(); err != nil {
 		log.Fatal(err)
 	}
 }

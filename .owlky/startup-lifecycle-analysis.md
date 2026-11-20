@@ -25,20 +25,22 @@ the module stays `pending`, the routes that need it answer `503`, and they open 
 
 ## Startup Sequence
 
-### Phase 1: App Creation (`core.New()`)
+### Phase 1: App Creation (`core.New(opts)`)
 
 ```
-core.New()
+core.New(opts)
+  ├─ loadAppOptions(opts)            every check (panics `invalid app: …`), copies, TLS pair load,
+  │                                  the pre-route stages compiled once in their fixed order
   ├─ newHTTP()                       router and route tables of this app
   ├─ memorybroker.NewMemoryBroker()  the app's own broker (ready for pub/sub immediately)
   ├─ newContainer()                  the app's own modules, providers, layers, routes and events
-  ├─ log.NewLog(nil)                 the built-in logger (replace it with SetLogger before Create)
+  ├─ log.NewLog(nil)                 the built-in logger (replaced by AppOptions.Logger)
   ├─ context pools (HTTP exchange, WS context), server defaults, body cap 10 MiB
   ├─ container.addInterface(common.Publisher)
   └─ BindGlobalExceptionFilters(built-in HTTP and WS filters)
 ```
 
-Every `core.New()` is independent: there is no package-level registry of routes, events, providers or
+Every `core.New(opts)` is independent: there is no package-level registry of routes, events, providers or
 layers (design 0009). The app's `trace.Tracer` is a zero value (no listener).
 
 ### Phase 2: App Initialization (`app.Create(m *Module)`, `internal/core/app.go`)
@@ -57,7 +59,7 @@ Create(m)
   │    ├─ discover(root)                    depth first, each module once:
   │    │     module factories of the sync set are called here, in dependency order (arguments from
   │    │     siblings, then globals, then Logger, Publisher), each on a helper goroutine within the
-  │    │     startup timeout (SetStartupTimeout, default 30 s, one budget; its ctx carries the deadline);
+  │    │     startup timeout (AppOptions.StartupTimeout, default 30 s, one budget; its ctx carries the deadline);
   │    │     the provider of an argument is built after its owner module's OnInit (which then
   │    │     does not run again); each result is scanned before the next call;
   │    │     visible providers and controllers per module, prefixes per controller
@@ -66,13 +68,13 @@ Create(m)
   │    │     (a provider is constructed after the providers its fields name, once per app)
   │    └─ injectController() for every controller of a ready module (fields injected, then NewController);
   │          controllers of pending modules are probed (throwaway instance, NewController) and gated
-  ├─ initWS()                               only when EnableWS was called
+  ├─ initWS()                               only when AppOptions.WS.Path is set
   ├─ initRoutes(), initMiddlewares(), initExceptionFilters(), initGuards(),
   │  initInterceptors(), initMainHandlers()  layers constructed once per type and configuration,
   │                                          handler plans built (internal/core/fn_plan.go)
   ├─ app.http.finishRoutes()                one immutable route struct per route, fixed 404/405 bodies
   ├─ initDevtool()                          after routes and layers exist
-  ├─ initAccessLog()                        the tracer's only listener, when EnableAccessLog was called
+  ├─ initAccessLog()                        the tracer's only listener, when AppOptions.IsAccessLog is true
   ├─ start one goroutine per AsyncImports entry (module_async.go)
   └─ callOnReady()                          OnReady of every ready module, in init order; then isCreated = true
 ```
@@ -82,7 +84,7 @@ Create(m)
    which every later step reads.
 2. `initWS` runs right after it and before `initExceptionFilters`, `initGuards`, `initInterceptors`
    and `initMainHandlers`: those write into `app.ws` (`catchFnsByEvent`, `eventMatcher`) whenever the
-   app has WS handlers. `app.ws` stays nil without `EnableWS`, so each of those call sites checks
+   app has WS handlers. `app.ws` stays nil without `AppOptions.WS.Path`, so each of those call sites checks
    `app.ws != nil`.
 3. `initDevtool` runs after the routes and layers exist: it reads them for its snapshot.
 4. `callOnReady` runs last. Only then is the app marked created, so a `Create` that did not finish
@@ -95,7 +97,7 @@ per app. Root importing A and C, both importing B: B, A, C, root.
 - A panic in `OnInit` or `OnReady` stops `Create` and reaches the caller unchanged. An app whose
   `Create` did not finish runs no `OnShutdown`.
 - `Create` never writes to the modules it is given: the same module value may be given to several apps.
-- Configuration methods (`BindGlobal…`, `Enable…`, `SetLogger`) panic after `Create`:
+- The `BindGlobal…` methods panic after `Create` (configuration is read at `New`):
   `invalid app: <Method> must be called before Create`.
 
 ### Phase 2b: Background (`AsyncImports`, `internal/core/module_async.go`)
@@ -111,10 +113,10 @@ per entry goroutine
 failure (error, panic, nil module, type never resolved) → failed, spreads to what needs it
 ```
 
-### Phase 3: Server Start (`app.Listen(port, nil)`, `ListenTLS`, `Serve`; `internal/core/server.go`)
+### Phase 3: Server Start (`app.Listen()`, `app.Serve(listener)`; `internal/core/server.go`)
 
 ```
-app.Listen(port, opts)
+app.Listen()
   ├─ checks (before Create, already serving, stopped, option conflicts) → return an error
   ├─ bind :<port>          a bind error returns here: nothing logged, no hook runs
   ├─ log InstanceLoader (one line per named module that is ready), RouteExplorer (one per route),
@@ -183,7 +185,7 @@ of `Imports(…)` matters only for the order hooks run in.
 
 ### Condition 3: Broker Subscriptions ✓ NOT POSSIBLE AT STARTUP
 
-The broker is created in `core.New()`; subscriptions only happen when a WebSocket client sends a
+The broker is created in `core.New(opts)`; subscriptions only happen when a WebSocket client sends a
 `subscribe` message, after the server is listening.
 
 ---

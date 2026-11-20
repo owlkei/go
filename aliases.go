@@ -15,10 +15,23 @@ type (
 	Module        = *core.Module
 	Controller    = core.Controller
 	Provider      = core.Provider
-	ServerOptions = core.ServerOptions
 	WSOptions     = core.WSOptions
 	RenderOptions = core.RenderOptions
 	RetryOptions  = core.RetryOptions
+
+	AppOptions           = core.AppOptions
+	ServerOptions        = core.ServerOptions
+	TLSOptions           = core.TLSOptions
+	HTTPOptions          = core.HTTPOptions
+	ProxyOptions         = core.ProxyOptions
+	ProxyHeader          = core.ProxyHeader
+	LoadShedOptions      = core.LoadShedOptions
+	HTTPSRedirectOptions = core.HTTPSRedirectOptions
+	HeadersOptions       = core.HeadersOptions
+	CORSOptions          = core.CORSOptions
+	CSRFOptions          = core.CSRFOptions
+	CompressOptions      = core.CompressOptions
+	ByteSize             = core.ByteSize
 
 	HTTP             = common.HTTP
 	WS               = common.WS
@@ -57,8 +70,8 @@ func ModuleBuilder() *core.ModuleBuilder {
 	return core.NewModuleBuilder()
 }
 
-func New() App {
-	return core.New()
+func New(opts *AppOptions) App {
+	return core.New(opts)
 }
 
 func Retry(ctx context.Context, opts *core.RetryOptions, fn func(ctx context.Context) error) error {

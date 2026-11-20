@@ -17,7 +17,7 @@ Feature Request
   │   └─ Providers go in exported controller fields (injected at Create())
   │
   ├─ "I need a server-rendered HTML page"
-  │   ├─ app.EnableRender(&owlky.RenderOptions{FS: web}) before Create
+  │   ├─ AppOptions{Render: &owlky.RenderOptions{FS: web}}
   │   ├─ Embed owlky.HTTP; RENDER_<route> = GET page, SUBMIT_<route> = its form POST (same words)
   │   ├─ The route picks the template: web/<path>.html or web/<path>/index.html ({id} for parameters)
   │   ├─ Return the template's data (any type); SUBMIT_ re-renders with 422 or c.Redirect → 303
@@ -117,7 +117,7 @@ Piece of Code
   │   └─ Per app: the module's OnShutdown hook (runs after the drain, reverse init order)
   │
   └─ "Logging, tracing, monitoring"
-      ├─ Per-request timing: EnableAccessLog() (the app's tracer has no public listener API)
+      ├─ Per-request timing: AppOptions.IsAccessLog (the app's tracer has no public listener API)
       ├─ Use Logger for structured logging (inject log.Logger, or app.Logger())
       └─ Can go in middleware, handler, or provider
 ```
@@ -273,12 +273,12 @@ Architecture Question
   │   ├─ Logging → Middleware or interceptor
   │   ├─ Error handling → Exception filter
   │   ├─ Authentication → Guard or middleware
-  │   ├─ Tracing → EnableAccessLog(), or an interceptor
+  │   ├─ Tracing → AppOptions.IsAccessLog, or an interceptor
   │   └─ Rate limiting → Guard
   │
   └─ "How do I test this application?"
       ├─ Create new app instance per test
-      ├─ Modules may be shared: every owlky.New() has its own routes, providers and layers
+      ├─ Modules may be shared: every owlky.New(opts) has its own routes, providers and layers
       ├─ Mock providers via dependency injection
       ├─ Use httptest.Server for HTTP testing
       ├─ For WS: use real websocket connection or mock interface
@@ -331,18 +331,18 @@ Pattern Question
   │   └─ YES - the app keeps one instance per configuration (type + constructor + reflect.DeepEqual value)
   │       Equal configurations share one instance; different ones get their own
   │
-  ├─ "Should I write cors.CORS{} or cors.CORS{IsAllowCredentials: true} without an origin list?"
+  ├─ "Should I set CORS: &owlky.CORSOptions{IsEnabled: true} without Origins?"
   │   └─ NO - an empty AllowOrigins panics at app.Create(); "*" never with credentials
-  │       Fix: cors.CORS{AllowOrigins: []string{"https://app.example.com"}, IsAllowCredentials: true}
+  │       Fix: Origins: []string{"https://app.example.com"}, CORS: &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true}
   │
   ├─ "Should I read X-Forwarded-For / X-Real-IP for the client IP?"
-  │   └─ NO - bind proxy.Proxy{TrustedProxies: ...} first and call proxy.ClientIP(c.Request)
+  │   └─ NO - set Proxy: &owlky.ProxyOptions{TrustedProxies: ...} and call owlky.ClientIP(c.Request)
   │
   ├─ "Should I add a CSRF token or cookie?"
-  │   └─ NO - csrf.CSRF uses Sec-Fetch-Site and Origin; its only option is TrustedOrigins
+  │   └─ NO - CSRF: &owlky.CSRFOptions{IsEnabled: true} uses Sec-Fetch-Site and Origin; trusted origins come from AppOptions.Origins
   │
   └─ "Should I assume request bodies are unlimited or add app.SetMaxBodySize(...)?"
-      └─ NO - 10 MiB cap by default; change it with app.Listen(port, &owlky.ServerOptions{MaxRequestBodyBytes: n}) (negative = off)
+      └─ NO - 10 MiB cap by default; change it with AppOptions{HTTP: &owlky.HTTPOptions{MaxBodyBytes: 50 * owlky.MiB}} (negative = off)
           Result: SetMaxBodySize won't compile; bodies over the cap panic 413 from owlky.Body()
 ```
 

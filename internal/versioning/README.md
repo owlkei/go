@@ -1,6 +1,6 @@
 # Versioning
 
-Internal package: applications use `app.EnableVersioning(&owlky.VersioningOptions{…})` with `owlky.VersioningQuery`, `VersioningHeader`, `VersioningCustom` or `VersioningMediaType` instead.
+Internal package: applications use `AppOptions.Versioning` (`&owlky.VersioningOptions{…}`) with `owlky.VersioningQuery`, `VersioningHeader`, `VersioningCustom` or `VersioningMediaType` instead.
 
 *Package `versioning` reads the API version of a request from the query, a header, the `Accept` media type or a function of your own, so that the router can pick the route registered for that version.*
 
@@ -31,12 +31,12 @@ import (
 )
 
 func main() {
-	app := core.New()
-	app.EnableVersioning(&versioning.Options{
+	app := core.New(&core.AppOptions{Versioning: &versioning.Options{
 		Type:           versioning.TypeMediaType,
 		Key:            "v",
 		DefaultVersion: "1",
-	})
+	}})
+	_ = app
 }
 ```
 

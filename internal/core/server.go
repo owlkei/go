@@ -24,25 +24,28 @@ import (
 	"go.owlky.com/owlky/internal/routing"
 )
 
-const (
-	defaultMaxRequestBodyBytes = 10 << 20
-	defaultShutdownTimeout     = 30 * time.Second
-)
+const defaultShutdownTimeout = 30 * time.Second
 
 var (
-	errNotCreated        = errors.New("owlky: Create must be called before serving")
-	errAlreadyServing    = errors.New("owlky: app is already serving")
-	errStopped           = errors.New("owlky: app is stopped")
-	errTLSConfigOnListen = errors.New("owlky: TLSConfig is set: use ListenTLS, or Serve with your listener")
-	errH2CWithTLS        = errors.New("owlky: IsH2C applies to connections without TLS")
-	errNoCertificate     = errors.New("owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates")
+	errNotCreated     = errors.New("owlky: Create must be called before serving")
+	errAlreadyServing = errors.New("owlky: app is already serving")
+	errStopped        = errors.New("owlky: app is stopped")
 )
 
-type ServerOptions struct {
-	ShutdownTimeout     time.Duration
-	MaxRequestBodyBytes int64
-	TLSConfig           *tls.Config
-	IsH2C               bool
+type serverConfig struct {
+	port            int
+	configuredPort  int
+	shutdownTimeout time.Duration
+	tlsConfig       *tls.Config
+	isH2C           bool
+}
+
+func (cfg *appConfig) serverConfig(opts *AppOptions) serverConfig {
+	s := serverConfig{port: cfg.port, shutdownTimeout: cfg.shutdownTimeout, tlsConfig: cfg.tlsConfig, isH2C: cfg.isH2C}
+	if opts != nil && opts.Server != nil {
+		s.configuredPort = opts.Server.Port
+	}
+	return s
 }
 
 type serverDefaults struct {
@@ -59,58 +62,16 @@ const (
 	serveStopped
 )
 
-func (app *App) Listen(port int, opts *ServerOptions) error {
+func (app *App) Listen() error {
 	if err := app.servingError(); err != nil {
 		return err
 	}
-	o := loadServerOptions(opts)
-	if o.TLSConfig != nil {
-		return errTLSConfigOnListen
-	}
 
-	return app.listenAndServe(port, o)
+	return app.listenAndServe(app.server.port)
 }
 
-func (app *App) ListenTLS(port int, certFile, keyFile string, opts *ServerOptions) error {
-	if err := app.servingError(); err != nil {
-		return err
-	}
-	o := loadServerOptions(opts)
-	if o.IsH2C {
-		return errH2CWithTLS
-	}
-
-	if certFile != "" || keyFile != "" {
-		if certFile == "" || keyFile == "" {
-			return errNoCertificate
-		}
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return fmt.Errorf("owlky: load TLS certificate: %w", err)
-		}
-		if o.TLSConfig == nil {
-			o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		}
-		o.TLSConfig.Certificates = []tls.Certificate{cert}
-	} else if !hasCertificateSource(o.TLSConfig) {
-		return errNoCertificate
-	}
-
-	return app.listenAndServe(port, o)
-}
-
-func (app *App) Serve(l net.Listener, opts *ServerOptions) error {
-	o := loadServerOptions(opts)
-	if o.TLSConfig != nil {
-		if o.IsH2C {
-			return errH2CWithTLS
-		}
-		if !hasCertificateSource(o.TLSConfig) {
-			return errNoCertificate
-		}
-	}
-
-	return app.serve(l, o)
+func (app *App) Serve(l net.Listener) error {
+	return app.serve(l, true)
 }
 
 func (app *App) Stop() {
@@ -119,7 +80,7 @@ func (app *App) Stop() {
 	case serveCreated:
 		app.serveState = serveStopped
 		app.serveMu.Unlock()
-		app.runShutdownHooks(time.Now().Add(defaultShutdownTimeout))
+		app.runShutdownHooks(time.Now().Add(app.server.shutdownTimeout))
 		return
 	case serveServing:
 		app.serveState = serveStopping
@@ -168,28 +129,6 @@ func notifyShutdownSignals() (<-chan os.Signal, func()) {
 	return signals, func() { signal.Stop(signals) }
 }
 
-func loadServerOptions(opts *ServerOptions) ServerOptions {
-	var o ServerOptions
-	if opts != nil {
-		o = *opts
-	}
-	if o.ShutdownTimeout <= 0 {
-		o.ShutdownTimeout = defaultShutdownTimeout
-	}
-	if o.MaxRequestBodyBytes == 0 {
-		o.MaxRequestBodyBytes = defaultMaxRequestBodyBytes
-	}
-	if o.TLSConfig != nil {
-		o.TLSConfig = o.TLSConfig.Clone()
-	}
-
-	return o
-}
-
-func hasCertificateSource(cfg *tls.Config) bool {
-	return cfg != nil && (len(cfg.Certificates) > 0 || cfg.GetCertificate != nil || cfg.GetConfigForClient != nil)
-}
-
 func (app *App) servingError() error {
 	app.serveMu.Lock()
 	defer app.serveMu.Unlock()
@@ -210,7 +149,7 @@ func (app *App) servingErrorLocked() error {
 	return nil
 }
 
-func (app *App) listenAndServe(port int, opts ServerOptions) error {
+func (app *App) listenAndServe(port int) error {
 	address := net.JoinHostPort("", strconv.Itoa(port))
 	l, err := net.Listen("tcp", address)
 	if err != nil {
@@ -218,18 +157,21 @@ func (app *App) listenAndServe(port int, opts ServerOptions) error {
 	}
 	defer func() { _ = l.Close() }()
 
-	return app.serve(l, opts)
+	return app.serve(l, false)
 }
 
-func (app *App) serve(l net.Listener, opts ServerOptions) error {
+func (app *App) serve(l net.Listener, isOwnListener bool) error {
 	stopRequest, err := app.beginServing()
 	if err != nil {
 		return err
 	}
 
-	app.maxRequestBodyBytes.Store(opts.MaxRequestBodyBytes)
-	isTLS := opts.TLSConfig != nil
-	server := app.newServer(opts, isTLS)
+	if isOwnListener && app.server.configuredPort != 0 {
+		app.logger.Info("ServerPortIgnored", "port", app.server.configuredPort)
+	}
+	timeout := app.server.shutdownTimeout
+	isTLS := app.server.tlsConfig != nil
+	server := app.newServer(isTLS)
 	app.logStartup(l.Addr(), isTLS, protocolNames(server.Protocols))
 
 	signals, stopSignals := app.notifySignals()
@@ -248,22 +190,22 @@ func (app *App) serve(l net.Listener, opts ServerOptions) error {
 	select {
 	case sig := <-signals:
 		stopSignals()
-		deadline = app.beginShutdown(opts.ShutdownTimeout)
+		deadline = app.beginShutdown(timeout)
 		app.markStopping()
 		app.logger.Info("ShutdownSignal", "signal", sig.String())
-		err = drain(server, opts.ShutdownTimeout)
+		err = drain(server, timeout)
 		<-served
 	case <-stopRequest:
 		stopSignals()
-		deadline = app.beginShutdown(opts.ShutdownTimeout)
+		deadline = app.beginShutdown(timeout)
 		app.logger.Info("Shutdown")
-		err = drain(server, opts.ShutdownTimeout)
+		err = drain(server, timeout)
 		<-served
 	case <-served:
 		stopSignals()
-		deadline = app.beginShutdown(opts.ShutdownTimeout)
+		deadline = app.beginShutdown(timeout)
 		app.markStopping()
-		_ = drain(server, opts.ShutdownTimeout)
+		_ = drain(server, timeout)
 		err = fmt.Errorf("owlky: serve: %w", serveErr)
 	}
 
@@ -285,13 +227,13 @@ func (app *App) beginServing() (<-chan struct{}, error) {
 	return app.stopRequest, nil
 }
 
-func (app *App) newServer(opts ServerOptions, isTLS bool) *http.Server {
+func (app *App) newServer(isTLS bool) *http.Server {
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
 	switch {
 	case isTLS:
-		protocols.SetHTTP2(allowsHTTP2(opts.TLSConfig))
-	case opts.IsH2C:
+		protocols.SetHTTP2(allowsHTTP2(app.server.tlsConfig))
+	case app.server.isH2C:
 		protocols.SetUnencryptedHTTP2(true)
 	}
 
@@ -304,7 +246,7 @@ func (app *App) newServer(opts ServerOptions, isTLS bool) *http.Server {
 		WriteTimeout:      d.writeTimeout,
 		IdleTimeout:       d.idleTimeout,
 		MaxHeaderBytes:    d.maxHeaderBytes,
-		TLSConfig:         opts.TLSConfig,
+		TLSConfig:         app.server.tlsConfig,
 		Protocols:         &protocols,
 		ErrorLog:          stdlog.New(serverErrorWriter{app: app}, "", 0),
 	}
@@ -446,14 +388,7 @@ func (app *App) runShutdownHooks(deadline time.Time) {
 		app.beginAsyncShutdown()
 		app.waitEntries(deadline)
 		if isCreated {
-			app.container.mu.RLock()
-			modules := slices.Clone(app.container.readyOrder)
-			app.container.mu.RUnlock()
-			for i := len(modules) - 1; i >= 0; i-- {
-				if modules[i].OnShutdown != nil {
-					app.callShutdownHook(modules[i])
-				}
-			}
+			app.runModuleShutdownHooks()
 		}
 		if app.accesslog != nil {
 			app.accesslog.Stop()
@@ -474,6 +409,31 @@ func (app *App) runShutdownHooks(deadline time.Time) {
 		app.serveMu.Unlock()
 		close(app.shutdownDone)
 	})
+}
+
+func (app *App) runModuleShutdownHooks() {
+	app.container.mu.RLock()
+	modules := slices.Clone(app.container.readyOrder)
+	app.container.mu.RUnlock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.serveMu.Lock()
+		app.hooksGoroutine = goroutineID()
+		app.serveMu.Unlock()
+		for i := len(modules) - 1; i >= 0; i-- {
+			if modules[i].OnShutdown != nil {
+				app.callShutdownHook(modules[i])
+			}
+		}
+	}()
+	timer := time.NewTimer(app.server.shutdownTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		app.logger.Warn("ShutdownHooksTimeout", "timeout", app.server.shutdownTimeout.String())
+	}
 }
 
 func (app *App) callShutdownHook(m *Module) {

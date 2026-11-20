@@ -40,7 +40,7 @@ func TestModuleFactory_CtxCarriesStartupDeadline(t *testing.T) {
 		return NewModuleBuilder().Build(), nil
 	}
 
-	app := New().SetStartupTimeout(2 * time.Second)
+	app := New(&AppOptions{StartupTimeout: 2 * time.Second})
 	before := time.Now()
 	mustCreate(t, app, NewModuleBuilder().Imports(factory).Build())
 	after := time.Now()
@@ -65,7 +65,7 @@ func TestModuleFactory_CtxCanceledAfterCreate(t *testing.T) {
 		return NewModuleBuilder().Build(), nil
 	}
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(factory).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(factory).Build())
 
 	c, _ := got.Load().(context.Context)
 	if c == nil || c.Err() == nil {
@@ -80,7 +80,7 @@ func TestModuleFactory_CtxCanceledWhenCreatePanics(t *testing.T) {
 		return NewModuleBuilder().Build(), nil
 	}
 
-	lfCreatePanic(t, New(), NewModuleBuilder().Imports(factory, lfFailFactory).Build())
+	lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(factory, lfFailFactory).Build())
 
 	c, _ := got.Load().(context.Context)
 	if c == nil || c.Err() == nil {
@@ -89,7 +89,7 @@ func TestModuleFactory_CtxCanceledWhenCreatePanics(t *testing.T) {
 }
 
 func TestModuleFactory_ErrorStopsCreate(t *testing.T) {
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(lfFailFactory).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(lfFailFactory).Build())
 	want := "invalid module: module factory 'core.lfFailFactory' failed: lf-factory-boom"
 	if !strings.Contains(text, want) {
 		t.Error(test.DiffMessage(text, want, "F6: the label and the error are in the panic"))
@@ -98,8 +98,7 @@ func TestModuleFactory_ErrorStopsCreate(t *testing.T) {
 
 func TestModuleFactory_PanicStopsCreate(t *testing.T) {
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
+	app := New(&AppOptions{Logger: logger})
 
 	text := lfCreatePanic(t, app, NewModuleBuilder().Imports(lfPanicFactory).Build())
 
@@ -136,7 +135,7 @@ func TestModuleFactory_NeverReturnsStopsAtDeadline(t *testing.T) {
 		"with params": func(lfRepo) *Module { <-release; return nil },
 	}
 	for name, factory := range shapes {
-		app := New().SetStartupTimeout(10 * time.Millisecond)
+		app := New(&AppOptions{StartupTimeout: 10 * time.Millisecond})
 		sibling := NewModuleBuilder().Providers(lfRepo{}).Build()
 		text := lfCreatePanic(t, app, NewModuleBuilder().Imports(sibling, factory).Build())
 		if !strings.Contains(text, "invalid module: module factory 'core.") ||
@@ -148,7 +147,7 @@ func TestModuleFactory_NeverReturnsStopsAtDeadline(t *testing.T) {
 
 func TestModuleFactory_NilModuleStopsCreate(t *testing.T) {
 	for _, factory := range []any{lfNilFactory, lfNilErrFactory} {
-		text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(factory).Build())
+		text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(factory).Build())
 		if !strings.Contains(text, "invalid module: module factory 'core.lfNil") || !strings.Contains(text, "returned a nil module") {
 			t.Error(test.DiffMessage(text, "module factory '…' returned a nil module", "F9: a nil module with a nil error"))
 		}
@@ -160,7 +159,7 @@ func TestModuleFactory_CalledOnce(t *testing.T) {
 	first := NewModuleBuilder().Imports(lfCountedFactory).Build()
 	second := NewModuleBuilder().Imports(lfCountedFactory).Build()
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(first, second).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(first, second).Build())
 
 	if got := lfCountedCalls.Load(); got != 1 {
 		t.Error(test.DiffMessage(got, int64(1), "F10: one function value is one call per app"))
@@ -175,7 +174,7 @@ func TestModuleFactory_ResolvesSiblingProvider(t *testing.T) {
 	}
 	db := NewModuleBuilder().Providers(lfRepo{}).Build()
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(db, factory).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(db, factory).Build())
 
 	if got.Load() != "built" {
 		t.Error(test.DiffMessage(got.Load(), "built", "S1: the factory receives the sibling's built provider"))
@@ -191,7 +190,7 @@ func TestModuleFactory_ResolvesSiblingReExport(t *testing.T) {
 	inner := NewModuleBuilder().Providers(lfRepo{}).Build()
 	outer := NewModuleBuilder().Imports(inner).Build()
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(outer, factory).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(outer, factory).Build())
 
 	if got.Load() != "built" {
 		t.Error(test.DiffMessage(got.Load(), "built", "S1: a provider visible through the sibling's imports"))
@@ -206,7 +205,7 @@ func TestModuleFactory_SiblingListedAfter(t *testing.T) {
 	}
 	db := NewModuleBuilder().Providers(lfRepo{}).Build()
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(factory, db).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(factory, db).Build())
 
 	if got.Load() != "built" {
 		t.Error(test.DiffMessage(got.Load(), "built", "S3: order does not matter, the factory is listed first"))
@@ -226,7 +225,7 @@ func TestModuleFactory_FactoryAfterFactory(t *testing.T) {
 			imports = []any{provider, consumer}
 		}
 
-		mustCreate(t, New(), NewModuleBuilder().Imports(imports...).Build())
+		mustCreate(t, New(nil), NewModuleBuilder().Imports(imports...).Build())
 
 		if got.Load() != "built" {
 			t.Error(test.DiffMessage(got.Load(), "built", "S3: a factory resolves from another factory's module, provider first: "+map[bool]string{true: "yes", false: "no"}[providerFirst]))
@@ -246,7 +245,7 @@ func TestModuleFactory_GlobalFromReturnedModuleAnyOrder(t *testing.T) {
 		return NewModuleBuilder().Build()
 	}
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(consumer, provider).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(consumer, provider).Build())
 
 	if got.Load() != "built" {
 		t.Error(test.DiffMessage(got.Load(), "built", "S2: a global of a returned module is found whatever the order"))
@@ -263,7 +262,7 @@ func TestModuleFactory_GlobalAtAnyDepth(t *testing.T) {
 		return NewModuleBuilder().Build()
 	}
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(factory, mid).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(factory, mid).Build())
 
 	if got.Load() != "built" {
 		t.Error(test.DiffMessage(got.Load(), "built", "S2: a global of a static module at any depth"))
@@ -274,7 +273,7 @@ func TestModuleFactory_OwnProvidersNotInScope(t *testing.T) {
 	factory := func(lfRepo) *Module { return NewModuleBuilder().Build() }
 	parent := NewModuleBuilder().Providers(lfRepo{}).Imports(factory).Build()
 
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(parent).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(parent).Build())
 
 	if !strings.Contains(text, "dependency injection: can't resolve argument of 'func(core.lfRepo)") {
 		t.Error(test.DiffMessage(text, "dependency injection: can't resolve argument of …", "S1: the parent's own providers are not in scope"))
@@ -291,7 +290,7 @@ func TestModuleFactory_OwnerOnInitRunsFirst(t *testing.T) {
 		return NewModuleBuilder().Build()
 	}
 
-	mustCreate(t, New(), NewModuleBuilder().Imports(factory, db).Build())
+	mustCreate(t, New(nil), NewModuleBuilder().Imports(factory, db).Build())
 
 	got := events.all()
 	if len(got) < 2 || got[0] != "init" || got[1] != "factory" {
@@ -302,7 +301,7 @@ func TestModuleFactory_OwnerOnInitRunsFirst(t *testing.T) {
 func TestModuleFactory_OneUnresolvedKeepsMessage(t *testing.T) {
 	factory := func(lfMissing) *Module { return NewModuleBuilder().Build() }
 
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(factory).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(factory).Build())
 
 	key := genFieldKey(reflect.TypeFor[lfMissing]())
 	want := "dependency injection: can't resolve argument of 'func(core.lfMissing)'. Please make sure that the argument '" +
@@ -313,7 +312,7 @@ func TestModuleFactory_OneUnresolvedKeepsMessage(t *testing.T) {
 }
 
 func TestModuleFactory_TwoUnresolvedListsChain(t *testing.T) {
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(lfNeedsAFactory, lfNeedsBFactory).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(lfNeedsAFactory, lfNeedsBFactory).Build())
 
 	prefix := "dependency injection: module factories can't be ordered: "
 	suffix := ". Nobody provides these types, or the factories need each other"
@@ -334,7 +333,7 @@ func TestModuleFactory_SyncNeedsAsyncProviderPanics(t *testing.T) {
 	storage := lfNamed("storage", NewModuleBuilder().Providers(lfRepo{}))
 	root := NewModuleBuilder().Imports(lfNeedsRepoFactory).AsyncImports(storage).Build()
 
-	text := lfCreatePanic(t, New(), root)
+	text := lfCreatePanic(t, New(nil), root)
 
 	for _, want := range []string{
 		"invalid module: module factory 'core.lfNeedsRepoFactory' is in Imports and needs '",

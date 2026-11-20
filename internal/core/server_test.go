@@ -26,49 +26,50 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-func TestLoadServerOptions_NilEqualsZero(t *testing.T) {
-	fromNil := loadServerOptions(nil)
-	fromZero := loadServerOptions(&ServerOptions{})
+func TestLoadAppOptions_ServerNilEqualsZero(t *testing.T) {
+	fromNil := loadAppOptions(nil)
+	fromZero := loadAppOptions(&AppOptions{Server: &ServerOptions{}, HTTP: &HTTPOptions{}})
 
-	if fromNil != fromZero {
-		t.Error(test.DiffMessage(fromNil, fromZero, "O1: nil options equal an empty ServerOptions"))
+	got := []any{fromZero.port, fromZero.shutdownTimeout, fromZero.maxBodyBytes, fromZero.tlsConfig, fromZero.isH2C}
+	want := []any{fromNil.port, fromNil.shutdownTimeout, fromNil.maxBodyBytes, fromNil.tlsConfig, fromNil.isH2C}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Error(test.DiffMessage(got, want, "O1: nil options equal empty Server and HTTP groups"))
 	}
-	if fromNil.TLSConfig != nil || fromNil.IsH2C {
-		t.Error(test.DiffMessage(fromNil, "no TLSConfig, no H2C", "O1: nil options enable nothing"))
+	if fromNil.tlsConfig != nil || fromNil.isH2C {
+		t.Error(test.DiffMessage([]any{fromNil.tlsConfig, fromNil.isH2C}, "no TLS, no H2C", "O1: nil options enable nothing"))
 	}
 }
 
-func TestLoadServerOptions_ShutdownTimeoutDefault(t *testing.T) {
+func TestLoadAppOptions_ShutdownTimeoutDefault(t *testing.T) {
 	cases := []struct {
 		in   time.Duration
 		want time.Duration
 	}{
 		{0, 30 * time.Second},
-		{-time.Second, 30 * time.Second},
 		{5 * time.Second, 5 * time.Second},
 	}
 	for _, c := range cases {
-		got := loadServerOptions(&ServerOptions{ShutdownTimeout: c.in}).ShutdownTimeout
+		got := loadAppOptions(&AppOptions{Server: &ServerOptions{ShutdownTimeout: c.in}}).shutdownTimeout
 		if got != c.want {
 			t.Error(test.DiffMessage(got, c.want, fmt.Sprintf("O2: ShutdownTimeout %v", c.in)))
 		}
 	}
 }
 
-func TestLoadServerOptions_BodyCapDefaultNegativePositive(t *testing.T) {
-	if got := loadServerOptions(&ServerOptions{}).MaxRequestBodyBytes; got != 10<<20 {
+func TestLoadAppOptions_BodyCapDefaultNegativePositive(t *testing.T) {
+	if got := loadAppOptions(&AppOptions{HTTP: &HTTPOptions{}}).maxBodyBytes; got != 10<<20 {
 		t.Error(test.DiffMessage(got, int64(10<<20), "O3: zero means 10 MiB"))
 	}
-	if got := loadServerOptions(&ServerOptions{MaxRequestBodyBytes: -1}).MaxRequestBodyBytes; got >= 0 {
+	if got := loadAppOptions(&AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: -1}}).maxBodyBytes; got >= 0 {
 		t.Error(test.DiffMessage(got, "a negative value", "O3: negative means no cap"))
 	}
-	if got := loadServerOptions(&ServerOptions{MaxRequestBodyBytes: 123}).MaxRequestBodyBytes; got != 123 {
+	if got := loadAppOptions(&AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: 123}}).maxBodyBytes; got != 123 {
 		t.Error(test.DiffMessage(got, int64(123), "O3: a positive value is kept"))
 	}
 }
 
 func TestServerDefaults_Values(t *testing.T) {
-	app := New()
+	app := New(nil)
 	want := serverDefaults{
 		readHeaderTimeout: 5 * time.Second,
 		readTimeout:       30 * time.Second,
@@ -82,7 +83,7 @@ func TestServerDefaults_Values(t *testing.T) {
 }
 
 func TestNewServer_AppliesDefaults(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.serverDefaults = serverDefaults{
 		readHeaderTimeout: 1 * time.Second,
 		readTimeout:       2 * time.Second,
@@ -90,7 +91,7 @@ func TestNewServer_AppliesDefaults(t *testing.T) {
 		idleTimeout:       4 * time.Second,
 		maxHeaderBytes:    5000,
 	}
-	srv := app.newServer(loadServerOptions(nil), false)
+	srv := app.newServer(false)
 
 	got := []any{srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout, srv.MaxHeaderBytes}
 	want := []any{1 * time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second, 5000}
@@ -105,71 +106,25 @@ func TestNewServer_AppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestListen_TLSConfigIsAnError(t *testing.T) {
-	h := newSrv(t)
-	port := srvHeldPort(t)
-
-	err := h.app.Listen(port, &ServerOptions{TLSConfig: &tls.Config{}})
-
-	want := "owlky: TLSConfig is set: use ListenTLS, or Serve with your listener"
-	if err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "O4: Listen refuses a TLSConfig"))
-	}
-}
-
-func TestListenTLS_H2CIsAnError(t *testing.T) {
-	h := newSrv(t)
-	certs := srvMakeCert(t)
-	port := srvHeldPort(t)
-
-	err := h.app.ListenTLS(port, "", "", &ServerOptions{
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}},
-		IsH2C:     true,
-	})
-
-	want := "owlky: IsH2C applies to connections without TLS"
-	if err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "O5: ListenTLS refuses H2C"))
-	}
-}
-
-func TestServe_TLSConfigWithH2CIsAnError(t *testing.T) {
-	h := newSrv(t)
-	certs := srvMakeCert(t)
-
-	err := h.app.Serve(h.ln, &ServerOptions{
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}},
-		IsH2C:     true,
-	})
-
-	want := "owlky: IsH2C applies to connections without TLS"
-	if err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "O5: Serve refuses TLSConfig with H2C"))
-	}
-	if !srvListenerOpen(h.ln) {
-		t.Error(test.DiffMessage("closed", "open", "S2: the listener is left open"))
-	}
-}
-
 func TestServe_OptionsReadOnce(t *testing.T) {
-	h := newSrv(t)
-	opts := &ServerOptions{MaxRequestBodyBytes: 64}
-	h.start(opts)
-	opts.MaxRequestBodyBytes = 1 << 20
+	opts := &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: 64}}
+	h := newSrvOpts(t, opts)
+	opts.HTTP.MaxBodyBytes = 1 << 20
+	h.serve()
 
 	big := `{"k":"` + strings.Repeat("a", 4096) + `"}`
 	r := srvFetch(srvClient(), http.MethodPost, "http://"+h.addr()+"/upload", big, false)
 
 	if r.err != nil || r.status != http.StatusRequestEntityTooLarge {
-		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusRequestEntityTooLarge, "O6: changing the options after the call starts has no effect"))
+		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusRequestEntityTooLarge, "O6: changing the options after New has no effect"))
 	}
 }
 
 func TestServe_ShutdownTimeoutReadOnce(t *testing.T) {
-	h := newSrv(t)
-	opts := &ServerOptions{ShutdownTimeout: 50 * time.Millisecond}
-	h.start(opts)
-	opts.ShutdownTimeout = time.Hour
+	opts := &AppOptions{Server: &ServerOptions{ShutdownTimeout: 50 * time.Millisecond}}
+	h := newSrvOpts(t, opts)
+	opts.Server.ShutdownTimeout = time.Hour
+	h.serve()
 
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
@@ -177,16 +132,16 @@ func TestServe_ShutdownTimeoutReadOnce(t *testing.T) {
 
 	err := h.wait()
 	if err == nil || err.Error() != "owlky: shutdown timed out after 50ms" {
-		t.Error(test.DiffMessage(err, "owlky: shutdown timed out after 50ms", "O6: the timeout is the one read at the start"))
+		t.Error(test.DiffMessage(err, "owlky: shutdown timed out after 50ms", "O6: the timeout is the one read at New"))
 	}
 	<-res
 }
 
-func TestServe_TLSConfigNotModified(t *testing.T) {
-	h := newSrv(t)
+func TestServe_TLSConfigIsCloned(t *testing.T) {
 	certs := srvMakeCert(t)
 	cfg := &tls.Config{Certificates: []tls.Certificate{certs.cert}}
-	h.start(&ServerOptions{TLSConfig: cfg})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: cfg}}})
+	h.serve()
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://"+h.addr()+"/ok", "", false)
 	h.app.Stop()
@@ -196,13 +151,13 @@ func TestServe_TLSConfigNotModified(t *testing.T) {
 		t.Fatal(r.err)
 	}
 	if len(cfg.NextProtos) != 0 {
-		t.Error(test.DiffMessage(cfg.NextProtos, []string(nil), "O6: the user's TLSConfig is cloned, never modified"))
+		t.Error(test.DiffMessage(cfg.NextProtos, []string(nil), "O6: the TLS.Config of the options is cloned, never modified"))
 	}
 }
 
 func TestServe_NegativeBodyCapDisablesCap(t *testing.T) {
-	h := newSrv(t)
-	h.start(&ServerOptions{MaxRequestBodyBytes: -1})
+	h := newSrvOpts(t, &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: -1}})
+	h.serve()
 
 	big := `{"k":"` + strings.Repeat("a", 1<<20) + `"}`
 	r := srvFetch(srvClient(), http.MethodPost, "http://"+h.addr()+"/upload", big, false)
@@ -214,7 +169,7 @@ func TestServe_NegativeBodyCapDisablesCap(t *testing.T) {
 
 func TestServe_AnswersOverTheListener(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 
 	r := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/ok", "", false)
 
@@ -224,8 +179,7 @@ func TestServe_AnswersOverTheListener(t *testing.T) {
 }
 
 func TestListen_BeforeCreateReturnsError(t *testing.T) {
-	app := New()
-	port := srvFreePort(t)
+	app := New(&AppOptions{Server: &ServerOptions{Port: srvFreePort(t)}})
 
 	var err error
 	func() {
@@ -234,7 +188,7 @@ func TestListen_BeforeCreateReturnsError(t *testing.T) {
 				t.Error(test.DiffMessage(rec, "an error", "S2/bug 5: Listen before Create must not panic"))
 			}
 		}()
-		err = app.Listen(port, nil)
+		err = app.Listen()
 	}()
 
 	want := "owlky: Create must be called before serving"
@@ -245,14 +199,13 @@ func TestListen_BeforeCreateReturnsError(t *testing.T) {
 
 func TestServe_BeforeCreateReturnsError(t *testing.T) {
 	log := &srvLogger{}
-	app := New()
-	app.SetLogger(log)
+	app := New(&AppOptions{Logger: log})
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got := app.Serve(ln, nil)
+	got := app.Serve(ln)
 
 	want := "owlky: Create must be called before serving"
 	if got == nil || got.Error() != want {
@@ -268,14 +221,14 @@ func TestServe_BeforeCreateReturnsError(t *testing.T) {
 
 func TestServe_SecondCallReturnsError(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	second, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := len(h.log.all())
 
-	got := h.app.Serve(second, nil)
+	got := h.app.Serve(second)
 
 	want := "owlky: app is already serving"
 	if got == nil || got.Error() != want {
@@ -291,7 +244,7 @@ func TestServe_SecondCallReturnsError(t *testing.T) {
 
 func TestServe_AfterStopReturnsError(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	h.app.Stop()
 	if err := h.wait(); err != nil {
 		t.Fatal(err)
@@ -302,7 +255,7 @@ func TestServe_AfterStopReturnsError(t *testing.T) {
 	}
 	before := len(h.log.all())
 
-	got := h.app.Serve(again, nil)
+	got := h.app.Serve(again)
 
 	want := "owlky: app is stopped"
 	if got == nil || got.Error() != want {
@@ -316,31 +269,18 @@ func TestServe_AfterStopReturnsError(t *testing.T) {
 	}
 }
 
-func TestServe_ErrorLeavesListenerOpen(t *testing.T) {
-	h := newSrv(t)
-	err := h.app.Serve(h.ln, &ServerOptions{TLSConfig: &tls.Config{}})
-
-	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
-	if err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "S5: a TLSConfig without certificates"))
-	}
-	if !srvListenerOpen(h.ln) {
-		t.Error(test.DiffMessage("closed", "open", "S2: the listener is left open"))
-	}
-}
-
 func TestListen_PortInUseReturnsBeforeLogging(t *testing.T) {
-	h := newSrv(t)
 	busy, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = busy.Close() }()
 	port := busy.Addr().(*net.TCPAddr).Port
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port}})
 	before := len(h.log.all())
 
 	var got error
-	out := srvCaptureStdout(t, func() { got = h.app.Listen(port, nil) })
+	out := srvCaptureStdout(t, func() { got = h.app.Listen() })
 
 	prefix := fmt.Sprintf("owlky: listen on :%d: ", port)
 	if got == nil || !strings.HasPrefix(got.Error(), prefix) {
@@ -360,30 +300,17 @@ func TestListen_PortInUseReturnsBeforeLogging(t *testing.T) {
 		t.Error(test.DiffMessage(names, []string(nil), "S3: no hook runs"))
 	}
 
-	h.start(nil)
+	h.serve()
 	r := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/ok", "", false)
 	if r.err != nil || r.status != http.StatusOK {
 		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusOK, "S3: the app can be served again"))
 	}
 }
 
-func TestListen_PortOutOfRangeReturnsError(t *testing.T) {
-	h := newSrv(t)
-	before := len(h.log.all())
-
-	got := h.app.Listen(70000, nil)
-
-	if got == nil || !strings.HasPrefix(got.Error(), "owlky: listen on :70000: ") {
-		t.Error(test.DiffMessage(got, "owlky: listen on :70000: <err>", "S3: an invalid port"))
-	}
-	if n := len(h.log.all()); n != before {
-		t.Error(test.DiffMessage(n, before, "S3: nothing is logged"))
-	}
-}
-
 func TestListen_LogsBoundAddress(t *testing.T) {
-	h := newSrv(t)
-	h.startWith(func() error { return h.app.Listen(0, nil) })
+	want := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: want}})
+	h.startWith(func() error { return h.app.Listen() })
 
 	entries := h.log.named("ServerListening")
 	if len(entries) != 1 {
@@ -391,8 +318,8 @@ func TestListen_LogsBoundAddress(t *testing.T) {
 	}
 	address, _ := entries[0].field("address").(string)
 	_, port, err := net.SplitHostPort(address)
-	if err != nil || port == "" || port == "0" {
-		t.Fatal(test.DiffMessage(address, "the bound host:port, not :0", "S4: Listen(0, nil) logs the port the system chose"))
+	if err != nil || port != strconv.Itoa(want) {
+		t.Fatal(test.DiffMessage(address, "the bound host:port", "S4: Listen logs the address it bound"))
 	}
 	r := srvFetch(srvClient(), http.MethodGet, "http://127.0.0.1:"+port+"/ok", "", false)
 	if r.err != nil || r.status != http.StatusOK {
@@ -405,7 +332,7 @@ func TestListen_NoBannerWithoutTerminal(t *testing.T) {
 
 	out := srvCaptureStdout(t, func() {
 		h.sigs <- syscall.SIGTERM
-		if err := h.app.Serve(h.ln, nil); err != nil {
+		if err := h.app.Serve(h.ln); err != nil {
 			t.Error(err)
 		}
 	})
@@ -418,7 +345,7 @@ func TestListen_NoBannerWithoutTerminal(t *testing.T) {
 func TestListen_LogsStartupInOrder(t *testing.T) {
 	h := newSrv(t)
 	h.sigs <- syscall.SIGTERM
-	if err := h.app.Serve(h.ln, nil); err != nil {
+	if err := h.app.Serve(h.ln); err != nil {
 		t.Fatal(err)
 	}
 
@@ -448,7 +375,7 @@ func TestListen_LogsStartupInOrder(t *testing.T) {
 
 func TestServe_LogsProtocolsPlain(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 
 	e := h.log.named("ServerListening")[0]
 	got := []any{e.field("tls"), e.field("protocols")}
@@ -462,9 +389,9 @@ func TestServe_LogsProtocolsPlain(t *testing.T) {
 }
 
 func TestServe_LogsProtocolsTLS(t *testing.T) {
-	h := newSrv(t)
 	certs := srvMakeCert(t)
-	h.start(&ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}}})
+	h.serve()
 
 	e := h.log.named("ServerListening")[0]
 	got := []any{e.field("tls"), e.field("protocols")}
@@ -475,8 +402,8 @@ func TestServe_LogsProtocolsTLS(t *testing.T) {
 }
 
 func TestServe_LogsProtocolsH2C(t *testing.T) {
-	h := newSrv(t)
-	h.start(&ServerOptions{IsH2C: true})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{IsH2C: true}})
+	h.serve()
 
 	e := h.log.named("ServerListening")[0]
 	got := []any{e.field("tls"), e.field("protocols")}
@@ -486,100 +413,26 @@ func TestServe_LogsProtocolsH2C(t *testing.T) {
 	}
 }
 
-func TestListenTLS_BadCertificateFile(t *testing.T) {
-	h := newSrv(t)
-	dir := t.TempDir()
-	certFile := filepath.Join(dir, "cert.pem")
-	keyFile := filepath.Join(dir, "key.pem")
-	if err := os.WriteFile(certFile, []byte("garbage"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(keyFile, []byte("garbage"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	port := srvHeldPort(t)
-	before := len(h.log.all())
-
-	err := h.app.ListenTLS(port, certFile, keyFile, nil)
-
-	if err == nil || !strings.HasPrefix(err.Error(), "owlky: load TLS certificate: ") {
-		t.Error(test.DiffMessage(err, "owlky: load TLS certificate: <err>", "S5: garbage in the pair"))
-	}
-	missing := h.app.ListenTLS(port, filepath.Join(dir, "none.pem"), keyFile, nil)
-	if missing == nil || !strings.HasPrefix(missing.Error(), "owlky: load TLS certificate: ") {
-		t.Error(test.DiffMessage(missing, "owlky: load TLS certificate: <err>", "S5: a missing file"))
-	}
-	if n := len(h.log.all()); n != before {
-		t.Error(test.DiffMessage(n, before, "S5: nothing is logged"))
-	}
-}
-
-func TestListenTLS_NoCertificateSource(t *testing.T) {
-	h := newSrv(t)
-	port := srvHeldPort(t)
-	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
-
-	for name, opts := range map[string]*ServerOptions{
-		"nil options":       nil,
-		"empty TLSConfig":   {TLSConfig: &tls.Config{}},
-		"empty options set": {},
-	} {
-		err := h.app.ListenTLS(port, "", "", opts)
-		if err == nil || err.Error() != want {
-			t.Error(test.DiffMessage(err, want, "C15, S5: "+name))
-		}
-	}
-}
-
-func TestListenTLS_OneEmptyFileName(t *testing.T) {
-	h := newSrv(t)
-	port := srvHeldPort(t)
-	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
-
-	if err := h.app.ListenTLS(port, "cert.pem", "", nil); err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "S5: key name empty"))
-	}
-	if err := h.app.ListenTLS(port, "", "key.pem", nil); err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "S5: cert name empty"))
-	}
-}
-
-func TestServe_TLSConfigWithoutCertificatesIsAnError(t *testing.T) {
-	h := newSrv(t)
-
-	err := h.app.Serve(h.ln, &ServerOptions{TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}})
-
-	want := "owlky: ListenTLS needs certFile and keyFile, or a TLSConfig with certificates"
-	if err == nil || err.Error() != want {
-		t.Error(test.DiffMessage(err, want, "C15, S5: Serve never falls back to plaintext"))
-	}
-	if !srvListenerOpen(h.ln) {
-		t.Error(test.DiffMessage("closed", "open", "S2: the listener is left open"))
-	}
-}
-
-func TestListenTLS_TLSConfigCertificates(t *testing.T) {
-	h := newSrv(t)
+func TestListen_TLSCertificatesFromConfig(t *testing.T) {
 	certs := srvMakeCert(t)
-	port := h.startOnFreePort(func(port int) error {
-		return h.app.ListenTLS(port, "", "", &ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
-	})
+	port := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port, TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}}})
+	h.startWith(func() error { return h.app.Listen() })
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://127.0.0.1:"+strconv.Itoa(port)+"/ok", "", false)
 
 	if r.err != nil || r.status != http.StatusOK {
-		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusOK, "S5: certificates from the TLSConfig"))
+		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusOK, "S5: certificates from TLS.Config"))
 	}
 }
 
-func TestListenTLS_GetCertificateIsACertificateSource(t *testing.T) {
-	h := newSrv(t)
+func TestListen_GetCertificateIsACertificateSource(t *testing.T) {
 	certs := srvMakeCert(t)
-	port := h.startOnFreePort(func(port int) error {
-		return h.app.ListenTLS(port, "", "", &ServerOptions{TLSConfig: &tls.Config{
-			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &certs.cert, nil },
-		}})
-	})
+	port := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port, TLS: &TLSOptions{Config: &tls.Config{
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &certs.cert, nil },
+	}}}})
+	h.startWith(func() error { return h.app.Listen() })
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://127.0.0.1:"+strconv.Itoa(port)+"/ok", "", false)
 
@@ -588,8 +441,7 @@ func TestListenTLS_GetCertificateIsACertificateSource(t *testing.T) {
 	}
 }
 
-func TestListenTLS_CertificateFiles(t *testing.T) {
-	h := newSrv(t)
+func TestListen_TLSCertificateFiles(t *testing.T) {
 	certs := srvMakeCert(t)
 	dir := t.TempDir()
 	certFile := filepath.Join(dir, "cert.pem")
@@ -600,19 +452,21 @@ func TestListenTLS_CertificateFiles(t *testing.T) {
 	if err := os.WriteFile(keyFile, certs.keyPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	port := h.startOnFreePort(func(port int) error { return h.app.ListenTLS(port, certFile, keyFile, nil) })
+	port := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port, TLS: &TLSOptions{CertFile: certFile, KeyFile: keyFile}}})
+	h.startWith(func() error { return h.app.Listen() })
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://127.0.0.1:"+strconv.Itoa(port)+"/proto", "", false)
 
 	if r.err != nil || r.status != http.StatusOK || !strings.Contains(r.body, "HTTP/2.0") {
-		t.Error(test.DiffMessage([]any{r.status, r.body, r.err}, "200 HTTP/2.0", "S1, S5: ListenTLS with a file pair"))
+		t.Error(test.DiffMessage([]any{r.status, r.body, r.err}, "200 HTTP/2.0", "S1, S5: Listen with a certificate file pair"))
 	}
 }
 
 func TestServe_ServerErrorsGoToLogger(t *testing.T) {
-	h := newSrv(t)
 	certs := srvMakeCert(t)
-	h.start(&ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}}})
+	h.serve()
 
 	c := srvDial(t, h.addr())
 	_, _ = c.Write([]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07})
@@ -627,7 +481,7 @@ func TestServe_ServerErrorsGoToLogger(t *testing.T) {
 
 func TestProtocols_PlainIsHTTP1(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 
 	r := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/proto", "", false)
 
@@ -638,7 +492,7 @@ func TestProtocols_PlainIsHTTP1(t *testing.T) {
 
 func TestProtocols_PlainRefusesPriorKnowledgeHTTP2(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 
 	r := srvFetch(srvH2CClient(), http.MethodGet, "http://"+h.addr()+"/proto", "", false)
 
@@ -648,9 +502,9 @@ func TestProtocols_PlainRefusesPriorKnowledgeHTTP2(t *testing.T) {
 }
 
 func TestProtocols_TLSNegotiatesHTTP2(t *testing.T) {
-	h := newSrv(t)
 	certs := srvMakeCert(t)
-	h.start(&ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}}})
+	h.serve()
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://"+h.addr()+"/proto", "", false)
 
@@ -660,9 +514,9 @@ func TestProtocols_TLSNegotiatesHTTP2(t *testing.T) {
 }
 
 func TestProtocols_TLSServesHTTP1Client(t *testing.T) {
-	h := newSrv(t)
 	certs := srvMakeCert(t)
-	h.start(&ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}}})
+	h.serve()
 
 	r := srvFetch(srvTLSClient(certs.pool, false), http.MethodGet, "https://"+h.addr()+"/proto", "", false)
 
@@ -672,12 +526,12 @@ func TestProtocols_TLSServesHTTP1Client(t *testing.T) {
 }
 
 func TestProtocols_TLSWithoutH2InNextProtosTurnsHTTP2Off(t *testing.T) {
-	h := newSrv(t)
 	certs := srvMakeCert(t)
-	h.start(&ServerOptions{TLSConfig: &tls.Config{
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{
 		Certificates: []tls.Certificate{certs.cert},
 		NextProtos:   []string{"http/1.1"},
-	}})
+	}}}})
+	h.serve()
 
 	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://"+h.addr()+"/proto", "", false)
 
@@ -687,8 +541,8 @@ func TestProtocols_TLSWithoutH2InNextProtosTurnsHTTP2Off(t *testing.T) {
 }
 
 func TestProtocols_H2CServesBothOnOnePort(t *testing.T) {
-	h := newSrv(t)
-	h.start(&ServerOptions{IsH2C: true})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{IsH2C: true}})
+	h.serve()
 
 	h2 := srvFetch(srvH2CClient(), http.MethodGet, "http://"+h.addr()+"/proto", "", false)
 	h1 := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/proto", "", false)
@@ -702,8 +556,8 @@ func TestProtocols_H2CServesBothOnOnePort(t *testing.T) {
 }
 
 func TestProtocols_H2CUpgradeRequestAnsweredAsHTTP1(t *testing.T) {
-	h := newSrv(t)
-	h.start(&ServerOptions{IsH2C: true})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{IsH2C: true}})
+	h.serve()
 	c := srvDial(t, h.addr())
 
 	_, err := c.Write([]byte("GET /proto HTTP/1.1\r\nHost: x\r\nConnection: Upgrade, HTTP2-Settings\r\nUpgrade: h2c\r\nHTTP2-Settings: AAMAAABkAAQCAAAAAAIAAAAA\r\n\r\n"))
@@ -723,9 +577,12 @@ func TestProtocols_H2CUpgradeRequestAnsweredAsHTTP1(t *testing.T) {
 }
 
 func TestProtocols_WebSocketOverTLS(t *testing.T) {
-	h := newSrv(t, func(app *App) { app.EnableWS(&WSOptions{Path: "/ws"}) })
 	certs := srvMakeCert(t)
-	h.start(&ServerOptions{TLSConfig: &tls.Config{Certificates: []tls.Certificate{certs.cert}}})
+	h := newSrvOpts(t, &AppOptions{
+		Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}},
+		WS:     &WSOptions{Path: "/ws"},
+	})
+	h.serve()
 
 	cfg, err := websocket.NewConfig("wss://"+h.addr()+"/ws", "https://"+h.addr())
 	if err != nil {
@@ -746,7 +603,7 @@ func TestProtocols_WebSocketOverTLS(t *testing.T) {
 
 func TestTimeouts_SlowHeaders(t *testing.T) {
 	h := newSrv(t, func(app *App) { app.serverDefaults.readHeaderTimeout = srvShort })
-	h.start(nil)
+	h.serve()
 	c := srvDial(t, h.addr())
 
 	_, _ = c.Write([]byte("GET /ok HTTP/1.1\r\nHost: x\r\n"))
@@ -758,7 +615,7 @@ func TestTimeouts_SlowHeaders(t *testing.T) {
 
 func TestTimeouts_SlowBody(t *testing.T) {
 	h := newSrv(t, func(app *App) { app.serverDefaults.readTimeout = srvShort })
-	h.start(nil)
+	h.serve()
 	c := srvDial(t, h.addr())
 
 	_, _ = c.Write([]byte("POST /upload HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"k\":"))
@@ -770,7 +627,7 @@ func TestTimeouts_SlowBody(t *testing.T) {
 
 func TestTimeouts_SlowReader(t *testing.T) {
 	h := newSrv(t, func(app *App) { app.serverDefaults.writeTimeout = srvShort })
-	h.start(nil)
+	h.serve()
 	c := srvDial(t, h.addr())
 
 	_, _ = c.Write([]byte("GET /flood HTTP/1.1\r\nHost: x\r\n\r\n"))
@@ -787,7 +644,7 @@ func TestTimeouts_SlowReader(t *testing.T) {
 
 func TestTimeouts_IdleConnection(t *testing.T) {
 	h := newSrv(t, func(app *App) { app.serverDefaults.idleTimeout = srvShort })
-	h.start(nil)
+	h.serve()
 	c := srvDial(t, h.addr())
 	br := bufio.NewReader(c)
 
@@ -806,7 +663,7 @@ func TestTimeouts_IdleConnection(t *testing.T) {
 
 func TestTimeouts_HeadersOverLimit431(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	c := srvDial(t, h.addr())
 
 	_, _ = c.Write([]byte("GET /ok HTTP/1.1\r\nHost: x\r\nX-Big: " + strings.Repeat("a", 80<<10) + "\r\n\r\n"))
@@ -822,8 +679,8 @@ func TestTimeouts_HeadersOverLimit431(t *testing.T) {
 }
 
 func TestTimeouts_BodyOverCap413(t *testing.T) {
-	h := newSrv(t)
-	h.start(&ServerOptions{MaxRequestBodyBytes: 64})
+	h := newSrvOpts(t, &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: 64}})
+	h.serve()
 	big := `{"k":"` + strings.Repeat("a", 4096) + `"}`
 
 	declared := srvFetch(srvClient(), http.MethodPost, "http://"+h.addr()+"/upload", big, false)
@@ -839,7 +696,7 @@ func TestTimeouts_BodyOverCap413(t *testing.T) {
 
 func TestTimeouts_HandlerExtendsWriteDeadline(t *testing.T) {
 	h := newSrv(t, func(app *App) { app.serverDefaults.writeTimeout = 50 * time.Millisecond })
-	h.start(nil)
+	h.serve()
 
 	extended := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/stream", "", false)
 	plain := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/nostream", "", false)
@@ -854,7 +711,7 @@ func TestTimeouts_HandlerExtendsWriteDeadline(t *testing.T) {
 
 func TestShutdown_SignalDrainsRunningRequest(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
 
@@ -878,7 +735,7 @@ func TestShutdown_SignalDrainsRunningRequest(t *testing.T) {
 
 func TestShutdown_StopDrainsRunningRequest(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
 
@@ -906,7 +763,7 @@ func TestShutdown_StopDrainsRunningRequest(t *testing.T) {
 
 func TestShutdown_RefusesNewConnections(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
 
@@ -920,7 +777,7 @@ func TestShutdown_RefusesNewConnections(t *testing.T) {
 
 func TestShutdown_ClosesIdleConnections(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	c := srvDial(t, h.addr())
 	_, _ = c.Write([]byte("GET /ok HTTP/1.1\r\nHost: x\r\n\r\n"))
 	res, err := http.ReadResponse(bufio.NewReader(c), nil)
@@ -940,7 +797,7 @@ func TestShutdown_ClosesIdleConnections(t *testing.T) {
 
 func TestShutdown_HooksAfterLastRequest(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
 
@@ -966,8 +823,8 @@ func TestShutdown_HooksAfterLastRequest(t *testing.T) {
 }
 
 func TestShutdown_TimeoutCutsRequestAndReports(t *testing.T) {
-	h := newSrv(t)
-	h.start(&ServerOptions{ShutdownTimeout: 50 * time.Millisecond})
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{ShutdownTimeout: 50 * time.Millisecond}})
+	h.serve()
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
 
@@ -989,7 +846,7 @@ func TestShutdown_TimeoutCutsRequestAndReports(t *testing.T) {
 
 func TestShutdown_StopsInterceptingSignals(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
 	srvWaitCh(t, srvCur.entered, "the handler")
 	if got := h.stops.Load(); got != 0 {
@@ -1012,7 +869,7 @@ func TestShutdown_StopsInterceptingSignals(t *testing.T) {
 
 func TestShutdown_SignalRegistrationReleasedOnStop(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	h.app.Stop()
 	_ = h.wait()
 
@@ -1025,7 +882,7 @@ func TestShutdown_ListenerFailureRunsHooks(t *testing.T) {
 	h := newSrv(t)
 	h.started = true
 	failing := srvFailingListener{Listener: h.ln, err: errors.New("boom")}
-	go func() { h.done <- h.app.Serve(failing, nil) }()
+	go func() { h.done <- h.app.Serve(failing) }()
 
 	err := h.wait()
 
@@ -1042,7 +899,7 @@ func TestShutdown_ListenerFailureRunsHooks(t *testing.T) {
 
 func TestShutdown_ReturnsNilWhenDrained(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	h.sigs <- syscall.SIGTERM
 
 	if err := h.wait(); err != nil {
@@ -1070,7 +927,7 @@ func TestShutdown_HookPanicDoesNotStopOthers(t *testing.T) {
 
 func TestShutdown_AppCannotServeAgain(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	h.sigs <- syscall.SIGTERM
 	if err := h.wait(); err != nil {
 		t.Fatal(err)
@@ -1081,7 +938,7 @@ func TestShutdown_AppCannotServeAgain(t *testing.T) {
 	}
 	defer func() { _ = again.Close() }()
 
-	got := h.app.Serve(again, nil)
+	got := h.app.Serve(again)
 
 	if got == nil || got.Error() != "owlky: app is stopped" {
 		t.Error(test.DiffMessage(got, "owlky: app is stopped", "G9: the app cannot serve again"))
@@ -1106,7 +963,7 @@ func TestStop_WithoutServerRunsHooksOnce(t *testing.T) {
 
 func TestStop_ConcurrentCallsRunHooksOnce(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 
 	var wg sync.WaitGroup
 	for range 16 {
@@ -1147,7 +1004,7 @@ func TestStop_ConcurrentCallsWithoutServerRunHooksOnce(t *testing.T) {
 
 func TestStop_ReturnsAfterHooks(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 	var ran atomic.Bool
 	srvCur.mu.Lock()
 	srvCur.childExtra = func() { ran.Store(true) }
@@ -1163,7 +1020,7 @@ func TestStop_ReturnsAfterHooks(t *testing.T) {
 
 func TestChecklist_PanicOverRealConnection(t *testing.T) {
 	h := newSrv(t)
-	h.start(nil)
+	h.serve()
 
 	r := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/panic", "", false)
 	after := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/ok", "", false)
@@ -1179,7 +1036,7 @@ func TestChecklist_PanicOverRealConnection(t *testing.T) {
 func TestChecklist_NoGoroutineLeak(t *testing.T) {
 	h := newSrv(t)
 	before := runtime.NumGoroutine()
-	h.start(nil)
+	h.serve()
 
 	c := srvDial(t, h.addr())
 	_, _ = c.Write([]byte("GET /ok HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))
@@ -1200,7 +1057,7 @@ func TestChecklist_NoGoroutineLeak(t *testing.T) {
 }
 
 func TestServeHTTP_WithoutServerUsesDefaultBodyCap(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(bodyLimitController{}).Build())
 
 	payload := `{"k":"` + strings.Repeat("a", 10<<20) + `"}`
@@ -1216,8 +1073,7 @@ func TestServeHTTP_WithoutServerUsesDefaultBodyCap(t *testing.T) {
 
 func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
 	logger := &allCallsCapturingLogger{}
-	app := New()
-	app.SetLogger(logger)
+	app := New(&AppOptions{Logger: logger})
 	app.Create(testListenModule())
 
 	serveOnce(t, app)
@@ -1234,8 +1090,7 @@ func TestListen_LogsModuleNameWhenResolved(t *testing.T) {
 
 func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
 	logger := &allCallsCapturingLogger{}
-	app := New()
-	app.SetLogger(logger)
+	app := New(&AppOptions{Logger: logger})
 
 	m := NewModuleBuilder().Build()
 	m.Name = ""
@@ -1250,8 +1105,7 @@ func TestListen_SkipsModuleLogWhenNameUnresolved(t *testing.T) {
 
 func TestListen_LogsNestedModuleNamesRecursively(t *testing.T) {
 	logger := &allCallsCapturingLogger{}
-	app := New()
-	app.SetLogger(logger)
+	app := New(&AppOptions{Logger: logger})
 	app.Create(testListenParentModule())
 
 	serveOnce(t, app)
@@ -1300,7 +1154,7 @@ func TestLogBoostrap_URLScheme(t *testing.T) {
 
 func TestHooks_OnShutdownReverseOrder(t *testing.T) {
 	rec := &createRecorder{}
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, hkDiamond(rec))
 
 	app.Stop()
@@ -1317,7 +1171,7 @@ func TestHooks_OnShutdownReverseOrder(t *testing.T) {
 
 func TestHooks_NoShutdownWithoutCreate(t *testing.T) {
 	rec := &createRecorder{}
-	app := New()
+	app := New(nil)
 	hkDiamond(rec)
 
 	app.Stop()
@@ -1329,7 +1183,7 @@ func TestHooks_NoShutdownWithoutCreate(t *testing.T) {
 
 func TestHooks_NoShutdownWhenCreateDidNotFinish(t *testing.T) {
 	rec := &createRecorder{}
-	app := New()
+	app := New(nil)
 	root := hkDiamond(rec)
 	root.OnReady = func() { panic("ready boom") }
 
@@ -1354,7 +1208,7 @@ func TestStop_SecondCallerWaitsWhileHooksRun_NotServing(t *testing.T) {
 		<-release
 		finished.Store(true)
 	}
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, m)
 
 	rvStopWaitsForHooks(t, app, entered, release, &finished, "G6/H2")
@@ -1372,7 +1226,7 @@ func TestStop_SecondCallerWaitsWhileHooksRun_Serving(t *testing.T) {
 		finished.Store(true)
 	}
 	srvCur.mu.Unlock()
-	h.start(nil)
+	h.serve()
 
 	rvStopWaitsForHooks(t, h.app, entered, release, &finished, "G6/H2")
 	_ = h.wait()
@@ -1380,7 +1234,7 @@ func TestStop_SecondCallerWaitsWhileHooksRun_Serving(t *testing.T) {
 
 func TestStop_FromInsideShutdownHookReturnsAtOnce(t *testing.T) {
 	returned := make(chan struct{})
-	app := New()
+	app := New(nil)
 	m := NewModuleBuilder().Build()
 	m.OnShutdown = func() {
 		app.Stop()
@@ -1406,7 +1260,7 @@ func TestStop_FromInsideShutdownHookReturnsAtOnce_Serving(t *testing.T) {
 		close(returned)
 	}
 	srvCur.mu.Unlock()
-	h.start(nil)
+	h.serve()
 
 	go h.app.Stop()
 
@@ -1420,7 +1274,7 @@ func TestStop_FromInsideShutdownHookReturnsAtOnce_Serving(t *testing.T) {
 
 func TestShutdown_FlushesAfterHooks(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	root := NewModuleBuilder().Build()
 	root.OnShutdown = func() { app.Logger().Info("from-shutdown-hook") }
 	mustCreate(t, app, root)
@@ -1434,7 +1288,7 @@ func TestShutdown_FlushesAfterHooks(t *testing.T) {
 
 func TestStop_WithoutServeFlushes(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Build())
 	w.hold()
 	app.Logger().Info("embedded")
@@ -1447,7 +1301,7 @@ func TestStop_WithoutServeFlushes(t *testing.T) {
 
 func TestShutdown_LinesAfterStopSynchronous(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Stop()
 	for i := range 20 {
@@ -1461,7 +1315,7 @@ func TestShutdown_LinesAfterStopSynchronous(t *testing.T) {
 
 func TestShutdown_AsyncCountedPerApp(t *testing.T) {
 	w := redirectStdout(t)
-	first, second := New(), New()
+	first, second := New(nil), New(nil)
 	mustCreate(t, first, NewModuleBuilder().Build())
 	mustCreate(t, second, NewModuleBuilder().Build())
 	first.Stop()
@@ -1479,7 +1333,7 @@ func TestShutdown_AsyncCountedPerApp(t *testing.T) {
 
 func TestShutdown_AccessLogLinesFlushedAfterHooks(t *testing.T) {
 	rec := &lcRecordingLogger{}
-	app := New().SetLogger(rec).EnableAccessLog()
+	app := New(&AppOptions{Logger: rec, IsAccessLog: true})
 	root := NewModuleBuilder().Controllers(tracePipelineController{}).Build()
 	root.OnShutdown = func() {
 		app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline?hook=1", nil))
@@ -1505,7 +1359,7 @@ func TestShutdown_AccessLogLinesFlushedAfterHooks(t *testing.T) {
 
 func TestShutdown_AccessLogStoppedOnce(t *testing.T) {
 	rec := &lcRecordingLogger{}
-	app := New().SetLogger(rec).EnableAccessLog()
+	app := New(&AppOptions{Logger: rec, IsAccessLog: true})
 	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 	app.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tracepipeline", nil))
 	app.Stop()
@@ -1520,8 +1374,8 @@ func TestServer_InstanceLoaderOnlyReady(t *testing.T) {
 	pendm := lfNamed("pendm", NewModuleBuilder().Providers(lfSQL{}))
 	release := lfHold(pendm)
 	root := lfNamed("rootm", NewModuleBuilder().Imports(okm).AsyncImports(pendm))
-	app := New()
-	logger := lfLogger(app)
+	logger := &lcRecordingLogger{}
+	app := New(&AppOptions{Logger: logger})
 	lfCreate(t, app, root)
 	lfRelease(t, app, release)
 
@@ -1538,5 +1392,199 @@ func TestServer_InstanceLoaderOnlyReady(t *testing.T) {
 	}
 	if slices.Contains(loaded, "pendm initialized") {
 		t.Error(test.DiffMessage(loaded, "no pendm", "V: InstanceLoader skips a module that is not ready"))
+	}
+}
+
+func newSrvOpts(t *testing.T, opts *AppOptions) *srvHarness {
+	t.Helper()
+	srvReset()
+	h := &srvHarness{
+		t:    t,
+		log:  &srvLogger{},
+		sigs: make(chan os.Signal, 4),
+		done: make(chan error, 1),
+	}
+	if opts == nil {
+		opts = &AppOptions{}
+	}
+	opts.Logger = h.log
+	h.app = New(opts)
+	h.app.notifySignals = func() (<-chan os.Signal, func()) {
+		h.regs.Add(1)
+		return h.sigs, func() { h.stops.Add(1) }
+	}
+	h.root = srvRootModule()
+	h.app.Create(h.root)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.ln = ln
+	t.Cleanup(h.cleanup)
+	return h
+}
+
+func (h *srvHarness) serve() {
+	h.t.Helper()
+	h.startWith(func() error { return h.app.Serve(h.ln) })
+}
+
+func TestListen_DefaultPort3000(t *testing.T) {
+	h := newSrvOpts(t, nil)
+	h.started = true
+	go func() { h.done <- h.app.Listen() }()
+	select {
+	case <-h.log.seen("ServerListening"):
+	case err := <-h.done:
+		h.waited = true
+		t.Skipf("port 3000 is not available: %v", err)
+	case <-time.After(srvWait):
+		t.Fatal("the server did not start")
+	}
+	addr, _ := h.log.named("ServerListening")[0].field("address").(string)
+	if !strings.HasSuffix(addr, ":3000") {
+		t.Error(test.DiffMessage(addr, "…:3000", "S1: Port 0 means 3000"))
+	}
+}
+
+func TestListen_ServesPortFromOptions(t *testing.T) {
+	port := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port}})
+	h.startWith(func() error { return h.app.Listen() })
+
+	r := srvFetch(srvClient(), http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(port)+"/ok", "", false)
+	if r.err != nil || r.status != http.StatusOK {
+		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusOK, "S1: Listen opens Server.Port"))
+	}
+}
+
+func TestListen_ServesTLSFromOptions(t *testing.T) {
+	certFile, keyFile := optCertFiles(t)
+	port := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port, TLS: &TLSOptions{CertFile: certFile, KeyFile: keyFile}}})
+	h.startWith(func() error { return h.app.Listen() })
+
+	pool := x509CertPoolFromFile(t, certFile)
+	r := srvFetch(srvTLSClient(pool, true), http.MethodGet, "https://127.0.0.1:"+strconv.Itoa(port)+"/proto", "", false)
+	if r.err != nil || r.status != http.StatusOK || !strings.Contains(r.body, "HTTP/2.0") {
+		t.Error(test.DiffMessage([]any{r.status, r.body, r.err}, "200 HTTP/2.0", "S1: TLS from options negotiates HTTP/2"))
+	}
+	e := h.log.named("ServerListening")[0]
+	if e.field("tls") != true {
+		t.Error(test.DiffMessage(e.field("tls"), true, "S1: the ServerListening line says tls"))
+	}
+}
+
+func TestListen_H2C(t *testing.T) {
+	port := srvFreePort(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port, IsH2C: true}})
+	h.startWith(func() error { return h.app.Listen() })
+
+	r := srvFetch(srvH2CClient(), http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(port)+"/proto", "", false)
+	if r.err != nil || !strings.Contains(r.body, "HTTP/2.0") {
+		t.Error(test.DiffMessage([]any{r.status, r.body, r.err}, "HTTP/2.0", "S1: IsH2C serves HTTP/2 without TLS"))
+	}
+}
+
+func TestServe_IgnoresPortAndLogs(t *testing.T) {
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: 4999}})
+	h.serve()
+
+	r := srvFetch(srvClient(), http.MethodGet, "http://"+h.addr()+"/ok", "", false)
+	if r.err != nil || r.status != http.StatusOK {
+		t.Error(test.DiffMessage([]any{r.status, r.err}, http.StatusOK, "S2: Serve uses the listener"))
+	}
+	lines := h.log.named("ServerPortIgnored")
+	if len(lines) != 1 || lines[0].level != "info" || lines[0].field("port") != 4999 {
+		t.Error(test.DiffMessage(lines, "one Info ServerPortIgnored port=4999", "S2: logged once"))
+	}
+}
+
+func TestServe_NoPortLineWhenPortIsZero(t *testing.T) {
+	h := newSrvOpts(t, nil)
+	h.serve()
+	if n := len(h.log.named("ServerPortIgnored")); n != 0 {
+		t.Error(test.DiffMessage(n, 0, "S2: no line when Port is 0"))
+	}
+}
+
+func TestServe_TLS(t *testing.T) {
+	certs := srvMakeCert(t)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{TLS: &TLSOptions{Config: &tls.Config{Certificates: []tls.Certificate{certs.cert}}}}})
+	h.serve()
+
+	r := srvFetch(srvTLSClient(certs.pool, true), http.MethodGet, "https://"+h.addr()+"/proto", "", false)
+	if r.err != nil || !strings.Contains(r.body, "HTTP/2.0") {
+		t.Error(test.DiffMessage([]any{r.status, r.body, r.err}, "HTTP/2.0", "S2: Serve applies TLS.Config"))
+	}
+}
+
+func TestListen_StateErrors(t *testing.T) {
+	app := New(&AppOptions{Logger: &mockLogger{}})
+	if err := app.Listen(); err == nil || err.Error() != "owlky: Create must be called before serving" {
+		t.Error(test.DiffMessage(err, "owlky: Create must be called before serving", "S3: Listen before Create"))
+	}
+	if err := app.Serve(nil); err == nil || err.Error() != "owlky: Create must be called before serving" {
+		t.Error(test.DiffMessage(err, "owlky: Create must be called before serving", "S3: Serve before Create"))
+	}
+
+	h := newSrvOpts(t, nil)
+	h.serve()
+	if err := h.app.Serve(h.ln); err == nil || err.Error() != "owlky: app is already serving" {
+		t.Error(test.DiffMessage(err, "owlky: app is already serving", "S3: second serve"))
+	}
+	h.app.Stop()
+	_ = h.wait()
+	if err := h.app.Serve(h.ln); err == nil || err.Error() != "owlky: app is stopped" {
+		t.Error(test.DiffMessage(err, "owlky: app is stopped", "S3: serve after Stop"))
+	}
+}
+
+func TestListen_PortInUseKeepsSocketError(t *testing.T) {
+	busy, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = busy.Close() }()
+	port := busy.Addr().(*net.TCPAddr).Port
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{Port: port}})
+
+	got := h.app.Listen()
+	prefix := fmt.Sprintf("owlky: listen on :%d: ", port)
+	if got == nil || !strings.HasPrefix(got.Error(), prefix) {
+		t.Error(test.DiffMessage(got, prefix+"<err>", "S3: the socket error is wrapped"))
+	}
+}
+
+func TestServe_ShutdownTimeoutFromOptions(t *testing.T) {
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{ShutdownTimeout: 50 * time.Millisecond}})
+	h.serve()
+
+	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	h.sigs <- syscall.SIGTERM
+
+	err := h.wait()
+	if err == nil || err.Error() != "owlky: shutdown timed out after 50ms" {
+		t.Error(test.DiffMessage(err, "owlky: shutdown timed out after 50ms", "S4: ShutdownTimeout bounds draining"))
+	}
+	<-res
+}
+
+func TestStop_UsesShutdownTimeout(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{ShutdownTimeout: 50 * time.Millisecond}})
+	srvCur.rootExtra = func() { <-release }
+
+	done := make(chan struct{})
+	go func() {
+		h.app.Stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error(test.DiffMessage("blocked", "returns after ~50ms", "S4: Stop before serving is bounded by ShutdownTimeout"))
 	}
 }

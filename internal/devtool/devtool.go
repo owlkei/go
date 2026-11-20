@@ -3,6 +3,8 @@ package devtool
 import (
 	"context"
 	"encoding/json"
+
+	"go.owlky.com/owlky/internal/inspect"
 )
 
 const PageKind = "page"
@@ -38,9 +40,27 @@ func (scope LayerScope) String() string {
 type GetConfigurationRequest struct{}
 
 type GetConfigurationResponse struct {
-	Controller *Controller     `json:"controller,omitempty"`
-	Render     *Render         `json:"render,omitempty"`
-	Modules    []*ModuleStatus `json:"modules,omitempty"`
+	PreRoute   []*PreRouteStage `json:"pre_route,omitempty"`
+	Controller *Controller      `json:"controller,omitempty"`
+	Render     *Render          `json:"render,omitempty"`
+	Modules    []*ModuleStatus  `json:"modules,omitempty"`
+}
+
+type PreRouteStage struct {
+	Name     string
+	Snapshot func() inspect.Snapshot
+}
+
+func (s *PreRouteStage) MarshalJSON() ([]byte, error) {
+	snapshot := s.Snapshot()
+	fields := make(map[string]any, len(snapshot.Fields))
+	for _, f := range snapshot.Fields {
+		fields[f.Key] = f.Value
+	}
+	return json.Marshal(struct {
+		Name   string         `json:"name"`
+		Fields map[string]any `json:"fields"`
+	}{Name: s.Name, Fields: fields})
 }
 
 type ModuleStatus struct {
@@ -134,6 +154,7 @@ type Devtool struct {
 
 func (devtool *Devtool) GetConfiguration(context.Context, *GetConfigurationRequest) (*GetConfigurationResponse, error) {
 	response := &GetConfigurationResponse{
+		PreRoute:   devtool.PreRoute,
 		Controller: devtool.Controller,
 		Render:     devtool.Render,
 	}

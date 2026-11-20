@@ -31,7 +31,7 @@ list: `internal/common/README.md` › Route DSL.
 | `MODIFY` | PATCH | `MODIFY_users_BY_id` → `PATCH /users/{id}` |
 | `DELETE` | DELETE | `DELETE_users_BY_id` → `DELETE /users/{id}` |
 | `PREFLIGHT` | OPTIONS | `PREFLIGHT_users` → `OPTIONS /users` |
-| `RENDER` | GET page (+ HEAD), needs `EnableRender` | `RENDER_bookings` → `GET /bookings`, template `bookings.html` or `bookings/index.html` |
+| `RENDER` | GET page (+ HEAD), needs `AppOptions.Render.FS` | `RENDER_bookings` → `GET /bookings`, template `bookings.html` or `bookings/index.html` |
 | `SUBMIT` | POST on the path of the `RENDER_` with the same words, same controller | `SUBMIT_new_OF_bookings` → `POST /bookings/new` |
 | `SERVE` | static files (GET) | `SERVE_ANY_OF_assets` → `GET /assets/*` |
 
@@ -229,7 +229,7 @@ directory answers its `index.html` or 404, never a listing. `core` registers rou
 
 Code: `internal/versioning`, `internal/core/http.go`. The version is **not** part of the path: it is
 read from the query, a header, the `Accept` media type or a custom extractor
-(`app.EnableVersioning(&owlky.VersioningOptions{…})`), and each route is registered per
+(`AppOptions.Versioning: &owlky.VersioningOptions{…}`), and each route is registered per
 (method, path, version).
 
 - `READ_users_VERSION_1` and `READ_users_VERSION_2` are two routes on `GET /users`.
@@ -251,7 +251,7 @@ The rest of the URL is the file path, opened through `os.Root` (`http.ServeFileF
 answers its `index.html` or 404, never a listing; hidden segments 404 except `.well-known`. The
 handler gets injected parameters like any route.
 
-### 6.2 Built-in routes of `EnableRender` (design 0018)
+### 6.2 Built-in routes of `AppOptions.Render` (design 0018)
 
 | Route | Added when | Serves |
 |---|---|---|
@@ -282,7 +282,7 @@ At `app.Create()` (`internal/core/container.go`, `bindHTTPController`):
 2. for each controller method:
      common.AddHandlerToRouterMap(&HTTP, modulePrefixes, style, name, handler)
        parse the name (panics of §1.6) → exact Path → controller prefixes → module prefixes
-     page route (RENDER_/SUBMIT_) → EnableRender check, SUBMIT_ pairing, render.Bind(route) → template
+     page route (RENDER_/SUBMIT_) → Render.FS check, SUBMIT_ pairing, render.Bind(route) → template
 3. check final patterns per app: route conflict: …
 4. plan each handler's arguments once (fn_plan.go); register with routing.AddInjectableHandler
 5. add the asset route and the public file routes; render.CheckBindings (an .html without a route panics)

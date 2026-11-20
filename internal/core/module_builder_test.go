@@ -255,7 +255,7 @@ func TestPathStyle_ReturnsTheBuilder(t *testing.T) {
 }
 
 func TestPathStyle_LastCallWins(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().
 		PathStyle(common.PathStyleAsWritten).
 		PathStyle(common.PathStyleKebab).
@@ -263,7 +263,7 @@ func TestPathStyle_LastCallWins(t *testing.T) {
 		Build())
 	psExpect(t, app, "B17a", "/root-page", http.StatusOK)
 
-	app = New()
+	app = New(nil)
 	mustCreate(t, app, NewModuleBuilder().
 		PathStyle(common.PathStyleKebab).
 		PathStyle(common.PathStyleAsWritten).

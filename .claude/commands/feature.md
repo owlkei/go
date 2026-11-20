@@ -21,7 +21,7 @@ first rule that applies:
 
 1. `--fable` or `--opus` in `$ARGUMENTS`: use it.
 2. **Near the weekly reset → `fable`.** Read `Fable weekly reset:` in `CLAUDE.local.md` (weekday and
-   time, the user's local zone). If the next reset is less than 48 hours away (`date` gives now), use
+   time, the user's local zone). If the next reset is less than 24 hours away (`date` gives now), use
    `fable`: quota left unused at the reset is lost.
 3. **Complex → `fable`.** Any of: it changes the DI container, routing, the request pipeline or
    WebSocket lifecycle (`core/`, `common/`, `routing/`, `ctx/`); it needs a concurrency design (new

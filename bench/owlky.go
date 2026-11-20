@@ -110,12 +110,14 @@ func NewOwlky() http.Handler {
 }
 
 func NewOwlkyApp() owlky.App {
-	return newOwlkyApp(owlky.New().SetLogger(silentLogger{}))
+	return newOwlkyApp(owlky.New(&owlky.AppOptions{Logger: silentLogger{}}))
 }
 
 func NewOwlkyAppWithLog() owlky.App {
-	app := owlky.New().SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON}))
-	return newOwlkyApp(app.EnableAccessLog())
+	return newOwlkyApp(owlky.New(&owlky.AppOptions{
+		Logger:      log.NewLog(&log.LogOptions{Format: log.FormatJSON}),
+		IsAccessLog: true,
+	}))
 }
 
 func newOwlkyApp(app owlky.App) owlky.App {

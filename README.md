@@ -113,7 +113,7 @@ served from your app's own origin.
     - [Config](#config)
     - [Cache](#cache)
     - [Outbound HTTP calls](#outbound-http-calls)
-  - [Built-in middlewares](#built-in-middlewares)
+  - [Configuration](#configuration)
   - [Production checklist](#production-checklist)
   - [Exceptions](#exceptions)
   - [Package reference](#package-reference)
@@ -136,8 +136,10 @@ served from your app's own origin.
 - Typed handler parameters and pipes that bind and validate input
 - Static file serving that never lists a directory or serves a dotfile
 - Config and Cache modules
-- Opt-in production middlewares: load shedding, trusted proxies, host check, HTTPS redirect,
-  security headers, CORS, CSRF and compression, plus a rate limit guard
+- Opt-in production protections, set in `AppOptions` and run in a fixed order before routing: load
+  shedding, trusted proxies, host check, HTTPS redirect, security headers, CORS, CSRF and
+  compression, plus a rate limit guard
+- One `AppOptions` struct for the whole configuration, also filled from `OK_*` variables and `.env`
 - JSON logs with request and trace IDs, and an access log
 
 ---
@@ -198,14 +200,14 @@ func (instance HelloController) READ_hello_BY_name(param owlky.Param) owlky.Map 
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(
 		owlky.ModuleBuilder().
 			Controllers(HelloController{}).
 			Providers(GreetingService{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -238,31 +240,33 @@ with a README and tests: copy a folder out of the repository and it is the start
 
 ### Application
 
-`owlky.New()` creates an application. Configure it, wire it once with `Create`, then serve it:
+`owlky.New(opts)` creates an application from an `*owlky.AppOptions` (`nil` gives the defaults),
+then you wire it once with `Create` and serve it:
 
-1. **Configure.** Call the configuration methods below. Each one returns the app, so calls chain.
-   They must run before `Create`: after it they panic with
+1. **Configure.** Every setting is a field of `owlky.AppOptions`, read once by `New`. A bad value
+   panics in `New` with `invalid app: <Field> …`. `owlky.OptionsFromEnv()` fills the same struct
+   from `OK_*` variables and `.env` (see [Configuration](#configuration)).
+2. **Bind app-wide layers.** `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`
+   and `BindGlobalExceptionFilters` run before `Create`; after it they panic with
    `invalid app: <Method> must be called before Create`.
-2. **Create.** `app.Create(rootModule)` builds the module tree, constructs the providers and
+3. **Create.** `app.Create(rootModule)` builds the module tree, constructs the providers and
    controllers, and plans every handler. Call it once per app.
-3. **Serve.** `app.Listen(port, nil)` blocks until the server stops. `ListenTLS` serves HTTPS and
-   HTTP/2, and `Serve` serves on a `net.Listener` you made. Pass `nil` options for the safe
-   defaults, or a `*owlky.ServerOptions` (`ShutdownTimeout`, `MaxRequestBodyBytes`, `TLSConfig`,
-   `IsH2C`).
+4. **Serve.** `app.Listen()` opens `Server.Port` (default 3000) and blocks until the server stops.
+   With `Server.TLS` it serves HTTPS and HTTP/2. `app.Serve(listener)` serves on a
+   `net.Listener` you made.
 
-| Method | Effect |
+| Field | Effect |
 |---|---|
-| `SetLogger(log.LogAdapter)` | Sets the app's logger. Read it back with `app.Logger()`. |
-| `SetStartupTimeout(time.Duration)` | How long `Create()` may take for the module factories of `Imports` (default 30 s). See [Startup timeout](#startup-timeout). |
-| `BindGlobalMiddlewares(...)` | Middlewares for every HTTP request. |
-| `BindGlobalGuards(...)` | Guards for every HTTP route and WebSocket event. |
-| `BindGlobalInterceptors(...)` | Interceptors for every HTTP route and WebSocket event. |
-| `BindGlobalExceptionFilters(...)` | Exception filters for every HTTP route and WebSocket event. |
-| `EnableVersioning(*owlky.VersioningOptions)` | Routes per API version. See [Versioning](#versioning). |
-| `EnableWS(*owlky.WSOptions, ...)` | The WebSocket server. See [WebSocket](#websocket). |
-| `EnableRender(*owlky.RenderOptions)` | Server-rendered HTML pages. See [Pages](#pages). |
-| `EnableAccessLog()` | One access log line per request. |
-| `EnableDevtool()` | A snapshot of the routes and layers for development tools. |
+| `Logger` | The app's logger. Read it back with `app.Logger()`. |
+| `StartupTimeout` | How long `Create()` may take for the module factories of `Imports` (default 30 s). See [Startup timeout](#startup-timeout). |
+| `IsAccessLog` | One access log line per request. |
+| `IsDevtool` | A snapshot of the routes and layers for development tools. |
+| `Server` | `Port`, `ShutdownTimeout`, `TLS` (`CertFile`, `KeyFile`, `Config`) and `IsH2C`, used by `Listen` and `Serve`. |
+| `HTTP` | `MaxBodyBytes` (default 10 MiB, negative turns the cap off) for every request, also in your own `http.Server`. |
+| `Versioning` | Routes per API version. See [Versioning](#versioning). |
+| `WS` | The WebSocket server. See [WebSocket](#websocket). |
+| `Render` | Server-rendered HTML pages. See [Pages](#pages). |
+| `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress` | The built-in protections, each off until set. See [Production checklist](#production-checklist). |
 
 The server shuts down gracefully on `SIGINT`, `SIGTERM` or `app.Stop()`: running requests get
 30 seconds to finish. An `App` is also an `http.Handler`, so you can serve it with your own
@@ -292,7 +296,7 @@ func (instance HealthController) READ_health() string {
 }
 
 func TestHealth(t *testing.T) {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(HealthController{}).Build())
 
 	w := httptest.NewRecorder()
@@ -304,7 +308,7 @@ func TestHealth(t *testing.T) {
 }
 ```
 
-Each `owlky.New()` is independent: two apps in one process have their own providers, routes,
+Each `owlky.New(…)` is independent: two apps in one process have their own providers, routes,
 layers and logger.
 
 ### Module
@@ -351,9 +355,9 @@ var AppModule = owlky.ModuleBuilder().
 	Prefix("api")
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(AppModule)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -424,7 +428,7 @@ func (instance StatusController) READ_status() bool {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(
 		owlky.ModuleBuilder().
 			Imports(
@@ -434,7 +438,7 @@ func main() {
 			Controllers(StatusController{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -522,9 +526,9 @@ func (instance ProductController) DELETE_products_BY_id(param owlky.Param) strin
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(ProductController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -634,9 +638,9 @@ func (instance CommentController) READ_comments_BY_comment_id(param owlky.Param)
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(CommentController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -693,9 +697,9 @@ var AppModule = owlky.ModuleBuilder().
 	Build()
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(AppModule)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -739,9 +743,9 @@ func (instance TokenController) CREATE_token() owlky.Map {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(TokenController{}).Build().Prefix("api"))
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -819,9 +823,9 @@ func (instance OrderController) CREATE_orders(body owlky.Body, w http.ResponseWr
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(OrderController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -844,7 +848,7 @@ func main() {
 | A pipe | yes | yes | What its `Transform` returns. See [Pipes](#pipes). |
 
 These types live in the root `owlky` package. An application imports it, plus `exception`,
-`log`, `middlewares/*`, `modules/*` and `guards/*`; the engine's other packages are internal.
+`log`, `modules/*` and `guards/*`; the engine's other packages are internal.
 
 Any other parameter type stops `Create()`:
 `dependency injection: can't resolve dependencies of the 'func(*ctx.HTTPContext, int) string'…`.
@@ -895,9 +899,9 @@ func (instance JobController) READ_jobs_BY_id(c owlky.HTTPContext) {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(JobController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -984,10 +988,10 @@ func (instance ReportController) READ_reports() []string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.BindGlobalMiddlewares(RequestLogMiddleware{})
 	app.Create(owlky.ModuleBuilder().Controllers(ReportController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1052,14 +1056,14 @@ func (instance AccountController) READ_account() string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(
 		owlky.ModuleBuilder().
 			Imports(config.Register(&config.ConfigModuleOptions{IsGlobal: true})).
 			Controllers(AccountController{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1113,10 +1117,10 @@ func (instance TagController) READ_tags() []string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.BindGlobalInterceptors(EnvelopeInterceptor{})
 	app.Create(owlky.ModuleBuilder().Controllers(TagController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1171,9 +1175,9 @@ func (instance BookController) READ_books_BY_id(param owlky.Param) string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(BookController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1251,9 +1255,9 @@ func (instance SignupController) CREATE_users(user CreateUserBody) owlky.Map {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(SignupController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1399,8 +1403,7 @@ func (instance StatusController) READ_status(c owlky.HTTPContext) string {
 }
 
 func main() {
-	app := owlky.New()
-	app.SetStartupTimeout(10 * time.Second)
+	app := owlky.New(&owlky.AppOptions{StartupTimeout: 10 * time.Second})
 	app.Create(
 		owlky.ModuleBuilder().
 			Imports(
@@ -1410,7 +1413,7 @@ func main() {
 			Controllers(StatusController{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1422,7 +1425,7 @@ The factory is in `Imports`, so the app does not start without the database. Wit
 
 ### Startup timeout
 
-`app.SetStartupTimeout(d)` sets how long `Create()` may take for the factories of `Imports`. The
+`AppOptions.StartupTimeout` sets how long `Create()` may take for the factories of `Imports`. The
 default is 30 seconds.
 
 - **One budget.** The timeout counts from the start of `Create()`, for all factories together.
@@ -1433,9 +1436,8 @@ default is 30 seconds.
   panics with `module factory '<name>' did not return within the startup timeout (10s)`.
 - **Factories only.** `OnInit` and `NewProvider` are not covered: they take no `ctx`. Do slow work,
   such as connecting, in a factory.
-- **Before `Create`.** A duration of zero or less panics
-  `invalid app: SetStartupTimeout needs a positive duration`, and a call after `Create` panics
-  `invalid app: SetStartupTimeout must be called before Create`.
+- **Checked by `New`.** Zero means the default; a negative duration panics
+  `invalid app: StartupTimeout is <d>, it must be positive`.
 
 The timeout never applies to `AsyncImports`.
 
@@ -1543,9 +1545,9 @@ var AppModule = owlky.ModuleBuilder().
 	Build()
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(AppModule)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -1630,7 +1632,7 @@ The log shows the states:
 | `ModuleShutdownTimeout` | Warn | `module` | A background goroutine outlives the shutdown |
 
 The `InstanceLoader` line at listen is printed only for modules that are ready then. With
-`EnableDevtool()`, the snapshot's `modules` list shows each module's `state`, `waiting_for`,
+`IsDevtool: true`, the snapshot's `modules` list shows each module's `state`, `waiting_for`,
 `attempts`, `last_error` and `ready_after_ms`, read live. `last_error` may hold a driver's error
 text, such as a host name: the devtool is for development only.
 
@@ -1645,7 +1647,7 @@ text, such as a host name: the devtool is for development only.
 - **`Retry-After`** is the whole seconds until the next `Retry` attempt of the entry, from 1 to 60.
   It is `5` when no attempt is scheduled, such as before the first attempt or for a factory that
   doesn't use `Retry`.
-- **Global middlewares run first.** `helmet`, `cors`, `loadshed` and the access log apply to the
+- **The pre-route stages and global middlewares run first.** The security headers, CORS, load shedding and the access log apply to the
   `503`, and a middleware that refuses wins. Module middlewares, guards, interceptors, exception
   filters and the handler don't run.
 - **No cause reaches the client.** The answer never names the module, the dependency or the error.
@@ -1686,8 +1688,8 @@ These mistakes stop the boot, or fail the module, with a message that names it:
   second call gives other routes, the module fails.
 - **A factory in `Imports` that needs an async module.** `Create()` panics with
   `module factory '<name>' is in Imports and needs '<T>' of '<module>', which is not ready at Create: import it with AsyncImports`.
-- **App-wide layers that inject an async provider.** A `BindGlobal…` layer or an `EnableWS`
-  middleware can't wait: `Create()` panics with `app-wide layers can't depend on AsyncImports`.
+- **App-wide layers that inject an async provider.** A `BindGlobal…` layer
+  can't wait: `Create()` panics with `app-wide layers can't depend on AsyncImports`.
 - **Async modules that need each other.** `Create()` panics with
   `invalid module: async modules need each other: '<a>' → '<b>' → '<a>'`.
 
@@ -1785,16 +1787,16 @@ assets, and nothing extra runs while the server is idle.
   script.
 - **Errors in the right format.** A page route answers errors as an HTML page, chosen by status.
   An API route answers JSON.
-- **Strict CSP without work.** With `helmet`, an inline `<script nonce="{{nonce}}">` runs and every
+- **Strict CSP without work.** With `Headers` on, an inline `<script nonce="{{nonce}}">` runs and every
   other inline script is blocked.
-- **Forms without tokens.** `csrf.CSRF{}` refuses cross-origin form posts, and a `Form` pipe binds
+- **Forms without tokens.** `CSRF: &owlky.CSRFOptions{IsEnabled: true}` refuses cross-origin form posts, and a `Form` pipe binds
   and checks the fields.
 - **Mistakes stop the boot.** A page without a template, a template without a route, or a
   stylesheet that belongs to no page stops `Create()`.
 
 ### Render a page
 
-Turn on rendering with `app.EnableRender(&owlky.RenderOptions{FS: web})` before `Create`. Then,
+Turn on rendering with `Render: &owlky.RenderOptions{FS: web}` in `AppOptions`. Then,
 in a controller that embeds `owlky.HTTP`, name a handler with one of the two page operations:
 
 - **`RENDER_<route>`** answers `GET` (and `HEAD`) on the path that `READ_<route>` would have. It
@@ -1836,8 +1838,6 @@ import (
 
 	"go.owlky.com/owlky"
 	"go.owlky.com/owlky/exception"
-	"go.owlky.com/owlky/middlewares/csrf"
-	"go.owlky.com/owlky/middlewares/helmet"
 )
 
 //go:embed web
@@ -1937,17 +1937,19 @@ func (instance BookingPages) SUBMIT_new_OF_bookings(c owlky.HTTPContext, form Bo
 }
 
 func main() {
-	app := owlky.New()
-	app.BindGlobalMiddlewares(helmet.Helmet{}, csrf.CSRF{})
-	// The web directory of the embedded files; PAGES_DEV=1 reads it from disk and reloads it.
-	app.EnableRender(&owlky.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"})
+	app := owlky.New(&owlky.AppOptions{
+		Headers: &owlky.HeadersOptions{IsEnabled: true},
+		CSRF:    &owlky.CSRFOptions{IsEnabled: true},
+		// The web directory of the embedded files; PAGES_DEV=1 reads it from disk and reloads it.
+		Render: &owlky.RenderOptions{FS: web, IsReload: os.Getenv("PAGES_DEV") == "1"},
+	})
 	app.Create(
 		owlky.ModuleBuilder().
 			Controllers(BookingPages{}).
 			Providers(BookingService{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2068,7 +2070,7 @@ Run it with `go run .`, then open the pages in a browser:
 
 `RenderOptions.FS` holds the templates and the assets, usually the app's `embed.FS`
 (`//go:embed web`). Owlky Go reads the directory `RenderOptions.Dir` inside it: `web` when `Dir` is empty,
-the root of `FS` with `Dir: "."`. A `FS` without that directory stops `EnableRender` with
+the root of `FS` with `Dir: "."`. A `FS` without that directory stops `New` with
 `invalid render: RenderOptions.FS has no "web" directory: embed it with //go:embed web, or set Dir`.
 With `IsReload` on an `embed.FS`, Owlky Go reads the same directory from disk instead (relative to the
 working directory), so edits show without a rebuild; `Create()` logs a `Warn` `RenderReloadOn`, and a
@@ -2146,14 +2148,14 @@ data instead, such as `{{.Date.Format "2 Jan 2006"}}`.
 - After a redirect, or any response the handler wrote itself, the result is ignored.
 - `HEAD` on a page answers its status and headers with no body. `PUT` on a page's path answers
   `405` with `Allow: GET, HEAD, POST`.
-- With `EnableVersioning`, a page route answers every version and requests without one.
+- With `Versioning` on, a page route answers every version and requests without one.
 - On an API route, `c.Redirect` still answers `301`, and `CREATE_` still answers `201`.
 
 Each mistake stops `Create()`:
 
 | Mistake | Panic |
 |---|---|
-| A page route without `EnableRender` | `invalid render: BookingPages.RENDER_bookings is a page route, call EnableRender before Create` |
+| A page route without `Render.FS` | `invalid render: BookingPages.RENDER_bookings is a page route, set Render.FS in AppOptions` |
 | A page route without its template | `invalid render: BookingPages.RENDER_bookings needs a template: bookings.html or bookings/index.html` |
 | A page route with both templates | `invalid render: BookingPages.RENDER_bookings has two templates: bookings.html and bookings/index.html` |
 | A page route below `partials/`, `assets/` or `public/` | `invalid render: BookingPages.RENDER_x_OF_partials can have no template: partials/ is reserved` |
@@ -2163,9 +2165,7 @@ Each mistake stops `Create()`:
 | `Path` or a targeted `Prefix` on a `SUBMIT_` | `invalid route: Path("/y") is bound to 'SUBMIT_x': a SUBMIT_ uses the path of its RENDER_` |
 | `ANY`, `VERSION` or `FILE` in a page route | `invalid route: ANY in RENDER_files_ANY: a page route has no wildcard` |
 | A page route whose path holds a `*` from `Path` or a prefix | `invalid route: BookingPages.RENDER_docs is a page route and its path /docs/* holds a wildcard` |
-| `EnableRender(nil)`, or no `FS` | `invalid render: EnableRender needs RenderOptions.FS` |
-| `EnableRender` called twice | `invalid render: EnableRender called twice` |
-| `EnableRender` after `Create` | `invalid app: EnableRender must be called before Create` |
+| `Render.Dir` or `Render.IsReload` without `Render.FS` | `invalid app: Render.Dir is set without Render.FS` |
 
 A `SUBMIT_` posts to the page that shows its form, so `Path` and prefixes on the `RENDER_` move
 both. An edit page and a delete button on one page share its `SUBMIT_`: tell them apart by the
@@ -2184,7 +2184,7 @@ Where an error happened decides its format:
 |---|---|
 | A page route (`RENDER_`, `SUBMIT_`), from its first guard on: a guard that refuses (`403`), an exception or a panic in a guard, pipe, interceptor, handler or filter, and the `429` of `guards/throttler` | HTML |
 | An API route, a `SERVE_…` route, the asset route or a public file, from its first guard on | JSON |
-| Before any guard: a refusal of a middleware (`csrf` `403`, `hostcheck` `421`, `loadshed` `503`, your own), and no route (`404`, `405` with its `Allow` header, `410`) | HTML when a value of the request's `Accept` header contains `text/html`, else JSON. The response carries `Vary: Accept` |
+| Before any guard: a refusal of a pre-route stage (`csrf` `403`, `hostcheck` `421`, `loadshed` `503`) or of your own middleware, and no route (`404`, `405` with its `Allow` header, `410`) | HTML when a value of the request's `Accept` header contains `text/html`, else JSON. The response carries `Vary: Accept` |
 
 - Browsers send `Accept: text/html,…`, so they get HTML. `*/*` alone, `application/xhtml+xml` alone,
   or no `Accept` header gets JSON. Owlky Go doesn't read q-values.
@@ -2198,7 +2198,7 @@ Where an error happened decides its format:
   code and logs `RenderFailed`. It doesn't try the next file. An error page is never empty and
   never half a page.
 - Your exception filters run first on a page route, and can answer by themselves.
-- Without `EnableRender`, every error is JSON, as in the rest of this README.
+- Without `Render.FS`, every error is JSON, as in the rest of this README.
 
 | Files at the root of `Dir` | 404 | 422 | 500 | 503 |
 |---|---|---|---|---|
@@ -2253,18 +2253,18 @@ A form is a pipe whose `Transform` takes `owlky.Form`, as `BookingForm` above:
 - A pipe's fields are exported. Owlky Go injects providers into them, and an unexported field stops
   `Create()`: `dependency injection: can't set value to unexported 'nights' field of the main.BookingForm pipe`.
   Keep computed values out of the pipe, or compute them again where you need them.
-- A malformed form body (`400`) or one over `ServerOptions.MaxRequestBodyBytes` (`413`) answers the
+- A malformed form body (`400`) or one over `HTTP.MaxBodyBytes` (`413`) answers the
   HTML error page.
-- Bind `csrf.CSRF{}`. It needs no token and no hidden field: it reads the `Sec-Fetch-Site` and
-  `Origin` headers that browsers send. A cross-origin form post gets a `403` error page. See
-  [csrf](middlewares/csrf/README.md).
+- Set `CSRF: &owlky.CSRFOptions{IsEnabled: true}`. It needs no token and no hidden field: it reads
+  the `Sec-Fetch-Site` and `Origin` headers that browsers send. A cross-origin form post gets a
+  `403` error page. See [Configuration](#configuration).
 - A layer bound to `RENDER_x` only doesn't run for `SUBMIT_x`. Bind a guard to both handlers, or
   to the whole controller with `BindGuard(guard)`.
 
 ### Content Security Policy
 
-`helmet`'s default policy allows no inline script or style. Give an inline `<script>` or `<style>`
-the attribute `nonce="{{nonce}}"`, and it runs: on a page that calls `{{nonce}}`, `helmet` adds the
+The default policy of `Headers` allows no inline script or style. Give an inline `<script>` or `<style>`
+the attribute `nonce="{{nonce}}"`, and it runs: on a page that calls `{{nonce}}`, the `headers` stage adds the
 same value to `script-src` and `style-src`.
 
 ```
@@ -2274,12 +2274,12 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-<N>'; styl
 - Every response gets its own nonce, never derived from the request. Pages default to
   `Cache-Control: no-cache`, so a shared cache doesn't replay one.
 - API routes, assets, public files and pages that don't call `{{nonce}}` draw no nonce and send
-  `helmet`'s policy unchanged.
+  the policy unchanged.
 - The files that `{{pageAssets}}` links are same-origin files, allowed by `'self'`: they need no
   nonce.
 - A custom policy gets the nonce in the directives that allow it; one with `'unsafe-inline'` or
-  `'none'` is left as it is. See [helmet › Nonce](middlewares/helmet/README.md#nonce).
-- Without `helmet`, `{{nonce}}` still writes a nonce and no policy is sent.
+  `'none'` is left as it is. See [Configuration](#configuration).
+- Without `Headers`, `{{nonce}}` still writes a nonce and no policy is sent.
 - `html/template` removes JavaScript comments from inline scripts. Write comments about a script in
   a template comment (`{{/* … */}}`) next to it.
 
@@ -2373,7 +2373,7 @@ files are read from `FS` on each request. Point `FS` at the disk, as `main.go` d
 
 ### Cost
 
-- **Without `EnableRender`:** nothing changes for API routes.
+- **Without `Render.FS`:** nothing changes for API routes.
 - **At `Create()`:** every template is parsed and escaped once, and every asset, public file and
   page CSS or JS file is hashed once.
 - **Per page:** one lookup in a table, one pooled buffer, the template's execution and one write.
@@ -2390,8 +2390,8 @@ built with Owlky's framework-free HTML components.
 
 ## WebSocket
 
-Turn on the WebSocket server with `app.EnableWS(&owlky.WSOptions{Path: "ws"})` before `Create`. An
-empty `Path` serves `/ws`. Then write a controller that embeds `owlky.WS`, with one
+Turn on the WebSocket server with `WS: &owlky.WSOptions{Path: "ws"}` in `AppOptions`; an empty
+`Path` leaves it off. Then write a controller that embeds `owlky.WS`, with one
 `SUBSCRIBE_…` method per event:
 
 ```go
@@ -2417,10 +2417,9 @@ func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky
 }
 
 func main() {
-	app := owlky.New()
-	app.EnableWS(&owlky.WSOptions{Path: "ws"})
+	app := owlky.New(&owlky.AppOptions{WS: &owlky.WSOptions{Path: "ws"}})
 	app.Create(owlky.ModuleBuilder().Controllers(ChatController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2504,10 +2503,9 @@ func (instance ChatController) SUBSCRIBE_chat_ANY(payload owlky.WSPayload) owlky
 }
 
 func main() {
-	app := owlky.New()
-	app.EnableWS(&owlky.WSOptions{Path: "ws"})
+	app := owlky.New(&owlky.AppOptions{WS: &owlky.WSOptions{Path: "ws"}})
 	app.Create(owlky.ModuleBuilder().Controllers(NewsController{}, ChatController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2521,11 +2519,11 @@ subscribed to `chat.news`.
 
 - Guards, interceptors and exception filters work on WebSocket events: write their methods with
   `owlky.WSContext` and bind them in the controller or globally.
-- Middlewares bound with `BindGlobalMiddlewares` don't run on WebSocket connections. Pass the
-  middlewares the handshake needs to `EnableWS`, after the config:
-  `app.EnableWS(&owlky.WSOptions{Path: "ws"}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
-  They run once per connection, at the handshake, and a middleware that doesn't call `next()`
-  refuses the connection.
+- The handshake runs the load shedding, proxy and host stages that `AppOptions` turns on, then the
+  Origin check: an `Origin` that is neither the same origin nor in `Origins` gets `403`. Then the
+  middlewares bound with `BindGlobalMiddlewares` run, once per connection, and one that doesn't
+  call `next()` refuses the connection. A controller's `BindMiddleware` doesn't run on the
+  handshake.
 
 ---
 
@@ -2560,14 +2558,13 @@ func (instance UserController) READ_health_VERSION_NEUTRAL() string {
 }
 
 func main() {
-	app := owlky.New()
-	app.EnableVersioning(&owlky.VersioningOptions{
+	app := owlky.New(&owlky.AppOptions{Versioning: &owlky.VersioningOptions{
 		Type:           owlky.VersioningHeader,
 		Key:            "X-Api-Version",
 		DefaultVersion: "1",
-	})
+	}})
 	app.Create(owlky.ModuleBuilder().Controllers(UserController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2617,9 +2614,9 @@ func (instance AssetController) SERVE_ANY_OF_assets(c owlky.HTTPContext) string 
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(AssetController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2635,7 +2632,7 @@ func main() {
   `Cache-Control`, as above. Set a long lifetime only for files whose names change with their
   content, such as `app.3f9a1c.js`.
 
-With `EnableRender`, the `assets` directory of the templates' `FS` is served at `/assets/*` without
+With `Render.FS` set, the `assets` directory of the templates' `FS` is served at `/assets/*` without
 a handler, with hashed URLs and immutable caching, and the files of its `public` directory at the
 root URL, such as `/robots.txt`. See [Pages › Assets](#assets) and
 [Pages › Public files](#public-files).
@@ -2684,7 +2681,7 @@ func (instance InfoController) READ_info() string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(
 		owlky.ModuleBuilder().
 			Imports(
@@ -2697,7 +2694,7 @@ func main() {
 			Providers(DatabaseService{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2754,14 +2751,14 @@ func (instance ProfileController) READ_profiles_BY_id(c owlky.HTTPContext) strin
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(
 		owlky.ModuleBuilder().
 			Imports(cache.Register(&cache.CacheModuleOptions{IsGlobal: true})).
 			Controllers(ProfileController{}).
 			Build(),
 	)
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2819,9 +2816,9 @@ func (instance AccountController) READ_profile(c owlky.HTTPContext) int {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(AccountController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2832,69 +2829,93 @@ the framework logs it (`ExceptionCause`, at `Debug`) and sends only the status t
 
 ---
 
-## Built-in middlewares
+## Configuration
 
-Every middleware is opt-in: an app that doesn't bind one pays nothing for it. Each package has its
-own README with every option, its defaults and their sources.
+`owlky.AppOptions` holds the whole configuration of an app. `New` reads it once and copies what it
+keeps, so changing the struct after `New` has no effect. Every check happens in `New`: a bad value
+panics with `invalid app: <Field> …` before the app exists.
 
-| Package | What it does |
-|---|---|
-| [`middlewares/loadshed`](middlewares/loadshed/README.md) | Keeps the server fast under overload: a limit on requests in flight that adapts to measured latency, then `503` with `Retry-After` |
-| [`middlewares/proxy`](middlewares/proxy/README.md) | The real client IP, scheme and host behind proxies you trust (`X-Forwarded-*` or `Forwarded`) |
-| [`middlewares/hostcheck`](middlewares/hostcheck/README.md) | Answers only for the host names you list (DNS rebinding, host header injection) |
-| [`middlewares/httpsredirect`](middlewares/httpsredirect/README.md) | Redirects plain HTTP to HTTPS with `308`, never to another host |
-| [`middlewares/helmet`](middlewares/helmet/README.md) | The OWASP security response headers (CSP, HSTS over HTTPS only, COOP, CORP and more) |
-| [`middlewares/cors`](middlewares/cors/README.md) | Lets the browser pages you list call your API from another origin |
-| [`middlewares/csrf`](middlewares/csrf/README.md) | Refuses cross-origin state-changing requests from browsers (Fetch Metadata and `Origin`, no token) |
-| [`middlewares/compress`](middlewares/compress/README.md) | gzip for text responses, with bounded memory |
+### From the environment
 
-Rate limiting per client is a guard, not a middleware: [`guards/throttler`](guards/throttler/README.md).
-The access log is a switch on the app: `app.EnableAccessLog()` ([`accesslog`](internal/accesslog/README.md)).
+`owlky.OptionsFromEnv()` returns an `*AppOptions` filled from `OK_*` variables, then from `./.env`
+(the environment wins). Code written after the call wins over both:
+
+```go
+package main
+
+import "go.owlky.com/owlky"
+
+func main() {
+	opts := owlky.OptionsFromEnv()
+	opts.IsDevtool = false
+	app := owlky.New(opts)
+	app.Create(owlky.ModuleBuilder().Build())
+	if err := app.Listen(); err != nil {
+		app.Logger().Fatal("AppError", "error", err)
+	}
+}
+```
+
+- **Names:** `OK_` and the field path in upper snake case, levels joined by `__`:
+  `OK_HTTP__MAX_BODY_BYTES`, `OK_SERVER__TLS__CERT_FILE`, `OK_ORIGINS`. `PORT` fills `Server.Port`
+  when `OK_SERVER__PORT` is not set. No other variable is read.
+- **Values:** `true` or `false`; durations with a unit (`30s`); sizes as bytes or with `KB`, `MB`,
+  `GB` (1000ⁿ) or `KiB`, `MiB`, `GiB` (1024ⁿ); lists split on `,`; `ProxyHeader` as `x-forwarded`
+  or `forwarded`; `VersioningType` as `query`, `header`, `media-type` or `custom`.
+- **Errors:** an unknown `OK_*` name (with the closest known name), an empty value, a value that
+  doesn't convert, and a `.env` syntax error stop `New` with every error, one per line.
+- **Code only:** `Logger`, `Render.FS`, `Server.TLS.Config` and `Versioning.Extractor` have no
+  variable.
+- **Startup log:** with `OptionsFromEnv`, `New` logs one `AppOption` line per field that is set,
+  with its source (the variable, `.env:<line>`, `PORT` or `code`).
+
+Without a call to `OptionsFromEnv`, Owlky Go reads no variable and no file.
 
 ---
 
 ## Production checklist
 
-A new app is safe to run as it is: the server has timeouts, a 10 MiB body limit and graceful
-shutdown ([core › Server](internal/core/README.md#server)). Before you put it on the internet, turn on the
-pieces below. Each one costs nothing until you bind it.
+A new app runs with server timeouts, a 10 MiB body limit and graceful shutdown
+([core › Server](internal/core/README.md#server)). The protections below are off until you set
+them. When an app has `SUBMIT_` routes without `CSRF`, or `RENDER_` routes without `Headers`,
+`Create` logs one `SecurityCheck` warning naming what is missing; set `IsDisabled: true` on the
+group to turn the protection off on purpose and silence it.
 
 ### Logs
 1. **JSON logs.** The built-in logger writes JSON when stdout is not a terminal, which is the case
    in a container. Set it explicitly and add the fields to mask:
-   `app.SetLogger(log.NewLog(&log.LogOptions{Format: log.FormatJSON, MaskFields: []string{"password"}}))`
+   `Logger: log.NewLog(&log.LogOptions{Format: log.FormatJSON, MaskFields: []string{"password"}})`
    ([log](log/README.md)).
-2. **Access log.** `app.EnableAccessLog()` writes one line per request with its status, its total
-   time and the time of each middleware, guard and handler ([accesslog](internal/accesslog/README.md)).
+2. **Access log.** `IsAccessLog: true` writes one line per request with its status, its total
+   time and the time of each stage, middleware, guard and handler ([accesslog](internal/accesslog/README.md)).
 3. **Log with the request's context.** Log through `Logger.From(c.Context())` in handlers and
    services, so every line carries the request's `trace_id` and `request` ID. See
    [Find the logs of a request](log/README.md#find-the-logs-of-a-request).
 
-### Middlewares, in this order
-Bind them with one `BindGlobalMiddlewares` call. Middlewares run in the order you bind them, and
-the order matters:
+### Protections, in a fixed order
+They run before routing, in this order, whatever the order of the fields, then your
+`BindGlobalMiddlewares`:
 
-1. **`loadshed`** first, so a request refused under overload costs as little as possible.
-2. **`proxy`**, when the app runs behind a load balancer or reverse proxy. It must come before
-   every middleware that reads the client: `hostcheck`, `httpsredirect`, `helmet`, `csrf`, the
-   throttler and the access log. Without it they all see the proxy's address and the connection's
-   scheme. List your proxies' addresses in `TrustedProxies`: no forwarding header is trusted
-   otherwise.
-3. **`hostcheck`**, with the host names your app serves.
-4. **`httpsredirect`**, unless your proxy already redirects HTTP to HTTPS. Set `Host` so the target
-   never comes from the client's `Host` header.
-5. **`helmet`** for the security headers. Its default Content Security Policy allows only your own
-   origin: set your own policy if your pages load scripts or styles from a CDN.
-6. **`cors`**, only when browser pages on another origin call your API.
-7. **`csrf`**, when browsers send cookies or HTTP authentication to your app (sessions, HTML
-   forms). List the origins that `cors` allows with credentials in `TrustedOrigins` too.
-8. **`compress`**, unless your proxy already compresses responses. Don't bind it to routes that
-   put a secret next to text from the request in one response (BREACH).
+1. **`LoadShed`** (`IsEnabled`): a request refused under overload costs as little as possible.
+2. **`Proxy`** (`TrustedProxies` or `TrustedHops`), when the app runs behind a load balancer. Every
+   later stage, your middlewares, the throttler and the access log then see the real client.
+   `owlky.ClientIP`, `owlky.ClientScheme` and `owlky.ClientHost` read it.
+3. **`Hosts`**, the host names your app serves; any other gets `421`.
+4. **`HTTPSRedirect`** (`IsEnabled`), unless your proxy already redirects HTTP to HTTPS. Set `Host`
+   so the target never comes from the client's `Host` header.
+5. **`Headers`** (`IsEnabled`) for the security headers. Its default Content Security Policy allows
+   only your own origin.
+6. **`CORS`** (`IsEnabled`), only when browser pages on another origin call your API.
+7. **`CSRF`** (`IsEnabled`), when browsers send cookies or HTTP authentication to your app
+   (sessions, HTML forms).
+8. **`Compress`** (`IsEnabled`), unless your proxy already compresses responses. Don't use it on
+   routes that put a secret next to text from the request in one response (BREACH).
+
+`Origins` is one list for `CORS`, `CSRF` and the WebSocket handshake.
 
 ### Guards
 - **`throttler`** limits each client: bind it globally with a budget your real users never reach,
-  and with a tighter one on routes such as logins and password resets. It reads the client IP from
-  `proxy`.
+  and with a tighter one on routes such as logins and password resets.
 
 ### Example
 
@@ -2907,14 +2928,6 @@ import (
 	"go.owlky.com/owlky"
 	"go.owlky.com/owlky/guards/throttler"
 	"go.owlky.com/owlky/log"
-	"go.owlky.com/owlky/middlewares/compress"
-	"go.owlky.com/owlky/middlewares/cors"
-	"go.owlky.com/owlky/middlewares/csrf"
-	"go.owlky.com/owlky/middlewares/helmet"
-	"go.owlky.com/owlky/middlewares/hostcheck"
-	"go.owlky.com/owlky/middlewares/httpsredirect"
-	"go.owlky.com/owlky/middlewares/loadshed"
-	"go.owlky.com/owlky/middlewares/proxy"
 )
 
 type HelloController struct {
@@ -2930,27 +2943,23 @@ func (instance HelloController) READ_hello() string {
 }
 
 func main() {
-	app := owlky.New()
-
-	app.SetLogger(log.NewLog(&log.LogOptions{
-		Format:     log.FormatJSON,
-		MaskFields: []string{"password", "token"},
-	}))
-	app.EnableAccessLog()
-
-	app.BindGlobalMiddlewares(
-		loadshed.LoadShed{},
-		proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}},
-		hostcheck.HostCheck{Hosts: []string{"example.com"}},
-		httpsredirect.HTTPSRedirect{Host: "example.com"},
-		helmet.Helmet{},
-		cors.CORS{
-			AllowOrigins:       []string{"https://app.example.com"},
-			IsAllowCredentials: true,
-		},
-		csrf.CSRF{TrustedOrigins: []string{"https://app.example.com"}},
-		compress.Compress{},
-	)
+	app := owlky.New(&owlky.AppOptions{
+		Logger: log.NewLog(&log.LogOptions{
+			Format:     log.FormatJSON,
+			MaskFields: []string{"password", "token"},
+		}),
+		IsAccessLog:   true,
+		Server:        &owlky.ServerOptions{Port: 8080},
+		Proxy:         &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
+		Hosts:         []string{"example.com"},
+		Origins:       []string{"https://app.example.com"},
+		LoadShed:      &owlky.LoadShedOptions{IsEnabled: true},
+		HTTPSRedirect: &owlky.HTTPSRedirectOptions{IsEnabled: true, Host: "example.com"},
+		Headers:       &owlky.HeadersOptions{IsEnabled: true},
+		CORS:          &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true},
+		CSRF:          &owlky.CSRFOptions{IsEnabled: true},
+		Compress:      &owlky.CompressOptions{IsEnabled: true},
+	})
 
 	app.BindGlobalGuards(throttler.Throttler{Limit: 300, TTL: time.Minute})
 
@@ -2960,7 +2969,7 @@ func main() {
 			Build(),
 	)
 
-	if err := app.Listen(8080, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -2972,10 +2981,9 @@ with `"ip":"198.51.100.20"`. The same request over plain HTTP answers
 `308 Location: https://example.com/hello`.
 
 ### WebSocket
-Middlewares bound with `BindGlobalMiddlewares` don't run on the WebSocket handshake. Pass the ones
-the handshake needs to `EnableWS`, in the same order, for example
-`app.EnableWS(&owlky.WSOptions{Path: "ws"}, loadshed.LoadShed{}, proxy.Proxy{TrustedProxies: []string{"10.0.0.0/8"}}, hostcheck.HostCheck{Hosts: []string{"example.com"}}, cors.CORS{AllowOrigins: []string{"https://app.example.com"}})`.
-`cors` then refuses a handshake from an origin you didn't list.
+The handshake runs `LoadShed`, `Proxy`, `Hosts`, then an Origin check: a browser handshake from
+another site is refused with `403` unless its origin is in `Origins` (no `Origin` header, or the
+same origin, passes). Your `BindGlobalMiddlewares` run after them, once per connection.
 
 ### Security notes
 - `c.Redirect` sends the client to any URL: never pass a URL from the request unchecked
@@ -2988,7 +2996,7 @@ the handshake needs to `EnableWS`, in the same order, for example
   in place ([core › Response writer](internal/core/README.md#response-writer)).
 - A guard bound to a `RENDER_` handler doesn't cover its `SUBMIT_`: bind it to both, or to the
   controller ([Pages › Forms](#forms)).
-- Bind `csrf.CSRF{}` on every app with `SUBMIT_` routes or cookies: Owlky Go doesn't add it for you.
+- Turn `CSRF` on in every app with `SUBMIT_` routes or cookies: Owlky Go doesn't add it for you.
 - Files in `public/` are sent as they are, at the root URL, with no escaping and no nonce: never
   write user content there ([Pages › Public files](#public-files)).
 - Page CSS and JS URLs show your template tree and are served without the page's guards
@@ -3027,9 +3035,9 @@ func (instance InvoiceController) READ_invoices() string {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(InvoiceController{}).Build())
-	if err := app.Listen(3000, nil); err != nil {
+	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
 	}
 }
@@ -3082,7 +3090,7 @@ WebSocket events also have constructors with WebSocket close codes, such as
 ## Package reference
 
 An application imports `go.owlky.com/owlky`, plus the packages it uses among
-[`exception`](exception/README.md), [`log`](log/README.md), `middlewares/*`, `modules/*` and
+[`exception`](exception/README.md), [`log`](log/README.md), `modules/*` and
 `guards/*`. Every other package of the module is under `internal/` and can't be imported.
 
 ### Functions
@@ -3098,16 +3106,18 @@ An application imports `go.owlky.com/owlky`, plus the packages it uses among
 
 | Type | Description |
 |---|---|
-| `App` | The application returned by `New`. Configure it with `SetLogger`, `SetStartupTimeout`, `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors`, `BindGlobalExceptionFilters`, `EnableVersioning`, `EnableWS`, `EnableRender`, `EnableAccessLog` and `EnableDevtool`; wire it with `Create(Module)`; serve it with `Listen(port, opts)`, `ListenTLS(port, certFile, keyFile, opts)` or `Serve(listener, opts)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
+| `App` | The application returned by `New(opts)`; its configuration is the `AppOptions` given to `New`. Bind app-wide layers with `BindGlobalMiddlewares`, `BindGlobalGuards`, `BindGlobalInterceptors` and `BindGlobalExceptionFilters`; wire it with `Create(Module)`; serve it with `Listen()` or `Serve(listener)`; stop it with `Stop()`. `Logger()` returns its logger, `Get(provider)` a constructed provider, and `ServeHTTP` makes it an `http.Handler`. |
 | `Module` | A built module. Set its fields after `Build()`: `Name`, `IsGlobal`, `OnInit`, `OnReady`, `OnShutdown`. `Prefix(path)` adds a path prefix. |
 | `RetryOptions` | The second argument of `Retry`; `nil` gives the defaults. `InitialDelay` (default 500 ms), `MaxDelay` (default 30 s) and `MaxAttempts` (default 0: until `ctx` is done). |
 | `Provider` | The interface of a provider: `NewProvider() Provider`. |
 | `Controller` | The interface of a controller: `NewController() Controller`. |
-| `ServerOptions` | The second argument of `Listen`, `ListenTLS` and `Serve`; `nil` gives the defaults. `ShutdownTimeout` (default 30 s), `MaxRequestBodyBytes` (default 10 MiB, negative turns the cap off), `TLSConfig`, and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |
-| `WSOptions` | The first argument of `EnableWS`. `Path` is the endpoint path (default `/ws`). |
-| `RenderOptions` | The argument of `EnableRender`. `FS` holds the templates and the `assets` and `public` directories (required); `Dir` is the directory inside it (default `web`, `.` for the root); `IsReload` reads that directory from disk and parses it again when a file changes (development only). See [Pages](#pages). |
+| `AppOptions` | The argument of `New`; `nil` gives the defaults. See [Configuration](#configuration). |
+| `ServerOptions` | `AppOptions.Server`, used when Owlky Go opens the listener: `Port` (default 3000), `ShutdownTimeout` (default 30 s), `TLS` (`TLSOptions`: `CertFile`, `KeyFile`, `Config`) and `IsH2C` (also accept unencrypted HTTP/2 without TLS). |
+| `HTTPOptions` | `AppOptions.HTTP`: `MaxBodyBytes` (a `ByteSize`, default 10 MiB, negative turns the cap off) and `ServeDirs`. |
+| `WSOptions` | `AppOptions.WS`. `Path` is the endpoint path; setting it turns WebSocket on. |
+| `RenderOptions` | `AppOptions.Render`. `FS` holds the templates and the `assets` and `public` directories (required); `Dir` is the directory inside it (default `web`, `.` for the root); `IsReload` reads that directory from disk and parses it again when a file changes (development only). See [Pages](#pages). |
 | `PathStyle` | The argument of `ModuleBuilder().PathStyle`: `PathStyleKebab` (the default, `READ_user_profile` → `/user-profile`) or `PathStyleAsWritten` (`/user_profile`). See [Routes from method names](#routes-from-method-names). |
-| `VersioningOptions` | The argument of `EnableVersioning`: `Type`, `Key` (default `v`), `DefaultVersion` and `Extractor`. See [Versioning](#versioning). |
+| `VersioningOptions` | `AppOptions.Versioning`: `Type` (setting it turns versioning on), `Key` (default `v`), `DefaultVersion` and `Extractor`. See [Versioning](#versioning). |
 | `VersioningType` | The type of `VersioningOptions.Type`: `VersioningQuery`, `VersioningHeader`, `VersioningMediaType` or `VersioningCustom`. |
 
 ### Controller embeds

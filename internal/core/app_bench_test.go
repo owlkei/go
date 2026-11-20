@@ -10,7 +10,7 @@ import (
 )
 
 func BenchmarkServeHTTP(b *testing.B) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
@@ -66,7 +66,7 @@ func BenchmarkCreate_FiveControllers(b *testing.B) {
 		Build()
 	b.ReportAllocs()
 	for b.Loop() {
-		New().Create(m)
+		New(nil).Create(m)
 	}
 }
 
@@ -74,7 +74,7 @@ func BenchmarkCreate_ChainedProviders(b *testing.B) {
 	m := NewModuleBuilder().Providers(benchChainProviders()...).Build()
 	b.ReportAllocs()
 	for b.Loop() {
-		New().Create(m)
+		New(nil).Create(m)
 	}
 }
 
@@ -83,7 +83,7 @@ func BenchmarkCreate_StaticSubmodules(b *testing.B) {
 	root := NewModuleBuilder().Imports(makeBenchStaticSubmodules(n)...).Build()
 	b.ReportAllocs()
 	for b.Loop() {
-		New().Create(root)
+		New(nil).Create(root)
 	}
 }
 
@@ -96,6 +96,6 @@ func BenchmarkCreate_FactorySubmodules(b *testing.B) {
 	root := NewModuleBuilder().Imports(imports...).Build()
 	b.ReportAllocs()
 	for b.Loop() {
-		New().Create(root)
+		New(nil).Create(root)
 	}
 }

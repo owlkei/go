@@ -446,9 +446,8 @@ func TestHooks_RunOnAbortHandler(t *testing.T) {
 
 func TestHooks_RunAtWSHandshake(t *testing.T) {
 	lcReset(t)
-	app := New()
-	app.SetLogger(&mockLogger{})
-	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"})
+	app := New(&AppOptions{Logger: &mockLogger{}, WS: &WSOptions{Path: "/ws"}})
+	app.BindGlobalMiddlewares(lcMiddleware{Name: "w1"})
 	app.Create(NewModuleBuilder().Controllers(lcController{}).Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -467,9 +466,8 @@ func TestHooks_RunAtWSHandshake(t *testing.T) {
 
 func TestHooks_RunAtRefusedWSHandshake(t *testing.T) {
 	lcReset(t)
-	app := New()
-	app.SetLogger(&mockLogger{})
-	app.EnableWS(&WSOptions{Path: "/ws"}, lcMiddleware{Name: "w1"})
+	app := New(&AppOptions{Logger: &mockLogger{}, WS: &WSOptions{Path: "/ws"}})
+	app.BindGlobalMiddlewares(lcMiddleware{Name: "w1"})
 	app.Create(NewModuleBuilder().Controllers(lcController{}).Build())
 	server := httptest.NewServer(app)
 	defer server.Close()
@@ -552,12 +550,10 @@ func TestHooks_NonFrameworkWriterIsNil(t *testing.T) {
 
 func TestServeHTTP_NoHook_NoAllocation(t *testing.T) {
 	plain := benchApp(benchPlainController{})
-	probing := New()
-	probing.SetLogger(&mockLogger{})
+	probing := New(&AppOptions{Logger: &mockLogger{}})
 	probing.BindGlobalMiddlewares(hookProbeMiddleware{})
 	probing.Create(NewModuleBuilder().Controllers(benchPlainController{}).Build())
-	bare := New()
-	bare.SetLogger(&mockLogger{})
+	bare := New(&AppOptions{Logger: &mockLogger{}})
 	bare.BindGlobalMiddlewares(passMiddleware{})
 	bare.Create(NewModuleBuilder().Controllers(benchPlainController{}).Build())
 

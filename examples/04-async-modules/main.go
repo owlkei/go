@@ -15,7 +15,7 @@ func newApp() owlky.App {
 		Controllers(StockController{}).
 		Build()
 
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().
 		Imports(stock).
 		Controllers(HealthController{}).
@@ -24,7 +24,7 @@ func newApp() owlky.App {
 }
 
 func main() {
-	if err := newApp().Listen(3000, nil); err != nil {
+	if err := newApp().Listen(); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -18,7 +18,7 @@ Internal package: applications use `owlky.TraceTransport` and `log.Logger.From(c
   - [Performance notes](#performance-notes)
   - [Benchmarks](#benchmarks)
 
-Apps cannot subscribe to the trace yet: `core` holds one `Tracer` per app and the access log (`app.EnableAccessLog()`) is its listener. The devtools platform will add a public way to listen.
+Apps cannot subscribe to the trace yet: `core` holds one `Tracer` per app and the access log (`AppOptions.IsAccessLog`) is its listener. The devtools platform will add a public way to listen.
 
 ## Usage
 
@@ -58,8 +58,8 @@ func main() {
 | `Duration` | `time.Duration` | every event; for `complete`, the wall-clock time of the request |
 | `Operation` | `string` | `complete`: the HTTP method, or the WS message type |
 | `Target` | `string` | `complete`: the URL path without the query string, or the WS topic |
-| `Code` | `int` | `complete`: the status written; a `middleware` event that ended in a panic: the status of the error response; a `render` event: `500` when the render failed, `0` otherwise |
-| `ClientIP` | `netip.Addr` | `complete` of an HTTP request or handshake: the client's address as `proxy.ClientIP` resolves it (the peer of `RemoteAddr` without `proxy`); the zero `Addr` on every other event and when the address is unknown |
+| `Code` | `int` | `complete`: the status written; a `pre-route` event: the status the stage answered with when it ended the request (`503`, `421`, `400`, `403`, `308`, `204`), `0` when it called `next()`; a `middleware` event that ended in a panic: the status of the error response; a `render` event: `500` when the render failed, `0` otherwise |
+| `ClientIP` | `netip.Addr` | `complete` of an HTTP request or handshake: the client's address as `owlky.ClientIP` resolves it (the peer of `RemoteAddr` without `AppOptions.Proxy`); the zero `Addr` on every other event and when the address is unknown |
 
 ## Spans
 
@@ -73,7 +73,7 @@ The events of one request (or WebSocket message) form a flat tree in the W3C Tra
 
 ## Stages and transports
 
-- Stages: `StageMiddleware`, `StageGuard`, `StagePreInterceptor`, `StagePostInterceptor`, `StageExceptionFilter`, `StagePipe`, `StageHandler`, `StageRender`, `StageComplete`.
+- Stages: `StagePreRoute` (`"pre-route"`: a built-in stage of `AppOptions`, `Name` the stage: `loadshed`, `proxy`, `hostcheck`, `httpsredirect`, `headers`, `cors`, `csrf`, `compress`, `origin`), `StageMiddleware` (user middlewares only), `StageGuard`, `StagePreInterceptor`, `StagePostInterceptor`, `StageExceptionFilter`, `StagePipe`, `StageHandler`, `StageRender`, `StageComplete`.
 - `StageRender` (`"render"`): one event per HTML render of a page or an error page, after `handler` and before `complete`; its `Duration` is the time to execute the template and place the nonce. A JSON error emits none.
 - Transport values: `TransportHTTP` (`"HTTP"`), `TransportWS` (`"WS"`).
 - `core` asks `Enabled()` once per request and emits nothing for a request that started without a listener.

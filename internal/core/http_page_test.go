@@ -19,15 +19,12 @@ import (
 	"go.owlky.com/owlky/internal/test"
 	"go.owlky.com/owlky/internal/trace"
 	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/middlewares/csrf"
 )
 
 func TestPage_RoutesLikeHTTP(t *testing.T) {
 	files := pgFiles(map[string]string{"v9/site/home.html": "HOME"})
 	logger := &lcRecordingLogger{}
-	app := New()
-	app.SetLogger(logger)
-	app.EnableRender(&RenderOptions{FS: files, Dir: "."})
+	app := New(&AppOptions{Logger: logger, Render: &RenderOptions{FS: files, Dir: "."}})
 	inner := NewModuleBuilder().Controllers(pgPrefixed{}).Build()
 	inner.Prefix("v9")
 	mustCreate(t, app, NewModuleBuilder().Imports(inner).Build())
@@ -318,8 +315,7 @@ func TestPage_AssetFunction(t *testing.T) {
 		t.Error(test.DiffMessage(got, want, "D6: asset returns the path with the first 8 bytes of the SHA-256"))
 	}
 
-	reload := New()
-	reload.EnableRender(&RenderOptions{FS: files, Dir: ".", IsReload: true})
+	reload := New(&AppOptions{Render: &RenderOptions{FS: files, Dir: ".", IsReload: true}})
 	mustCreate(t, reload, NewModuleBuilder().Controllers(pgPages{}).Build())
 	if got, want := createGet(reload, pgView("view", "")).Body.String(), "/assets/css/app.css"; got != want {
 		t.Error(test.DiffMessage(got, want, "D6: with IsReload asset adds no version"))
@@ -394,10 +390,10 @@ func TestPage_Head(t *testing.T) {
 	}
 }
 
-func TestCreate_RenderWithoutEnableRenderPanics(t *testing.T) {
-	msExpectPanic(t, "P3", "invalid render: cpPageController.RENDER_x is a page route, call EnableRender before Create",
+func TestCreate_RenderWithoutRenderFSPanics(t *testing.T) {
+	msExpectPanic(t, "P3", "invalid render: cpPageController.RENDER_x is a page route, set Render.FS in AppOptions",
 		cpCreate(nil, cpPageController{}))
-	msExpectPanic(t, "P3", "invalid render: cpRenderElsewhere.RENDER_x is a page route, call EnableRender before Create",
+	msExpectPanic(t, "P3", "invalid render: cpRenderElsewhere.RENDER_x is a page route, set Render.FS in AppOptions",
 		cpCreate(nil, cpRenderElsewhere{}))
 }
 
@@ -485,17 +481,13 @@ func TestCreate_RenderReservedNamePanics(t *testing.T) {
 	msExpectPanic(t, "P20", "invalid render: cpPath404.RENDER_x resolves to 404.html, which is an error page, not a route",
 		cpCreateWith(map[string]string{"404.html": "x"}, cpPath404{}))
 
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{"admin/404.html": "ADMIN-404"}), Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(map[string]string{"admin/404.html": "ADMIN-404"}), Dir: "."}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(cpAdmin404{}).Build())
 	if w := createGet(app, "/admin/404"); w.Code != http.StatusOK || w.Body.String() != "ADMIN-404" {
 		t.Error(test.DiffMessage(w.Body.String(), "ADMIN-404", "P20: under a prefix the name is an ordinary page"))
 	}
 
-	prefixed := New()
-	prefixed.SetLogger(&lcRecordingLogger{})
-	prefixed.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{"site/404.html": "SITE-404"}), Dir: "."})
+	prefixed := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(map[string]string{"site/404.html": "SITE-404"}), Dir: "."}})
 	module := NewModuleBuilder().Controllers(cpR404{}).Build()
 	module.Prefix("site")
 	mustCreate(t, prefixed, NewModuleBuilder().Imports(module).Build())
@@ -606,9 +598,7 @@ func TestCreate_SubmitPathPanics(t *testing.T) {
 }
 
 func TestSubmit_PathAndPrefixOfRenderMoveBoth(t *testing.T) {
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{"p/moved.html": "FORM"}), Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(map[string]string{"p/moved.html": "FORM"}), Dir: "."}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(cpSubmitMovesWithRender{}).Build())
 
 	if w := createGet(app, "/p/moved"); w.Body.String() != "FORM" {
@@ -651,16 +641,16 @@ func TestDevtool_PageKind(t *testing.T) {
 	}
 }
 
-func TestDevtool_NoRenderWithoutEnableRender(t *testing.T) {
+func TestDevtool_NoRenderWithoutRenderFS(t *testing.T) {
 	app := dvrApp(t, nil, dvrAPI{})
 
 	snapshot := dvrDecode(t, app)
 	if _, ok := snapshot["render"]; ok {
-		t.Error(test.DiffMessage(snapshot["render"], "no render section", "R43: omitted without EnableRender"))
+		t.Error(test.DiffMessage(snapshot["render"], "no render section", "R43: omitted without Render.FS"))
 	}
 	for route, kind := range dvrKinds(t, snapshot) {
 		if kind != nil {
-			t.Error(test.DiffMessage(kind, nil, "R42: no kind on an app without EnableRender: "+route))
+			t.Error(test.DiffMessage(kind, nil, "R42: no kind on an app without Render.FS: "+route))
 		}
 	}
 }
@@ -678,7 +668,7 @@ func TestDevtool_RenderSnapshot(t *testing.T) {
 	snapshot := dvrDecode(t, app)
 	render, ok := snapshot["render"].(map[string]any)
 	if !ok {
-		t.Fatal(test.DiffMessage(snapshot["render"], "a render section", "R43: present with EnableRender"))
+		t.Fatal(test.DiffMessage(snapshot["render"], "a render section", "R43: present with Render.FS"))
 	}
 	if render["is_reload"] != nil && render["is_reload"] != false {
 		t.Error(test.DiffMessage(render["is_reload"], false, "R43: is_reload"))
@@ -892,8 +882,7 @@ func TestPageAssets_RouteWithoutAssetsDir(t *testing.T) {
 			t.Error(test.DiffMessage([]any{w.Code, w.Header().Get("Allow")}, []any{http.StatusNotFound, ""}, "R39: without an assets directory or page files there is no route: "+method))
 		}
 	}
-	free := New()
-	free.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{"bookings/new.html": "NEW", "bookings/{id}.html": "ONE"}), Dir: "."})
+	free := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(map[string]string{"bookings/new.html": "NEW", "bookings/{id}.html": "ONE"}), Dir: "."}})
 	if text, panicked := createPanicText(func() {
 		free.Create(NewModuleBuilder().Controllers(paBookings{}, assetUserServe{}).Build())
 	}); panicked {
@@ -902,8 +891,7 @@ func TestPageAssets_RouteWithoutAssetsDir(t *testing.T) {
 }
 
 func TestPageAssets_RouteConflictWithUserAssetsRoute(t *testing.T) {
-	app := New()
-	app.EnableRender(&RenderOptions{FS: pgFiles(paFiles()), Dir: "."})
+	app := New(&AppOptions{Render: &RenderOptions{FS: pgFiles(paFiles()), Dir: "."}})
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Controllers(paBookings{}, assetUserServe{}).Build())
 	})
@@ -1147,7 +1135,7 @@ func TestRedirect_APIStill301(t *testing.T) {
 }
 
 func TestPageForm_BadBodyIsHTMLError(t *testing.T) {
-	app, _ := pfApp(t, nil)
+	app, _ := peAppOptions(t, pfFiles(), &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: 64}}, nil, pfPages{}, pfAPI{})
 
 	w := pfPost(app, "/bookings/new", pfURLEncoded, "name=%zz")
 	peExpectHTML(t, "R28: a malformed urlencoded body", w, http.StatusBadRequest)
@@ -1161,16 +1149,15 @@ func TestPageForm_BadBodyIsHTMLError(t *testing.T) {
 		t.Error(test.DiffMessage(w.Body.String(), "Invalid form body", "R28: the message"))
 	}
 
-	app.maxRequestBodyBytes.Store(64)
 	w = pfPost(app, "/bookings/new", pfURLEncoded, "name="+strings.Repeat("a", 4096))
-	peExpectHTML(t, "R28: a body over MaxRequestBodyBytes", w, http.StatusRequestEntityTooLarge)
+	peExpectHTML(t, "R28: a body over HTTP.MaxBodyBytes", w, http.StatusRequestEntityTooLarge)
 	if body := w.Body.String(); !strings.Contains(body, "Request body too large") || strings.Contains(body, "http: request body too large") {
 		t.Error(test.DiffMessage(body, "Request body too large", "R28, R24: the framework message"))
 	}
 }
 
 func TestPageForm_CSRF(t *testing.T) {
-	app, _ := pfApp(t, func(app *App) { app.BindGlobalMiddlewares(csrf.CSRF{}) })
+	app, _ := peAppOptions(t, pfFiles(), &AppOptions{CSRF: &CSRFOptions{IsEnabled: true}}, nil, pfPages{}, pfAPI{})
 	valid := pfEncode(map[string]string{"name": "Ann", "email": "ann@example.com"})
 
 	w := pfPost(app, "/bookings/echo", pfURLEncoded, valid, "Sec-Fetch-Site", "cross-site", "Accept", peAcceptHTML)
@@ -1537,10 +1524,7 @@ func TestRender_LastResultIsTheData(t *testing.T) {
 }
 
 func TestRender_VersionNeutral(t *testing.T) {
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{"nodata.html": "PAGE"}), Dir: "."})
-	app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(map[string]string{"nodata.html": "PAGE"}), Dir: "."}, Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(pgNodataOnly{}).Build())
 
 	for name, headers := range map[string][]string{
@@ -1556,9 +1540,7 @@ func TestRender_VersionNeutral(t *testing.T) {
 }
 
 func TestRender_EmptyDirectoryServesNothingWithoutRoutes(t *testing.T) {
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: fstest.MapFS{"layout.html": {Data: []byte(`{{template "content" .}}`)}}, Dir: "."})
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: fstest.MapFS{"layout.html": {Data: []byte(`{{template "content" .}}`)}}, Dir: "."}})
 	mustCreate(t, app, NewModuleBuilder().Controllers(rnMixedAPIOnly{}).Build())
 	if w := createGet(app, "/layout"); w.Code != http.StatusNotFound {
 		t.Error(test.DiffMessage(w.Code, http.StatusNotFound, "P2: a layout is no route"))
@@ -1594,13 +1576,11 @@ func TestSubmit_PostsToRenderPath(t *testing.T) {
 func TestSubmit_PostsUnderModulePrefix(t *testing.T) {
 	inner := NewModuleBuilder().Controllers(sbPages{}).Build()
 	inner.Prefix("shop")
-	app := New()
-	app.SetLogger(&lcRecordingLogger{})
-	app.EnableRender(&RenderOptions{FS: pgFiles(map[string]string{
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, Render: &RenderOptions{FS: pgFiles(map[string]string{
 		"shop.html":               "SHOP",
 		"shop/bookings/new.html":  `FORM {{.Name}}`,
 		"shop/bookings/{id}.html": `BOOKING {{.Id}}`,
-	}), Dir: "."})
+	}), Dir: "."}})
 	mustCreate(t, app, NewModuleBuilder().Imports(inner).Build())
 
 	w := pfPost(app, "/shop/bookings/new", pfURLEncoded, sbValid())
@@ -1745,7 +1725,7 @@ func TestRenderDir_DotIsTheRoot(t *testing.T) {
 
 func TestRenderDir_MissingDirectoryPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().EnableRender(&RenderOptions{FS: fstest.MapFS{"x.html": {Data: []byte("x")}}})
+		New(&AppOptions{Render: &RenderOptions{FS: fstest.MapFS{"x.html": {Data: []byte("x")}}}})
 	})
 	want := `invalid render: RenderOptions.FS has no "web" directory: embed it with //go:embed web, or set Dir`
 	if !panicked || !strings.Contains(text, want) {
@@ -1779,7 +1759,7 @@ func TestRenderDir_EmbeddedFSWithReloadReadsDisk(t *testing.T) {
 
 func TestRenderDir_ReloadWithoutDiskDirectoryPanics(t *testing.T) {
 	text, panicked := createPanicText(func() {
-		New().EnableRender(&RenderOptions{FS: rdEmbedded, Dir: "no-such-dir", IsReload: true})
+		New(&AppOptions{Render: &RenderOptions{FS: rdEmbedded, Dir: "no-such-dir", IsReload: true}})
 	})
 	want := `invalid render: IsReload reads "no-such-dir" from disk, but there is no such directory under the working directory`
 	if !panicked || !strings.Contains(text, want) {

@@ -11,7 +11,6 @@ import (
 
 	"go.owlky.com/owlky"
 	"go.owlky.com/owlky/internal/test"
-	"go.owlky.com/owlky/middlewares/helmet"
 )
 
 type discardWriter struct {
@@ -97,13 +96,13 @@ func (c jsonController) READ_json() owlky.Map {
 }
 
 func newPageApp(render bool) owlky.App {
-	app := owlky.New().SetLogger(silentLogger{})
-	app.BindGlobalMiddlewares(helmet.Helmet{})
+	opts := &owlky.AppOptions{Logger: silentLogger{}, Headers: &owlky.HeadersOptions{IsEnabled: true}}
 	builder := owlky.ModuleBuilder().Controllers(jsonController{})
 	if render {
-		app.EnableRender(&owlky.RenderOptions{FS: pageFiles, Dir: "."})
+		opts.Render = &owlky.RenderOptions{FS: pageFiles, Dir: "."}
 		builder = owlky.ModuleBuilder().Controllers(jsonController{}, pageController{})
 	}
+	app := owlky.New(opts)
 	app.Create(builder.Build())
 	return app
 }

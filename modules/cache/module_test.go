@@ -21,7 +21,7 @@ func TestRegister_NilOptions(t *testing.T) {
 		t.Error(test.DiffMessage(m.IsGlobal, false, "C2: nil options equal empty options"))
 	}
 
-	app := core.New()
+	app := core.New(nil)
 	app.Create(m)
 	svc := serviceOf(t, app)
 	if svc.Backend == nil {
@@ -30,7 +30,7 @@ func TestRegister_NilOptions(t *testing.T) {
 }
 
 func TestRegister_DefaultBackend(t *testing.T) {
-	app := core.New()
+	app := core.New(nil)
 	app.Create(Register(&CacheModuleOptions{}))
 	svc := serviceOf(t, app)
 
@@ -46,7 +46,7 @@ func TestRegister_DefaultBackend(t *testing.T) {
 
 func TestRegister_CustomBackend(t *testing.T) {
 	rec := &recordingBackend{}
-	app := core.New()
+	app := core.New(nil)
 	app.Create(Register(&CacheModuleOptions{Backend: rec}))
 	svc := serviceOf(t, app)
 
@@ -68,7 +68,7 @@ func TestRegister_IsGlobalAndOnInit(t *testing.T) {
 	if m.OnInit == nil {
 		t.Fatal(test.DiffMessage(nil, "a function", "C2: OnInit is copied to the module"))
 	}
-	app := core.New()
+	app := core.New(nil)
 	app.Create(m)
 	if inits != 1 {
 		t.Error(test.DiffMessage(inits, 1, "C2: OnInit runs once when the app is created"))
@@ -91,7 +91,7 @@ func TestRegister_StartsNoGoroutine(t *testing.T) {
 		t.Error(test.DiffMessage(after, before, "C3: Register starts no goroutine"))
 	}
 
-	app := core.New()
+	app := core.New(nil)
 	app.Create(modules[0])
 	if st, ok := inspect.CacheStateOf(serviceOf(t, app).Backend); !ok || st.IsSweeping {
 		t.Error(test.DiffMessage(st.IsSweeping, false, "C3: Register arms no timer"))
@@ -105,7 +105,7 @@ func TestRegister_InjectedServicesShareBackend(t *testing.T) {
 		Providers(consumerA{}, consumerB{}).
 		Build()
 
-	app := core.New()
+	app := core.New(nil)
 	app.Create(root)
 
 	a, okA := app.Get(consumerA{}).(consumerA)
@@ -132,9 +132,9 @@ func TestRegister_InjectedServicesShareBackend(t *testing.T) {
 func TestRegister_TwoAppsShareBackend(t *testing.T) {
 	m := Register(nil)
 
-	first := core.New()
+	first := core.New(nil)
 	first.Create(m)
-	second := core.New()
+	second := core.New(nil)
 	second.Create(m)
 
 	one, two := serviceOf(t, first), serviceOf(t, second)

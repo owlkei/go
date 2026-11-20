@@ -22,7 +22,7 @@ components' behavior.
 - **Template functions.** `{{asset "owlky.js"}}` writes `/assets/owlky.js?v=<hash>`, served with
   `Cache-Control: immutable`. `{{nonce}}` gives the inline script the request's CSP nonce, which `helmet`
   adds to `script-src` and `style-src`.
-- **Security defaults.** `html/template` escapes every value for its context; `csrf.CSRF{}` refuses
+- **Security defaults.** `html/template` escapes every value for its context; `CSRF: &owlky.CSRFOptions{IsEnabled: true}` refuses
   cross-origin form posts; `helmet` sends a strict policy with no `'unsafe-inline'`.
 
 ## Run it

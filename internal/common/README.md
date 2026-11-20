@@ -118,13 +118,13 @@ func (instance UserController) DELETE_users_BY_id(param ctx.Param) string {
 }
 
 func main() {
-	app := core.New()
+	app := core.New(&core.AppOptions{Server: &core.ServerOptions{Port: 8080}})
 	app.Create(
 		core.NewModuleBuilder().
 			Controllers(UserController{}).
 			Build(),
 	)
-	app.Listen(8080, nil)
+	app.Listen()
 }
 ```
 

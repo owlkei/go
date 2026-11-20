@@ -27,7 +27,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	app := New()
+	app := New(nil)
 	if app == nil {
 		t.Fatal(test.DiffMessage(nil, "*App", "New should not return nil"))
 		return
@@ -41,7 +41,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewHasGlobalExceptionFilter(t *testing.T) {
-	app := New()
+	app := New(nil)
 	if len(app.globalExceptionFilters) == 0 {
 		t.Error(test.DiffMessage(0, ">0", "New should register default global exception filter"))
 	}
@@ -76,7 +76,7 @@ func TestGetContextIDGeneratesUUID(t *testing.T) {
 }
 
 func TestBindGlobalMiddlewaresChaining(t *testing.T) {
-	app := New()
+	app := New(nil)
 	result := app.BindGlobalMiddlewares()
 	if result != app {
 		t.Error(test.DiffMessage(result, app, "BindGlobalMiddlewares should return *App"))
@@ -84,7 +84,7 @@ func TestBindGlobalMiddlewaresChaining(t *testing.T) {
 }
 
 func TestBindGlobalGuardsChaining(t *testing.T) {
-	app := New()
+	app := New(nil)
 	result := app.BindGlobalGuards()
 	if result != app {
 		t.Error(test.DiffMessage(result, app, "BindGlobalGuards should return *App"))
@@ -92,7 +92,7 @@ func TestBindGlobalGuardsChaining(t *testing.T) {
 }
 
 func TestBindGlobalInterceptorsChaining(t *testing.T) {
-	app := New()
+	app := New(nil)
 	result := app.BindGlobalInterceptors()
 	if result != app {
 		t.Error(test.DiffMessage(result, app, "BindGlobalInterceptors should return *App"))
@@ -100,26 +100,15 @@ func TestBindGlobalInterceptorsChaining(t *testing.T) {
 }
 
 func TestBindGlobalExceptionFiltersChaining(t *testing.T) {
-	app := New()
+	app := New(nil)
 	result := app.BindGlobalExceptionFilters()
 	if result != app {
 		t.Error(test.DiffMessage(result, app, "BindGlobalExceptionFilters should return *App"))
 	}
 }
 
-func TestEnableDevtoolChaining(t *testing.T) {
-	app := New()
-	result := app.EnableDevtool()
-	if result != app {
-		t.Error(test.DiffMessage(result, app, "EnableDevtool should return *App"))
-	}
-	if !app.isDevtoolEnabled {
-		t.Error(test.DiffMessage(app.isDevtoolEnabled, true, "isDevtoolEnabled should be true after EnableDevtool"))
-	}
-}
-
 func TestServeHTTPNotFound(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/notfound", nil)
@@ -132,7 +121,7 @@ func TestServeHTTPNotFound(t *testing.T) {
 }
 
 func TestServeHTTPSetsRequestIDHeader(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/notfound", nil)
@@ -145,7 +134,7 @@ func TestServeHTTPSetsRequestIDHeader(t *testing.T) {
 }
 
 func TestServeHTTPSetsGeneratedRequestID(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	const clientID = "client-supplied-request-id"
@@ -164,10 +153,9 @@ func TestServeHTTPSetsGeneratedRequestID(t *testing.T) {
 }
 
 func TestNew_AppliesDefaultBodyLimit(t *testing.T) {
-
-	app := New()
-	if app.maxRequestBodyBytes.Load() != 10<<20 {
-		t.Error(test.DiffMessage(app.maxRequestBodyBytes.Load(), int64(10<<20), "O3: a new app must cap request bodies at 10 MiB, not read them unbounded"))
+	app := New(nil)
+	if app.maxBodyBytes != 10<<20 {
+		t.Error(test.DiffMessage(app.maxBodyBytes, int64(10<<20), "O3: a new app must cap request bodies at 10 MiB, not read them unbounded"))
 	}
 }
 
@@ -219,7 +207,7 @@ func TestServeHTTPBodyLimit_NegativeDisablesCap(t *testing.T) {
 }
 
 func TestGetAfterCreate(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	got := app.Get(&mockProvider{})
@@ -228,16 +216,8 @@ func TestGetAfterCreate(t *testing.T) {
 	}
 }
 
-func TestSetLogger_ReturnsApp(t *testing.T) {
-	app := New()
-	result := app.SetLogger(&mockLogger{})
-	if result != app {
-		t.Error(test.DiffMessage(result, app, "SetLogger should return *App"))
-	}
-}
-
 func TestServeHTTPConcurrent_NoDataRace(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Build())
 
 	const goroutines = 32
@@ -272,7 +252,7 @@ func TestConcurrentAppCreate_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			app := New()
+			app := New(nil)
 			app.BindGlobalMiddlewares(raceGlobalMiddleware{})
 			app.Create(NewModuleBuilder().
 				Providers(raceGlobalProvider{}).
@@ -282,19 +262,8 @@ func TestConcurrentAppCreate_NoDataRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestEnableVersioning_Chaining(t *testing.T) {
-	app := New()
-	result := app.EnableVersioning(&versioning.Options{})
-	if result != app {
-		t.Error(test.DiffMessage(result, app, "EnableVersioning should return *App"))
-	}
-	if !app.http.isVersioningEnabled {
-		t.Error(test.DiffMessage(app.http.isVersioningEnabled, true, "EnableVersioning should set isVersioningEnabled"))
-	}
-}
-
 func TestGlobalMiddlewarePanic_CaughtByExceptionFilter(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.BindGlobalMiddlewares(panicMiddleware{})
 	app.Create(NewModuleBuilder().Controllers(panicMiddlewareController{}).Build())
 
@@ -308,7 +277,7 @@ func TestGlobalMiddlewarePanic_CaughtByExceptionFilter(t *testing.T) {
 }
 
 func TestGlobalGuard_DeniesHTTPRequest(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.BindGlobalGuards(denyGlobalGuard{})
 	app.Create(NewModuleBuilder().Controllers(globalGuardController{}).Build())
 
@@ -322,7 +291,7 @@ func TestGlobalGuard_DeniesHTTPRequest(t *testing.T) {
 }
 
 func TestGlobalGuard_ShapelessGuardPanicsOnCreate(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.BindGlobalGuards(shapelessGlobalGuard{})
 
 	defer func() {
@@ -334,7 +303,7 @@ func TestGlobalGuard_ShapelessGuardPanicsOnCreate(t *testing.T) {
 }
 
 func TestTrace_EmitsPerStageAndComplete(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var stages []string
@@ -384,7 +353,7 @@ func TestTrace_EmitsPerStageAndComplete(t *testing.T) {
 }
 
 func TestTrace_PipeStageExcludedFromHandlerDuration(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var pipeEvent, handlerEvent *trace.Event
@@ -426,7 +395,7 @@ func TestTrace_PipeStageExcludedFromHandlerDuration(t *testing.T) {
 }
 
 func TestTrace_ExceptionFilterStageFiresOnPanic(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var sawExceptionFilter bool
@@ -466,7 +435,7 @@ func TestTrace_ExceptionFilterStageFiresOnPanic(t *testing.T) {
 }
 
 func TestTrace_PipePanicStillEmitsPipeEventAndReachesExceptionFilter(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var pipeEvent *trace.Event
@@ -523,7 +492,7 @@ func TestTrace_PipePanicStillEmitsPipeEventAndReachesExceptionFilter(t *testing.
 }
 
 func TestTrace_HandlerPanicAfterSuccessfulPipeStillExcludesPipeDuration(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var pipeEvent, handlerEvent *trace.Event
@@ -576,7 +545,7 @@ func TestTrace_HandlerPanicAfterSuccessfulPipeStillExcludesPipeDuration(t *testi
 }
 
 func TestTrace_InterceptorPrePostEventsMatchInCountAndOrder(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var pre []string
@@ -620,7 +589,7 @@ func TestTrace_InterceptorPrePostEventsMatchInCountAndOrder(t *testing.T) {
 }
 
 func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	var mu sync.Mutex
 	var pre, post []string
@@ -663,7 +632,7 @@ func TestTrace_InterceptorEventsStopAtTheShortCircuit(t *testing.T) {
 }
 
 func TestTrace_InterceptorNoListener_NoPostEventOverhead(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(multiInterceptorController{}).Build())
 
 	r := httptest.NewRequest(http.MethodGet, "/multiintercept", nil)
@@ -676,7 +645,7 @@ func TestTrace_InterceptorNoListener_NoPostEventOverhead(t *testing.T) {
 }
 
 func TestTrace_WSHandshakeEmitsStageCompleteWithHTTPTransport(t *testing.T) {
-	app := New()
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 
 	var mu sync.Mutex
 	var complete *trace.Event
@@ -694,7 +663,7 @@ func TestTrace_WSHandshakeEmitsStageCompleteWithHTTPTransport(t *testing.T) {
 		}
 	})
 
-	app.EnableWS(&WSOptions{Path: "/ws"}, traceMiddleware{})
+	app.BindGlobalMiddlewares(traceMiddleware{})
 	app.Create(NewModuleBuilder().Build())
 
 	server := httptest.NewServer(app)
@@ -728,8 +697,7 @@ func TestInitLogger_CustomLoggerAutomaticallyGetsTagBehavior(t *testing.T) {
 	}
 
 	capturing := &capturingMockLogger{}
-	app := New()
-	app.SetLogger(capturing)
+	app := New(&AppOptions{Logger: capturing})
 	app.Create(NewModuleBuilder().Build())
 
 	app.Logger().Info("test", "s", secret{Value: "visible", skip: "hidden"})
@@ -748,8 +716,7 @@ func TestInitLogger_CustomLoggerAutomaticallyGetsTagBehavior(t *testing.T) {
 
 func TestInitLogger_CustomLoggerAutomaticallyGetsMaskBehavior(t *testing.T) {
 	capturing := &capturingMockLogger{}
-	app := New()
-	app.SetLogger(log.WrapLogger(capturing, []string{"password"}))
+	app := New(&AppOptions{Logger: log.WrapLogger(capturing, []string{"password"})})
 	app.Create(NewModuleBuilder().Build())
 
 	app.Logger().Info("test", "password", "secret")
@@ -763,12 +730,11 @@ func TestInitDevtool_DoesNotSpawnAServerGoroutine(t *testing.T) {
 
 	before := runtime.NumGoroutine()
 
-	app := New()
-	app.EnableDevtool()
+	app := New(&AppOptions{IsDevtool: true})
 	app.Create(NewModuleBuilder().Build())
 
 	if app.devtool == nil {
-		t.Fatal("EnableDevtool must still build the devtool snapshot")
+		t.Fatal("IsDevtool must still build the devtool snapshot")
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -843,24 +809,19 @@ func TestTraceWSCatch_EmitsOnlyWhenListenerAttached(t *testing.T) {
 	}
 }
 
-func TestEnableVersioning_NilIsZeroOptions(t *testing.T) {
-	app := New()
-	result := app.EnableVersioning(nil)
-	if result != app {
-		t.Error(test.DiffMessage(result, app, "D7: EnableVersioning(nil) returns the app"))
-	}
+func TestNew_VersioningDefaultKey(t *testing.T) {
+	app := New(&AppOptions{Versioning: &versioning.Options{Type: versioning.TypeQuery}})
 	if !app.http.isVersioningEnabled || app.http.versioning == nil {
-		t.Error(test.DiffMessage(app.http.isVersioningEnabled, true, "D7: nil options enable versioning with the zero options"))
+		t.Fatal(test.DiffMessage(app.http.isVersioningEnabled, true, "D7: Versioning.Type turns versioning on"))
 	}
-	if app.http.versioning != nil && app.http.versioning.Key != "v" {
-		t.Error(test.DiffMessage(app.http.versioning.Key, "v", "D7: nil options get the default key like zero options"))
+	if app.http.versioning.Key != "v" {
+		t.Error(test.DiffMessage(app.http.versioning.Key, "v", "D7: an empty Key gets the default key"))
 	}
 }
 
-func TestEnableVersioning_PointerIsNotRetained(t *testing.T) {
-	app := New()
-	opts := &versioning.Options{Key: "X-V"}
-	app.EnableVersioning(opts)
+func TestNew_VersioningPointerIsNotRetained(t *testing.T) {
+	opts := &versioning.Options{Type: versioning.TypeHeader, Key: "X-V"}
+	app := New(&AppOptions{Versioning: opts})
 	opts.Key = "changed"
 	if app.http.versioning.Key != "X-V" {
 		t.Error(test.DiffMessage(app.http.versioning.Key, "X-V", "D7: a later change of the caller's options does not change the app"))
@@ -868,7 +829,7 @@ func TestEnableVersioning_PointerIsNotRetained(t *testing.T) {
 }
 
 func TestLogger_DefaultIsNotNil(t *testing.T) {
-	app := New()
+	app := New(nil)
 
 	if app.Logger() == nil {
 		t.Fatal(test.DiffMessage(nil, "a logger", "G1: Logger is never nil before Create"))
@@ -880,7 +841,7 @@ func TestLogger_DefaultIsNotNil(t *testing.T) {
 }
 
 func TestLogger_SameValueEachCall(t *testing.T) {
-	app := New()
+	app := New(nil)
 	first := app.Logger()
 	if second := app.Logger(); second != first {
 		t.Error(test.DiffMessage(second, first, "G1: Logger returns the same value on every call before Create"))
@@ -892,13 +853,9 @@ func TestLogger_SameValueEachCall(t *testing.T) {
 	}
 }
 
-func TestSetLogger_LogsReachCustomLogger(t *testing.T) {
+func TestNew_LoggerLogsReachCustomLogger(t *testing.T) {
 	rec := &createLogger{}
-	app := New()
-
-	if got := app.SetLogger(rec); got != app {
-		t.Error(test.DiffMessage(got, app, "G2: SetLogger returns the app"))
-	}
+	app := New(&AppOptions{Logger: rec})
 	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Logger().Info("hello", "k", "v")
 
@@ -907,10 +864,9 @@ func TestSetLogger_LogsReachCustomLogger(t *testing.T) {
 	}
 }
 
-func TestSetLogger_InjectedFieldsUseIt(t *testing.T) {
+func TestNew_LoggerInjectedFieldsUseIt(t *testing.T) {
 	rec := &createLogger{}
-	app := New()
-	app.SetLogger(rec)
+	app := New(&AppOptions{Logger: rec})
 	mustCreate(t, app, NewModuleBuilder().Providers(isoLogProvider{}).Build())
 
 	if got := len(rec.named("provider-ready")); got != 1 {
@@ -918,15 +874,14 @@ func TestSetLogger_InjectedFieldsUseIt(t *testing.T) {
 	}
 }
 
-func TestSetLogger_CustomLoggerGetsTagsAndMasking(t *testing.T) {
+func TestNew_LoggerCustomLoggerGetsTagsAndMasking(t *testing.T) {
 	type secret struct {
 		Value string `log:"value"`
 		skip  string
 	}
 
 	rec := &createLogger{}
-	app := New()
-	app.SetLogger(rec)
+	app := New(&AppOptions{Logger: rec})
 	mustCreate(t, app, NewModuleBuilder().Build())
 
 	app.Logger().Info("tagged", "s", secret{Value: "visible", skip: "hidden"})
@@ -947,10 +902,9 @@ func TestSetLogger_CustomLoggerGetsTagsAndMasking(t *testing.T) {
 	}
 }
 
-func TestSetLogger_WrappedLoggerGetsMasking(t *testing.T) {
+func TestNew_LoggerWrappedLoggerGetsMasking(t *testing.T) {
 	rec := &createLogger{}
-	app := New()
-	app.SetLogger(log.WrapLogger(rec, []string{"password"}))
+	app := New(&AppOptions{Logger: log.WrapLogger(rec, []string{"password"})})
 	mustCreate(t, app, NewModuleBuilder().Build())
 
 	app.Logger().Info("masked", "password", "secret")
@@ -961,11 +915,10 @@ func TestSetLogger_WrappedLoggerGetsMasking(t *testing.T) {
 	}
 }
 
-func TestSetLogger_WrappedLoggerNotWrappedAgain(t *testing.T) {
+func TestNew_LoggerWrappedLoggerNotWrappedAgain(t *testing.T) {
 	rec := &createLogger{}
 	wrapped := log.WrapLogger(rec, nil)
-	app := New()
-	app.SetLogger(wrapped)
+	app := New(&AppOptions{Logger: wrapped})
 	mustCreate(t, app, NewModuleBuilder().Build())
 
 	if got := app.Logger(); got != wrapped {
@@ -973,36 +926,21 @@ func TestSetLogger_WrappedLoggerNotWrappedAgain(t *testing.T) {
 	}
 
 	built := log.NewLog(nil)
-	other := New()
-	other.SetLogger(built)
+	other := New(&AppOptions{Logger: built})
 	mustCreate(t, other, NewModuleBuilder().Build())
 	if got := other.Logger(); got != built {
 		t.Error(test.DiffMessage(got, built, "G3: a logger from log.NewLog is used as it is"))
 	}
 }
 
-func TestSetLogger_NilPanics(t *testing.T) {
-	msExpectPanic(t, "G4", "invalid app: SetLogger needs a logger", func() {
-		New().SetLogger(nil)
-	})
-}
-
-func TestSetLogger_AfterCreatePanics(t *testing.T) {
-	app := msCreated()
-	msExpectPanic(t, "M3", "invalid app: SetLogger must be called before Create", func() {
-		app.SetLogger(&createLogger{})
-	})
-}
-
 func TestDevtool_WithoutVersioning(t *testing.T) {
-	app := New()
-	app.EnableDevtool()
+	app := New(&AppOptions{IsDevtool: true})
 
 	text, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Controllers(dvController{}).Build())
 	})
 	if panicked {
-		t.Fatal(test.DiffMessage(text, "no panic", "D1: EnableDevtool without EnableVersioning does not panic"))
+		t.Fatal(test.DiffMessage(text, "no panic", "D1: IsDevtool without Versioning does not panic"))
 	}
 	if app.devtool == nil || len(app.devtool.Controller.Http) != 1 {
 		t.Fatal(test.DiffMessage(app.devtool, "a snapshot with one HTTP entry", "D1: the snapshot is built"))
@@ -1019,9 +957,7 @@ func TestDevtool_WithoutVersioning(t *testing.T) {
 
 func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 	freshProcess(t, func(t *testing.T) {
-		app := New()
-		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
-		app.EnableDevtool()
+		app := New(&AppOptions{IsDevtool: true, Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}})
 		app.Create(NewModuleBuilder().Controllers(dvController{}).Build())
 
 		if app.devtool == nil || len(app.devtool.Controller.Http) != 1 {
@@ -1035,8 +971,7 @@ func TestDevtool_WithVersioningUnchanged(t *testing.T) {
 }
 
 func TestDevtool_SnapshotNamesUnchangedByMove(t *testing.T) {
-	app := New()
-	app.EnableDevtool()
+	app := New(&AppOptions{IsDevtool: true})
 	app.Create(NewModuleBuilder().Controllers(dvGuardedController{}).Build())
 
 	if app.devtool == nil || len(app.devtool.Controller.Http) != 1 {
@@ -1055,7 +990,7 @@ func TestDevtool_SnapshotNamesUnchangedByMove(t *testing.T) {
 
 func TestHooks_OnReadySameOrderAfterWiring(t *testing.T) {
 	rec := &createRecorder{}
-	app := New()
+	app := New(nil)
 	root := hkDiamond(rec)
 	var seen []bool
 	root.OnReady = func() {
@@ -1083,7 +1018,7 @@ func TestHooks_OnReadyPanicReachesCaller(t *testing.T) {
 	root := hkModule(rec, "root")
 	root.OnReady = func() { panic("ready boom") }
 
-	value, panicked := createPanicValue(func() { New().Create(root) })
+	value, panicked := createPanicValue(func() { New(nil).Create(root) })
 
 	if !panicked || value != "ready boom" {
 		t.Error(test.DiffMessage(value, "ready boom", "K3: a panic in OnReady reaches the caller unchanged"))
@@ -1091,7 +1026,7 @@ func TestHooks_OnReadyPanicReachesCaller(t *testing.T) {
 }
 
 func TestHooks_OnReadySeesRoutes(t *testing.T) {
-	app := New()
+	app := New(nil)
 	var code int
 	root := NewModuleBuilder().Controllers(hkController{}).Build()
 	root.OnReady = func() { code = createGet(app, "/hk").Code }
@@ -1103,13 +1038,13 @@ func TestHooks_OnReadySeesRoutes(t *testing.T) {
 }
 
 func TestGet_BeforeCreateIsNil(t *testing.T) {
-	if got := New().Get(isoPlainProvider{}); got != nil {
+	if got := New(nil).Get(isoPlainProvider{}); got != nil {
 		t.Error(test.DiffMessage(got, nil, "I9: Get before Create is nil"))
 	}
 }
 
 func TestGet_UnknownTypeIsNil(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Providers(isoPlainProvider{}).Build())
 
 	if got := app.Get(isoGlobalProvider{}); got != nil {
@@ -1118,9 +1053,9 @@ func TestGet_UnknownTypeIsNil(t *testing.T) {
 }
 
 func TestGet_ReturnsThisAppsInstance(t *testing.T) {
-	appA := New()
+	appA := New(nil)
 	mustCreate(t, appA, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "a"}).Build())
-	appB := New()
+	appB := New(nil)
 	mustCreate(t, appB, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "b"}).Build())
 
 	a, _ := appA.Get(isoGlobalProvider{}).(isoGlobalProvider)
@@ -1131,7 +1066,7 @@ func TestGet_ReturnsThisAppsInstance(t *testing.T) {
 }
 
 func TestGet_ConcurrentAfterCreate_NoRace(t *testing.T) {
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Providers(isoGlobalProvider{Tag: "x"}).Controllers(isoConcurrentController{}).Build())
 
 	const n = 16
@@ -1157,7 +1092,7 @@ func TestGet_ConcurrentAfterCreate_NoRace(t *testing.T) {
 
 func TestCreate_NilModulePanics(t *testing.T) {
 	msExpectPanic(t, "M1", "invalid module: Create needs a root module", func() {
-		New().Create(nil)
+		New(nil).Create(nil)
 	})
 }
 
@@ -1196,79 +1131,21 @@ func TestApp_BindGlobalExceptionFiltersAfterCreatePanics(t *testing.T) {
 	})
 }
 
-func TestApp_EnableVersioningAfterCreatePanics(t *testing.T) {
-	app := msCreated()
-	msExpectPanic(t, "M3", "invalid app: EnableVersioning must be called before Create", func() {
-		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
-	})
-}
-
-func TestApp_EnableWSAfterCreatePanics(t *testing.T) {
-	app := msCreated()
-	msExpectPanic(t, "M3", "invalid app: EnableWS must be called before Create", func() {
-		app.EnableWS(&WSOptions{Path: "/ws"})
-	})
-}
-
-func TestApp_EnableDevtoolAfterCreatePanics(t *testing.T) {
-	app := msCreated()
-	msExpectPanic(t, "M3", "invalid app: EnableDevtool must be called before Create", func() {
-		app.EnableDevtool()
-	})
-}
-
-func TestApp_EnableAccessLogAfterCreatePanics(t *testing.T) {
-	app := msCreated()
-	msExpectPanic(t, "M3", "invalid app: EnableAccessLog must be called before Create", func() {
-		app.EnableAccessLog()
-	})
-}
-
 func TestApp_ConfigurationBeforeCreateDoesNotPanic(t *testing.T) {
-	app := New()
+	app := New(&AppOptions{
+		Versioning:  &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"},
+		IsDevtool:   true,
+		IsAccessLog: true,
+	})
 
 	text, panicked := createPanicText(func() {
 		app.BindGlobalMiddlewares(msMiddleware{}).
 			BindGlobalGuards(isoGuard{Role: "ms-before"}).
-			BindGlobalInterceptors(z1Interceptor{Name: "ms-before"}).
-			EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}).
-			EnableDevtool().
-			EnableAccessLog()
+			BindGlobalInterceptors(z1Interceptor{Name: "ms-before"})
 		app.Create(NewModuleBuilder().Controllers(hkController{}).Build())
 	})
 	if panicked {
 		t.Error(test.DiffMessage(text, "no panic", "M3: configuration before Create is fine"))
-	}
-}
-
-func TestEnableRender_NilPanics(t *testing.T) {
-	msExpectPanic(t, "R3", "invalid render: EnableRender needs RenderOptions.FS", func() {
-		New().EnableRender(nil)
-	})
-	msExpectPanic(t, "R3", "invalid render: EnableRender needs RenderOptions.FS", func() {
-		New().EnableRender(&RenderOptions{})
-	})
-}
-
-func TestEnableRender_TwicePanics(t *testing.T) {
-	msExpectPanic(t, "R3", "invalid render: EnableRender called twice", func() {
-		app := New()
-		app.EnableRender(&RenderOptions{FS: cpFS(), Dir: "."})
-		app.EnableRender(&RenderOptions{FS: cpFS(), Dir: "."})
-	})
-}
-
-func TestEnableRender_AfterCreatePanics(t *testing.T) {
-	app := msCreated()
-	msExpectPanic(t, "R3", "invalid app: EnableRender must be called before Create", func() {
-		app.EnableRender(&RenderOptions{FS: cpFS(), Dir: "."})
-	})
-}
-
-func TestEnableRender_ReturnsApp(t *testing.T) {
-	app := New()
-	if got := app.EnableRender(&RenderOptions{FS: cpFS(), Dir: "."}); got != app {
-		t.Error(test.DiffMessage(got, app, "R3: EnableRender returns the app"))
 	}
 }
 
@@ -1336,13 +1213,10 @@ func TestBodyLimit_BodyAtTheLimitIsServed(t *testing.T) {
 	}
 }
 
-func TestSetLogger_AcceptsFiveMethodAdapter(t *testing.T) {
+func TestNew_LoggerAcceptsFiveMethodAdapter(t *testing.T) {
 	var adapter log.LogAdapter = &createLogger{}
 	rec := adapter.(*createLogger)
-	app := New()
-	if got := app.SetLogger(adapter); got != app {
-		t.Error(test.DiffMessage(got, app, "I1: SetLogger accepts a log.LogAdapter and returns the app"))
-	}
+	app := New(&AppOptions{Logger: adapter})
 	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Logger().Info("hello", "k", "v")
 	if len(rec.named("hello")) != 1 {
@@ -1350,18 +1224,9 @@ func TestSetLogger_AcceptsFiveMethodAdapter(t *testing.T) {
 	}
 }
 
-func TestSetLogger_NilStillPanics(t *testing.T) {
-	var adapter log.LogAdapter
-	text, panicked := createPanicText(func() { New().SetLogger(adapter) })
-	if !panicked {
-		t.Error(test.DiffMessage(text, "a panic", "I1: SetLogger(nil) panics as today"))
-	}
-}
-
 func TestLogger_InjectedHasFrom(t *testing.T) {
 	rec := &createLogger{}
-	app := New()
-	app.SetLogger(rec)
+	app := New(&AppOptions{Logger: rec})
 	fromProviderSeen = nil
 	mustCreate(t, app, NewModuleBuilder().Providers(fromProvider{}).Build())
 	if fromProviderSeen == nil {
@@ -1373,14 +1238,14 @@ func TestLogger_InjectedHasFrom(t *testing.T) {
 	for _, name := range []string{"scoped", "scoped-app"} {
 		calls := rec.named(name)
 		if len(calls) != 1 || !slices.Equal(calls[0].args, want) {
-			t.Error(test.DiffMessage(calls, want, "I2: the injected logger and app.Logger() implement From whatever was given to SetLogger, "+name))
+			t.Error(test.DiffMessage(calls, want, "I2: the injected logger and app.Logger() implement From whatever was given as Logger, "+name))
 		}
 	}
 }
 
 func TestLogger_BuiltinAppLoggerHasFrom(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Build())
 	app.Logger().From(scopedContext()).Info("scoped-builtin", "k", 1)
 	app.Stop()
@@ -1389,11 +1254,11 @@ func TestLogger_BuiltinAppLoggerHasFrom(t *testing.T) {
 	}
 }
 
-func TestSetLogger_AdapterCalledDirectly(t *testing.T) {
+func TestNew_LoggerAdapterCalledDirectly(t *testing.T) {
 	w := redirectStdout(t)
 	w.hold()
 	rec := &createLogger{}
-	app := New().SetLogger(rec)
+	app := New(&AppOptions{Logger: rec})
 	mustCreate(t, app, NewModuleBuilder().Build())
 	defer app.Stop()
 	defer w.openAll()
@@ -1405,7 +1270,7 @@ func TestSetLogger_AdapterCalledDirectly(t *testing.T) {
 
 func TestCreate_BootstrapLinesSynchronous(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	var seen string
 	root := NewModuleBuilder().Build()
 	root.OnReady = func() {
@@ -1421,7 +1286,7 @@ func TestCreate_BootstrapLinesSynchronous(t *testing.T) {
 
 func TestCreate_BootstrapPanicLosesNoLine(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	_, panicked := createPanicText(func() {
 		app.Create(NewModuleBuilder().Providers(bootstrapPanicProvider{}).Build())
 	})
@@ -1435,7 +1300,7 @@ func TestCreate_BootstrapPanicLosesNoLine(t *testing.T) {
 
 func TestCreate_SwitchesToAsync(t *testing.T) {
 	w := redirectStdout(t)
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, NewModuleBuilder().Build())
 	w.hold()
 	withinCore(t, "M1: after Create a log call does not wait for stdout", func() {
@@ -1906,9 +1771,7 @@ func TestTrace_ListenerRemovedMidRequestGetsNothingAfter(t *testing.T) {
 }
 
 func TestServeHTTP_RefusedUpgradeReleasesExchange(t *testing.T) {
-	app := New()
-	app.SetLogger(&mockLogger{})
-	app.EnableWS(&WSOptions{Path: "/ws"})
+	app := New(&AppOptions{Logger: &mockLogger{}, WS: &WSOptions{Path: "/ws"}})
 	app.Create(NewModuleBuilder().Build())
 
 	var mu sync.Mutex
@@ -1950,9 +1813,7 @@ func TestServeHTTP_RefusedUpgradeReleasesExchange(t *testing.T) {
 
 func TestServeHTTP_UpgradeReleasesExchangeOnce(t *testing.T) {
 	for name, version := range map[string]string{"accepted": "13", "refused": "99"} {
-		app := New()
-		app.SetLogger(&mockLogger{})
-		app.EnableWS(&WSOptions{Path: "/ws"})
+		app := New(&AppOptions{Logger: &mockLogger{}, WS: &WSOptions{Path: "/ws"}})
 		app.Create(NewModuleBuilder().Build())
 		served := make(chan struct{}, 1)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2150,9 +2011,8 @@ func TestTrace_EveryEventCarriesTransport(t *testing.T) {
 }
 
 func TestTrace_EveryWSEventCarriesTransport(t *testing.T) {
-	app := New()
+	app := New(&AppOptions{WS: &WSOptions{Path: "/ws"}})
 	rec := newTraceRecorder(app)
-	app.EnableWS(&WSOptions{Path: "/ws"})
 	app.Create(NewModuleBuilder().Controllers(traceWSAllController{}).Build())
 
 	server := httptest.NewServer(app)
@@ -2193,6 +2053,12 @@ func TestTrace_EveryWSEventCarriesTransport(t *testing.T) {
 	}
 	for _, e := range rec.all() {
 		if e.Stage == trace.StageComplete && e.Operation == http.MethodGet {
+			continue
+		}
+		if e.Stage == trace.StagePreRoute {
+			if e.Transport != trace.TransportHTTP {
+				t.Error(test.DiffMessage(e.Transport, trace.TransportHTTP, "T7: a handshake stage ("+e.Name+") is an HTTP event"))
+			}
 			continue
 		}
 		if e.Transport != trace.TransportWS {
@@ -2242,7 +2108,7 @@ func TestTrace_CompleteTargetHasNoQuery(t *testing.T) {
 }
 
 func TestTrace_NoListenerNoEvents(t *testing.T) {
-	app := New()
+	app := New(nil)
 	var seen int
 	stop := app.tracer.Listen(func(trace.Event) { seen++ })
 	stop()
@@ -2277,7 +2143,7 @@ func TestTrace_ListenerAddedMidRequestSeesNothingOfIt(t *testing.T) {
 }
 
 func TestTrace_ConcurrentRequestsWithListener_NoRace(t *testing.T) {
-	app := New()
+	app := New(nil)
 	var mu sync.Mutex
 	counts := map[string]int{}
 	app.tracer.Listen(func(e trace.Event) {
@@ -2306,18 +2172,18 @@ func TestTrace_ConcurrentRequestsWithListener_NoRace(t *testing.T) {
 }
 
 func TestAccessLog_NotEnabledMeansNoListener(t *testing.T) {
-	app := New()
+	app := New(nil)
 	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 	if app.tracer.Enabled() {
-		t.Error(test.DiffMessage(true, false, "T1: without EnableAccessLog nobody listens, so requests are not traced"))
+		t.Error(test.DiffMessage(true, false, "T1: without IsAccessLog nobody listens, so requests are not traced"))
 	}
 }
 
 func TestAccessLog_EnabledListensOnTheAppTracer(t *testing.T) {
-	app := New().EnableAccessLog()
+	app := New(&AppOptions{IsAccessLog: true})
 	app.Create(NewModuleBuilder().Controllers(tracePipelineController{}).Build())
 	if !app.tracer.Enabled() {
-		t.Error(test.DiffMessage(false, true, "T2: EnableAccessLog listens on the app's tracer"))
+		t.Error(test.DiffMessage(false, true, "T2: IsAccessLog listens on the app's tracer"))
 	}
 }
 
@@ -2356,34 +2222,6 @@ func TestTransport_FromHandlerContext(t *testing.T) {
 	}
 }
 
-func TestApp_SetStartupTimeout_RefusesZeroAndNegative(t *testing.T) {
-	want := "invalid app: SetStartupTimeout needs a positive duration"
-	for _, d := range []time.Duration{0, -time.Second} {
-		text, panicked := createPanicText(func() { New().SetStartupTimeout(d) })
-		if !panicked || !strings.Contains(text, want) {
-			t.Error(test.DiffMessage(text, want, "F3: SetStartupTimeout("+d.String()+")"))
-		}
-	}
-}
-
-func TestApp_SetStartupTimeout_RefusesAfterCreate(t *testing.T) {
-	app := New()
-	mustCreate(t, app, NewModuleBuilder().Build())
-
-	want := "invalid app: SetStartupTimeout must be called before Create"
-	text, panicked := createPanicText(func() { app.SetStartupTimeout(time.Second) })
-	if !panicked || !strings.Contains(text, want) {
-		t.Error(test.DiffMessage(text, want, "F3: SetStartupTimeout after Create"))
-	}
-}
-
-func TestApp_SetStartupTimeout_ReturnsApp(t *testing.T) {
-	app := New()
-	if got := app.SetStartupTimeout(time.Second); got != app {
-		t.Error(test.DiffMessage(got, app, "F3: SetStartupTimeout returns the app"))
-	}
-}
-
 func TestApp_Devtool_ModulesLive(t *testing.T) {
 	release := make(chan struct{})
 	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
@@ -2391,9 +2229,7 @@ func TestApp_Devtool_ModulesLive(t *testing.T) {
 	user := lfNamed("user", NewModuleBuilder().AsyncImports(sql).Providers(lfUserSvc{}).Controllers(lfUserCtl{}))
 	root := lfNamed("root", NewModuleBuilder().Imports(user))
 
-	app := New()
-	lfLogger(app)
-	app.EnableDevtool()
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, IsDevtool: true})
 	lfRelease(t, app, release)
 	lfCreate(t, app, root)
 
@@ -2443,9 +2279,7 @@ func TestApp_Devtool_ModulesWaitingForAndLastError(t *testing.T) {
 	root := lfNamed("root", NewModuleBuilder().Imports(user))
 	hold := lfHold(sql)
 
-	app := New()
-	lfLogger(app)
-	app.EnableDevtool()
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}, IsDevtool: true})
 	lfCreate(t, app, root)
 	lfRelease(t, app, hold)
 

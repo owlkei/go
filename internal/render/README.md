@@ -1,6 +1,6 @@
 # Render
 
-Internal package: applications use `RENDER_` / `SUBMIT_` routes, `owlky.RenderOptions` and `App.EnableRender` instead.
+Internal package: applications use `RENDER_` / `SUBMIT_` routes, `AppOptions.Render` (`owlky.RenderOptions`) instead.
 
 *Render is a part of `Owlky Go` framework: it turns the `.html` files of an `fs.FS` into `html/template` sets at `Create()`, binds each page route to the template its path names, renders a page by route into a pooled buffer, picks the error page of a status, and holds the asset, public file and page CSS and JS tables and the template functions.*
 
@@ -38,7 +38,7 @@ Internal package: applications use `RENDER_` / `SUBMIT_` routes, `owlky.RenderOp
 
 ## Usage
 
-`internal/core` is the only caller: `App.EnableRender` calls `New`; `App.Create` calls `Load`, then `Bind` for each `RENDER_` and `SUBMIT_` route, then `CheckBindings`; a page route calls `Render` with its route, writes the bytes and calls `Release`; an HTML error calls `RenderError` with its status (falling back to its built-in page on any error).
+`internal/core` is the only caller: `core.New` calls `New` when `Render.FS` is set; `App.Create` calls `Load`, then `Bind` for each `RENDER_` and `SUBMIT_` route, then `CheckBindings`; a page route calls `Render` with its route, writes the bytes and calls `Release`; an HTML error calls `RenderError` with its status (falling back to its built-in page on any error).
 
 ```go
 package main

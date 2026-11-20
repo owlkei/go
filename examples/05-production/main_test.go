@@ -10,7 +10,7 @@ import (
 
 const webOrigin = "https://app.example.com"
 
-// serve runs the app on a real listener with the production server options and returns its URL
+// serve runs the app on a real listener with the production options and returns its URL
 // and a function that shuts it down and reports what the serving call returned.
 func serve(t *testing.T) (string, func() error) {
 	t.Helper()
@@ -20,7 +20,7 @@ func serve(t *testing.T) (string, func() error) {
 	}
 	app := newApp(webOrigin)
 	done := make(chan error, 1)
-	go func() { done <- app.Serve(ln, serverOptions) }()
+	go func() { done <- app.Serve(ln) }()
 
 	stop := func() error {
 		app.Stop()

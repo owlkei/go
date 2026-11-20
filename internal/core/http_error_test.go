@@ -18,9 +18,6 @@ import (
 	"go.owlky.com/owlky/internal/test"
 	"go.owlky.com/owlky/internal/trace"
 	"go.owlky.com/owlky/internal/versioning"
-	"go.owlky.com/owlky/middlewares/csrf"
-	"go.owlky.com/owlky/middlewares/hostcheck"
-	"go.owlky.com/owlky/middlewares/loadshed"
 )
 
 func TestHTTPError_Format(t *testing.T) {
@@ -754,10 +751,9 @@ func TestPageError_RouteKindDecides(t *testing.T) {
 }
 
 func TestError_AcceptDecidesBeforeGuards(t *testing.T) {
-	setup := func(app *App) {
-		app.BindGlobalMiddlewares(peMiddleware{}, csrf.CSRF{}, hostcheck.HostCheck{Hosts: []string{"example.com"}})
-	}
-	app, _ := peApp(t, peLayerFiles("page"), setup, pePage{}, peAPI{})
+	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}) }
+	opts := &AppOptions{CSRF: &CSRFOptions{IsEnabled: true}, Hosts: []string{"example.com"}}
+	app, _ := peAppOptions(t, peLayerFiles("page"), opts, setup, pePage{}, peAPI{})
 
 	for _, route := range []string{"/page/ok", "/api/ok"} {
 		peExpectHTML(t, "R18: a user middleware refusal on "+route+" with Accept text/html", peDo(app, http.MethodGet, route, "X-Mw", "panic", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
@@ -793,20 +789,18 @@ func TestError_AcceptDecidesBeforeGuards(t *testing.T) {
 }
 
 func TestError_AcceptDecidesBeforeGuardsGone(t *testing.T) {
-	setup := func(app *App) {
-		app.EnableVersioning(&versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"})
-	}
-	app, _ := peApp(t, peLayerFiles(), setup, peAPI{})
+	opts := &AppOptions{Versioning: &versioning.Options{Type: versioning.TypeHeader, Key: "X-Version"}}
+	app, _ := peAppOptions(t, peLayerFiles(), opts, nil, peAPI{})
 	peExpectHTML(t, "R18: 410 with Accept text/html", peDo(app, http.MethodGet, "/api/ok", "Accept", peAcceptHTML), http.StatusGone)
 	peExpectJSON(t, "R18: 410 with Accept application/json", peDo(app, http.MethodGet, "/api/ok", "Accept", peAcceptJSON), http.StatusGone)
 	peExpectJSON(t, "R18: 410 without Accept", peDo(app, http.MethodGet, "/api/ok"), http.StatusGone)
 }
 
 func TestError_AcceptDecidesBeforeGuardsLoadShed(t *testing.T) {
-	setup := func(app *App) { app.BindGlobalMiddlewares(loadshed.LoadShed{MaxInFlight: 1, MaxQueue: -1}) }
+	opts := &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}}
 	peBlockStarted = make(chan struct{})
 	peBlockRelease = make(chan struct{})
-	app, _ := peApp(t, peLayerFiles(), setup, peBlocking{})
+	app, _ := peAppOptions(t, peLayerFiles(), opts, nil, peBlocking{})
 	done := make(chan struct{})
 	go func() {
 		peDo(app, http.MethodGet, "/block/hold")
@@ -871,18 +865,18 @@ func TestError_VaryAccept(t *testing.T) {
 	}
 }
 
-func TestError_JSONWithoutEnableRender(t *testing.T) {
-	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}, csrf.CSRF{}) }
-	app, _ := peApp(t, nil, setup, peAPI{})
+func TestError_JSONWithoutRenderFS(t *testing.T) {
+	setup := func(app *App) { app.BindGlobalMiddlewares(peMiddleware{}) }
+	app, _ := peAppOptions(t, nil, &AppOptions{CSRF: &CSRFOptions{IsEnabled: true}}, setup, peAPI{})
 
 	w := peDo(app, http.MethodGet, "/nowhere", "Accept", peAcceptHTML)
-	lcExpectResponse(t, w, http.StatusNotFound, wantNotFoundJSON, "R18: without EnableRender a 404 is JSON whatever Accept says")
+	lcExpectResponse(t, w, http.StatusNotFound, wantNotFoundJSON, "R18: without Render.FS a 404 is JSON whatever Accept says")
 	if got := w.Header().Values("Vary"); len(got) != 0 {
-		t.Error(test.DiffMessage(got, []string(nil), "R18: without EnableRender the response is byte for byte as before, no Vary"))
+		t.Error(test.DiffMessage(got, []string(nil), "R18: without Render.FS the response is byte for byte as before, no Vary"))
 	}
-	peExpectJSON(t, "R18: a middleware refusal is JSON without EnableRender", peDo(app, http.MethodGet, "/api/ok", "X-Mw", "panic", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
-	peExpectJSON(t, "R18: csrf is JSON without EnableRender", peDo(app, http.MethodPost, "/api/boom", "Sec-Fetch-Site", "cross-site", "Accept", peAcceptHTML), http.StatusForbidden)
-	peExpectJSON(t, "R17: a handler exception is JSON without EnableRender", peDo(app, http.MethodGet, "/api/boom?k=notfound", "Accept", peAcceptHTML), http.StatusNotFound)
+	peExpectJSON(t, "R18: a middleware refusal is JSON without Render.FS", peDo(app, http.MethodGet, "/api/ok", "X-Mw", "panic", "Accept", peAcceptHTML), http.StatusServiceUnavailable)
+	peExpectJSON(t, "R18: csrf is JSON without Render.FS", peDo(app, http.MethodPost, "/api/boom", "Sec-Fetch-Site", "cross-site", "Accept", peAcceptHTML), http.StatusForbidden)
+	peExpectJSON(t, "R17: a handler exception is JSON without Render.FS", peDo(app, http.MethodGet, "/api/boom?k=notfound", "Accept", peAcceptHTML), http.StatusNotFound)
 }
 
 func TestPageError_CustomTemplate(t *testing.T) {
@@ -1124,8 +1118,7 @@ func TestClientText_JSONShapeUnchanged(t *testing.T) {
 
 func TestClientText_FrameworkMessages(t *testing.T) {
 	files := map[string]string{"4xx.html": peTextBody, "pin/json.html": "OK", "pin/form.html": "OK"}
-	app, logger := peApp(t, files, nil, peBodyAPI{}, pePageIn{})
-	app.maxRequestBodyBytes.Store(64)
+	app, logger := peAppOptions(t, files, &AppOptions{HTTP: &HTTPOptions{MaxBodyBytes: 64}}, nil, peBodyAPI{}, pePageIn{})
 	big := strings.Repeat("a", 4096)
 	tooLarge := http.StatusText(http.StatusRequestEntityTooLarge)
 
@@ -1149,8 +1142,6 @@ func TestClientText_FrameworkMessages(t *testing.T) {
 	if n := len(logger.named("ExceptionCause")); n != 3 {
 		t.Error(test.DiffMessage(n, 3, "R24: each refusal logs its cause"))
 	}
-
-	app.maxRequestBodyBytes.Store(10 << 20)
 
 	w = pePost(app, "/in/form", "application/x-www-form-urlencoded", "k=%zz")
 	lcExpectResponse(t, w, http.StatusBadRequest, `{"code":400,"error":"Bad Request","message":"Invalid form body"}`, "R24: a malformed form keeps its message and loses the cause text in error")

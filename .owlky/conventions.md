@@ -42,7 +42,7 @@ don't mass-rewrite the exceptions.
 - **Receivers are one to three letters** from the type (`c`, `p`, `m`, `e`, `app`, `rb`): 683 of 737
   methods outside the old `sample/` (roadmap 0011 replaced it with `examples/`). `func (s *shard) evictOneLocked` (`internal/memorycache/memory_cache.go`).
 - **`instance` is the receiver of user-facing configuration types** whose value the user writes:
-  `func (instance CORS) NewMiddleware()` (`middlewares/cors/cors.go:100`), the `csrf` and `helmet`
+  `func (instance CORS) NewMiddleware()` (`internal/middlewares/cors/cors.go`), the `csrf` and `helmet`
   middlewares, `log/log.go`, and the README examples. Use it
   for types a user declares in their own app, and in examples.
 - **Exported option booleans start with `Is`:** `IsGlobal`, `IsAllowCredentials`,
@@ -61,7 +61,7 @@ don't mass-rewrite the exceptions.
 
 - **Options struct + loader:** a public `<X>Options` (or the middleware type itself) holds what the
   user sets; a private `load<X>Options` fills defaults once and returns the normalized form:
-  `loadCORSOptions` (`middlewares/cors/cors.go:108`),
+  `loadCORSOptions` (`internal/middlewares/cors/cors.go`),
   `loadConfigOptions` (`modules/config/module.go:28`). Never normalize on the request path.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once

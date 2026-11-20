@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,7 +24,10 @@ func main() {
 	var err error
 	switch *framework {
 	case "owlky":
-		err = pick(*isLogged, bench.NewOwlkyApp, bench.NewOwlkyAppWithLog)().Listen(*port, nil)
+		var l net.Listener
+		if l, err = net.Listen("tcp", addr); err == nil {
+			err = pick(*isLogged, bench.NewOwlkyApp, bench.NewOwlkyAppWithLog)().Serve(l)
+		}
 	case "nethttp":
 		err = http.ListenAndServe(addr, bench.NewNetHTTP())
 	case "gin":

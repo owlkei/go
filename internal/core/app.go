@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.owlky.com/owlky/exception"
@@ -18,10 +17,8 @@ import (
 	"go.owlky.com/owlky/internal/devtool"
 	"go.owlky.com/owlky/internal/logpipe"
 	"go.owlky.com/owlky/internal/memorybroker"
-	"go.owlky.com/owlky/internal/render"
 	"go.owlky.com/owlky/internal/trace"
 	"go.owlky.com/owlky/internal/tracecontext"
-	"go.owlky.com/owlky/internal/versioning"
 	"go.owlky.com/owlky/log"
 	"golang.org/x/net/websocket"
 )
@@ -69,9 +66,15 @@ type App struct {
 	stacks     *stackSampler
 	isLogAsync bool
 
-	maxRequestBodyBytes atomic.Int64
-	serverDefaults      serverDefaults
-	notifySignals       func() (<-chan os.Signal, func())
+	maxBodyBytes   int64
+	server         serverConfig
+	serverDefaults serverDefaults
+	notifySignals  func() (<-chan os.Signal, func())
+
+	preRoute     []namedStage
+	wsStages     []httpMiddleware
+	isCSRFSet    bool
+	isHeadersSet bool
 
 	readyOnce sync.Once
 
@@ -83,13 +86,14 @@ type App struct {
 	shutdownDone   chan struct{}
 }
 
-func New() *App {
+func New(opts *AppOptions) *App {
+	cfg := loadAppOptions(opts)
 	app := &App{
 		http:      newHTTP(),
 		ws:        nil,
 		broker:    memorybroker.NewMemoryBroker(),
 		container: newContainer(),
-		logger:    log.NewLog(nil),
+		logger:    cfg.logger,
 		ctxPool: sync.Pool{
 			New: func() any {
 				return newHTTPExchange()
@@ -100,25 +104,60 @@ func New() *App {
 				return ctx.NewWSContext()
 			},
 		},
-		serverDefaults: newServerDefaults(),
-		notifySignals:  notifyShutdownSignals,
-		shutdownDone:   make(chan struct{}),
-		startupTimeout: defaultStartupTimeout,
+		serverDefaults:     newServerDefaults(),
+		notifySignals:      notifyShutdownSignals,
+		shutdownDone:       make(chan struct{}),
+		startupTimeout:     cfg.startupTimeout,
+		isAccessLogEnabled: cfg.isAccessLog,
+		isDevtoolEnabled:   cfg.isDevtool,
+		maxBodyBytes:       cfg.maxBodyBytes,
+		server:             cfg.serverConfig(opts),
+		preRoute:           cfg.stages,
+		isCSRFSet:          cfg.isCSRFSet,
+		isHeadersSet:       cfg.isHeadersSet,
 	}
-	app.maxRequestBodyBytes.Store(defaultMaxRequestBodyBytes)
+	if cfg.render != nil {
+		app.renderDir = cfg.renderDir
+		app.http.render = cfg.render
+		app.container.render = cfg.render
+	}
+	if cfg.versioning != nil {
+		app.http.versioning = cfg.versioning
+		app.http.isVersioningEnabled = true
+	}
+	if cfg.ws != nil {
+		app.isWSEnabled = true
+		app.wsConfig = cfg.ws
+		app.wsStages = preRouteMiddlewares(cfg.wsStages)
+		app.preRoute = append(slices.Clone(cfg.stages), cfg.wsStages[len(cfg.wsStages)-1])
+	}
+	app.http.stages = preRouteMiddlewares(cfg.stages)
 
 	app.container.addInterface(publisherKey, common.Publisher(newPublisher(app.broker)))
 
 	app.BindGlobalExceptionFilters(globalHTTPExceptionFilter{}, globalWSExceptionFilter{})
 
+	if opts != nil && opts.env != nil {
+		opts.env.logOptions(opts, app.logger)
+	}
+
 	return app
 }
 
+func preRouteMiddlewares(stages []namedStage) []httpMiddleware {
+	if len(stages) == 0 {
+		return nil
+	}
+	out := make([]httpMiddleware, len(stages))
+	for i, s := range stages {
+		out[i] = httpMiddleware{use: s.stage.Use, name: s.name, isPreRoute: true}
+	}
+	return out
+}
+
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Body != nil && r.Body != http.NoBody {
-		if limit := app.maxRequestBodyBytes.Load(); limit > 0 {
-			r.Body = http.MaxBytesReader(w, r.Body, limit)
-		}
+	if r.Body != nil && r.Body != http.NoBody && app.maxBodyBytes > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, app.maxBodyBytes)
 	}
 
 	ex := app.ctxPool.Get().(*httpExchange)
@@ -153,6 +192,17 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, traceparent []string) {
 	c := &ex.HTTPContext
+	ex.traced = app.tracer.Enabled()
+	if !app.http.runHandshake(ex, app.wsStages, app.ws) {
+		ex.writer.runHooks(ctx.HTTPTimestamp(c))
+		if ex.traced {
+			e := completeEvent(ex.scope, c.ID(), trace.TransportHTTP, c.Method, c.URL.Path, ex.writer.status(), time.Since(*ctx.HTTPTimestamp(c)))
+			e.ClientIP = tracecontext.ClientIP(c.Request)
+			app.tracer.Emit(e)
+		}
+		app.releaseCtx(ex)
+		return
+	}
 	isReleased := false
 	app.ws.upgrade(w, c.Request, websocket.Server{
 		Handshake: func(wsCfg *websocket.Config, _ *http.Request) error {
@@ -165,14 +215,13 @@ func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, trac
 			wsCfg.Header[ctx.RequestID] = requestID
 			wsCfg.Header[traceparentHeader] = traceparent
 			c.Status(http.StatusSwitchingProtocols)
-			err := app.ws.handshake(c)
 			ex.writer.runHooks(ctx.HTTPTimestamp(c))
 			if app.tracer.Enabled() {
 				e := completeEvent(ex.scope, c.ID(), trace.TransportHTTP, c.Method, c.URL.Path, ctx.HTTPCode(c), time.Since(*ctx.HTTPTimestamp(c)))
 				e.ClientIP = tracecontext.ClientIP(c.Request)
 				app.tracer.Emit(e)
 			}
-			return err
+			return nil
 		},
 		Handler: websocket.Handler(app.ws.handleRequest),
 	})
@@ -219,6 +268,7 @@ func (app *App) Create(m *Module) {
 	readyAtCreate := slices.Clone(app.container.readyOrder)
 	app.startEntries()
 	app.callOnReady(readyAtCreate)
+	app.securityCheck()
 
 	app.serveMu.Lock()
 	app.isCreated = true
@@ -348,6 +398,12 @@ func traceWSCatch(ev *trace.Tracer, name string, fn common.WSCatch) common.WSCat
 func (app *App) initMiddlewares() {
 	for _, gm := range app.globalMiddlewares {
 		app.http.addGlobalMiddleware(newHTTPMiddleware(gm, app.container.providerByKey, app.container))
+	}
+	if app.ws != nil {
+		app.ws.globalMiddlewares = make([]ctx.HTTPHandler, len(app.http.globalMiddlewares))
+		for i, m := range app.http.globalMiddlewares {
+			app.ws.globalMiddlewares[i] = handshakeMiddleware(m, &app.tracer)
+		}
 	}
 
 	for _, rm := range app.container.httpMiddlewares {
@@ -509,76 +565,6 @@ func (app *App) BindGlobalMiddlewares(middlewares ...common.MiddlewareFn) *App {
 	return app
 }
 
-func (app *App) EnableVersioning(opts *versioning.Options) *App {
-	app.mustBeBeforeCreate("EnableVersioning")
-	var v versioning.Options
-	if opts != nil {
-		v = *opts
-	}
-	app.http.enableVersioning(v)
-
-	return app
-}
-
-func (app *App) EnableRender(opts *RenderOptions) *App {
-	app.mustBeBeforeCreate("EnableRender")
-	if opts == nil || opts.FS == nil {
-		panic(color.FmtRed("invalid render: EnableRender needs RenderOptions.FS"))
-	}
-	if app.http.render != nil {
-		panic(color.FmtRed("invalid render: EnableRender called twice"))
-	}
-	fsys, dir := renderFS(opts)
-	app.renderDir = dir
-	app.http.render = render.New(fsys, opts.IsReload)
-	app.container.render = app.http.render
-
-	return app
-}
-
-func (app *App) EnableDevtool() *App {
-	app.mustBeBeforeCreate("EnableDevtool")
-	app.isDevtoolEnabled = true
-
-	return app
-}
-
-func (app *App) EnableAccessLog() *App {
-	app.mustBeBeforeCreate("EnableAccessLog")
-	app.isAccessLogEnabled = true
-
-	return app
-}
-
-func (app *App) EnableWS(cfg *WSOptions, middlewares ...common.MiddlewareFn) *App {
-	app.mustBeBeforeCreate("EnableWS")
-	app.isWSEnabled = true
-	cfg.globalMiddlewares = middlewares
-	app.wsConfig = cfg
-
-	return app
-}
-
-func (app *App) SetLogger(logger log.LogAdapter) *App {
-	app.mustBeBeforeCreate("SetLogger")
-	if logger == nil {
-		panic(color.FmtRed("invalid app: SetLogger needs a logger"))
-	}
-	app.logger = log.WrapLogger(logger, nil)
-
-	return app
-}
-
-func (app *App) SetStartupTimeout(d time.Duration) *App {
-	app.mustBeBeforeCreate("SetStartupTimeout")
-	if d <= 0 {
-		panic(color.FmtRed("invalid app: SetStartupTimeout needs a positive duration"))
-	}
-	app.startupTimeout = d
-
-	return app
-}
-
 func (app *App) Logger() log.Logger {
 	return app.logger
 }
@@ -612,6 +598,7 @@ func (app *App) initDevtool() {
 		AddHTTPMainHandlers(app.container.httpMainHandlers).
 		AddRender(app.renderSnapshot()).
 		AddModules(app.container.moduleRows).
+		AddPreRoute(app.preRouteSnapshot()).
 		Build()
 }
 
@@ -623,4 +610,12 @@ func (app *App) callOnReady(modules []*Module) {
 			}
 		}
 	})
+}
+
+func (app *App) preRouteSnapshot() []*devtool.PreRouteStage {
+	out := make([]*devtool.PreRouteStage, len(app.preRoute))
+	for i, s := range app.preRoute {
+		out[i] = &devtool.PreRouteStage{Name: s.name, Snapshot: s.stage.Snapshot}
+	}
+	return out
 }

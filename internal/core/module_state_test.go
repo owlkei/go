@@ -27,8 +27,8 @@ func lfNewWorld(t *testing.T) *lfWorld {
 	w.cache = lfNamed("cache", NewModuleBuilder().AsyncImports(w.redis).Controllers(lfRedisCtl{}))
 	w.root = lfNamed("root", NewModuleBuilder().Imports(w.user, w.booking, w.cache).Controllers(lfPlainCtl{}))
 	release := lfHold(w.sql, w.redis)
-	w.app = New()
-	w.logger = lfLogger(w.app)
+	w.logger = &lcRecordingLogger{}
+	w.app = New(&AppOptions{Logger: w.logger})
 	mustCreate(t, w.app, w.root)
 	lfRelease(t, w.app, release)
 	return w
@@ -43,8 +43,7 @@ func lfNeedApp(t *testing.T, ctl Controller, providers ...Provider) (*App, *Modu
 	}
 	user := lfNamed("user", b)
 	release := lfHold(sql)
-	app := New()
-	lfLogger(app)
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}})
 	mustCreate(t, app, lfNamed("root", NewModuleBuilder().Imports(user)))
 	lfRelease(t, app, release)
 	return app, sql, user
@@ -61,7 +60,7 @@ func TestModuleState_StringNames(t *testing.T) {
 func TestModuleState_ReadyWithoutAsync(t *testing.T) {
 	child := NewModuleBuilder().Controllers(lfPlainCtl{}).Build()
 	root := NewModuleBuilder().Imports(child).Build()
-	app := New()
+	app := New(nil)
 	mustCreate(t, app, root)
 
 	for name, m := range map[string]*Module{"root": root, "child": child} {
@@ -169,7 +168,7 @@ func TestModuleState_OneWay(t *testing.T) {
 func TestModuleState_AppWideGuardOnAsyncPanics(t *testing.T) {
 	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
 	sql.IsGlobal = true
-	app := New()
+	app := New(nil)
 	app.BindGlobalGuards(lfSQLGuard{})
 
 	text := lfCreatePanic(t, app, NewModuleBuilder().AsyncImports(sql).Build())
@@ -191,7 +190,7 @@ func TestModuleState_AsyncCyclePanics(t *testing.T) {
 	beta := lfNamed("beta", NewModuleBuilder().Providers(lfBetaSvc{}).Controllers(lfNeedsAlphaCtl{}))
 	beta.IsGlobal = true
 
-	text := lfCreatePanic(t, New(), NewModuleBuilder().AsyncImports(alpha, beta).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().AsyncImports(alpha, beta).Build())
 
 	want := "invalid module: async modules need each other: 'alpha' → 'beta' → 'alpha'"
 	if !strings.Contains(text, want) {
@@ -204,7 +203,7 @@ func TestRouteProbe_ChecksRoutesAtCreate(t *testing.T) {
 	gated := lfNamed("gated", NewModuleBuilder().AsyncImports(sql).Controllers(lfDupGatedCtl{}))
 	root := NewModuleBuilder().Imports(gated).Controllers(lfDupOpenCtl{}).Build()
 
-	text := lfCreatePanic(t, New(), root)
+	text := lfCreatePanic(t, New(nil), root)
 
 	if !strings.Contains(text, "route conflict") || !strings.Contains(text, "READ_hello") {
 		t.Error(test.DiffMessage(text, "route conflict: …READ_hello…", "G6: a gated route conflicts with an open one at Create"))
@@ -215,7 +214,7 @@ func TestRouteProbe_NewControllerPanicNamesController(t *testing.T) {
 	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
 	user := lfNamed("user", NewModuleBuilder().AsyncImports(sql).Controllers(lfPanicCtl{}))
 
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(user).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(user).Build())
 
 	for _, want := range []string{
 		"invalid module: NewController of '",
@@ -232,7 +231,7 @@ func TestRouteProbe_ChecksSubmitNeedsRender(t *testing.T) {
 	sql := lfNamed("sql", NewModuleBuilder().Providers(lfSQL{}))
 	user := lfNamed("user", NewModuleBuilder().AsyncImports(sql).Controllers(lfSubmitOnlyCtl{}))
 
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(user).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(user).Build())
 
 	want := "invalid handler: lfSubmitOnlyCtl.SUBMIT_x needs lfSubmitOnlyCtl.RENDER_x: a SUBMIT_ posts to the page that shows its form"
 	if !strings.Contains(text, want) {
@@ -248,8 +247,7 @@ func TestRouteProbe_NoHookRunsWhilePending(t *testing.T) {
 	user.OnReady = func() { readies.Add(1) }
 	release := lfHold(sql)
 
-	app := New()
-	lfLogger(app)
+	app := New(&AppOptions{Logger: &lcRecordingLogger{}})
 	mustCreate(t, app, NewModuleBuilder().Imports(user).Build())
 	lfRelease(t, app, release)
 
@@ -292,7 +290,7 @@ func TestModuleBuilder_AsyncImports_BothListsAcrossModulesPanics(t *testing.T) {
 	x := lfNamed("x", NewModuleBuilder().Imports(shared))
 	y := lfNamed("y", NewModuleBuilder().AsyncImports(shared))
 
-	text := lfCreatePanic(t, New(), NewModuleBuilder().Imports(x, y).Build())
+	text := lfCreatePanic(t, New(nil), NewModuleBuilder().Imports(x, y).Build())
 
 	want := "invalid module: 'shared' is imported with Imports by 'x' and with AsyncImports by 'y'"
 	if !strings.Contains(text, want) {

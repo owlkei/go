@@ -17,9 +17,8 @@ import (
 
 func lfWatchApp(t *testing.T) (*App, *lfWatchLog) {
 	t.Helper()
-	app := New()
 	logger := newLFWatchLog()
-	app.SetLogger(logger)
+	app := New(&AppOptions{Logger: logger})
 	return app, logger
 }
 
@@ -409,7 +408,7 @@ func TestAsync_UnknownProviderWithoutAsyncFactoryStillPanics(t *testing.T) {
 	needy := NewModuleBuilder().Controllers(lfMissingCtl{}).Build()
 	root := NewModuleBuilder().Imports(needy).AsyncImports(redis).Build()
 
-	text := lfCreatePanic(t, New(), root)
+	text := lfCreatePanic(t, New(nil), root)
 
 	if !strings.Contains(text, "dependency injection: can't resolve dependency '") {
 		t.Error(test.DiffMessage(text, "dependency injection: can't resolve dependency '…' of the …", "A7: without an async factory the app panics as today"))
@@ -509,11 +508,10 @@ func TestAsync_ShutdownTimeoutAbandons(t *testing.T) {
 		return nil, errors.New("late")
 	}
 	user := lfNamed("user", NewModuleBuilder().AsyncImports(factory).Controllers(lfSQLCtl{}))
-	app := New()
 	logger := newLFListenLogger()
-	app.SetLogger(logger)
+	app := New(&AppOptions{Logger: logger, Server: &ServerOptions{ShutdownTimeout: 50 * time.Millisecond}})
 	lfCreate(t, app, NewModuleBuilder().Imports(user).Build())
-	done := lfServe(t, app, 50*time.Millisecond, logger)
+	done := lfServe(t, app, logger)
 	lfWait(t, started, "the factory to start")
 	t.Cleanup(func() { close(release) })
 
@@ -608,8 +606,7 @@ func lfNewEntrySet(t *testing.T) *lfEntrySet {
 	for i, m := range []*Module{s.sql, s.rds, s.cch} {
 		s.releases[i] = lfHold(m)
 	}
-	s.app, _ = lfWatchApp(t)
-	s.app.EnableDevtool()
+	s.app = New(&AppOptions{Logger: newLFWatchLog(), IsDevtool: true})
 	lfRelease(t, s.app, s.releases[:]...)
 	lfCreate(t, s.app, NewModuleBuilder().AsyncImports(s.sql, s.rds, s.cch).Controllers(lfPlainCtl{}).Build())
 	return s

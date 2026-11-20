@@ -27,7 +27,6 @@ import (
 	"go.owlky.com/owlky/internal/core"
 	"go.owlky.com/owlky/internal/test"
 	"go.owlky.com/owlky/log"
-	"go.owlky.com/owlky/middlewares/proxy"
 	"go.owlky.com/owlky/modules/cache"
 	"golang.org/x/net/websocket"
 )
@@ -136,7 +135,7 @@ func TestSurface_ModuleBuilderChain(t *testing.T) {
 }
 
 func TestSurface_FilterCatchesExceptionPointer(t *testing.T) {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(pointerCatchController{}).Build())
 	w := serve(app, http.MethodGet, "/boom", nil, nil)
 	if w.Code != http.StatusTeapot {
@@ -233,7 +232,7 @@ func TestSurface_LoggerFieldInjected(t *testing.T) {
 		t.Error(test.DiffMessage(guardLogger, logger, "B10: a log.Logger field of a layer receives the app's logger"))
 	}
 	if app.Logger() != logger {
-		t.Error(test.DiffMessage(app.Logger(), logger, "B10: app.Logger() returns the logger given to SetLogger"))
+		t.Error(test.DiffMessage(app.Logger(), logger, "B10: app.Logger() returns the logger given as Logger"))
 	}
 }
 
@@ -252,7 +251,7 @@ func TestSurface_PublisherFieldInjected(t *testing.T) {
 
 func TestSurface_HandlerParameters(t *testing.T) {
 	seen = paramsSeen{}
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(paramsController{}).Build())
 
 	if w := serve(app, http.MethodGet, "/inspect/42?q=7", nil, map[string]string{"X-Probe": "p"}); w.Code != http.StatusOK {
@@ -297,8 +296,7 @@ func TestSurface_HandlerParameters(t *testing.T) {
 }
 
 func TestSurface_HandlerParametersWS(t *testing.T) {
-	app := owlky.New()
-	app.EnableWS(&owlky.WSOptions{Path: "/ws"})
+	app := owlky.New(&owlky.AppOptions{WS: &owlky.WSOptions{Path: "/ws"}})
 	app.Create(owlky.ModuleBuilder().Controllers(wsParamsGateway{}).Build())
 
 	server := httptest.NewServer(app)
@@ -335,7 +333,7 @@ func TestSurface_HandlerParametersWS(t *testing.T) {
 
 func TestSurface_ModuleFunc(t *testing.T) {
 	funcModuleCalls = 0
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Imports(greeterModule, funcModule, countedModule, countedModule).Build())
 
 	w := serve(app, http.MethodGet, "/greet", nil, nil)
@@ -349,7 +347,7 @@ func TestSurface_ModuleFunc(t *testing.T) {
 
 func TestSurface_ModuleValue(t *testing.T) {
 	local := owlky.ModuleBuilder().Providers(greeter{Word: "value"}).Controllers(greetController{}).Build()
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Imports(local, cache.Register(nil)).Build())
 
 	w := serve(app, http.MethodGet, "/greet", nil, nil)
@@ -362,7 +360,7 @@ func TestSurface_InvalidModulePanics(t *testing.T) {
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
-		owlky.New().Create(owlky.ModuleBuilder().Imports("not a module").Build())
+		owlky.New(nil).Create(owlky.ModuleBuilder().Imports("not a module").Build())
 	}()
 	if recovered == nil {
 		t.Fatal(test.DiffMessage("no panic", "a panic", "B9: an import that is not a module panics"))
@@ -393,8 +391,8 @@ func TestSurface_ConstantValues(t *testing.T) {
 		{"StrategyFixedWindow", int64(throttler.StrategyFixedWindow), 0},
 		{"StrategySlidingWindow", int64(throttler.StrategySlidingWindow), 1},
 		{"StrategyTokenBucket", int64(throttler.StrategyTokenBucket), 2},
-		{"HeaderXForwarded", int64(proxy.HeaderXForwarded), 0},
-		{"HeaderForwarded", int64(proxy.HeaderForwarded), 1},
+		{"ProxyHeaderXForwarded", int64(owlky.ProxyHeaderXForwarded), 0},
+		{"ProxyHeaderForwarded", int64(owlky.ProxyHeaderForwarded), 1},
 		{"LevelDebug", int64(log.LevelDebug), int64(slog.LevelDebug)},
 		{"LevelInfo", int64(log.LevelInfo), int64(slog.LevelInfo)},
 		{"LevelWarn", int64(log.LevelWarn), int64(slog.LevelWarn)},
@@ -415,7 +413,7 @@ func TestSurface_ConstantValues(t *testing.T) {
 func TestSurface_WrongLayerShapeNamesTheRootTypes(t *testing.T) {
 	msg := func() (msg string) {
 		defer func() { msg = fmt.Sprint(recover()) }()
-		app := owlky.New()
+		app := owlky.New(nil)
 		app.Create(owlky.ModuleBuilder().Controllers(wrongShapeController{}).Build())
 		return ""
 	}()
@@ -440,10 +438,11 @@ func TestSurface_EveryWrongShapeMessage(t *testing.T) {
 	for _, c := range cases {
 		msg := func() (msg string) {
 			defer func() { msg = fmt.Sprint(recover()) }()
-			app := owlky.New()
+			opts := &owlky.AppOptions{}
 			if c.ws {
-				app.EnableWS(&owlky.WSOptions{Path: "/ws"})
+				opts.WS = &owlky.WSOptions{Path: "/ws"}
 			}
+			app := owlky.New(opts)
 			app.Create(owlky.ModuleBuilder().Controllers(c.controller).Build())
 			return ""
 		}()
@@ -456,7 +455,6 @@ func TestSurface_EveryWrongShapeMessage(t *testing.T) {
 func TestSurface_PagesByRoute(t *testing.T) {
 	var _ = owlky.RenderOptions{IsReload: false}
 
-	app := owlky.New()
 	web := fstest.MapFS{
 		"layout.html":         {Data: []byte(`<main>{{template "content" .}}</main>`)},
 		"bookings/index.html": {Data: []byte(`<ul>{{range .Bookings}}<li>{{.}}</li>{{end}}</ul>`)},
@@ -465,9 +463,7 @@ func TestSurface_PagesByRoute(t *testing.T) {
 		"404.html":            {Data: []byte(`<h1>{{.Code}} {{.Message}}</h1>`)},
 		"public/robots.txt":   {Data: []byte("User-agent: *\n")},
 	}
-	if got := app.EnableRender(&owlky.RenderOptions{FS: web, Dir: "."}); got != app {
-		t.Error(test.DiffMessage(got, app, "R3: EnableRender returns the app"))
-	}
+	app := owlky.New(&owlky.AppOptions{Render: &owlky.RenderOptions{FS: web, Dir: "."}})
 	app.Create(owlky.ModuleBuilder().Controllers(surfaceBookingPages{}).Build())
 
 	w := serve(app, http.MethodGet, "/bookings", nil, nil)
@@ -521,7 +517,7 @@ func TestSurface_PageAndViewAreGone(t *testing.T) {
 
 func TestSurface_PathStyle(t *testing.T) {
 	style := owlky.PathStyle(owlky.PathStyleAsWritten)
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().
 		PathStyle(style).
 		Imports(billingModule).
@@ -544,7 +540,7 @@ func TestSurface_PathStyle(t *testing.T) {
 }
 
 func TestSurface_PathStyleKebabIsTheDefault(t *testing.T) {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(tokenController{}).Build())
 
 	if w := serve(app, http.MethodGet, "/payment-intents", nil, nil); w.Code != http.StatusOK {
@@ -559,7 +555,7 @@ func TestSurface_PathStyleConstantsAreDistinct(t *testing.T) {
 }
 
 func TestSurface_HTTPControllerRoutes(t *testing.T) {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(helloController{}).Build())
 
 	w := serve(app, http.MethodGet, "/hello", nil, nil)
@@ -576,8 +572,7 @@ func TestSurface_HTTPControllerRoutes(t *testing.T) {
 
 func TestSurface_WSControllerEvents(t *testing.T) {
 	chatCalls.Store(0)
-	app := owlky.New()
-	app.EnableWS(&owlky.WSOptions{Path: "/ws"})
+	app := owlky.New(&owlky.AppOptions{WS: &owlky.WSOptions{Path: "/ws"}})
 	app.Create(owlky.ModuleBuilder().Controllers(chatGateway{}).Build())
 
 	server := httptest.NewServer(app)
@@ -615,7 +610,7 @@ func TestSurface_WSControllerEvents(t *testing.T) {
 }
 
 func TestSurface_BindLayersThroughAliases(t *testing.T) {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(layersController{}).Build())
 
 	plain := serve(app, http.MethodGet, "/plain?deny=true", nil, nil)
@@ -647,7 +642,7 @@ func TestSurface_BindLayersThroughAliases(t *testing.T) {
 }
 
 func TestSurface_BindInterceptorThroughAliasWrapsOneRoute(t *testing.T) {
-	app := owlky.New()
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Controllers(wrapController{}).Build())
 
 	if got := serve(app, http.MethodGet, "/wrapped", nil, nil).Body.String(); !strings.Contains(got, "wrapped") {
@@ -685,8 +680,7 @@ func TestSurface_AsyncImports_ServesWhileFactoryBlocks(t *testing.T) {
 	}
 	root := owlky.ModuleBuilder().AsyncImports(factory).Build()
 
-	app := owlky.New()
-	app.SetStartupTimeout(5 * time.Second)
+	app := owlky.New(&owlky.AppOptions{StartupTimeout: 5 * time.Second})
 	created := make(chan struct{})
 	go func() {
 		defer close(created)
@@ -699,4 +693,115 @@ func TestSurface_AsyncImports_ServesWhileFactoryBlocks(t *testing.T) {
 	}
 	close(release)
 	app.Stop()
+}
+
+type clientProbe struct {
+	ip, scheme, host string
+}
+
+func (p *clientProbe) Use(r *http.Request, _ http.ResponseWriter, next owlky.Next) {
+	p.ip = owlky.ClientIP(r).String()
+	p.scheme = owlky.ClientScheme(r)
+	p.host = owlky.ClientHost(r)
+	next()
+}
+
+func TestSurface_NewTakesOptions(t *testing.T) {
+	typ := reflect.TypeOf(owlky.New)
+	if typ.NumIn() < 1 || typ.In(0) != reflect.TypeFor[*core.AppOptions]() {
+		t.Error(test.DiffMessage(typ.String(), "func(*core.AppOptions) *core.App", "API: New takes *AppOptions"))
+	}
+	if owlky.New(nil) == nil || owlky.New(&owlky.AppOptions{}) == nil {
+		t.Error(test.DiffMessage(nil, "an app", "A1: New(nil) and New(&AppOptions{})"))
+	}
+}
+
+func TestSurface_ListenAndServeTakeNoOptions(t *testing.T) {
+	listen, _ := reflect.TypeFor[owlky.App]().MethodByName("Listen")
+	serve, _ := reflect.TypeFor[owlky.App]().MethodByName("Serve")
+	if listen.Type.NumIn() != 1 || listen.Type.NumOut() != 1 {
+		t.Error(test.DiffMessage(listen.Type.String(), "func(*App) error", "S1: Listen() error"))
+	}
+	if serve.Type.NumIn() != 2 || serve.Type.NumOut() != 1 {
+		t.Error(test.DiffMessage(serve.Type.String(), "func(*App, net.Listener) error", "S2: Serve(l) error"))
+	}
+}
+
+func TestSurface_ClientHelpers(t *testing.T) {
+	probe := &clientProbe{}
+	app := owlky.New(&owlky.AppOptions{
+		Logger: log.NewLog(nil),
+		Proxy:  &owlky.ProxyOptions{TrustedProxies: []string{"192.0.2.1"}, IsHostForwarded: true},
+	})
+	app.BindGlobalMiddlewares(probe)
+	app.Create(owlky.ModuleBuilder().Build())
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	r.Header.Set("X-Forwarded-Host", "app.example.com")
+	app.ServeHTTP(httptest.NewRecorder(), r)
+	got := []string{probe.ip, probe.scheme, probe.host}
+	want := []string{"203.0.113.9", "https", "app.example.com"}
+	if !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "P2-P9: ClientIP, ClientScheme, ClientHost keep the proxy behavior"))
+	}
+}
+
+func TestSurface_ClientHelpersWithoutProxy(t *testing.T) {
+	probe := &clientProbe{}
+	app := owlky.New(nil)
+	app.BindGlobalMiddlewares(probe)
+	app.Create(owlky.ModuleBuilder().Build())
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	app.ServeHTTP(httptest.NewRecorder(), r)
+	if probe.ip != "192.0.2.1" || probe.scheme != "http" || probe.host != "example.com" {
+		t.Error(test.DiffMessage([]string{probe.ip, probe.scheme, probe.host}, []string{"192.0.2.1", "http", "example.com"}, "P2: the peer is the client without Proxy"))
+	}
+}
+
+func TestSurface_ByteSizeAndProxyHeaderConstants(t *testing.T) {
+	got := []owlky.ByteSize{owlky.KB, owlky.MB, owlky.GB, owlky.KiB, owlky.MiB, owlky.GiB}
+	want := []owlky.ByteSize{1000, 1_000_000, 1_000_000_000, 1024, 1 << 20, 1 << 30}
+	if !slices.Equal(got, want) {
+		t.Error(test.DiffMessage(got, want, "B1: the six unit constants"))
+	}
+	if owlky.MiB.String() != "1MiB" || (10*owlky.KB).String() != "10KB" {
+		t.Error(test.DiffMessage(owlky.MiB.String(), "1MiB", "B3: ByteSize.String is public"))
+	}
+	if owlky.ProxyHeaderXForwarded != 0 || owlky.ProxyHeaderForwarded != 1 {
+		t.Error(test.DiffMessage([]owlky.ProxyHeader{owlky.ProxyHeaderXForwarded, owlky.ProxyHeaderForwarded}, []int{0, 1}, "API: ProxyHeader constants"))
+	}
+}
+
+func TestSurface_GroupAliases(t *testing.T) {
+	pairs := map[string][2]reflect.Type{
+		"AppOptions":           {reflect.TypeFor[owlky.AppOptions](), reflect.TypeFor[core.AppOptions]()},
+		"TLSOptions":           {reflect.TypeFor[owlky.TLSOptions](), reflect.TypeFor[core.TLSOptions]()},
+		"HTTPOptions":          {reflect.TypeFor[owlky.HTTPOptions](), reflect.TypeFor[core.HTTPOptions]()},
+		"ProxyOptions":         {reflect.TypeFor[owlky.ProxyOptions](), reflect.TypeFor[core.ProxyOptions]()},
+		"LoadShedOptions":      {reflect.TypeFor[owlky.LoadShedOptions](), reflect.TypeFor[core.LoadShedOptions]()},
+		"HTTPSRedirectOptions": {reflect.TypeFor[owlky.HTTPSRedirectOptions](), reflect.TypeFor[core.HTTPSRedirectOptions]()},
+		"HeadersOptions":       {reflect.TypeFor[owlky.HeadersOptions](), reflect.TypeFor[core.HeadersOptions]()},
+		"CORSOptions":          {reflect.TypeFor[owlky.CORSOptions](), reflect.TypeFor[core.CORSOptions]()},
+		"CSRFOptions":          {reflect.TypeFor[owlky.CSRFOptions](), reflect.TypeFor[core.CSRFOptions]()},
+		"CompressOptions":      {reflect.TypeFor[owlky.CompressOptions](), reflect.TypeFor[core.CompressOptions]()},
+	}
+	for name, pair := range pairs {
+		if pair[0] != pair[1] {
+			t.Error(test.DiffMessage(pair[0], pair[1], "API: "+name+" is an alias of the core type"))
+		}
+	}
+}
+
+func TestSurface_OptionsFromEnv(t *testing.T) {
+	t.Chdir(t.TempDir())
+	opts := owlky.OptionsFromEnv()
+	if opts == nil || opts.Server == nil || opts.Server.TLS == nil || opts.HTTP == nil || opts.Headers == nil || opts.CSRF == nil {
+		t.Fatal(test.DiffMessage(opts, "every group non-nil", "E1: OptionsFromEnv fills every pointer group"))
+	}
+	t.Setenv("OK_HTTP__MAX_BODY_BYTES", "2KiB")
+	if got := owlky.OptionsFromEnv().HTTP.MaxBodyBytes; got != 2*owlky.KiB {
+		t.Error(test.DiffMessage(got, 2*owlky.KiB, "E5: a variable reaches the public struct"))
+	}
 }

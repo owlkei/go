@@ -66,14 +66,14 @@ func (instance VisitController) READ_visits() map[string]int64 {
 }
 
 func main() {
-	app := owlky.New()
+	app := owlky.New(&owlky.AppOptions{Server: &owlky.ServerOptions{Port: 8080}})
 	app.Create(
 		owlky.ModuleBuilder().
 			Imports(cache.Register(nil)).
 			Controllers(VisitController{}).
 			Build(),
 	)
-	app.Listen(8080, nil)
+	app.Listen()
 }
 ```
 

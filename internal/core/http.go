@@ -36,6 +36,9 @@ var (
 
 	accessDeniedException = exception.ForbiddenException("Access denied")
 
+	handshakeRefusedException = exception.ForbiddenException(stdHTTP.StatusText(stdHTTP.StatusForbidden))
+	handshakeRefusedBody      = handshakeRefusedException.AppendJSON(nil)
+
 	noCacheValue = []string{"no-cache"}
 
 	allowMethods = []string{
@@ -81,6 +84,7 @@ type HTTP struct {
 	routes             []*httpRoute
 	routeByPattern     map[string]*httpRoute
 	assetByName        map[string]assetEntry
+	stages             []httpMiddleware
 	globalMiddlewares  []httpMiddleware
 	globalGuards       []httpGuard
 	globalInterceptors []httpInterceptor
@@ -158,14 +162,6 @@ func newHTTP() *HTTP {
 		route:          routing.NewRouter(),
 		routeByPattern: make(map[string]*httpRoute),
 	}
-}
-
-func (http *HTTP) enableVersioning(v versioning.Options) {
-	if v.Key == "" {
-		v.Key = "v"
-	}
-	http.versioning = &v
-	http.isVersioningEnabled = true
 }
 
 func (http *HTTP) addRoute(mainHandler common.HTTPLayer, plan *httpHandlerPlan) {
@@ -267,6 +263,14 @@ func (http *HTTP) finishRoutes() {
 func (http *HTTP) handleRequest(ex *httpExchange) {
 	defer http.recoverRequest(ex)
 
+	var run *middlewareRun
+	if len(http.stages) > 0 {
+		run = newMiddlewareRun()
+		if !http.runLayers(ex, http.stages, run) {
+			return
+		}
+	}
+
 	c := &ex.HTTPContext
 	method := c.Method
 	if method == stdHTTP.MethodHead {
@@ -279,7 +283,7 @@ func (http *HTTP) handleRequest(ex *httpExchange) {
 
 	route, isGone := http.match(c, method, version)
 	if route == nil {
-		if http.runMiddlewares(ex, nil) {
+		if http.runMiddlewares(ex, nil, run) {
 			http.answerNoRoute(ex, method, version, isGone)
 		}
 		return
@@ -287,15 +291,52 @@ func (http *HTTP) handleRequest(ex *httpExchange) {
 	if route.gate != nil {
 		live := route.gate.live.Load()
 		if live == nil {
-			http.answerGated(ex, route)
+			http.answerGated(ex, route, run)
 			return
 		}
 		route = live.http[route.gateIndex]
 	}
-	if !http.runMiddlewares(ex, route) {
+	if !http.runMiddlewares(ex, route, run) {
 		return
 	}
 	http.serveRoute(ex, route)
+}
+
+func (http *HTTP) runHandshake(ex *httpExchange, stages []httpMiddleware, ws *WS) (isAccepted bool) {
+	defer http.recoverRequest(ex)
+
+	if len(stages) > 0 && !http.runLayers(ex, stages, newMiddlewareRun()) {
+		return false
+	}
+	if err := ws.handshake(&ex.HTTPContext); err != nil {
+		if ex.writer.status() == 0 {
+			http.writeEarlyError(ex, &handshakeRefusedException, handshakeRefusedBody)
+		}
+		return false
+	}
+	return true
+}
+
+type middlewareRun struct {
+	next      ctx.Next
+	isProceed bool
+}
+
+func newMiddlewareRun() *middlewareRun {
+	run := &middlewareRun{}
+	run.next = func() { run.isProceed = true }
+	return run
+}
+
+func (http *HTTP) runLayers(ex *httpExchange, layers []httpMiddleware, run *middlewareRun) bool {
+	ctx.HTTPSetNext(&ex.HTTPContext, run.next)
+	w := stdHTTP.ResponseWriter(&ex.writer)
+	for i := range layers {
+		if !http.runMiddleware(ex, &layers[i], w, run) {
+			return false
+		}
+	}
+	return true
 }
 
 func (http *HTTP) match(c *ctx.HTTPContext, method, version string) (*httpRoute, bool) {
@@ -323,7 +364,7 @@ func (http *HTTP) bindRoute(c *ctx.HTTPContext, item *routing.RouterItem, values
 	return http.routes[item.Index]
 }
 
-func (http *HTTP) runMiddlewares(ex *httpExchange, route *httpRoute) bool {
+func (http *HTTP) runMiddlewares(ex *httpExchange, route *httpRoute, run *middlewareRun) bool {
 	var module []httpMiddleware
 	if route != nil {
 		module = route.middlewares
@@ -333,37 +374,30 @@ func (http *HTTP) runMiddlewares(ex *httpExchange, route *httpRoute) bool {
 		return true
 	}
 
-	proceed := false
-	next := func() { proceed = true }
-	ctx.HTTPSetNext(&ex.HTTPContext, next)
-	w := stdHTTP.ResponseWriter(&ex.writer)
-	for i := range http.globalMiddlewares {
-		if !http.runMiddleware(ex, &http.globalMiddlewares[i], w, next, &proceed) {
-			return false
-		}
+	if run == nil {
+		run = newMiddlewareRun()
 	}
-	for i := range module {
-		if !http.runMiddleware(ex, &module[i], w, next, &proceed) {
-			return false
-		}
-	}
-	return true
+	return http.runLayers(ex, http.globalMiddlewares, run) && http.runLayers(ex, module, run)
 }
 
 func noopNext() {}
 
-func (http *HTTP) runMiddleware(ex *httpExchange, m *httpMiddleware, w stdHTTP.ResponseWriter, next ctx.Next, proceed *bool) bool {
-	*proceed = false
+func (http *HTTP) runMiddleware(ex *httpExchange, m *httpMiddleware, w stdHTTP.ResponseWriter, run *middlewareRun) bool {
+	run.isProceed = false
 	if !ex.traced {
-		m.use(ex.Request, w, next)
-		return *proceed
+		m.use(ex.Request, w, run.next)
+		return run.isProceed
 	}
 	ex.middleware = m
 	ex.middlewareStart = time.Now()
-	m.use(ex.Request, w, next)
+	m.use(ex.Request, w, run.next)
 	ex.middleware = nil
-	m.emit(http.tracer, ex.scope, ex.ID(), time.Since(ex.middlewareStart), 0)
-	return *proceed
+	code := 0
+	if m.isPreRoute && !run.isProceed {
+		code = ex.writer.status()
+	}
+	m.emit(http.tracer, ex.scope, ex.ID(), time.Since(ex.middlewareStart), code)
+	return run.isProceed
 }
 
 func (http *HTTP) answerNoRoute(ex *httpExchange, method, version string, isGone bool) {
