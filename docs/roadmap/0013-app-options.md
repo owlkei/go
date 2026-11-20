@@ -1,6 +1,6 @@
 # 0013: App options
 
-Status: Approved
+Status: Running
 
 ## Goal
 An app's configuration lives in one place: `owlky.New(&owlky.AppOptions{…})`, or the same struct filled
@@ -58,3 +58,5 @@ Agreed with the owner on 2026-11-19 (backlog › "App options", "Less configurat
 - Commits follow `.claude/commands/commit.md`: no Claude attribution or trailers.
 
 ## Log
+- 2026-11-20: design 0022 approved with every recommendation of its open questions; run started at `ee67bb2`. Order of work: the new API is added next to the old one (steps 1-8, so the tree builds and every existing test keeps running), then step 9 migrates every caller and removes the old API in one pass. The session lost its `go-*` agent types after the repository moved; agents run as general-purpose agents that read the role files in `.claude/agents/`.
+
