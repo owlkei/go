@@ -2309,3 +2309,92 @@ func TestApp_Devtool_ModulesWaitingForAndLastError(t *testing.T) {
 		t.Error(test.DiffMessage(waiting, "no waiting_for", "V: a failed module no longer waits"))
 	}
 }
+
+func plainWSGet(t *testing.T, s *hsServer) int {
+	t.Helper()
+	res := srvFetch(srvClient(), http.MethodGet, s.url+"/ws", "", false)
+	if res.err != nil {
+		t.Fatalf("fixture: GET /ws without Upgrade headers failed: %v", res.err)
+	}
+	return res.status
+}
+
+func TestServeWS_RejectedUpgradeReleasesLoadShedSlot(t *testing.T) {
+	s := newHandshake(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 2, MaxQueue: -1}})
+	for i := range 6 {
+		if got := plainWSGet(t, s); got != http.StatusBadRequest {
+			t.Error(test.DiffMessage(got, http.StatusBadRequest, fmt.Sprintf("P3: GET /ws without Upgrade headers, attempt %d, is a bad request, not a shed one", i+1)))
+		}
+	}
+	res := srvFetch(srvClient(), http.MethodGet, s.url+"/ok", "", false)
+	if res.err != nil || res.status != http.StatusOK {
+		t.Error(test.DiffMessage([]any{res.status, res.err}, 200, "P3: a rejected handshake releases its LoadShed slot, so a route still answers"))
+	}
+}
+
+func TestServeWS_AcceptedHandshakeAfterRejectedUpgrades(t *testing.T) {
+	s := newHandshake(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 2, MaxQueue: -1}})
+	for range 4 {
+		plainWSGet(t, s)
+	}
+	hsExpect(t, s.handshake(t, nil), http.StatusSwitchingProtocols, "P3: a real handshake still passes after rejected ones")
+}
+
+func TestServeWS_RejectedUpgradeEmitsCompleteEvent(t *testing.T) {
+	s := newHandshake(t, nil)
+	if got := plainWSGet(t, s); got != http.StatusBadRequest {
+		t.Fatal(test.DiffMessage(got, http.StatusBadRequest, "fixture: GET /ws without Upgrade headers is refused"))
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case e := <-s.rec.ch:
+			if e.Stage != trace.StageComplete || e.Target != "/ws" {
+				continue
+			}
+			if e.Code != http.StatusBadRequest || e.Transport != trace.TransportHTTP {
+				t.Error(test.DiffMessage([]any{e.Code, e.Transport}, []any{http.StatusBadRequest, trace.TransportHTTP}, "T1: the complete event of a rejected handshake carries its status and the HTTP transport"))
+			}
+			return
+		case <-deadline:
+			t.Fatal(test.DiffMessage("no event", "one complete event for /ws", "T1: a rejected handshake emits its complete event"))
+		}
+	}
+}
+
+func hsExpectTraceHeaders(t *testing.T, resp *http.Response, what string) {
+	t.Helper()
+	id := resp.Header.Get(ctx.RequestID)
+	if len(id) != 16 || !isLowerHex(id) {
+		t.Error(test.DiffMessage(id, "<16 hex characters>", what+": X-Request-Id"))
+	}
+	_, parentID, _, ok := tracecontext.ParseTraceparent(resp.Header.Get("Traceparent"))
+	if !ok || parentID != id {
+		t.Error(test.DiffMessage([]any{resp.Header.Get("Traceparent"), ok}, "<a traceparent whose span is the request ID>", what+": Traceparent"))
+	}
+}
+
+func TestServeWS_OriginRefusalCarriesTraceHeaders(t *testing.T) {
+	s := newHandshake(t, nil)
+	resp := s.handshake(t, map[string]string{"Origin": "https://evil.com"})
+	hsExpect(t, resp, http.StatusForbidden, "fixture: another site is refused")
+	hsExpectTraceHeaders(t, resp, "W5: a 403 handshake refusal")
+}
+
+func TestServeWS_HostRefusalCarriesTraceHeaders(t *testing.T) {
+	s := newHandshake(t, &AppOptions{Hosts: []string{"a.com"}})
+	resp := s.handshake(t, map[string]string{"Host": "evil.com"})
+	hsExpect(t, resp, http.StatusMisdirectedRequest, "fixture: an unknown host is refused")
+	hsExpectTraceHeaders(t, resp, "P2: a 421 handshake refusal")
+}
+
+func TestServeWS_LoadShedRefusalCarriesTraceHeaders(t *testing.T) {
+	s := newHandshake(t, &AppOptions{LoadShed: &LoadShedOptions{IsEnabled: true, MaxInFlight: 1, MaxQueue: -1}})
+	blocked := srvFetchAsync(srvClient(), s.url+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	resp := s.handshake(t, nil)
+	srvCur.open()
+	<-blocked
+	hsExpect(t, resp, http.StatusServiceUnavailable, "fixture: the handshake is shed")
+	hsExpectTraceHeaders(t, resp, "P3: a 503 handshake refusal")
+}

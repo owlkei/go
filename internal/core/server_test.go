@@ -1588,3 +1588,52 @@ func TestStop_UsesShutdownTimeout(t *testing.T) {
 		t.Error(test.DiffMessage("blocked", "returns after ~50ms", "S4: Stop before serving is bounded by ShutdownTimeout"))
 	}
 }
+
+func TestServe_ShutdownTimeoutBoundsDrainAndHooksTogether(t *testing.T) {
+	const timeout = 400 * time.Millisecond
+	release := make(chan struct{})
+	defer close(release)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{ShutdownTimeout: timeout}})
+	srvCur.mu.Lock()
+	srvCur.rootExtra = func() { <-release }
+	srvCur.mu.Unlock()
+	h.serve()
+
+	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	start := time.Now()
+	h.sigs <- syscall.SIGTERM
+	_ = h.wait()
+	elapsed := time.Since(start)
+	<-res
+
+	if elapsed < timeout {
+		t.Error(test.DiffMessage(elapsed.String(), "at least "+timeout.String(), "fixture: the slow drain uses the whole ShutdownTimeout"))
+	}
+	if limit := timeout + timeout*3/4; elapsed >= limit {
+		t.Error(test.DiffMessage(elapsed.String(), "under "+limit.String(), "S4: one ShutdownTimeout bounds draining and OnShutdown hooks together"))
+	}
+}
+
+func TestStop_HooksUseTheDeadlineLeftByTheDrain(t *testing.T) {
+	const timeout = 400 * time.Millisecond
+	release := make(chan struct{})
+	defer close(release)
+	h := newSrvOpts(t, &AppOptions{Server: &ServerOptions{ShutdownTimeout: timeout}})
+	srvCur.mu.Lock()
+	srvCur.rootExtra = func() { <-release }
+	srvCur.mu.Unlock()
+	h.serve()
+
+	res := srvFetchAsync(srvClient(), "http://"+h.addr()+"/block")
+	srvWaitCh(t, srvCur.entered, "the handler")
+	start := time.Now()
+	h.app.Stop()
+	elapsed := time.Since(start)
+	_ = h.wait()
+	<-res
+
+	if limit := timeout + timeout*3/4; elapsed >= limit {
+		t.Error(test.DiffMessage(elapsed.String(), "under "+limit.String(), "S4: Stop returns within one ShutdownTimeout when the drain and a hook are both slow"))
+	}
+}

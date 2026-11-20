@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -339,5 +340,44 @@ func TestNew_ServeDirsDeclared(t *testing.T) {
 	msg, isPanic := optRecover(func() { New(&AppOptions{HTTP: &HTTPOptions{ServeDirs: []string{""}}}) })
 	if !isPanic || !strings.Contains(msg, "HTTP.ServeDirs has an empty entry") {
 		t.Error(test.DiffMessage(msg, "HTTP.ServeDirs has an empty entry", "D1: an empty entry panics"))
+	}
+}
+
+func TestNew_TLSConfigCertificatesNotWrittenThrough(t *testing.T) {
+	certFile, keyFile := optCertFiles(t)
+	own := srvMakeCert(t).cert
+	certs := make([]tls.Certificate, 1, 4)
+	certs[0] = own
+	cfg := &tls.Config{Certificates: certs}
+
+	app := New(&AppOptions{
+		Server: &ServerOptions{TLS: &TLSOptions{CertFile: certFile, KeyFile: keyFile, Config: cfg}},
+		Logger: &mockLogger{},
+	})
+
+	if got := len(app.server.tlsConfig.Certificates); got != 2 {
+		t.Fatal(test.DiffMessage(got, 2, "fixture: the app serves the caller's certificate and the file pair"))
+	}
+	if spare := certs[:2][1]; len(spare.Certificate) != 0 || spare.PrivateKey != nil {
+		t.Error(test.DiffMessage(len(spare.Certificate), 0, "A2: the file pair is not written into the caller's Certificates backing array"))
+	}
+	if len(cfg.Certificates) != 1 || !reflect.DeepEqual(cfg.Certificates[0].Certificate, own.Certificate) {
+		t.Error(test.DiffMessage(len(cfg.Certificates), 1, "A2: the caller's Certificates slice is unchanged"))
+	}
+}
+
+func TestNew_TLSConfigCertificatesIndependentOfLaterWrites(t *testing.T) {
+	certFile, keyFile := optCertFiles(t)
+	own := srvMakeCert(t).cert
+	cfg := &tls.Config{Certificates: []tls.Certificate{own}}
+
+	app := New(&AppOptions{
+		Server: &ServerOptions{TLS: &TLSOptions{CertFile: certFile, KeyFile: keyFile, Config: cfg}},
+		Logger: &mockLogger{},
+	})
+	cfg.Certificates[0] = tls.Certificate{}
+
+	if got := app.server.tlsConfig.Certificates[0].Certificate; !reflect.DeepEqual(got, own.Certificate) {
+		t.Error(test.DiffMessage(len(got), len(own.Certificate), "A2: a later write to the caller's Certificates does not reach the app"))
 	}
 }

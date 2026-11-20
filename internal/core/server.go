@@ -388,7 +388,7 @@ func (app *App) runShutdownHooks(deadline time.Time) {
 		app.beginAsyncShutdown()
 		app.waitEntries(deadline)
 		if isCreated {
-			app.runModuleShutdownHooks()
+			app.runModuleShutdownHooks(deadline)
 		}
 		if app.accesslog != nil {
 			app.accesslog.Stop()
@@ -411,7 +411,9 @@ func (app *App) runShutdownHooks(deadline time.Time) {
 	})
 }
 
-func (app *App) runModuleShutdownHooks() {
+const shutdownHooksGrace = 100 * time.Millisecond
+
+func (app *App) runModuleShutdownHooks(deadline time.Time) {
 	app.container.mu.RLock()
 	modules := slices.Clone(app.container.readyOrder)
 	app.container.mu.RUnlock()
@@ -427,7 +429,7 @@ func (app *App) runModuleShutdownHooks() {
 			}
 		}
 	}()
-	timer := time.NewTimer(app.server.shutdownTimeout)
+	timer := time.NewTimer(max(time.Until(deadline), shutdownHooksGrace))
 	defer timer.Stop()
 	select {
 	case <-done:

@@ -204,7 +204,7 @@ func (record *envRecord) logOptions(opts *AppOptions, logger log.Logger) {
 		for _, f := range record.fields {
 			if f.path == leaf.path && reflect.DeepEqual(current.Interface(), f.value) {
 				source = f.variable
-				if f.source != envEnvironment {
+				if f.source != envEnvironment && f.variable != envPortName {
 					source = f.source
 				}
 			}

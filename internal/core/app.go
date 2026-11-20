@@ -192,15 +192,12 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, traceparent []string) {
 	c := &ex.HTTPContext
+	h := w.Header()
+	h[ctx.RequestID] = requestID
+	h[traceparentHeader] = traceparent
 	ex.traced = app.tracer.Enabled()
 	if !app.http.runHandshake(ex, app.wsStages, app.ws) {
-		ex.writer.runHooks(ctx.HTTPTimestamp(c))
-		if ex.traced {
-			e := completeEvent(ex.scope, c.ID(), trace.TransportHTTP, c.Method, c.URL.Path, ex.writer.status(), time.Since(*ctx.HTTPTimestamp(c)))
-			e.ClientIP = tracecontext.ClientIP(c.Request)
-			app.tracer.Emit(e)
-		}
-		app.releaseCtx(ex)
+		app.finishHandshake(ex, ex.writer.status())
 		return
 	}
 	isReleased := false
@@ -226,8 +223,23 @@ func (app *App) serveWS(w http.ResponseWriter, ex *httpExchange, requestID, trac
 		Handler: websocket.Handler(app.ws.handleRequest),
 	})
 	if !isReleased {
-		app.releaseCtx(ex)
+		code := http.StatusBadRequest
+		if c.Method != http.MethodGet {
+			code = http.StatusMethodNotAllowed
+		}
+		app.finishHandshake(ex, code)
 	}
+}
+
+func (app *App) finishHandshake(ex *httpExchange, code int) {
+	c := &ex.HTTPContext
+	ex.writer.runHooks(ctx.HTTPTimestamp(c))
+	if ex.traced {
+		e := completeEvent(ex.scope, c.ID(), trace.TransportHTTP, c.Method, c.URL.Path, code, time.Since(*ctx.HTTPTimestamp(c)))
+		e.ClientIP = tracecontext.ClientIP(c.Request)
+		app.tracer.Emit(e)
+	}
+	app.releaseCtx(ex)
 }
 
 func (app *App) Create(m *Module) {

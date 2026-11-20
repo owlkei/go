@@ -336,6 +336,7 @@ func loadTLS(t *TLSOptions) *tls.Config {
 	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if t.Config != nil {
 		cfg = t.Config.Clone()
+		cfg.Certificates = slices.Clone(cfg.Certificates)
 	}
 	if hasFiles {
 		cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)

@@ -33,3 +33,6 @@ CLAUDE.local.md
 # NodeJS
 node_modules
 data/shop/
+
+# Private references (owlkei/references), cloned locally; never committed
+.local/
