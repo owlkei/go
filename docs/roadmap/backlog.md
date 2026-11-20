@@ -336,6 +336,63 @@ Follow-ups found by the roadmap 0008 review (2026-11-18):
 
 Taken by roadmap `docs/roadmap/0008-server-rendered-html.md`, steps 10-17 (2026-11-18).
 
+## Multi-parameter page routes: tests (owner, 2026-11-19: next session, before roadmap 0013)
+
+Route parsing with several parameters is tested (`internal/common`: `BY_a_AND_b`, nested `OF`, order),
+and page routes with one parameter are (`bookings/{id}.html`, `bookings/{id}/index.html`, a wrong name,
+both forms). Page routes with several parameters have no test. With `/implement`, add tests (and fix
+what fails) for:
+1. nested template lookup: `orgs/{org_id}/projects/{project_id}.html` and `…/{project_id}/index.html`;
+2. `AND`: `reports/{year}/{month}.html`;
+3. a `layout.html` inside a parameter directory (`orgs/{org_id}/layout.html`) wrapping every page below,
+   nested in the root layout;
+4. page CSS and JS inside parameter directories: served at `/assets/_pages/orgs/{org_id}/…`, linked by
+   `{{pageAssets}}`;
+5. a multi-parameter `SUBMIT_` sharing its `RENDER_`'s template;
+6. errors: a wrong name for one of the parameters; both forms (`{org_id}.html` and
+   `{org_id}/index.html`) for a middle parameter;
+7. an error page (`404.html`) for a multi-parameter page whose handler panics `NotFoundException`.
+
+## TechEmpower benchmarks (owner, 2026-11-19: after the storage roadmap)
+
+The owner wants to know where Owlky Go stands, and to use a good result in its marketing. Estimate
+today (not measured): with the `net/http` group (Gin, Echo, Chi), mid-table on plaintext and JSON,
+upper half once a database is involved; our own load tests (0006) put it level with or ahead of
+Gin / Echo / Chi, 61-67 % of Fiber on 1-2 cores and ahead of Fiber at 12 cores.
+
+- **When:** after the storage roadmap, so the database tests use Owlky Go's own SQL module.
+- **What:** a TechEmpower implementation of Owlky Go for the six tests (plaintext, JSON, single
+  query, multiple queries, fortunes, updates) with PostgreSQL, written as a user would write it
+  (`AppOptions`, controllers, providers, `RENDER_` for fortunes): classified **Realistic**, no
+  hand-written HTTP parser, no benchmark-only shortcuts; log off as the other entries do.
+- **How:** run the official toolset (Docker) locally, with the Gin, Echo, Chi and Fiber entries of
+  the TechEmpower repository on the same machine, report in `docs/review/techempower-<n>.md`; then
+  submit the entry upstream (a pull request to the TechEmpower repository) so the official rounds
+  list it.
+- **Marketing:** quote only official or reproducible numbers, name the test and the classification
+  ("Realistic", which test), compare with frameworks of the same class, and keep the positioning
+  (the ecosystem first, performance as a guarantee). Watch the fortunes test: `html/template` took
+  92 % of a page's time in 0008, so it is where a template optimization would show.
+
+## Release hygiene (owner, 2026-11-20: before 0.1)
+
+The repository is public, so everything committed is already published: `CLAUDE.md`, `.claude/`
+(agents and commands), `.owlky/` (the AI knowledge base), `docs/roadmap/`, `docs/design/`,
+`docs/review/`. Decided: keep them (transparency, and they help contributors who work with AI agents);
+Claude Code memory lives in the owner's home directory and is never part of the repository;
+`CLAUDE.local.md` and `.claude/settings.local.json` stay ignored. Before 0.1:
+1. **No personal data or local paths** in committed files, checked in CI (like Owlky UI's
+   `check:names`). Fixed 2026-11-20: a local path in `.owlky/README.md`. Open: `package.json`'s author
+   email (the owner decides: keep, or a GitHub `noreply` address).
+2. **`AGENTS.md`** pointing at `CLAUDE.md` and `.owlky/`, so every AI tool (Codex, Cursor, Claude Code…)
+   finds the conventions.
+3. **Roadmap wording:** keep the decisions and their reasons; remove internal notes a reader can't
+   follow.
+4. **README › Contributing:** the knowledge base, `make check`, and the workflow commands (`/roadmap`,
+   `/feature`, `/implement`).
+5. **Know that `go get` downloads the whole module** (`docs/`, `.claude/`, `.owlky/` included) into
+   the user's module cache; small, so acceptable.
+
 ## Accurate trace timings (found 2026-11-19)
 
 The access log and the trace show stage times that users read as the cost of their code, so they

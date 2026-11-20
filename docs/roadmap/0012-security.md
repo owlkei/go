@@ -5,7 +5,7 @@ Status: Draft (paused 2026-11-19; runs after roadmap 0013, App options, which to
 ## Goal
 With the configuration API final (roadmap 0013), the framework is audited and hardened where the API
 doesn't change: personal pages aren't cached by shared caches, redirects stay on the site, a guard on a
-page also guards its form, static files can't widen routes or leak, and every sink (HTML, headers,
+page also guards its form, static files can't widen routes or leak source and secrets (a deep audit), and every sink (HTML, headers,
 redirects, logs, paths, JSON) is reviewed. The REST side is audited again after the API review and the
 SSR changes.
 
@@ -22,6 +22,8 @@ SSR changes.
 | # | Step | Path | Design | Depends on | Done when | State |
 |---|---|---|---|---|---|---|
 | 1 | Audit: `go-security` over REST and SSR (the 0005 method), plus every sink of the injection review (HTML, `template.HTML` in data, headers and redirects with CR/LF, logs, paths of `assets/`, `public/` and uploads, template names, JSON); findings ranked | light | - | - | `docs/review/security-0012.md`; each finding mapped to a step below or to the backlog | todo |
+| 1b | Static files deep audit (owner, 2026-11-19: serving files is where source and secrets leak): every way a file is served (`SERVE_…` with a handler-chosen root, `public/`, `/assets/*`, `/assets/_pages/…`, `embed.FS` with `all:`, `IsReload` from disk) against the list in Decisions › Static files; one test per attack (encoded and double-encoded traversal, `..\` and drive letters, NUL bytes, trailing dots and spaces, mixed case, Windows short names, symlinks in and out, hidden segments, `.git` / `.env` / `*.go` / `go.mod` / editor swap and backup files, source maps, directory index, `Range` and multi-range, large files and timeouts, MIME sniffing, uploaded `.html` / `.svg`), on Linux, macOS and Windows | tdd | docs/design/0021-security.md | 1 | the audit's report lists each attack with its test; no file outside the declared roots or of a forbidden kind is ever served | todo |
+| 1c | Static files fixes: (a) the directories a `SERVE_` handler may return are declared in `AppOptions`; a root outside them answers 500 and is logged, never served (a tenant name such as `../../etc` can't move the root); (b) a guarded `SERVE_` route defaults to `Cache-Control: private, no-cache`; (c) `X-Content-Type-Options: nosniff` on every static response, whatever the headers stage says; (d) files that can run in a browser (`.html`, `.svg`, `.xml`, `.js` outside `assets/`) served by `SERVE_` go out as `Content-Disposition: attachment` with a CSP `sandbox` unless the route opts in; (e) source and secret files (`*.go`, `go.mod`, `go.sum`, `.env*`, `*.pem`, `*.key`, `*.map` unless enabled, editor and backup files such as `*~`, `*.swp`, `*.bak`, `*.orig`) are refused with 404 whatever the directory; (f) the startup log lists the public URLs (`public/`) | tdd | docs/design/0021-security.md | 1b | every finding of 1b of high or critical rank is fixed with its test | todo |
 | 2 | Private caching: pages and HTML error pages answer `Cache-Control: private, no-cache` unless the handler sets its own | tdd | docs/design/0021-security.md | 1 | a personal page can't be stored by a shared cache by default | todo |
 | 3 | Same-origin redirects: on page routes `c.Redirect` accepts only same-origin paths (no scheme, no `//host`, no CR/LF); another host needs an explicit call | tdd | docs/design/0021-security.md | 1 | `c.Redirect(form.Next)` can't send a user to another site | todo |
 | 5 | A layer bound to a `RENDER_` also covers its `SUBMIT_` (the POST on the same URL) | tdd | docs/design/0021-security.md | 1 | `BindGuard(auth, c.RENDER_account)` also guards `POST /account` | todo |
@@ -39,6 +41,14 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
 - Error format (decided 2026-11-19): once a route matched, the route decides (page HTML, API JSON);
   before routing and without a route, `Accept` decides. Already the behavior; step 10 documents it.
 - No input-sanitizing middleware: escaping belongs at the sink.
+- **Static files (owner, 2026-11-19): audited deeply, leaks of source and secrets are the worst case.**
+  Already in place (0005 found nothing): `os.OpenRoot` blocks traversal and symlinks leaving the root,
+  hidden segments answer 404 (except `.well-known`), no directory listing. Not reviewed since: a root
+  that the handler builds from user input (`"uploads/" + tenant`: `os.OpenRoot` only confines below the
+  root it is given), uploaded `.html` / `.svg` served inline (stored XSS), guarded files cached by shared
+  caches, MIME sniffing with the headers stage off, multi-range and large files, odd names per OS,
+  `public/` names with `{` / `*` (step 7), the SSR asset and public routes (0008), `//go:embed all:`
+  shipping dotfiles. Steps 1b and 1c.
 - Moved to roadmap 0013 (2026-11-19): the built-in stages and their fixed order (former step 6), the
   SSR defaults (former step 4: all stages off, a `SecurityCheck` warning instead), shared `Origins` and
   the WebSocket Origin check. Steps keep their numbers; 4 and 6 are gone.

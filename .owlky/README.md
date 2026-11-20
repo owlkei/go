@@ -361,7 +361,7 @@ Reference: request-pipeline.md#3-guard-layer (authorization)
 **Source**: Complete source code analysis (direct reads of `.go` files, not a separate roadmap doc — `ARCHITECTURE_REVIEW_AND_ROADMAP.md` referenced by earlier versions of this doc does not exist in this repository)
 
 **To Update This Knowledge Base**:
-1. Verify against current source code in /Users/tadangduoc/Projects/owlky
+1. Verify against the current source code of this repository
 2. Update affected markdown files
 3. Update corresponding metadata-*.json
 4. Update this README with new files
