@@ -20,10 +20,11 @@ components' behavior.
   at `/assets/_pages/layout.css?v=<hash>`, after the shared stylesheet. A page can have its own files the
   same way, such as `web/bookings/new.css` next to `web/bookings/new.html`.
 - **Template functions.** `{{asset "owlky.js"}}` writes `/assets/owlky.js?v=<hash>`, served with
-  `Cache-Control: immutable`. `{{nonce}}` gives the inline script the request's CSP nonce, which `helmet`
+  `Cache-Control: immutable`. `{{nonce}}` gives the inline script the request's CSP nonce, which the `Headers` stage
   adds to `script-src` and `style-src`.
-- **Security defaults.** `html/template` escapes every value for its context; `CSRF: &owlky.CSRFOptions{IsEnabled: true}` refuses
-  cross-origin form posts; `helmet` sends a strict policy with no `'unsafe-inline'`.
+- **Security.** `html/template` escapes every value for its context; `CSRF: &owlky.CSRFOptions{IsEnabled: true}` refuses
+  cross-origin form posts; `Headers: &owlky.HeadersOptions{IsEnabled: true}` sends a strict policy with no `'unsafe-inline'`.
+  Both are off until you set them ([Configuration](../../README.md#configuration)).
 
 ## Run it
 

@@ -7,12 +7,15 @@
       "go.owlky.com/owlky",
       "go.owlky.com/owlky/exception",
       "go.owlky.com/owlky/log",
-      "go.owlky.com/owlky/middlewares/*",
       "go.owlky.com/owlky/modules/*",
       "go.owlky.com/owlky/guards/*"
     ],
     "root_functions": [
-      "New() App",
+      "New(opts *core.AppOptions) App (nil = defaults)",
+      "OptionsFromEnv() *core.AppOptions (OK_<PATH> variables with __ between levels, PORT, ./.env; environment > .env; code assigned afterwards wins; every error stops New)",
+      "ClientIP(r *http.Request) netip.Addr",
+      "ClientScheme(r *http.Request) string",
+      "ClientHost(r *http.Request) string",
       "ModuleBuilder() *core.ModuleBuilder",
       "TraceTransport(base http.RoundTripper) http.RoundTripper",
       "Retry(ctx context.Context, opts *core.RetryOptions, fn func(context.Context) error) error"
@@ -52,7 +55,19 @@
       "Aggregation": "*aggregation.Aggregation",
       "VersioningOptions": "versioning.Options",
       "VersioningType": "versioning.Type",
-      "PathStyle": "common.PathStyle"
+      "PathStyle": "common.PathStyle",
+      "AppOptions": "core.AppOptions",
+      "TLSOptions": "core.TLSOptions",
+      "HTTPOptions": "core.HTTPOptions",
+      "ProxyOptions": "core.ProxyOptions",
+      "ProxyHeader": "core.ProxyHeader",
+      "LoadShedOptions": "core.LoadShedOptions",
+      "HTTPSRedirectOptions": "core.HTTPSRedirectOptions",
+      "HeadersOptions": "core.HeadersOptions",
+      "CORSOptions": "core.CORSOptions",
+      "CSRFOptions": "core.CSRFOptions",
+      "CompressOptions": "core.CompressOptions",
+      "ByteSize": "core.ByteSize"
     },
     "root_constants": [
       "VersioningQuery = 1",
@@ -69,12 +84,12 @@
       "responsibility": "Application lifecycle, server, handler invocation, DI container (user docs: README.md; maintainer docs: internal/core/README.md)",
       "public_types": {
         "App": {
-          "description": "Main application container; every core.New() is independent (own routes, providers, layers, logger, publisher)",
+          "description": "Main application container; every owlky.New(opts) is independent (own routes, providers, layers, logger, publisher). The whole configuration is the *AppOptions given to New (design 0022)",
           "methods": [
             {
               "name": "New",
-              "signature": "New() *App",
-              "purpose": "Create new app instance"
+              "signature": "New(opts *AppOptions) *App",
+              "purpose": "Create an app from its options (nil = defaults); reads opts once, copies what it keeps, makes every check (panics `invalid app: <Group>.<Field> …`), compiles the pre-route stages in their fixed order"
             },
             {
               "name": "Create",
@@ -83,18 +98,13 @@
             },
             {
               "name": "Listen",
-              "signature": "Listen(port int, opts *ServerOptions) error",
-              "purpose": "Serve HTTP/1.1 (and h2c with IsH2C) on :port; nil opts = safe defaults; blocks until shut down"
-            },
-            {
-              "name": "ListenTLS",
-              "signature": "ListenTLS(port int, certFile, keyFile string, opts *ServerOptions) error",
-              "purpose": "Serve TLS with HTTP/1.1 and HTTP/2; empty file names need opts.TLSConfig with certificates"
+              "signature": "Listen() error",
+              "purpose": "Serve on :Server.Port (default 3000): HTTPS with HTTP/1.1 and HTTP/2 when Server.TLS holds a certificate, else HTTP/1.1 (and h2c with Server.IsH2C); blocks until shut down"
             },
             {
               "name": "Serve",
-              "signature": "Serve(l net.Listener, opts *ServerOptions) error",
-              "purpose": "Serve on a listener you made (TLS when opts.TLSConfig is set)"
+              "signature": "Serve(l net.Listener) error",
+              "purpose": "Serve on a listener you made, same TLS and protocol rules; ignores Server.Port"
             },
             {
               "name": "Stop",
@@ -112,16 +122,6 @@
               "purpose": "The instance this app created for p's type, nil before Create or for an unknown type; nil while the provider's module is not ready (AsyncImports)"
             },
             {
-              "name": "SetLogger",
-              "signature": "SetLogger(logger log.LogAdapter) *App",
-              "purpose": "The one way to set the logger (before Create; nil panics)"
-            },
-            {
-              "name": "SetStartupTimeout",
-              "signature": "SetStartupTimeout(d time.Duration) *App",
-              "purpose": "Budget of Create for the module factories of Imports (default 30 s); before Create; d <= 0 panics"
-            },
-            {
               "name": "Logger",
               "signature": "Logger() log.Logger",
               "purpose": "The app's logger, never nil"
@@ -129,7 +129,7 @@
             {
               "name": "BindGlobalMiddlewares",
               "signature": "BindGlobalMiddlewares(middlewares ...common.MiddlewareFn) *App",
-              "purpose": "Middlewares for every HTTP request"
+              "purpose": "Middlewares for every HTTP request, after the pre-route stages, and once per WebSocket connection at the handshake"
             },
             {
               "name": "BindGlobalGuards",
@@ -145,38 +145,15 @@
               "name": "BindGlobalExceptionFilters",
               "signature": "BindGlobalExceptionFilters(exceptionFilters ...any) *App",
               "purpose": "Exception filters for every route and event"
-            },
-            {
-              "name": "EnableVersioning",
-              "signature": "EnableVersioning(opts *versioning.Options) *App",
-              "purpose": "Route versioning"
-            },
-            {
-              "name": "EnableWS",
-              "signature": "EnableWS(opts *WSOptions, middlewares ...common.MiddlewareFn) *App",
-              "purpose": "Enable WebSocket support with handshake middlewares"
-            },
-            {
-              "name": "EnableRender",
-              "signature": "EnableRender(opts *RenderOptions) *App",
-              "purpose": "Server-rendered HTML pages: RENDER_ / SUBMIT_ routes of common.HTTP controllers (before Create; nil opts or nil FS panics `invalid render: EnableRender needs RenderOptions.FS`, a second call `invalid render: EnableRender called twice`); templates parsed once and bound to their routes at Create (design 0018 amendment 2)"
-            },
-            {
-              "name": "EnableDevtool",
-              "signature": "EnableDevtool() *App",
-              "purpose": "Devtool snapshot of routes and layers"
-            },
-            {
-              "name": "EnableAccessLog",
-              "signature": "EnableAccessLog() *App",
-              "purpose": "One access log line per request (the tracer's only listener)"
             }
           ],
           "notes": [
-            "Configuration methods panic after Create: 'invalid app: <Method> must be called before Create'.",
-            "The request body cap is ServerOptions.MaxRequestBodyBytes of the serving call (0 = 10 MiB, negative = off); ServeHTTP wraps a body (not nil / http.NoBody) in http.MaxBytesReader. Exceeding it is a 413 exception from ctx.Body(). No SetMaxBodySize-style method exists.",
+            "Configuration is AppOptions, checked at New. The BindGlobal* methods panic after Create: 'invalid app: <Method> must be called before Create'. There are no Enable* / Set* methods and no ListenTLS.",
+            "The request body cap is AppOptions.HTTP.MaxBodyBytes (a ByteSize: 0 = 10 MiB, negative = off), also when App runs in your own http.Server; ServeHTTP wraps a body (not nil / http.NoBody) in http.MaxBytesReader. Exceeding it is a 413 exception from ctx.Body(). No SetMaxBodySize-style method exists.",
             "Server timeouts are internal defaults, not options: ReadHeaderTimeout 5 s, ReadTimeout 30 s, WriteTimeout 30 s, IdleTimeout 75 s, MaxHeaderBytes 64 KiB. Deeper tuning: run App as an http.Handler in your own http.Server.",
-            "The logger API is SetLogger(l) and Logger() only; App has no exported fields."
+            "The logger is AppOptions.Logger, read with Logger(); App has no exported fields.",
+            "Built-in protections are pre-route stages configured in AppOptions, each off until configured, in the fixed order loadshed → proxy → hostcheck → httpsredirect → headers → cors → csrf → compress, before routing and user middlewares. There are no public built-in middlewares (internal/middlewares/*).",
+            "SecurityCheck: one Warn at the end of Create when the app has SUBMIT_ routes without CSRF or RENDER_ routes without Headers; IsEnabled or IsDisabled on the group silences it; no behavior change."
           ]
         },
         "Module": {
@@ -209,17 +186,44 @@
           "description": "Any struct implementing NewProvider() Provider",
           "interface": "type Provider interface { NewProvider() Provider }"
         },
-        "ServerOptions": {
-          "description": "Options of Listen, ListenTLS and Serve; nil = defaults",
+        "AppOptions": {
+          "description": "Argument of New (root alias owlky.AppOptions); nil = defaults; documented in README.md › Configuration with each field's default and OK_* variable",
           "fields": [
-            "ShutdownTimeout time.Duration - drain time at shutdown (0 or negative = 30 s)",
-            "MaxRequestBodyBytes int64 - body cap (0 = 10 MiB, negative = off)",
-            "TLSConfig *tls.Config - ListenTLS / Serve TLS config, cloned",
-            "IsH2C bool - Listen / Serve without TLS also accept unencrypted HTTP/2"
+            "Logger log.LogAdapter - default log.NewLog(nil); code only",
+            "StartupTimeout time.Duration - budget of Create for Imports factories (default 30s); OK_STARTUP_TIMEOUT",
+            "IsAccessLog bool - one access line per request and WS message; OK_IS_ACCESS_LOG",
+            "IsDevtool bool - devtool snapshot at Create; OK_IS_DEVTOOL",
+            "Server *ServerOptions - Port (3000; OK_SERVER__PORT, else PORT), ShutdownTimeout (30s), TLS *TLSOptions{CertFile, KeyFile, Config (code only)}, IsH2C",
+            "HTTP *HTTPOptions - MaxBodyBytes ByteSize (10MiB, negative = no limit; OK_HTTP__MAX_BODY_BYTES), ServeDirs []string (declared, not enforced yet)",
+            "Render *RenderOptions - pages, on when FS is set (code only); Dir (web), IsReload",
+            "WS *WSOptions - WebSocket endpoint, on when Path is set; OK_WS__PATH",
+            "Versioning *VersioningOptions - on when Type is set; Key (v), DefaultVersion, Extractor (code only)",
+            "Proxy *ProxyOptions - on when TrustedProxies or TrustedHops (1-16) is set, exactly one; Header ProxyHeader (ProxyHeaderXForwarded | ProxyHeaderForwarded), IsHostForwarded",
+            "Hosts []string - host names answered, others 421; empty = every host; at most 256",
+            "Origins []string - one list for CORS, CSRF and the WebSocket handshake: scheme://host[:port] lower case, scheme://*.host, or \"*\" alone; at most 256; panics when CORS, CSRF and WS are all off",
+            "LoadShed *LoadShedOptions - IsEnabled, MaxInFlight (0 = adaptive), MaxQueue (64, negative = none)",
+            "HTTPSRedirect *HTTPSRedirectOptions - IsEnabled, Host (request's host), Port (443)",
+            "Headers *HeadersOptions - IsEnabled, IsDisabled (off on purpose, silences SecurityCheck), eight header strings (\"\" = default, \"-\" = not sent)",
+            "CORS *CORSOptions - IsEnabled (needs Origins), AllowMethods, AllowHeaders, ExposeHeaders, MaxAge (10m), IsAllowCredentials, IsAllowPrivateNetwork",
+            "CSRF *CSRFOptions - IsEnabled, IsDisabled; trusted origins come from Origins; no token, no cookie",
+            "Compress *CompressOptions - IsEnabled, MinSize ByteSize (1KiB)"
+          ],
+          "notes": [
+            "A group with a required field is on when that field is set; a group whose fields are all optional has IsEnabled. A field set while its group is off panics at New.",
+            "ByteSize: plain bytes; constants owlky.KB / MB / GB (1000ⁿ) and KiB / MiB / GiB (1024ⁿ); in a variable a whole number with one of those units, case-sensitive; a lower-case b is refused."
+          ]
+        },
+        "ServerOptions": {
+          "description": "AppOptions.Server: applies when Owlky opens the listener (Listen, Serve); no effect when App is only an http.Handler",
+          "fields": [
+            "Port int - TCP port of Listen (0 = 3000); Serve ignores it",
+            "ShutdownTimeout time.Duration - drain time at shutdown (0 = 30 s; negative panics at New)",
+            "TLS *TLSOptions - CertFile + KeyFile (PEM, loaded at New) and/or Config *tls.Config (cloned); HTTPS with HTTP/2",
+            "IsH2C bool - unencrypted HTTP/2 without TLS; with TLS panics at New"
           ]
         },
         "RenderOptions": {
-          "description": "Argument of EnableRender (root alias owlky.RenderOptions)",
+          "description": "AppOptions.Render (root alias owlky.RenderOptions); pages are on when FS is set",
           "fields": {
             "FS": "fs.FS, required: holds Dir. In Dir: layout.html per directory, top-level partials/, root error pages <400-599>.html / 4xx.html / 5xx.html, assets/ served at /assets/*, public/ served at the root URL, X.css / X.js next to X.html (linked by {{pageAssets}}, served at /assets/_pages/...), every other .html is the template of the page route with that path (<path>.html or <path>/index.html) and stops Create without one",
             "Dir": "string: the directory of FS holding the files (default web, . for the root of FS)",
@@ -307,7 +311,7 @@
       },
       "embedded_types": {
         "HTTP": "Embed in controller to enable HTTP routing (there is NO common.REST type — do not generate it)",
-        "HTTP methods": "Prefix(v string, handlers ...any) *HTTP (controller prefix, may hold {param}); Path(v string, handlers ...any) *HTTP (exact path replacing what the name spells; prefixes, method and version still apply). There is no Page embed and no View type: RENDER_ / SUBMIT_ methods of an HTTP controller are page routes (needs EnableRender), the result is the template's data; 200 for RENDER_, 422 for a SUBMIT_ that renders, c.Redirect without a 3xx status answers 303, errors from the first guard on are HTML",
+        "HTTP methods": "Prefix(v string, handlers ...any) *HTTP (controller prefix, may hold {param}); Path(v string, handlers ...any) *HTTP (exact path replacing what the name spells; prefixes, method and version still apply). There is no Page embed and no View type: RENDER_ / SUBMIT_ methods of an HTTP controller are page routes (needs AppOptions.Render.FS), the result is the template's data; 200 for RENDER_, 422 for a SUBMIT_ that renders, c.Redirect without a 3xx status answers 303, errors from the first guard on are HTML",
         "WS": "Embed in controller to enable WebSocket routing",
         "Middleware": "Separate embeddable type providing BindMiddleware(MiddlewareFn, ...any) *Middleware — not a field on HTTP/WS",
         "Guard": "Separate embeddable type providing BindGuard(any, ...any) *Guard",
@@ -325,7 +329,7 @@
           "MODIFY": "PATCH",
           "DELETE": "DELETE",
           "PREFLIGHT": "OPTIONS",
-          "RENDER": "GET page (template by route, needs EnableRender)",
+          "RENDER": "GET page (template by route, needs AppOptions.Render.FS)",
           "SUBMIT": "POST on the path of the RENDER_ with the same words (same controller)",
           "SERVE": "static files (GET)"
         },
@@ -427,7 +431,7 @@
     },
     "trace": {
       "responsibility": "Request tracing and observability",
-      "tracer": "type Tracer (zero value ready): Enabled() bool, Emit(Event), Listen(func(Event)) (stop func()); synchronous, no recover, 0 allocs. There is no event bus. core keeps one Tracer per app, unexported: EnableAccessLog() adds its only listener.",
+      "tracer": "type Tracer (zero value ready): Enabled() bool, Emit(Event), Listen(func(Event)) (stop func()); synchronous, no recover, 0 allocs. There is no event bus. core keeps one Tracer per app, unexported: AppOptions.IsAccessLog adds its only listener.",
       "trace_stages": [
         "middleware",
         "guard",
@@ -553,7 +557,7 @@
     "NEVER access raw websocket.Conn in handlers (use Publisher)",
     "NEVER retain pooled objects beyond request lifetime",
     "Code after next() runs before the next layer, not after the handler: post-handler work belongs in an interceptor's Pipe operators",
-    "Configuration methods (BindGlobal*, Enable*, SetLogger) only before Create",
+    "Configuration only in AppOptions (checked at New); BindGlobal* only before Create",
     "Providers are fields, never handler parameters",
     "Pages are RENDER_ / SUBMIT_ routes: the route picks the template (<path>.html or <path>/index.html), the only or last result is the data; there is no owlky.Page or owlky.View. Template functions are fixed (nonce, asset, dict, pageAssets): no user FuncMap",
     "Errors: a matched page route from its first guard on answers HTML (<code>.html, then <N>xx.html, then built-in), an API / SERVE / asset / public file route JSON; before any guard (middlewares, 404, 405, 410) HTML only when Accept contains text/html. A cause's text and a 500's own message never reach the client"

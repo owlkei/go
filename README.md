@@ -65,7 +65,10 @@ served from your app's own origin.
   handlers for one route make `Create()` panic, before the server takes a request.
 - **Fast at run time.** Owlky Go does its reflection once, at `Create()`. A request runs a plan
   that was built at startup.
-- **Safe defaults.** The server has timeouts, a request body limit and graceful shutdown. Only
+- **Explicit protection.** Nothing runs unless you configure it. One `AppOptions` block holds the
+  whole configuration, documented in [one place](#configuration), with a
+  [production checklist](#production-checklist) to copy.
+- **A safe server.** The server has timeouts, a request body limit and graceful shutdown. Only
   exceptions reach the client: any other panic answers a fixed `500` and is logged.
 
 ## Contents
@@ -114,7 +117,19 @@ served from your app's own origin.
     - [Cache](#cache)
     - [Outbound HTTP calls](#outbound-http-calls)
   - [Configuration](#configuration)
-  - [Production checklist](#production-checklist)
+    - [Start here](#start-here)
+    - [Production checklist](#production-checklist)
+    - [The built-in stages and their order](#the-built-in-stages-and-their-order)
+    - [Who is the client: Proxy, Hosts, Origins](#who-is-the-client-proxy-hosts-origins)
+    - [HTTP](#http)
+    - [Server](#server)
+    - [Pages (Render)](#pages-render)
+    - [WebSocket options](#websocket-options)
+    - [Versioning options](#versioning-options)
+    - [Operations](#operations)
+    - [From the environment](#from-the-environment)
+    - [Behavior changes](#behavior-changes)
+    - [Security notes](#security-notes)
   - [Exceptions](#exceptions)
   - [Package reference](#package-reference)
   - [License](#license)
@@ -266,7 +281,7 @@ then you wire it once with `Create` and serve it:
 | `Versioning` | Routes per API version. See [Versioning](#versioning). |
 | `WS` | The WebSocket server. See [WebSocket](#websocket). |
 | `Render` | Server-rendered HTML pages. See [Pages](#pages). |
-| `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress` | The built-in protections, each off until set. See [Production checklist](#production-checklist). |
+| `Proxy`, `Hosts`, `Origins`, `LoadShed`, `HTTPSRedirect`, `Headers`, `CORS`, `CSRF`, `Compress` | The built-in protections, each off until set. See [Configuration](#configuration). |
 
 The server shuts down gracefully on `SIGINT`, `SIGTERM` or `app.Stop()`: running requests get
 30 seconds to finish. An `App` is also an `http.Handler`, so you can serve it with your own
@@ -2831,14 +2846,21 @@ the framework logs it (`ExceptionCause`, at `Debug`) and sends only the status t
 
 ## Configuration
 
-`owlky.AppOptions` holds the whole configuration of an app. `New` reads it once and copies what it
-keeps, so changing the struct after `New` has no effect. Every check happens in `New`: a bad value
-panics with `invalid app: <Field> …` before the app exists.
+The whole configuration of an app is one struct, `owlky.AppOptions`, passed to `owlky.New`. Code is
+bound with the `Bind…` methods, and `app.Listen()` takes no argument.
 
-### From the environment
+- `New` reads the struct once and copies what it keeps. Changing it after `New` has no effect.
+- Every check happens in `New`. A bad value panics with `invalid app: <Group>.<Field> …` before
+  the app exists.
+- An empty field means "off" or the default in the tables below. No field changes the meaning of
+  another.
+- **Nothing protects the app until you configure it.** Load shedding, the proxy headers, the host
+  check, the HTTPS redirect, the security headers, CORS, CSRF and compression are all off by
+  default. Copy the [production checklist](#production-checklist) and remove what you don't need.
 
-`owlky.OptionsFromEnv()` returns an `*AppOptions` filled from `OK_*` variables, then from `./.env`
-(the environment wins). Code written after the call wins over both:
+### Start here
+
+An app with no options is a complete app for development:
 
 ```go
 package main
@@ -2846,9 +2868,7 @@ package main
 import "go.owlky.com/owlky"
 
 func main() {
-	opts := owlky.OptionsFromEnv()
-	opts.IsDevtool = false
-	app := owlky.New(opts)
+	app := owlky.New(nil)
 	app.Create(owlky.ModuleBuilder().Build())
 	if err := app.Listen(); err != nil {
 		app.Logger().Fatal("AppError", "error", err)
@@ -2856,68 +2876,24 @@ func main() {
 }
 ```
 
-- **Names:** `OK_` and the field path in upper snake case, levels joined by `__`:
-  `OK_HTTP__MAX_BODY_BYTES`, `OK_SERVER__TLS__CERT_FILE`, `OK_ORIGINS`. `PORT` fills `Server.Port`
-  when `OK_SERVER__PORT` is not set. No other variable is read.
-- **Values:** `true` or `false`; durations with a unit (`30s`); sizes as bytes or with `KB`, `MB`,
-  `GB` (1000ⁿ) or `KiB`, `MiB`, `GiB` (1024ⁿ); lists split on `,`; `ProxyHeader` as `x-forwarded`
-  or `forwarded`; `VersioningType` as `query`, `header`, `media-type` or `custom`.
-- **Errors:** an unknown `OK_*` name (with the closest known name), an empty value, a value that
-  doesn't convert, and a `.env` syntax error stop `New` with every error, one per line.
-- **Code only:** `Logger`, `Render.FS`, `Server.TLS.Config` and `Versioning.Extractor` have no
-  variable.
-- **Startup log:** with `OptionsFromEnv`, `New` logs one `AppOption` line per field that is set,
-  with its source (the variable, `.env:<line>`, `PORT` or `code`).
+`New(nil)` and `New(&owlky.AppOptions{})` give the same app:
 
-Without a call to `OptionsFromEnv`, Owlky Go reads no variable and no file.
+| What | Value |
+|---|---|
+| Port | 3000, plain HTTP/1.1 |
+| Request body | 10 MiB at most |
+| Server timeouts | Fixed ([core › Timeouts and limits](internal/core/README.md#timeouts-and-limits)) |
+| Graceful shutdown | 30 seconds for running requests |
+| Startup timeout | 30 seconds |
+| Logger | `log.NewLog(nil)` |
+| Access log, devtool | Off |
+| Pages, WebSocket, versioning | Off |
+| Built-in protections | Off |
 
----
+### Production checklist
 
-## Production checklist
-
-A new app runs with server timeouts, a 10 MiB body limit and graceful shutdown
-([core › Server](internal/core/README.md#server)). The protections below are off until you set
-them. When an app has `SUBMIT_` routes without `CSRF`, or `RENDER_` routes without `Headers`,
-`Create` logs one `SecurityCheck` warning naming what is missing; set `IsDisabled: true` on the
-group to turn the protection off on purpose and silence it.
-
-### Logs
-1. **JSON logs.** The built-in logger writes JSON when stdout is not a terminal, which is the case
-   in a container. Set it explicitly and add the fields to mask:
-   `Logger: log.NewLog(&log.LogOptions{Format: log.FormatJSON, MaskFields: []string{"password"}})`
-   ([log](log/README.md)).
-2. **Access log.** `IsAccessLog: true` writes one line per request with its status, its total
-   time and the time of each stage, middleware, guard and handler ([accesslog](internal/accesslog/README.md)).
-3. **Log with the request's context.** Log through `Logger.From(c.Context())` in handlers and
-   services, so every line carries the request's `trace_id` and `request` ID. See
-   [Find the logs of a request](log/README.md#find-the-logs-of-a-request).
-
-### Protections, in a fixed order
-They run before routing, in this order, whatever the order of the fields, then your
-`BindGlobalMiddlewares`:
-
-1. **`LoadShed`** (`IsEnabled`): a request refused under overload costs as little as possible.
-2. **`Proxy`** (`TrustedProxies` or `TrustedHops`), when the app runs behind a load balancer. Every
-   later stage, your middlewares, the throttler and the access log then see the real client.
-   `owlky.ClientIP`, `owlky.ClientScheme` and `owlky.ClientHost` read it.
-3. **`Hosts`**, the host names your app serves; any other gets `421`.
-4. **`HTTPSRedirect`** (`IsEnabled`), unless your proxy already redirects HTTP to HTTPS. Set `Host`
-   so the target never comes from the client's `Host` header.
-5. **`Headers`** (`IsEnabled`) for the security headers. Its default Content Security Policy allows
-   only your own origin.
-6. **`CORS`** (`IsEnabled`), only when browser pages on another origin call your API.
-7. **`CSRF`** (`IsEnabled`), when browsers send cookies or HTTP authentication to your app
-   (sessions, HTML forms).
-8. **`Compress`** (`IsEnabled`), unless your proxy already compresses responses. Don't use it on
-   routes that put a secret next to text from the request in one response (BREACH).
-
-`Origins` is one list for `CORS`, `CSRF` and the WebSocket handshake.
-
-### Guards
-- **`throttler`** limits each client: bind it globally with a budget your real users never reach,
-  and with a tighter one on routes such as logins and password resets.
-
-### Example
+One block to copy. Every protection an app on the internet needs is in it. The full app is
+[`examples/05-production`](examples/05-production/README.md).
 
 ```go
 package main
@@ -2950,6 +2926,7 @@ func main() {
 		}),
 		IsAccessLog:   true,
 		Server:        &owlky.ServerOptions{Port: 8080},
+		HTTP:          &owlky.HTTPOptions{MaxBodyBytes: 1 * owlky.MiB},
 		Proxy:         &owlky.ProxyOptions{TrustedProxies: []string{"10.0.0.0/8"}},
 		Hosts:         []string{"example.com"},
 		Origins:       []string{"https://app.example.com"},
@@ -2980,10 +2957,414 @@ Behind a load balancer at `10.0.0.7`, a request for `https://example.com/hello` 
 with `"ip":"198.51.100.20"`. The same request over plain HTTP answers
 `308 Location: https://example.com/hello`.
 
-### WebSocket
-The handshake runs `LoadShed`, `Proxy`, `Hosts`, then an Origin check: a browser handshake from
-another site is refused with `403` unless its origin is in `Origins` (no `Origin` header, or the
-same origin, passes). Your `BindGlobalMiddlewares` run after them, once per connection.
+Go through the list once for your app:
+
+1. **`Logger`**: JSON logs, with the fields to mask ([log](log/README.md)). Log through
+   `Logger.From(c.Context())` in handlers and services, so every line carries the request's
+   `trace_id` and `request` ID.
+2. **`IsAccessLog`**: one line per request.
+3. **`HTTP.MaxBodyBytes`**: the largest body your app really accepts.
+4. **`Proxy`**: set it when the app runs behind a load balancer. Leave it out when clients connect
+   directly.
+5. **`Hosts`**: the host names your app serves.
+6. **`LoadShed`**: on.
+7. **`HTTPSRedirect`**: on, unless your proxy already redirects HTTP to HTTPS. Set `Host`.
+8. **`Headers`**: on for every app that serves HTML pages.
+9. **`Origins` and `CORS`**: only when browser pages on another origin call your API.
+10. **`CSRF`**: on when browsers send cookies or HTTP authentication to your app (sessions, HTML
+    forms).
+11. **`Compress`**: on, unless your proxy already compresses responses.
+12. **A rate limit**: bind the [`throttler`](guards/throttler/README.md) guard globally with a
+    budget your real users never reach, and a tighter one on routes such as logins and password
+    resets.
+
+**The `SecurityCheck` warning.** At the end of `Create`, the app logs at most one `Warn` line,
+`SecurityCheck`, with a `missing` list and a link to this section:
+
+- `csrf`: the app has a `SUBMIT_` route and `CSRF` is not set.
+- `headers`: the app has a `RENDER_` route and `Headers` is not set.
+
+The warning changes no response and turns nothing on. Set `IsEnabled: true` on the group to turn
+the protection on, or `IsDisabled: true` to turn it off on purpose. Both silence the warning. An
+app without pages logs nothing.
+
+### The built-in stages and their order
+
+The eight protections are stages of the framework. They run before routing and before your
+middlewares, always in this order:
+
+`LoadShed` → `Proxy` → `Hosts` → `HTTPSRedirect` → `Headers` → `CORS` → `CSRF` → `Compress` →
+your `BindGlobalMiddlewares` → routing → the [request lifecycle](#request-lifecycle)
+
+- A stage that is off doesn't run and costs nothing.
+- The order of the fields in `AppOptions` and of your `Bind…` calls never changes this order.
+- A request refused by a stage gets the stage's answer, also on a path with no route: a wrong
+  host answers `421`, never `404`.
+- A WebSocket handshake runs `LoadShed`, `Proxy`, `Hosts`, then the
+  [Origin check](#websocket-options), then your `BindGlobalMiddlewares`.
+- With `IsAccessLog`, each stage that ran appears in the access line under `pre-route`.
+
+### Who is the client: Proxy, Hosts, Origins
+
+These three fields say where requests come from. The other stages rely on them.
+
+**`Proxy`** trusts the forwarding headers of your load balancer. Without it, the client is the
+peer of the TCP connection, which is your proxy when you have one. The stage is on when
+`TrustedProxies` or `TrustedHops` is set. Set one of them, not both.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `TrustedProxies` | empty | `OK_PROXY__TRUSTED_PROXIES` | You know the IPs or CIDRs of your proxies (`10.0.0.0/8`). |
+| `TrustedHops` | `0` | `OK_PROXY__TRUSTED_HOPS` | Your platform doesn't publish its ranges: the number of proxies in front of the app, 1 to 16. |
+| `Header` | `ProxyHeaderXForwarded` | `OK_PROXY__HEADER` (`x-forwarded`, `forwarded`) | Your proxy sends the standard `Forwarded` header instead of `X-Forwarded-*`. |
+| `IsHostForwarded` | `false` | `OK_PROXY__IS_HOST_FORWARDED` | Your proxy rewrites `Host` and sends the client's host in the forwarding header. |
+
+Every later stage, your middlewares, the throttler and the access log then see the real client.
+Read it with `owlky.ClientIP(r)`, `owlky.ClientScheme(r)` and `owlky.ClientHost(r)`.
+
+**`Hosts`** lists the host names the app answers. A request for another host gets `421`.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `Hosts` | empty: every host | `OK_HOSTS` | In production, always. At most 256 entries. `localhost` is not added for you. |
+
+**`Origins`** is one list of browser origins, used by `CORS`, `CSRF` and the WebSocket handshake.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `Origins` | empty: same origin only | `OK_ORIGINS` | Pages on another origin call your app: `https://app.example.com`, `https://*.example.com`, or `*` alone. |
+
+- An entry is `scheme://host[:port]` in lower case, without a path. At most 256 entries.
+- `*` can't be combined with `CORS.IsAllowCredentials` or with `CSRF`.
+- `Origins` without `CORS`, `CSRF` or `WS` stops `New`: the list would have no effect.
+
+### HTTP
+
+`HTTP` holds what applies to every request, also when the `App` runs in your own `http.Server`.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `MaxBodyBytes` | `10MiB` | `OK_HTTP__MAX_BODY_BYTES` | Lower it to the largest body you accept; raise it for uploads. A larger body answers `413`. A negative value removes the limit. |
+| `ServeDirs` | empty | `OK_HTTP__SERVE_DIRS` | Reserved: the directories a `SERVE_` handler may return. It has no effect yet. |
+
+`MaxBodyBytes` is a `ByteSize`. In code, write `16 * owlky.KiB` or `2 * owlky.MB`. In a variable,
+write bytes (`1500`) or a whole number with a unit: `KB`, `MB`, `GB` are powers of 1000, and
+`KiB`, `MiB`, `GiB` powers of 1024. Units are case-sensitive, without a space or a fraction:
+`10Mb`, `10 MB` and `1.5MB` are refused.
+
+The stages below also belong to HTTP requests. Each is on with `IsEnabled: true`. A field set
+while `IsEnabled` is false stops `New`.
+
+**`LoadShed`** refuses requests with `503` when the app has more work than it can do.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `IsEnabled` | `false` | `OK_LOAD_SHED__IS_ENABLED` | In production. |
+| `MaxInFlight` | `0`: adapts to the machine | `OK_LOAD_SHED__MAX_IN_FLIGHT` | You measured how many concurrent requests the app handles and want a fixed limit. |
+| `MaxQueue` | `64` | `OK_LOAD_SHED__MAX_QUEUE` | How many requests wait up to 100 ms for a slot. A negative value: none wait. |
+
+**`HTTPSRedirect`** answers plain HTTP requests with `308` to HTTPS.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `IsEnabled` | `false` | `OK_HTTPS_REDIRECT__IS_ENABLED` | The app is reachable over plain HTTP and your proxy doesn't redirect. |
+| `Host` | the request's host | `OK_HTTPS_REDIRECT__HOST` | Always, or set `Hosts`: the target then never comes from the client's `Host` header. |
+| `Port` | `443` | `OK_HTTPS_REDIRECT__PORT` | HTTPS listens on another port. |
+
+**`Headers`** sends the security headers.
+
+| Field | Default | Variable |
+|---|---|---|
+| `IsEnabled` | `false` | `OK_HEADERS__IS_ENABLED` |
+| `IsDisabled` | `false` | `OK_HEADERS__IS_DISABLED` |
+| `ContentSecurityPolicy` | `default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src-attr 'none'; upgrade-insecure-requests` | `OK_HEADERS__CONTENT_SECURITY_POLICY` |
+| `CrossOriginEmbedderPolicy` | not sent | `OK_HEADERS__CROSS_ORIGIN_EMBEDDER_POLICY` |
+| `CrossOriginOpenerPolicy` | `same-origin` | `OK_HEADERS__CROSS_ORIGIN_OPENER_POLICY` |
+| `CrossOriginResourcePolicy` | `same-origin` | `OK_HEADERS__CROSS_ORIGIN_RESOURCE_POLICY` |
+| `FrameOptions` | `DENY` | `OK_HEADERS__FRAME_OPTIONS` |
+| `PermissionsPolicy` | every powerful feature off (camera, geolocation, microphone, payment…) | `OK_HEADERS__PERMISSIONS_POLICY` |
+| `ReferrerPolicy` | `no-referrer` | `OK_HEADERS__REFERRER_POLICY` |
+| `StrictTransportSecurity` | `max-age=63072000; includeSubDomains`, over HTTPS only | `OK_HEADERS__STRICT_TRANSPORT_SECURITY` |
+
+- Turn it on for every app with pages. Change a header when a page needs more: a script from a
+  CDN in `ContentSecurityPolicy`, `SAMEORIGIN` in `FrameOptions` to frame your own pages.
+- For each header, an empty value sends the default, `"-"` sends nothing, and any other value is
+  sent as written.
+- `IsDisabled: true` says "off on purpose" and silences the `SecurityCheck` warning.
+- Inline scripts and styles need a nonce. See
+  [Pages › Content Security Policy](#content-security-policy).
+
+**`CORS`** answers cross-origin browser requests from the origins in `Origins`.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `IsEnabled` | `false` | `OK_CORS__IS_ENABLED` | Browser pages on another origin call your API. It needs `Origins`. |
+| `AllowMethods` | `GET, HEAD, PUT, PATCH, POST, DELETE` | `OK_CORS__ALLOW_METHODS` | You want to allow fewer methods. |
+| `AllowHeaders` | `Content-Type, Authorization` | `OK_CORS__ALLOW_HEADERS` | Pages send another request header. |
+| `ExposeHeaders` | none | `OK_CORS__EXPOSE_HEADERS` | Pages read a response header such as `X-Total-Count`. |
+| `MaxAge` | `10m` | `OK_CORS__MAX_AGE` | How long browsers cache a preflight. |
+| `IsAllowCredentials` | `false` | `OK_CORS__IS_ALLOW_CREDENTIALS` | Pages send cookies or HTTP authentication. |
+| `IsAllowPrivateNetwork` | `false` | `OK_CORS__IS_ALLOW_PRIVATE_NETWORK` | A public page calls an app on a private network. |
+
+**`CSRF`** refuses cross-site `POST`, `PUT`, `PATCH` and `DELETE` requests whose origin is not in
+`Origins`. It needs no token and no hidden field: it reads the `Sec-Fetch-Site` and `Origin`
+headers that browsers send.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `IsEnabled` | `false` | `OK_CSRF__IS_ENABLED` | Browsers send cookies or HTTP authentication to your app. |
+| `IsDisabled` | `false` | `OK_CSRF__IS_DISABLED` | Off on purpose: silences the `SecurityCheck` warning. |
+
+**`Compress`** gzips compressible responses.
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `IsEnabled` | `false` | `OK_COMPRESS__IS_ENABLED` | Your proxy doesn't compress responses. |
+| `MinSize` | `1KiB` | `OK_COMPRESS__MIN_SIZE` | The smallest body worth compressing (a `ByteSize`). |
+
+Don't compress routes that put a secret next to text from the request in one response (BREACH).
+
+### Server
+
+`Server` applies when Owlky Go opens the listener (`Listen`, `Serve`). It has no effect when you
+mount the `App` in your own `http.Server`. See [core › Server](internal/core/README.md#server).
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `Port` | `3000` | `OK_SERVER__PORT`, else `PORT` | Your platform gives the port. `Serve(listener)` ignores it. |
+| `ShutdownTimeout` | `30s` | `OK_SERVER__SHUTDOWN_TIMEOUT` | Your platform kills the process sooner after `SIGTERM`: stay below its grace period. |
+| `IsH2C` | `false` | `OK_SERVER__IS_H2C` | A proxy speaks HTTP/2 without TLS to the app. Not with `TLS`. |
+| `TLS.CertFile` | none | `OK_SERVER__TLS__CERT_FILE` | The app terminates TLS itself: the PEM certificate chain. |
+| `TLS.KeyFile` | none | `OK_SERVER__TLS__KEY_FILE` | The PEM private key of `CertFile`. Set both or neither. |
+| `TLS.Config` | TLS 1.2 minimum | code only | You need your own `*tls.Config`, such as `GetCertificate` for automatic certificates. |
+
+- With a certificate, `Listen()` serves HTTPS with HTTP/1.1 and HTTP/2.
+- The files are loaded at `New`: a wrong path stops the app at start, not at the first handshake.
+- The server timeouts are fixed and are not options
+  ([core › Timeouts and limits](internal/core/README.md#timeouts-and-limits)).
+
+### Pages (Render)
+
+`Render` turns on server-rendered pages when `FS` is set. See [Pages](#pages).
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `FS` | none: pages off | code only | The app has `RENDER_` routes: an `embed.FS` or `os.DirFS` with your templates. |
+| `Dir` | `web` | `OK_RENDER__DIR` | The templates are in another directory of `FS` (`.` for its root). |
+| `IsReload` | `false` | `OK_RENDER__IS_RELOAD` | In development only: read the templates from disk and parse them again when a file changes. |
+
+`Dir` or `IsReload` without `FS` stops `New`. An app with pages should also set `Headers` and
+`CSRF`.
+
+### WebSocket options
+
+`WS` turns on the WebSocket endpoint when `Path` is set. See [WebSocket](#websocket).
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `Path` | none: WebSocket off | `OK_WS__PATH` | The app has `SUBSCRIBE_` handlers: the path of the endpoint, such as `ws`. |
+
+The handshake always checks the `Origin` header. This check has no switch:
+
+- No `Origin` header (a client that is not a browser) passes.
+- The same origin as the request passes.
+- An origin in `Origins` passes.
+- Any other origin gets `403`, before the upgrade. This stops another site from opening a
+  connection with your user's cookies.
+
+### Versioning options
+
+`Versioning` turns on route versioning when `Type` is set. See [Versioning](#versioning).
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `Type` | none: versioning off | `OK_VERSIONING__TYPE` (`query`, `header`, `media-type`, `custom`) | The app has `_VERSION_` routes: where the request carries its version. |
+| `Key` | `v` | `OK_VERSIONING__KEY` | Another query parameter, header or media type parameter name. |
+| `DefaultVersion` | empty | `OK_VERSIONING__DEFAULT_VERSION` | The version of a request that carries none. |
+| `Extractor` | none | code only | With `VersioningCustom`: your function that reads the version. |
+
+A field set without `Type` stops `New`.
+
+### Operations
+
+| Field | Default | Variable | When to change it |
+|---|---|---|---|
+| `Logger` | `log.NewLog(nil)` | code only | You want JSON, masked fields or your own `log.LogAdapter` ([log](log/README.md)). |
+| `IsAccessLog` | `false` | `OK_IS_ACCESS_LOG` | In production: one line per request and WebSocket message, with the time of each stage ([accesslog](internal/accesslog/README.md)). |
+| `StartupTimeout` | `30s` | `OK_STARTUP_TIMEOUT` | Module factories need more or less time ([Startup timeout](#startup-timeout)). |
+| `IsDevtool` | `false` | `OK_IS_DEVTOOL` | In development: a snapshot of the routes, layers and stages for development tools. |
+
+The built-in logger writes JSON when stdout is not a terminal, which is the case in a container.
+
+### From the environment
+
+`owlky.OptionsFromEnv()` returns the same `*AppOptions`, filled from environment variables and
+from a `.env` file. Without a call to it, Owlky Go reads no variable and no file.
+
+```go
+package main
+
+import (
+	"embed"
+
+	"go.owlky.com/owlky"
+)
+
+//go:embed all:web
+var web embed.FS
+
+func main() {
+	opts := owlky.OptionsFromEnv()
+	opts.Render.FS = web
+	opts.IsDevtool = false
+	app := owlky.New(opts)
+	app.Create(owlky.ModuleBuilder().Build())
+	if err := app.Listen(); err != nil {
+		app.Logger().Fatal("AppError", "error", err)
+	}
+}
+```
+
+**Names.** A variable is `OK_`, then the field path in upper snake case, with `__` between
+levels:
+
+| Field | Variable |
+|---|---|
+| `Origins` | `OK_ORIGINS` |
+| `IsAccessLog` | `OK_IS_ACCESS_LOG` |
+| `HTTP.MaxBodyBytes` | `OK_HTTP__MAX_BODY_BYTES` |
+| `Server.TLS.CertFile` | `OK_SERVER__TLS__CERT_FILE` |
+| `HTTPSRedirect.Port` | `OK_HTTPS_REDIRECT__PORT` |
+| `Server.Port` | `OK_SERVER__PORT`, else `PORT` |
+
+`PORT` is the one name without `OK_`. It fills `Server.Port` when `OK_SERVER__PORT` is not set.
+No other variable is read. Four fields are set in code only: `Logger`, `Render.FS`,
+`Server.TLS.Config` and `Versioning.Extractor`.
+
+**Values.**
+
+| Type | Written as |
+|---|---|
+| Text, number | `example.com`, `8080` |
+| Boolean | `true` or `false` only |
+| Duration | A number with a unit: `30s`, `10m`. `30` is refused. |
+| `ByteSize` | Bytes, or a whole number with `KB`, `MB`, `GB` (1000ⁿ) or `KiB`, `MiB`, `GiB` (1024ⁿ) |
+| List | Elements joined by `,`: `a.com,b.com`. Spaces around an element are removed. |
+| `Proxy.Header` | `x-forwarded` or `forwarded` |
+| `Versioning.Type` | `query`, `header`, `media-type` or `custom` |
+
+**Precedence.** From strongest to weakest:
+
+1. Code written after the `OptionsFromEnv()` call, an explicit `false`, `0` or `""` included.
+2. The process environment.
+3. The file `.env` in the working directory. A missing file is skipped. Only its `OK_*` and `PORT`
+   keys are read; the other keys are left to your app and to the [Config](#config) module.
+
+`OptionsFromEnv` returns every group non-nil, so `opts.Render.FS = web` needs no check.
+
+**Strict errors.** `OptionsFromEnv` never panics. `New` stops with every error at once, one per
+line:
+
+```text
+invalid app: 3 environment errors:
+  OK_HOST (environment): unknown variable; did you mean OK_HOSTS?
+  OK_HTTP__MAX_BODY_BYTES (.env:3): "10Mb" is not a size: write bytes or a number with KB, MB, GB (1000ⁿ) or KiB, MiB, GiB (1024ⁿ); a lower-case b means bits
+  OK_ORIGINS (environment): empty value; remove the variable to unset it
+```
+
+- An unknown `OK_*` name stops the app, with the closest known name. A typo never leaves a
+  protection off in silence.
+- An empty value stops the app. Remove the variable to unset it.
+- A value that doesn't convert stops the app. One bad element refuses the whole list.
+- A `.env` syntax error stops the app, with its line number and never the value.
+- A value of the right type and wrong meaning (a bad CIDR, a missing TLS file) fails the check of
+  `New`, which names the field and the variable it came from.
+
+**Sources in the startup log.** With `OptionsFromEnv`, `New` logs one `AppOption` line per field
+that is set, with its value and where it came from:
+
+| `source` | Meaning |
+|---|---|
+| `OK_HOSTS` | The process environment |
+| `.env:3` | Line 3 of `.env` |
+| `PORT` | The `PORT` variable of the process environment |
+| `code` | Set or changed in code after `OptionsFromEnv()` |
+
+Code-only fields print `set` instead of their value.
+
+**`.env` and `.env.example`.** Keep `.env` out of version control and commit an example instead:
+
+```gitignore
+.env
+```
+
+```sh
+# .env.example: copy to .env and fill in
+PORT=8080
+OK_IS_ACCESS_LOG=true
+OK_HTTP__MAX_BODY_BYTES=1MiB
+OK_PROXY__TRUSTED_PROXIES=10.0.0.0/8
+OK_HOSTS=example.com
+OK_ORIGINS=https://app.example.com
+OK_LOAD_SHED__IS_ENABLED=true
+OK_HTTPS_REDIRECT__IS_ENABLED=true
+OK_HTTPS_REDIRECT__HOST=example.com
+OK_HEADERS__IS_ENABLED=true
+OK_CORS__IS_ENABLED=true
+OK_CORS__IS_ALLOW_CREDENTIALS=true
+OK_CSRF__IS_ENABLED=true
+OK_COMPRESS__IS_ENABLED=true
+```
+
+This file gives the same protections as the [production checklist](#production-checklist); the
+logger stays in code. `OptionsFromEnv` reads `.env` from the working directory, and the
+[Config](#config) module from the directory of the nearest `go.mod`. They are the same file when
+you run `go run .` from the module root.
+
+### Behavior changes
+
+For apps written before `AppOptions`. The old API is removed, with no alias.
+
+| Before | Now |
+|---|---|
+| `owlky.New()` | `owlky.New(nil)` or `owlky.New(&owlky.AppOptions{…})` |
+| `SetLogger`, `SetStartupTimeout`, `EnableAccessLog`, `EnableDevtool` | `Logger`, `StartupTimeout`, `IsAccessLog`, `IsDevtool` |
+| `EnableRender`, `EnableVersioning`, `EnableWS` | `Render`, `Versioning`, `WS` |
+| `Listen(port, opts)`, `ListenTLS(port, cert, key, opts)` | `Server.Port`, `Server.TLS` and `Listen()` |
+| `Serve(listener, opts)` | `Serve(listener)` |
+| `ServerOptions.MaxRequestBodyBytes` | `HTTP.MaxBodyBytes`, a `ByteSize` |
+| The `middlewares/*` packages bound with `BindGlobalMiddlewares` | The matching `AppOptions` field. The packages are no longer public. |
+| An origin list for CORS and another for CSRF | One `Origins` list |
+| `proxy.ClientIP`, `proxy.Scheme`, `proxy.Host` | `owlky.ClientIP`, `owlky.ClientScheme`, `owlky.ClientHost` |
+
+What behaves differently:
+
+- **The built-in stages always run before your middlewares, in a fixed order.** The order of your
+  `Bind…` calls no longer matters. A middleware of yours that ran before a built-in one now runs
+  after it:
+  - It no longer runs for a request refused under overload.
+  - It reads the client resolved by `Proxy`, not the peer.
+  - Its own refusals carry the security headers.
+  - `Compress` also compresses what it writes.
+- **The stages run before routing.** A request refused by a stage gets the stage's answer on an
+  unknown path (`421`, not `404`) and on a route of a module that is not ready (not the `503` of
+  [AsyncImports](#imports-and-asyncimports)).
+- **Every stage is off by default.** An app that bound no built-in middleware behaves as before.
+  Nothing is turned on for you.
+- **The `SecurityCheck` warning** is logged once at `Create` when an app has `SUBMIT_` routes
+  without `CSRF`, or `RENDER_` routes without `Headers`. It changes no response.
+- **`Origins` also guards the WebSocket handshake.** A browser handshake from another site gets
+  `403` unless its origin is listed. The handshake runs the stages its fields turn on, not a list
+  of middlewares passed to `EnableWS`; your `BindGlobalMiddlewares` run on it, once per
+  connection. CORS no longer runs on the handshake.
+- **Wildcard origins work for CSRF.** `https://*.example.com` in `Origins` passes `CSRF` as it
+  passes `CORS`.
+- **Configuration errors come from `New`.** They read `invalid app: <Group>.<Field> …` in place
+  of `invalid cors: …`, `invalid proxy: …` and the others. TLS files are loaded at `New`.
+- **Sizes are `ByteSize` values.** `HTTP.MaxBodyBytes` and `Compress.MinSize` take
+  `10 * owlky.MiB` in code. A plain number is still bytes. In a variable, `KB`, `MB` and `GB` are
+  powers of 1000, `KiB`, `MiB` and `GiB` powers of 1024, and a lower-case `b` (`10Mb`) is refused,
+  because it means bits.
 
 ### Security notes
 - `c.Redirect` sends the client to any URL: never pass a URL from the request unchecked

@@ -62,9 +62,13 @@ Designs consider both outputs (errors, security headers such as CSP, forms, the 
   framework's lower layers. The surface users see is as small as possible: they learn only what they
   must, and use only what they should.
 - **One obvious way.** No two APIs for the same job; no option whose effect depends on another call.
-- **Safe defaults, little configuration.** Defaults are production-safe; options exist only for what
-  real apps need to change. Deep tuning goes through standard Go escape hatches (`App` is an
-  `http.Handler`), documented as advanced.
+- **Explicit protection.** Nothing runs unless configured: every built-in stage (load shedding, proxy,
+  host check, HTTPS redirect, security headers, CORS, CSRF, compression) is off until its `AppOptions`
+  field is set. One `AppOptions` block, documented in one place (`README.md` › Configuration, with the
+  production checklist); the CLI's templates (later) ship the production configuration. The server's
+  timeouts, the body limit and graceful shutdown stay on; a `SecurityCheck` warning names a missing CSRF
+  or headers protection. Options exist only for what real apps need to change; deep tuning goes through
+  standard Go escape hatches (`App` is an `http.Handler`), documented as advanced.
 - **Hide by default.** A new identifier is unexported (or under `internal/`) unless users need it.
   Designs list every exported addition and justify it; the reviewer flags exported names users don't
   need.
@@ -173,8 +177,11 @@ Controller method names are parsed into HTTP routes — no annotations needed (d
 ### Request Pipeline (per route)
 
 ```
-GlobalMiddlewares → ModuleMiddlewares → GlobalGuards → ModuleGuards → GlobalInterceptors → ModuleInterceptors
+pre-route stages (built-in, from AppOptions, before route matching; none when nothing is configured):
+  loadshed → proxy → hostcheck → httpsredirect → headers → cors → csrf → compress
+→ GlobalMiddlewares → ModuleMiddlewares → GlobalGuards → ModuleGuards → GlobalInterceptors → ModuleInterceptors
   → MainHandler → module post-interceptors → global post-interceptors → response
+refusal by a stage → the stage's answer, before 404 / 405 / 410 and the async gate's 503
 error in a middleware → the HTTP layer's fixed error response (no user filter)
 error from a guard on → module filters → global filters → built-in filter
 ```
@@ -242,7 +249,7 @@ Controllers embed `owlky.WS` (alongside or instead of `owlky.HTTP`). Handler nam
 
 ### Bootstrap-time Error Convention
 
-Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `internal/core/`, `internal/common/`, `internal/routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires during `app.Create()`'s module/controller wiring (or a configuration call made after it), never on the request path, so an uncaught panic there is fail-fast by design.
+Build/config failures (route conflicts, unresolved dependencies, invalid handlers) in `internal/core/`, `internal/common/`, `internal/routing/` are reported via `panic()`, not returned as `error` — there is no error-return API (`Build()` returns the module, `Create()` returns nothing; neither returns an `error`). This only fires in `owlky.New` (every `AppOptions` check), during `app.Create()`'s module/controller wiring, or in a `BindGlobal…` call made after it, never on the request path, so an uncaught panic there is fail-fast by design.
 
 Message format is `"<category>: <detail>"`:
 - `"route conflict: ..."` (`internal/core/container.go`, per app: the same method, version and route shape; routes that differ only in parameter names conflict; `SERVE_static_ANY` and `SERVE_ANY_OF_static` are the same route, `/static/*`)

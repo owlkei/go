@@ -28,7 +28,7 @@ Internal package: applications use `AppOptions.Headers` (`owlky.HeadersOptions`)
 
 ## Key Features
 - A strict Content Security Policy by default (`'self'` only, no inline script attributes, no framing)
-- `Strict-Transport-Security` only over HTTPS (RFC 6797 § 7.2), read through `proxy.Scheme`
+- `Strict-Transport-Security` only over HTTPS (RFC 6797 § 7.2), read through `owlky.ClientScheme`
 - One rule for every field: `""` is the default, `helmet.Disabled` turns the header off, any other value is sent as written
 - `Permissions-Policy` denies powerful browser features by default
 - Every header value is built once at startup; no allocation per request
@@ -203,7 +203,7 @@ only; the framework always calls `NewMiddleware`.
 ## Nonce
 
 `helmet` compiles a nonce form of its policy in `NewMiddleware()`. On a page rendered by Owlky Go
-(`EnableRender`: a `RENDER_` or `SUBMIT_` route, or an HTML error page) that calls `{{nonce}}`, the
+(`AppOptions.Render`: a `RENDER_` or `SUBMIT_` route, or an HTML error page) that calls `{{nonce}}`, the
 response's `Content-Security-Policy` carries `'nonce-<N>'`, where `<N>` is the same 32-character
 value the page writes. Every other response (API routes, assets, public files, pages without
 `{{nonce}}`) sends the static policy, byte for byte. The page CSS and JS files that `{{pageAssets}}`
@@ -247,7 +247,7 @@ value, `-` when disabled) and `nonce_directives`, the directives that receive a 
 (`["script-src","style-src"]` for the default policy, `[]` when none does).
 
 ## Rules
-- `Strict-Transport-Security` is sent only when `proxy.Scheme(r)` is `https`: a direct TLS
+- `Strict-Transport-Security` is sent only when `owlky.ClientScheme(r)` is `https`: a direct TLS
   connection, or `https` forwarded by a trusted `proxy`. An untrusted client cannot claim HTTPS,
   and with no `proxy` bound no forwarding header is read. A custom value follows the same rule.
 - The always-sent headers are on every response that passes `helmet`, a `404` or `405` included,

@@ -154,7 +154,7 @@ Reads the host the client asked for from `X-Forwarded-Host` (with `HeaderXForwar
 (with `HeaderForwarded`). Turn it on only when every trusted proxy sets that header itself and never
 passes a client's value through. Many proxy setups don't: the common nginx configuration sets
 `Host` and leaves `X-Forwarded-Host` to the client. A host the client chooses ends up in your
-redirects, links and password reset mails, so it is off by default and `proxy.Host` returns
+redirects, links and password reset mails, so it is off by default and `owlky.ClientHost` returns
 `r.Host`, the host your proxy routed on.
 
 You need it when your proxy rewrites `Host` to an internal name (for example nginx without
@@ -187,7 +187,7 @@ IPv6 addresses are unmapped and zones removed. Returns the zero `netip.Addr` whe
 not `ip:port`.
 
 ```go
-ip := proxy.ClientIP(c.Request)
+ip := owlky.ClientIP(c.Request)
 if ip.IsValid() {
 	fmt.Println(ip.String())
 }

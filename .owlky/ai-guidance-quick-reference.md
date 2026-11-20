@@ -332,7 +332,7 @@ Pattern Question
   │       Equal configurations share one instance; different ones get their own
   │
   ├─ "Should I set CORS: &owlky.CORSOptions{IsEnabled: true} without Origins?"
-  │   └─ NO - an empty AllowOrigins panics at app.Create(); "*" never with credentials
+  │   └─ NO - New panics `invalid app: CORS needs Origins`; "*" never with credentials
   │       Fix: Origins: []string{"https://app.example.com"}, CORS: &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true}
   │
   ├─ "Should I read X-Forwarded-For / X-Real-IP for the client IP?"

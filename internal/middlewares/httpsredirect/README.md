@@ -19,7 +19,7 @@ Internal package: applications use `AppOptions.HTTPSRedirect` (`owlky.HTTPSRedir
 ## Key Features
 - `308`, so browsers repeat the method and the body (RFC 9110 § 15.4.9)
 - Path and query kept, re-encoded; the target always starts with `https://` and a validated host
-- Reads the scheme from `proxy.Scheme`, so a TLS-terminating proxy that sends `X-Forwarded-Proto: https` passes
+- Reads the scheme from `owlky.ClientScheme`, so a TLS-terminating proxy that sends `X-Forwarded-Proto: https` passes
 - A fixed `Host` for production closes redirects built from a client's `Host` header
 - No allocation on HTTPS requests
 
@@ -100,7 +100,7 @@ Makes `HTTPSRedirect` a `owlky.MiddlewareFn`. It compiles the options on every c
 tests only; the framework always calls `NewMiddleware`.
 
 ## Rules
-- When `proxy.Scheme(r)` is `https`, the next layer runs and nothing else happens.
+- When `owlky.ClientScheme(r)` is `https`, the next layer runs and nothing else happens.
 - Otherwise the response is `308` with `Location: https://<host><:port><path>[?<query>]` and no
   body; the next layer does not run, for every method.
 - `<host>` is `Host` when set, else the request host without its port (`[::1]:8080` becomes

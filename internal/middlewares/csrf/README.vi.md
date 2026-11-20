@@ -1,5 +1,7 @@
 # Middleware CSRF
 
+> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.CSRF` (`owlky.CSRFOptions`) cùng `AppOptions.Origins` trong `owlky.New(&owlky.AppOptions{…})`; các ví dụ `owlky.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
+
 *`csrf` từ chối các request thay đổi trạng thái (state-changing) gửi từ trình duyệt ở origin khác, dựa trên header Fetch Metadata `Sec-Fetch-Site` và header `Origin`: không token, không cookie, không đọc body.*
 
 - [Middleware CSRF](#middleware-csrf)

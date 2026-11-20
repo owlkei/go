@@ -186,8 +186,8 @@
       "limit_factor": "memory (goroutine stack + send channel buffer)"
     },
     "http_server_fixed_limits": {
-      "note": "internal/core/server.go: internal defaults applied by Listen, ListenTLS and Serve; only the body cap and the shutdown drain are options (ServerOptions)",
-      "max_request_body_bytes": "10 MiB by default, ServerOptions.MaxRequestBodyBytes (negative = off); http.MaxBytesReader in ServeHTTP for a request with a body; exceeding it is a 413 exception from ctx.Body()",
+      "note": "internal/core/server.go: internal defaults applied by Listen and Serve; only the body cap (AppOptions.HTTP.MaxBodyBytes) and the shutdown drain (AppOptions.Server.ShutdownTimeout) are options",
+      "max_request_body_bytes": "10 MiB by default, AppOptions.HTTP.MaxBodyBytes (a ByteSize, negative = off); http.MaxBytesReader in ServeHTTP for a request with a body; exceeding it is a 413 exception from ctx.Body()",
       "read_header_timeout": "5s",
       "read_timeout": "30s",
       "write_timeout": "30s",

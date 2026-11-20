@@ -3,7 +3,7 @@
   "title": "Owlky Go Lifecycle State Machines",
   "purpose": "Document exact state transitions for app, requests, and connections",
   "application_lifecycle": {
-    "source": "internal/core/app.go (New, Create), internal/core/container.go (wire), internal/core/server.go (Listen, ListenTLS, Serve, Stop); user contract in internal/core/README.md",
+    "source": "internal/core/app.go (New, Create), internal/core/container.go (wire), internal/core/options.go (AppOptions, checked at New), internal/core/server.go (Listen, Serve, Stop); user contract in internal/core/README.md",
     "states": [
       "CREATED",
       "INITIALIZED",
@@ -14,24 +14,25 @@
       {
         "from": "START",
         "to": "CREATED",
-        "action": "app := core.New()",
+        "action": "app := owlky.New(opts) (nil = defaults)",
         "effects": [
           "own HTTP router, container, memorybroker, built-in logger (log.NewLog(nil)), context pools",
           "Publisher registered in the container",
           "built-in HTTP and WS exception filters bound",
           "trace.Tracer zero value (no listener)",
-          "body cap 10 MiB"
+          "AppOptions read once, copied and checked (panics 'invalid app: <Group>.<Field> …'); TLS files loaded",
+          "pre-route stages compiled in the fixed order loadshed, proxy, hostcheck, httpsredirect, headers, cors, csrf, compress (only those configured)",
+          "body cap AppOptions.HTTP.MaxBodyBytes (default 10 MiB)"
         ]
       },
       {
         "from": "CREATED",
         "to": "CREATED",
-        "action": "configuration: BindGlobal*, EnableVersioning, EnableWS, EnableDevtool, EnableAccessLog, SetLogger, SetStartupTimeout",
+        "action": "binding code: BindGlobalMiddlewares, BindGlobalGuards, BindGlobalInterceptors, BindGlobalExceptionFilters (configuration is in AppOptions)",
         "effects": [
           "each returns *App",
           "after Create each panics 'invalid app: <Method> must be called before Create'",
-          "SetLogger(nil) panics 'invalid app: SetLogger needs a logger'",
-          "SetStartupTimeout(d <= 0) panics 'invalid app: SetStartupTimeout needs a positive duration'"
+          "global middlewares run after the pre-route stages, whatever the bind order"
         ]
       },
       {
@@ -42,7 +43,7 @@
         "order": [
           "container.addInterface(log.Logger)",
           "container.wire(root): addGlobals(root), scanGlobals, discover (sync-set module factories called in dependency order on helper goroutines within the startup timeout; arguments from siblings, globals, Logger, Publisher), module states and needs, then per ready module in init order OnInit() and provide() of its providers, injectController for every controller of a ready module, probe and gate the controllers of pending modules",
-          "initWS (only if EnableWS)",
+          "initWS (only if AppOptions.WS.Path is set)",
           "initRoutes",
           "initMiddlewares",
           "initExceptionFilters",
@@ -67,9 +68,9 @@
       {
         "from": "INITIALIZED",
         "to": "RUNNING",
-        "action": "app.Listen(port, opts) / app.ListenTLS(port, certFile, keyFile, opts) / app.Serve(listener, opts)",
+        "action": "app.Listen() / app.Serve(listener) (port, TLS and h2c from AppOptions.Server)",
         "effects": [
-          "errors returned before binding: 'owlky: Create must be called before serving', 'owlky: app is already serving', 'owlky: app is stopped', TLS / IsH2C option conflicts, 'owlky: listen on :<port>: <err>'",
+          "errors returned before binding: 'owlky: Create must be called before serving', 'owlky: app is already serving', 'owlky: app is stopped', 'owlky: listen on :<port>: <err>' (TLS / IsH2C conflicts panic at New)",
           "startup log: InstanceLoader, RouteExplorer, WebSocketEvent, ServerListening",
           "the call blocks until the server stopped"
         ]
@@ -138,7 +139,7 @@
         "stage": "ServeHTTP()",
         "action": "if r.Body is not nil / http.NoBody and the cap > 0: r.Body = http.MaxBytesReader(w, r.Body, cap); ctx.HTTPInit(c, &ex.writer, r)",
         "effects": [
-          "the cap is an atomic.Int64: 10 MiB, or ServerOptions.MaxRequestBodyBytes of the serving call (negative = off)",
+          "the cap is a plain int64 written once at New: 10 MiB, or AppOptions.HTTP.MaxBodyBytes (negative = off)",
           "Request ID generated, X-Request-Id set",
           "ResponseWriter/Request set"
         ]
@@ -150,6 +151,7 @@
         "action": "routing.Router.Match(method, path, version string, params []string) (*RouterItem, []string), retried with versioning.NeutralVersion on a miss",
         "effects": [
           "the route's immutable httpRoute (layers, handler plan, filters)",
+          "the configured pre-route stages ran before the match; a stage that refuses answers itself, never 404 / 405 / 410 or the gate's 503",
           "no route: global middlewares only, then 404 or 405 with Allow (precomputed bodies)"
         ]
       },
@@ -366,7 +368,7 @@
     "sequence": [
       "container.addInterface(log.Logger)",
       "container.wire(root): addGlobals(root), scanGlobals, discover (sync-set module factories called in dependency order on helper goroutines within the startup timeout; arguments from siblings, globals, Logger, Publisher), module states and needs, then per ready module in init order OnInit() and provide() of its providers, injectController for every controller of a ready module, probe and gate the controllers of pending modules",
-      "initWS (only if EnableWS)",
+      "initWS (only if AppOptions.WS.Path is set)",
       "initRoutes",
       "initMiddlewares",
       "initExceptionFilters",

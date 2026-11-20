@@ -59,6 +59,12 @@ don't mass-rewrite the exceptions.
 
 ## Configuration and modules
 
+- **App configuration is one struct:** every app setting is a field of `AppOptions`
+  (`internal/core/options.go`), with godoc on each field giving its default (the one exception to the
+  no-comment rule), checked once at `New`. A group with a required field is on when that field is set;
+  a group whose fields are all optional has `IsEnabled`. A new feature adds a group, never an
+  `Enable…` / `Set…` method, and its field is documented in `README.md` › Configuration with its
+  `OK_*` variable.
 - **Options struct + loader:** a public `<X>Options` (or the middleware type itself) holds what the
   user sets; a private `load<X>Options` fills defaults once and returns the normalized form:
   `loadCORSOptions` (`internal/middlewares/cors/cors.go`),
@@ -66,9 +72,11 @@ don't mass-rewrite the exceptions.
 - **Middlewares** are a value type with the public options as fields. When they have options to
   compile, they implement `NewMiddleware() common.MiddlewareFn`, which the framework calls once
   through the app's container (`(*container).construct`, `internal/core/container.go`) and which returns a private
-  compiled type that implements `Use` (`compiledCORS`). Every package under `middlewares/` follows
-  it; the option type's own `Use` calls `instance.NewMiddleware().Use(...)` and is for tests only.
-  Invalid options panic in `NewMiddleware` as `invalid <package>: <detail>` (`color.FmtRed`), and a
+  compiled type that implements `Use` (`compiledCORS`). Every package under `internal/middlewares/` follows
+  it, and also exports `Compile(*<Options>) (compiled, error)`, which `core.New` calls to build the
+  pre-route stage from `AppOptions` (design 0022); the option type's own `Use` calls `instance.NewMiddleware().Use(...)` and is for tests only.
+  Invalid options are an error from `Compile`, which `New` reports as `invalid app: <Group>.<Field> …`
+  (`color.FmtRed`; `NewMiddleware` panics `invalid <package>: <detail>`), and a
   refusal on the request path is `panic(&prebuiltException)`, answered by the HTTP layer.
 - **Built-in modules** are built by `Register(opts *<X>ModuleOptions) *core.Module` that accept `nil` and
   apply defaults, then set `IsGlobal` / `OnInit` on the built module

@@ -1,5 +1,7 @@
 # Middleware CORS
 
+> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.CORS` (`owlky.CORSOptions`) cùng `AppOptions.Origins` trong `owlky.New(&owlky.AppOptions{…})`; các ví dụ `owlky.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
+
 *`cors` cho phép các trang trình duyệt bạn liệt kê đọc API của bạn từ origin khác, theo [giao thức CORS của Fetch Standard](https://fetch.spec.whatwg.org/#http-cors-protocol): request thật, preflight `OPTIONS`, credentials và private network access.*
 
 - [Middleware CORS](#middleware-cors)

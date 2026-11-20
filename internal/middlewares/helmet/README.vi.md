@@ -1,5 +1,7 @@
 # Middleware Helmet
 
+> **Lưu ý (design 0022):** package này nay là internal. Ứng dụng cấu hình qua `AppOptions.Headers` (`owlky.HeadersOptions`) trong `owlky.New(&owlky.AppOptions{…})`; các ví dụ `owlky.New()`, `BindGlobalMiddlewares(…)` và import `middlewares/…` bên dưới là API cũ đã bị gỡ. Bản cập nhật: [README.md](README.md) và [Configuration](../../../README.md#configuration).
+
 *`helmet` đặt các HTTP security response header mà OWASP khuyến nghị, với mặc định an toàn phù hợp cho cả JSON API lẫn trang HTML render phía server.*
 
 - [Middleware Helmet](#middleware-helmet)

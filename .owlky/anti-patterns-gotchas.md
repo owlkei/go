@@ -609,7 +609,7 @@ owlky.AppOptions{CORS: &owlky.CORSOptions{IsEnabled: true}} // panics at New: in
 owlky.AppOptions{Origins: []string{"*"}, CORS: &owlky.CORSOptions{IsEnabled: true, IsAllowCredentials: true}} // panics: * never with credentials
 ```
 
-**Why It's Wrong**: the zero value allows nothing (design 0014) and `*` with credentials would give every site credentialed access. The fields are exactly `AllowOrigins`, `AllowMethods`, `AllowHeaders`, `ExposeHeaders`, `MaxAge`, `IsAllowCredentials`, `IsAllowPrivateNetwork`; origins are exact strings or `*.` patterns, never patterns of another syntax.
+**Why It's Wrong**: the zero value allows nothing (design 0014) and `*` with credentials would give every site credentialed access. The origins are `AppOptions.Origins`; the `CORSOptions` fields are exactly `IsEnabled`, `AllowMethods`, `AllowHeaders`, `ExposeHeaders`, `MaxAge`, `IsAllowCredentials`, `IsAllowPrivateNetwork`; origins are exact strings or `*.` patterns, never patterns of another syntax.
 
 **RIGHT**:
 ```go
@@ -622,7 +622,7 @@ owlky.AppOptions{Origins: []string{"https://app.example.com", "https://*.example
 
 **WRONG**: generating CSRF token fields or helpers, or front-end code that reads a CSRF cookie and sends a token header.
 
-**Why It's Wrong**: `csrf` now wraps `http.CrossOriginProtection` (Fetch Metadata + `Origin`): there is no token, no cookie and no context value. The only option is `TrustedOrigins`.
+**Why It's Wrong**: The `csrf` stage wraps `http.CrossOriginProtection` (Fetch Metadata + `Origin`): there is no token, no cookie and no context value. The only options are `CSRFOptions.IsEnabled` / `IsDisabled` and the shared `AppOptions.Origins`.
 
 **RIGHT**: `CSRF: &owlky.CSRFOptions{IsEnabled: true}`, with `Origins: []string{"https://app.example.com"}` for trusted cross-origin pages; keep `GET` free of state changes.
 
