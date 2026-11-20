@@ -1,6 +1,6 @@
 # 0012: Security
 
-Status: Running
+Status: Done
 
 ## Goal
 With the configuration API final (roadmap 0013), the framework is audited and hardened where the API
@@ -30,8 +30,8 @@ SSR changes.
 | 7 | Static files: a `public/` name with `{` or `*` stops `Create()`; hidden files in `Dir` are logged; the static-route guard rule (Decisions › open) | tdd | docs/design/0021-security.md | 1 | a file name can't widen a route; the guard rule holds for `public/`, `/assets/*` and page assets | done |
 | 8 | Sink fixes found by step 1 that need code (header values with CR/LF, log control characters in every format, path normalization before matching) | tdd | docs/design/0021-security.md | 1 | every step-1 finding of high or critical rank is fixed with a test | done |
 | 9 | CI: `gosec` with the rules that matter for a framework (G201/G202 SQL strings, G1xx, G3xx, G4xx), baseline of accepted findings with reasons | light | - | 1 | CI fails on a new `gosec` finding | done |
-| 10 | Docs: a "Security" section in the README (what the defaults do, `template.HTML` disables escaping, `Bind` fills only `bind` fields, `public/` is served as is, `//go:embed all:web` ships dotfiles, the error format rule, redirects); `.owlkei/`; the examples where a default changes | light | - | 2-9 | every default and every rule users must follow is documented | todo |
-| 11 | Measure: `make bench` and the `bench/` scenarios against `docs/review/http-0009.md` | light | - | 2-8 | no scenario slower than the noise band; `docs/review/http-0012.md` | todo |
+| 10 | Docs: a "Security" section in the README (what the defaults do, `template.HTML` disables escaping, `Bind` fills only `bind` fields, `public/` is served as is, `//go:embed all:web` ships dotfiles, the error format rule, redirects); `.owlkei/`; the examples where a default changes | light | - | 2-9 | every default and every rule users must follow is documented | done |
+| 11 | Measure: `make bench` and the `bench/` scenarios against `docs/review/http-0009.md` | light | - | 2-8 | no scenario slower than the noise band; `docs/review/http-0012.md` | done |
 
 Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (one agent or the main
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
@@ -62,3 +62,5 @@ session writes tests and code together, for small steps). State: `todo`, `doing`
 - 2026-11-21: design 0021 approved with every recommendation except open question 6: the owner chose explicit binding checked at `Create()` (a guard on `RENDER_x` but not on `SUBMIT_x` panics), guards only, no layer moving on its own. Run started at `01d0d5e`.
 - 2026-11-21: steps 1b, 1c, 2, 3, 5, 7, 8, 9 in one builder pass (shared code). Builder choices where the design was open: the G1 check runs in `InjectProvidersIntoHTTPGuards` and names the controller by its receiver type; `RedirectRefused` is logged through a hook core installs; a one-file `SERVE_` root outside `ServeDirs` answers 500 (D4); `.map` matches lower case only; the gosec test baseline also lists G102, G116, G204, G304, G602, G702, G703. About ten tester tests contradicted the design (traversal is 404 per N3, control characters 400 per N2) or had fixture bugs (a missing `public` directory, two apps sharing a root, missing controllers or `ServeDirs`); the tester fixed them, no code change. Step 1 (the general audit) runs as the review.
 - 2026-11-21: step 1 (the audit) and the review in one pass: `docs/review/security-0012.md`, 0 critical, 1 high, 1 medium, 9 low. Fixed with tests: H1 (on case-insensitive disks, U+212A and U+017F folded to `k` / `s` let `server.%E2%84%AAey` return `server.key` on macOS; new rule S1.8 refuses such code points) and M1 (the trailing-slash redirect of a `SERVE_` directory built `Location` from the raw path, `\\evil.test/`; new rule H3: an absolute cleaned path). Both rules are an amendment of design 0021. The old test expecting `Location: sub/` now expects `/files/sub/`. The nine lows are in the backlog.
+- 2026-11-21: step 10 docs landed with the code (README Static files, Pages, Configuration › ServeDirs, Security; `.owlkei/`); step 11 `docs/review/http-0012.md`: hot path within noise, allocations identical, `Create` +0.1 to 0.8 KiB, idle heap +0.2 KiB.
+- 2026-11-21: `make check` green (L12 570 s); pushed.
