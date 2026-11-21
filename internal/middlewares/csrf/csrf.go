@@ -3,6 +3,7 @@ package csrf
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 
 	"go.owlkei.com/owlkei/exception"
@@ -80,7 +81,7 @@ func (c *compiledCSRF) Use(r *http.Request, w http.ResponseWriter, next ctx.Next
 		next()
 		return
 	}
-	if value != "" && len(r.Header[fetchSiteHeader]) == 0 && isForwardedHost(r) && originHost(value) == tracecontext.Host(r) {
+	if value != "" && len(r.Header[fetchSiteHeader]) == 0 && isForwardedHost(r) && originHost(value) == tracecontext.Host(r) && isOriginHTTPS(value) == tracecontext.IsHTTPS(r) {
 		next()
 		return
 	}
@@ -105,6 +106,10 @@ func headerValue(h http.Header, key string) string {
 func isForwardedHost(r *http.Request) bool {
 	s := tracecontext.ScopeOf(r.Context())
 	return s != nil && s.IsClientSet && s.ClientHost != ""
+}
+
+func isOriginHTTPS(value string) bool {
+	return len(value) > 8 && strings.EqualFold(value[:8], "https://")
 }
 
 func originHost(value string) string {

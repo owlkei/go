@@ -94,6 +94,7 @@ func TestCSRF_ForwardedHost(t *testing.T) {
 		r.Host = "internal.local:8080"
 		r.RemoteAddr = remote
 		r.Header.Set("X-Forwarded-For", "198.51.100.1")
+		r.Header.Set("X-Forwarded-Proto", "https")
 		if host != "" {
 			r.Header.Set("X-Forwarded-Host", host)
 		}
@@ -106,6 +107,10 @@ func TestCSRF_ForwardedHost(t *testing.T) {
 	expectRefused(t, serve(app, forwarded("https://app.example.com", "", "10.0.0.1:80")), "S8: with no forwarded host the request's host is compared")
 	expectPass(t, serve(app, forwarded("http://internal.local:8080", "", "10.0.0.1:80")), "S5: with no forwarded host an origin equal to r.Host passes")
 
+	expectRefused(t, serve(app, forwarded("http://app.example.com", "app.example.com", "10.0.0.1:80")), "S8: an http origin is not the https forwarded site (audit 0012 L6)")
+	plain := forwarded("http://app.example.com", "app.example.com", "10.0.0.1:80")
+	plain.Header.Set("X-Forwarded-Proto", "http")
+	expectPass(t, serve(app, plain), "S8: an http origin equals a forwarded http site")
 	r := forwarded("https://app.example.com", "app.example.com", "10.0.0.1:80")
 	r.Header.Set("Sec-Fetch-Site", "cross-site")
 	expectRefused(t, serve(app, r), "S8: with Sec-Fetch-Site present the forwarded host is not used")
