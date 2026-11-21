@@ -235,6 +235,10 @@ c.JSON(`{"greeting":"%s"}`, "hi")
 
 `JSONP(data any, args ...any)` writes `data` as `/**/ typeof <cb> === 'function' && <cb>(<json>);` with `Content-Type: text/javascript; charset=utf-8` and `X-Content-Type-Options: nosniff`, where `<cb>` is the `callback` query parameter.
 
+Any site can load a JSONP route with a `<script>` tag, and the browser sends the visitor's cookies
+with it, so the page of another site reads the answer. Use it only for public data, never for data
+that depends on who is logged in.
+
 #### Rules
 - `<json>` is what `JSON` would write; U+2028, U+2029, `<`, `>` and `&` stay escaped.
 - The callback is read from the cached `Query()`, so a change made to it before `JSONP` is used.

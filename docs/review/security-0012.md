@@ -269,3 +269,10 @@ from my overlay probes and are not yet tests.
 Sources: [Go downloads (JSON)](https://go.dev/dl/?mode=json),
 [Go vulnerability list](https://pkg.go.dev/vuln/list), [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859),
 [x/net versions](https://pkg.go.dev/golang.org/x/net?tab=versions).
+
+## Follow-up (2026-11-21)
+
+After the roadmap: L1, L2 and L6 fixed with tests (design 0021 amendment 2); L4, L5 and L7 documented;
+L9 benchmarks added (`docs/review/http-0012.md`). L3 is open for the owner (backlog); L8 belongs to
+the WebSocket roadmap.
+

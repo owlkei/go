@@ -2333,10 +2333,13 @@ changes when the file does.
 - A directory, a missing file, or a refused name answers the same `404` as JSON. Templates are not
   reachable through this route. Refused names, on every system: a segment that starts with `.`
   (except `.well-known`), holds `\`, `:` or a control character, ends with `.` or a space, holds `~`
-  and a digit (`GIT~1`), or is a Windows device name (`CON`, `nul.txt`, `COM1`…); and source,
-  secret, backup and dump files: `*.go`, `go.mod`, `go.sum`, `go.work`, `.env*`, `*.env`, `*.pem`,
-  `*.key`, `*.p12`, `*.pfx`, `id_rsa`…, `*~`, `*.swp`, `*.bak`, `*.orig`, `*.old`, `*.tmp`, `#x#`,
-  `*.sql`, `*.db`, `*.sqlite`. Source maps (`*.map`) are served only here and only with `IsReload`.
+  and a digit (`GIT~1`), or is a Windows device name (`CON`, `nul.txt`, `COM1`, `CONIN$`…); and
+  source, secret, backup and dump files: `*.go`, `go.mod`, `go.sum`, `go.work`, `.env*`, `*.env`,
+  `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`…, `*.tfstate`, `*.kdbx`, `*.jks`, `*.keystore`,
+  `*.ppk`, `credentials.json`, `service-account*.json`, `*~`, `*.swp`, `*.bak`, `*.orig`, `*.old`,
+  `*.tmp`, `#x#`, `*.sql`, `*.db`, `*.sqlite`. Source maps (`*.map`) are served only here and only
+  with `IsReload`. Logs and archives (`*.log`, `*.zip`, `*.tar.gz`) are served: never keep logs or
+  backups in a directory a static route serves.
 - Such a file in `assets/` is not registered: `Create()` logs one `Warn` record
   `StaticFilesSkipped` with `count` and the first 20 `files`. A symbolic link is skipped the same
   way. A file of such a kind that must be downloadable is sent by a `READ_` handler that writes
@@ -2707,7 +2710,10 @@ func main() {
   `c.ResponseWriter.Header().Set("Content-Disposition", "inline")` in the handler. Never do it for
   uploads.
 - Files are sent with `Cache-Control: no-cache`, or `private, no-cache` when a guard covers the
-  route, unless a layer or the handler sets `Cache-Control`. Set a long lifetime only for files
+  route, unless a layer or the handler sets `Cache-Control`. Owlkei Go only knows about guards: when
+  a middleware or the handler itself decides who may read the file, set
+  `Cache-Control: private, no-cache` in the handler, or a shared cache (CDN, proxy) may hand the file
+  to another user. Set a long lifetime only for files
   whose names change with their content, such as `app.3f9a1c.js`. A protected file belongs behind
   a guarded `SERVE_` route, never in `public/`.
 
@@ -3032,7 +3038,9 @@ Go through the list once for your app:
    directly.
 5. **`Hosts`**: the host names your app serves.
 6. **`LoadShed`**: on.
-7. **`HTTPSRedirect`**: on, unless your proxy already redirects HTTP to HTTPS. Set `Host`.
+7. **`HTTPSRedirect`**: on, unless your proxy already redirects HTTP to HTTPS. Set `Host` (or
+   `Hosts`): without either, the `308` copies the request's `Host` header, and a cache that doesn't
+   key on `Host` can store a redirect to a host an attacker chose.
 8. **`Headers`**: on for every app that serves HTML pages.
 9. **`Origins` and `CORS`**: only when browser pages on another origin call your API.
 10. **`CSRF`**: on when browsers send cookies or HTTP authentication to your app (sessions, HTML
@@ -3433,6 +3441,9 @@ What behaves differently:
 ### Security notes
 - `c.Redirect` accepts only a path of this site. `c.RedirectExternal` accepts any `http(s)` URL:
   never pass one from the request unchecked ([ctx › Redirect](internal/ctx/README.md#redirect)).
+- `c.JSONP` makes a route readable from any site, with the visitor's cookies: that is how JSONP
+  works. Never use it on data that depends on who is logged in
+  ([ctx › JSONP](internal/ctx/README.md#jsonp)).
 - `c.JSON` and `c.Text` insert format arguments unescaped: pass request data in a map or struct
   instead ([ctx › JSON](internal/ctx/README.md#json)).
 - `owlkei.TraceTransport` sends your trace ID and request ID to every host you call

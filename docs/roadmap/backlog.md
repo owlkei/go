@@ -19,7 +19,7 @@ Next:
 4. 0.x release once the court booking app runs for real and `go.owlkei.com` serves the module.
 5. After the release: WebSocket, devtools and MCP.
 
-Not ordered yet, before the release: Validation of DTOs, the low findings of audit 0012, accurate trace
+Not ordered yet, before the release: Validation of DTOs, finding L3 of audit 0012, accurate trace
 timings.
 
 ## Owlkei platform (from the rebrand, 2026-11-19)
@@ -262,11 +262,15 @@ Gin / Echo / Chi, 61-67 % of Fiber on 1-2 cores and ahead of Fiber at 12 cores.
 
 ## Security audit 0012: low findings (2026-11-21)
 
-`docs/review/security-0012.md` lists nine low findings left open after roadmap 0012 (its high H1 and
-medium M1 were fixed in the roadmap): gaps in the forbidden-file and Windows device-name lists, the
-`RENDER_`/`SUBMIT_` guard check matching by type only, caching of unguarded `SERVE_` files, Host and
-CSRF details, and three benchmarks the design lists but nobody wrote. Take them in the next security
-pass or one by one with `/implement`.
+`docs/review/security-0012.md` listed nine low findings. Done on 2026-11-21: L1 (more Windows device
+names), L2 (more secret kinds in F1), L6 (CSRF forwarded host compares the scheme): design 0021
+amendment 2; L4, L5, L7 documented (README › Static files, Production checklist, Security notes);
+L9 benchmarks added (`docs/review/http-0012.md` › Static file benchmarks). L8 is in "WebSocket bugs
+and limits". Open:
+- **L3, to discuss with the owner:** the G1 check matches guards by type, not by value
+  (`Role{"admin"}` on `RENDER_x` and `Role{"user"}` on `SUBMIT_x` pass, the POST weaker than the page),
+  and covers only `SUBMIT_x`, not another POST route given the page's path. Options: compare guard
+  values at `Create()` when comparable, and check every POST route on a page's path; or document both.
 
 ## Accurate trace timings (found 2026-11-19)
 
