@@ -130,6 +130,7 @@ served from your app's own origin.
     - [Security notes](#security-notes)
   - [Exceptions](#exceptions)
   - [Package reference](#package-reference)
+  - [Contributing](#contributing)
   - [License](#license)
 
 ---
@@ -3620,6 +3621,41 @@ wrong one, for example
 
 `Bind` returns the bound struct and its field levels. `BindValue` returns the struct only and
 allocates nothing more.
+
+## Contributing
+
+Clone the repository and install the tools once:
+
+```bash
+git clone https://github.com/owlkei/go owlkei-go && cd owlkei-go
+make deps   # Go modules, plus husky and lint-staged for the pre-commit hook
+```
+
+Before you open a pull request, `make check` must pass. It runs what CI runs: gofmt, `go vet`, the
+public API listing (`make api-check`; after an intended API change, run `make api` and commit
+`api/owlkei.txt`), a check that no file holds personal data (`make check-names`), `golangci-lint`,
+`go test -race` and the examples. Commits follow Conventional Commits (`feat(core): …`), one concern
+per commit, the code together with its tests.
+
+The repository ships the documents it is built with:
+
+| Where | What |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md) | the rules for every change: principles, workflow, architecture, commands; `AGENTS.md` points any AI coding tool at them |
+| [`.owlkei/`](.owlkei/INDEX.md) | the knowledge base: how routing, the request pipeline, injection, modules and WebSocket work inside, the gotchas, and the [code conventions](.owlkei/conventions.md) |
+| [`docs/roadmap/`](docs/roadmap/README.md) | the plan of each larger piece of work, its decisions and a log of the run; [`backlog.md`](docs/roadmap/backlog.md) holds decided work without a roadmap |
+| [`docs/design/`](docs/design/) | the design behind each feature: rules, test plan, performance budget |
+| [`docs/review/`](docs/review/) | reviews, security audits and benchmark reports |
+| [`.claude/`](.claude/) | the agents and commands of the AI workflow |
+
+Larger work starts as a roadmap the maintainer approves, then a design, then tests and code. With
+Claude Code, the commands in `.claude/commands/` run that flow: `/roadmap` (plan, design, run every
+step), `/feature` (one design, tests, code), `/implement` (a small change), `/commit`. Without an AI
+tool, follow the same order by hand: open an issue to agree on the change, then send the tests and the
+code together.
+
+`go get` downloads the whole module, these documents included, into your module cache; they are text
+and small.
 
 ---
 
