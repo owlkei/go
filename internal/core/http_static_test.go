@@ -22,9 +22,9 @@ import (
 func TestStaticName_Policy(t *testing.T) {
 	refused := []string{
 		"a\\b.txt", "x.txt::$DATA", "C:x.txt", "x.txt:stream", "main.txt.", "x.txt ", "x.txt...", "GIT~1/config", "SECRE~1.GO", "ENV~1", "a~1",
-		"CON", "con.txt", "PRN", "AUX.html", "nul.txt", "COM1", "com9.css", "LPT1", "lpt9.css", "d/NUL", "a\x01b.txt", "a\x7fb.txt", "d/.hidden.txt", ".hidden/x.txt", "d/.x/y.txt",
+		"CON", "con.txt", "PRN", "AUX.html", "nul.txt", "COM1", "com9.css", "LPT1", "lpt9.css", "d/NUL", "CONIN$", "conout$.txt", "COM\u00b9", "lpt\u00b3.css", "Com\u00b2.txt", "a\x01b.txt", "a\x7fb.txt", "d/.hidden.txt", ".hidden/x.txt", "d/.x/y.txt",
 	}
-	accepted := []string{"a~b.txt", ".well-known/x.txt", "con-fig.txt", "a b.txt", "100%.png", "comx.txt", "lpt10.txt", "console.txt", "a.b.c.txt"}
+	accepted := []string{"a~b.txt", ".well-known/x.txt", "con-fig.txt", "a b.txt", "100%.png", "comx.txt", "lpt10.txt", "console.txt", "a.b.c.txt", "conin.txt", "conout.txt", "com\u2074.txt", "com\u00b9x.txt"}
 	files := map[string]string{"page.html": "x"}
 	for _, name := range refused {
 		files["public/"+name] = secMarker
@@ -72,8 +72,10 @@ func TestStaticName_Forbidden(t *testing.T) {
 		"a.pem", "a.KEY", "a.p12", "a.pfx", "id_rsa", "ID_RSA", "id_dsa", "id_ecdsa", "id_ed25519",
 		"index.html~", "a.swp", "a.swo", "a.bak", "a.orig", "a.rej", "a.old", "a.tmp", "#main.go#", "#x#",
 		"d.sql", "d.sqlite", "d.sqlite3", "d.db", "app.js.map", "App.JS.MAP",
+		"terraform.tfstate", "infra.TFSTATE.backup", "vault.kdbx", "app.jks", "release.keystore", "server.ppk",
+		"credentials.json", "Credentials.JSON", "service-account.json", "service-account-prod.json", "Service-Account.JSON",
 	}
-	allowed := []string{"go.model", "key.txt", "mapfile", "sql.txt", "gopher", "main.gopher", "id_rsa.txt", "env", "a.pemx", "#x", "x#", "dbx", "ok.txt", "index.html", "a.map.txt"}
+	allowed := []string{"go.model", "key.txt", "mapfile", "sql.txt", "gopher", "main.gopher", "id_rsa.txt", "env", "a.pemx", "#x", "x#", "dbx", "ok.txt", "index.html", "a.map.txt", "tfstate", "a.tfstate.txt", "credentials.json.txt", "my-credentials.json", "service-account.txt", "service.json"}
 	for _, name := range forbidden {
 		if !isForbiddenFile(name) {
 			t.Error(test.DiffMessage(false, true, "F1: "+name+" is forbidden"))

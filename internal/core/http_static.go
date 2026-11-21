@@ -55,9 +55,13 @@ var (
 		".go", ".env", ".pem", ".key", ".p12", ".pfx",
 		"~", ".swp", ".swo", ".bak", ".orig", ".rej", ".old", ".tmp",
 		".sql", ".sqlite", ".sqlite3", ".db", ".map",
+		".tfstate", ".tfstate.backup", ".kdbx", ".jks", ".keystore", ".ppk",
 	}
-	forbiddenNames = []string{"go.mod", "go.sum", "go.work", "go.work.sum", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
-	deviceNames    = []string{"con", "prn", "aux", "nul"}
+	forbiddenNames     = []string{"go.mod", "go.sum", "go.work", "go.work.sum", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials.json"}
+	deviceNames        = []string{"con", "prn", "aux", "nul"}
+	consoleDeviceNames = []string{"conin$", "conout$"}
+
+	serviceAccountPrefix = "service-account"
 )
 
 func isServableName(name string, isMapAllowed bool) bool {
@@ -132,9 +136,21 @@ func isDeviceName(segment string) bool {
 		}
 	case 4:
 		digit := stem[3]
-		return digit >= '1' && digit <= '9' && (strings.EqualFold(stem[:3], "com") || strings.EqualFold(stem[:3], "lpt"))
+		return digit >= '1' && digit <= '9' && isPortDevicePrefix(stem)
+	case 5:
+		return stem[3] == 0xc2 && (stem[4] == 0xb9 || stem[4] == 0xb2 || stem[4] == 0xb3) && isPortDevicePrefix(stem)
+	case 6, 7:
+		for _, name := range consoleDeviceNames {
+			if strings.EqualFold(stem, name) {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+func isPortDevicePrefix(stem string) bool {
+	return strings.EqualFold(stem[:3], "com") || strings.EqualFold(stem[:3], "lpt")
 }
 
 func isForbiddenFile(name string) bool {
@@ -157,7 +173,7 @@ func isForbiddenFile(name string) bool {
 			return true
 		}
 	}
-	return false
+	return len(name) >= len(serviceAccountPrefix) && strings.EqualFold(name[:len(serviceAccountPrefix)], serviceAccountPrefix) && hasSuffixFold(name, ".json")
 }
 
 func hasSuffixFold(s, suffix string) bool {

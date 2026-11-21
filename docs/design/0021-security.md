@@ -90,7 +90,8 @@ Shared terms:
   4. ends with `.` or a space (Windows drops them: `main.go.` opens `main.go`);
   5. holds `~` followed by a digit (Windows short names: `GIT~1`, `SECRE~1.GO`);
   6. is, before its first `.` and ignoring ASCII case, a Windows device name: `CON`, `PRN`, `AUX`,
-     `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`;
+     `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, and (amendment 2) `CONIN$`, `CONOUT$`, `COM¹`-`COM³`,
+     `LPT¹`-`LPT³`;
   7. is forbidden by F1 (the last segment only).
 - **S2.** The policy runs on the request path before any file system call, in: `SERVE_` (D4: on the
   whole path below the declared directory), `/assets/*` and `/assets/_pages/*` (in `serveAsset`,
@@ -121,6 +122,7 @@ Shared terms:
   | Editor and backup files | suffix `~`, `.swp`, `.swo`, `.bak`, `.orig`, `.rej`, `.old`, `.tmp`; prefix and suffix `#` (`#main.go#`) |
   | Database dumps | suffix `.sql`, `.sqlite`, `.sqlite3`, `.db` |
   | Source maps | suffix `.map`, unless F3 |
+  | Other secrets (amendment 2) | suffix `.tfstate`, `.tfstate.backup`, `.kdbx`, `.jks`, `.keystore`, `.ppk`; exact `credentials.json`; prefix `service-account` and suffix `.json` |
 
 - **F2.** The table is one unexported function in `internal/core/http_static.go`
   (`isForbiddenFile(name string) bool`: a suffix `switch` on the lower-cased extension, no regexp, no
@@ -361,6 +363,25 @@ numbered rule in its family. Neither adds a public API.
   not start with exactly one `/`, or that holds `\`, answers the fixed 404 instead. A route parameter
   such as `%5C%5Cevil.test` can no longer produce `Location: \\evil.test/`, which browsers resolve
   to another host. Test: `TestServe_SlashRedirectSameOrigin`. H1 gains this `Location` sink.
+
+## Amendment 2 (2026-11-21): audit findings L1, L2 and L6
+
+Low findings of `docs/review/security-0012.md`, approved by the owner. No public API.
+
+- **S1.6 (finding L1)** also refuses, before the first `.` and ignoring ASCII case, the console devices
+  `CONIN$` and `CONOUT$` and the port devices written with a superscript digit, `COM¹`-`COM³` and
+  `LPT¹`-`LPT³` (Windows and Go's `filepath.IsLocal` treat them as devices). `com⁴.txt`, `conin.txt`
+  stay legal. Test rows in `TestStaticName_Policy`.
+- **F1 (finding L2)** gains the secret kinds that are almost never public: suffix `.tfstate`,
+  `.tfstate.backup` (Terraform state), `.kdbx` (KeePass), `.jks`, `.keystore` (Java keystores), `.ppk`
+  (PuTTY keys); exact `credentials.json`; prefix `service-account` with suffix `.json` (cloud service
+  account keys). Logs (`*.log`) and archives (`*.zip`, `*.tar.gz`) stay servable, since apps offer
+  them on purpose; the README says never to keep logs or backups in a served directory. Test rows in
+  `TestStaticName_Forbidden`.
+- **Forwarded CSRF check (finding L6, design 0014 S8):** with a forwarded host and no
+  `Sec-Fetch-Site`, `Origin` passes only when its host equals the forwarded host **and** its scheme
+  equals the client's (`https://` exactly when the request is HTTPS). `Origin: http://app.test` no
+  longer passes for `https://app.test`. Test: `TestCSRF_ForwardedHost`.
 
 ## Performance
 
