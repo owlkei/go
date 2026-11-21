@@ -45,11 +45,16 @@ api: ## Write the public API listing api/owlkei.txt
 api-check: ## Fail when the public API differs from api/owlkei.txt
 	go run ./internal/apicheck
 
+.PHONY: check-names
+check-names: ## Fail when a tracked file holds personal data (personal email, home directory path)
+	sh scripts/check-names.sh
+
 .PHONY: check
-check: ## Everything CI runs: format, vet, API, lint, tests
+check: ## Everything CI runs: format, vet, API, personal data, lint, tests
 	@test -z "$$(gofmt -l $$(git ls-files '*.go'))" || (gofmt -l $$(git ls-files '*.go'); echo "run make fmt"; exit 1)
 	go vet ./...
 	$(MAKE) api-check
+	$(MAKE) check-names
 	golangci-lint run
 	go test ./... -cover -race
 	$(MAKE) examples
