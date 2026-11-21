@@ -51,7 +51,7 @@ README, the file rule.
   default exception filter too (no development mode that returns details). When the response is
   already written, nothing more is written: the error is logged only. The middleware trace event is
   emitted on a panic too, with the status code. The README documents it ("Errors in middleware").
-- Designs: one architect pass with Fable (dispatch, server and lifecycle share `core`; logging is
+- Designs: one architect pass (dispatch, server and lifecycle share `core`; logging is
   separate code), split into two calls (steps 1-3, step 4). The user approves the designs.
 - The run commits on `master`; WebSocket code is touched only where a shared `core` change forces it.
 

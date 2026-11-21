@@ -43,7 +43,7 @@ the commit), README.
 - Heavy techniques (`unsafe`, `sync.Pool`, hand-managed buffers, inlining restructures) appear only
   in a design, with the benchmark that justifies them; approving the design approves exactly those
   uses.
-- Designs: three architect calls with Fable (steps 1-2, 3-4, 5-6); the user approves all six before
+- Designs: three architect calls (steps 1-2, 3-4, 5-6); the user approves all six before
   `run`.
 - The run commits on `master`, one commit (or a few) per step.
 - Handler injection may report an unresolvable handler argument at `Create()` (a bootstrap panic)

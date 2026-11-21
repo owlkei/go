@@ -32,7 +32,7 @@ Path: `tdd` (tester writes failing tests, builder makes them pass) or `light` (o
 session writes tests and code together, for small steps). State: `todo`, `doing`, `done`, `blocked`.
 
 ## Decisions
-Agreed with the owner on 2026-11-20 (prompted by the UI session's brand notice):
+Agreed with the owner on 2026-11-20 (prompted by the Owlkei UI rebrand):
 - Owlky becomes Owlkei (the owner bought owlkei.com); the product is Owlkei Go.
 - Import path `go.owlkei.com/owlkei`, package `owlkei`.
 - The env prefix stays `OK_`.
@@ -43,8 +43,8 @@ Agreed with the owner on 2026-11-20 (prompted by the UI session's brand notice):
 - Commits follow `.claude/commands/commit.md`: no Claude attribution or trailers.
 
 ## Log
-- 2026-11-20: repository transferred `dangduoc08/go` → `owlkei/go` by the orchestrator at the owner's
-  request, before the run.
+- 2026-11-20: repository transferred `dangduoc08/go` → `owlkei/go` at the owner's request,
+  before the run.
 - 2026-11-21: steps 1-4 in one pass: 423 files (module path, package, `api/owlkei.txt`, `bench/owlkei*.go`, `.owlkei/`, every document including the history), except this roadmap, 0010 and the note in `docs/roadmap/README.md` (they describe the renames), the local folder name `~/Projects/owlky/go`, and the vendored Owlky UI build files in `examples/03-pages/web/assets/` (their names follow the UI build they were copied from).
 - 2026-11-21: step 5 blocked: the Owlkei Go lockups are not reachable from this machine (the UI branch `rebrand/owlkei` is not on GitHub; `owlkei/ui` main still has `owlky-*` lockups). The README keeps the owl mark (unchanged in the new brand) and the name in text; the lockups follow when the UI pushes them.
 - 2026-11-21: step 5 unblocked: the UI pushed `rebrand/owlkei` (`354109a`); the four `owlkei-go-*` lockups are in `docs/assets/`, the README header uses the horizontal one in both themes, the old mark files are removed.

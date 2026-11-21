@@ -9,6 +9,12 @@ work on the current branch → the maintainer reviews the commits and pushes the
 - **Status:** `Draft` → `Approved` → `Designed` (designs approved) → `Running` → `Done`.
 - Claude keeps the Steps table and the Log up to date while it runs, so a run that loses its context
   resumes from the file.
+- **Who is who in the Logs:** the *owner* or *maintainer* decides; the *orchestrator* (or *main
+  session*) is the Claude Code session that runs the roadmap and calls the agents of
+  `.claude/agents/`: the *architect* (designs), the *tester* (failing tests), the *builder* (code that
+  makes them pass), the *reviewer* and *security* (reviews and audits). Roadmaps and designs are
+  numbered separately: in a Log, `0014` next to a step or a revision is the design
+  `docs/design/0014-…`.
 
 ## Template
 
